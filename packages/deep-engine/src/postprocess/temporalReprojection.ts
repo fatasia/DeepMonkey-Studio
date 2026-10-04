@@ -46,6 +46,60 @@ export interface ReprojectionDecision {
   readonly historyError: number;
 }
 
+// ---------------------------------------------------------------------------
+// AA-M2 后续切片:决策层接线进生产 WGSL 的单一来源。
+// wgsl/temporalAa.wgsl 与 wgsl/temporalUpscale.wgsl 的历史融合段内嵌本模块派生的
+// 决策层片段(字面常量由 GHOST_GUARD_REPROJECTION_POLICY 模板化;两份真源以
+// temporalAaWgslChecksum.test.ts / temporalUpscaleWgslChecksum.test.ts 与本函数逐字
+// 互钉)。T07 GPU 探针(t07TemporalSequencesGpuTest.mts)与生产 pass 选项共用
+// enableTemporalGhostGuardWgsl 翻转开关 —— 逻辑与常量都只有这一处,无双处硬编码。
+// ---------------------------------------------------------------------------
+
+/**
+ * GHOST_GUARD 决策层的 WGSL 片段(固定 10 空格基础缩进,与两份生产真源的嵌入位置
+ * 对齐),与 accumulateTemporalFrameDetailed 的决策分支逐式同源:
+ * acceptedRatio 拒绝(深度拒绝下的 disocclusion)优先回退 3x3 邻域 box;否则
+ * clamp 后历史误差(深度匹配时深度拒绝失效的内容变化)超线则 feedback 衰减。
+ * reactive 降权在 decay 乘子之前生效(次序 = T07 注入体先例)。
+ *
+ * @param boxAnchor box fallback 3x3 邻域锚(TAA = `coordinate`,上采样 = `center`,
+ *   内部 texel 网格最近邻,与钳制窗同点)。
+ * @param boxSize 邻域钳制边界符号(TAA = `size`,上采样 = `sizeInternal`)。
+ * @param feedbackBlock 以 `var feedback = ...` 开头的完整语句块(12 空格缩进),
+ *   TAA 单行复用已算好的 reactive,上采样多行带 flags.y 门。
+ */
+export function deriveTemporalGhostGuardWgsl(boxAnchor: string, boxSize: string, feedbackBlock: string): string {
+  const { fallbackAcceptedRatio, maxHistoryError, decayFactor } = GHOST_GUARD_REPROJECTION_POLICY;
+  return `let acceptedRatio = historicalColor.a;
+          if (acceptedRatio < ${fallbackAcceptedRatio}) {
+            var boxMean = vec3f(0.0);
+            for (var oy = -1; oy <= 1; oy++) { for (var ox = -1; ox <= 1; ox++) {
+              let neighbor = clamp(${boxAnchor} + vec2<i32>(ox, oy), vec2<i32>(0), vec2<i32>(${boxSize}) - 1);
+              boxMean = boxMean + textureLoad(currentColor, neighbor, 0).rgb / 9.0;
+            } }
+            resolved = max(boxMean, vec3f(0.0));
+          } else {
+            let historyError = dot(abs(clampedHistory - color.rgb), vec3f(1.0)) / 3.0;
+${feedbackBlock}
+            if (historyError > ${maxHistoryError}) { feedback = feedback * ${decayFactor}; }
+            resolved = mix(color.rgb, clampedHistory, feedback);
+          }`;
+}
+
+/** 生产 WGSL 编译期开关常量行(0 = 关,与历史生产输出逐位一致)。 */
+export const TEMPORAL_GHOST_GUARD_CONST_OFF = "const DEEP_TEMPORAL_GHOST_GUARD: u32 = 0u;";
+/** 开关常量行(1 = 开);翻转后与 OFF 文本仅差这一个字符。 */
+export const TEMPORAL_GHOST_GUARD_CONST_ON = "const DEEP_TEMPORAL_GHOST_GUARD: u32 = 1u;";
+
+/**
+ * 把编译期开关翻到开启(fail-fast:常量行缺失 = 生产 WGSL 漂移,重复应用 = 编程错误)。
+ * 两个时域核(temporalAa.wgsl / temporalUpscale.wgsl)共用同一常量名,各自模块内一次翻转。
+ */
+export function enableTemporalGhostGuardWgsl(wgsl: string): string {
+  if (!wgsl.includes(TEMPORAL_GHOST_GUARD_CONST_OFF)) throw new Error("Ghost-guard switch constant missing; production WGSL drifted.");
+  return wgsl.replace(TEMPORAL_GHOST_GUARD_CONST_OFF, TEMPORAL_GHOST_GUARD_CONST_ON);
+}
+
 export interface TemporalAccumulationInput {
   readonly width: number;
   readonly height: number;

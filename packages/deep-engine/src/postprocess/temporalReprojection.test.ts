@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { resolveTemporalAaCpu } from "./temporalAaCpu.js";
 import { accumulateTemporalFrame, accumulateTemporalFrameDetailed, BASELINE_REPROJECTION_POLICY,
-  GHOST_GUARD_REPROJECTION_POLICY, ghostEnergy, measureGhostSequence, neighborhoodVarianceLuma,
+  deriveTemporalGhostGuardWgsl, enableTemporalGhostGuardWgsl, GHOST_GUARD_REPROJECTION_POLICY, ghostEnergy,
+  measureGhostSequence, neighborhoodVarianceLuma, TEMPORAL_GHOST_GUARD_CONST_OFF, TEMPORAL_GHOST_GUARD_CONST_ON,
   type ReprojectionPolicy, type TemporalAccumulationInput } from "./temporalReprojection.js";
 
 const options = { feedback: 0.9, depthThreshold: 0.1, relativeDepthThreshold: 0.02 } as const;
@@ -174,5 +175,31 @@ describe("temporal reprojection reference (T07)", () => {
     expect(() => ghostEnergy([0, 0, 0, 1], [0, 0, 0, 1, 0, 1, 0, 1], 1)).toThrow();
     expect(() => measureGhostSequence([], [], 1)).toThrow();
     expect(() => neighborhoodVarianceLuma([0, 0, 0], 4, 1, 0, 0)).not.toThrow();
+  });
+});
+
+describe("GHOST_GUARD WGSL wiring single source (AA-M2 follow-up slice)", () => {
+  it("derives the decision fragment from the policy constants (no duplicated hardcode)", () => {
+    const { fallbackAcceptedRatio, maxHistoryError, decayFactor } = GHOST_GUARD_REPROJECTION_POLICY;
+    const fragment = deriveTemporalGhostGuardWgsl("coordinate", "size",
+      "            var feedback = temporalParams.tuning.x * (1.0 - reactive);");
+    expect(fragment).toContain(`if (acceptedRatio < ${fallbackAcceptedRatio}) {`);
+    expect(fragment).toContain(`if (historyError > ${maxHistoryError}) { feedback = feedback * ${decayFactor}; }`);
+    // 判据次序与 CPU 决策分支一致:box fallback(disocclusion)优先于 historyError decay。
+    expect(fragment.indexOf("acceptedRatio")).toBeLessThan(fragment.indexOf("historyError"));
+    // box fallback 不含 feedback(clamp 收紧时直接取当前帧邻域),decay 分支 feedback 先 reactive 后 decay。
+    expect(fragment.split("resolved = max(boxMean")).toHaveLength(2);
+    expect(fragment).toContain("resolved = mix(color.rgb, clampedHistory, feedback);");
+  });
+
+  it("flips the compile-time switch exactly once and fail-fasts on drift", () => {
+    expect(TEMPORAL_GHOST_GUARD_CONST_OFF).toBe("const DEEP_TEMPORAL_GHOST_GUARD: u32 = 0u;");
+    expect(TEMPORAL_GHOST_GUARD_CONST_ON).toBe("const DEEP_TEMPORAL_GHOST_GUARD: u32 = 1u;");
+    const sample = `fn f() {\n  ${TEMPORAL_GHOST_GUARD_CONST_OFF}\n}`;
+    const enabled = enableTemporalGhostGuardWgsl(sample);
+    expect(enabled).toContain(TEMPORAL_GHOST_GUARD_CONST_ON);
+    expect(enabled.length).toBe(sample.length);
+    expect(() => enableTemporalGhostGuardWgsl(enabled)).toThrow("drifted");
+    expect(() => enableTemporalGhostGuardWgsl("no constant here")).toThrow("drifted");
   });
 });

@@ -108,6 +108,41 @@ lab/msaaPerfProbe.ts、scripts/bench-msaa1080p.mjs、packages/contracts/src/disp
   证据:test-output/parity-gate/evidence.json(基线刷新与原因见 parityGateThresholds.mjs aa-bloom 注)。
 - FrameMetrics.msaa 遥测:4x 渲染器 `{requested:4, active:4}`;回退帧携带 fallbackReason。
 
+### AA-M2 落地记录一:TSR 防鬼影决策层接线进生产 WGSL(2026-10-04)
+
+**接线内容:** T07 残影修复的 `GHOST_GUARD_REPROJECTION_POLICY` 决策层(深度拒绝
+disocclusion → 3×3 box fallback;深度匹配内容变化 → clamp 残差超线 feedback ×0.1
+衰减)从单测/注入体接线进生产 `temporalAa`/`temporalUpscale` 两核的历史融合段。
+开关载体 = **WGSL 编译期常量** `DEEP_TEMPORAL_GHOST_GUARD`(contactShadow steps
+编译进 WGSL 同族先例,features 表外):默认 0 = 关,基线分支逐字保留历史生产语句
+→ 输出与旧 WGSL **逐位一致**;开启经 `enableTemporalGhostGuardWgsl`(单字符翻转,
+fail-fast)+ pass 构造选项 `TemporalAaPass/TemporalUpscalePass(…, { ghostGuard: true })`,
+不动 features 表与 pbrPostProcessChain。决策层 WGSL 片段与常量唯一来源在
+`temporalReprojection.ts`(deriveTemporalGhostGuardWgsl 由策略对象模板化)——T07
+GPU 探针同步改为翻生产常量,注入式退役。两个核纳入 `wgsl:sync` 单源家族
+(wgsl/temporalAa.wgsl、wgsl/temporalUpscale.wgsl 真源 + 生成镜像 + sha256 +
+temporalAaWgslChecksum / temporalUpscaleWgslChecksum 门禁:镜像不陈旧、策略字面量
+与 GHOST_GUARD_REPROJECTION_POLICY 互钉、决策关键行锁定、失效门位置锁定)。
+
+**证据(2026-10-04,RTX 4060 / Chrome headless WebGPU):**
+- 逐位一致门:git HEAD 历史 WGSL vs 新 WGSL(开关关)真机 GPU 逐字节对拍,TAA 四
+  序列(fence/thin-tube/rotating-blades/moving-character)与上采样核(合成栅栏+深度
+  跳变输入)全部 byte-identical;开关开为同一 WGSL 单字符翻转且全场景确实分流
+  (maxDiff 0.39–0.91)。证据:test-output/deep-core/T07/ghost-guard-wiring-probe/
+  evidence.json(scripts/t07TemporalGhostGuardWiringProbe.mts)。
+- 残影门:CPU 镜像 frame-3 = 0.6834%(门 ≤1%,与接线前一致不回退);T07 全链路
+  GPU 复测 allPass=true(生产 WGSL 常量翻转路径)。证据:
+  docs/reports/deep-core/assets/t07-temporal-sequences-gpu-2026-09-28.json(重采集)。
+- Naga 30.0.1:两真源 ×(关/开)四变体全部 validation successful。
+- 测试:deep-engine src 全套 vitest 绿(postprocess 29 文件 225 用例,含 12 条新门禁
+  用例);tsc 对本刀文件零错误(仓库在途 dgcLoader.ts 未跟踪文件有既有错误,非本刀)。
+
+**同族排查:** 决策层只活在可信历史分支内——camera-cut/resize/revision-gap/首帧仍走
+宿主 fail-closed(sizeHistory.z=0 / flags.x=0 整支跳过,输出退化纯空间核);
+temporalValidity.ts 独立门未动;reactive 降权次序保持「(1-reactive) 先于 decay」;
+depth 拒绝判据(threshold = max(绝对,相对))原样保留,box fallback 只在其后分流;
+MV 管线未动(t07 mvMaxErr ≤6.2e-5)。
+
 ## 5. 指标体系(进 verify 与 parity)
 1. **parity aa-bloom**:目标 RMSE <1(与 three 同构 MSAA4+SMAA 组合后);
 2. **边缘质量**:边缘带像素梯度能量 vs 4x 超采样参考(离线路径追踪或 2x 分辨率渲染);

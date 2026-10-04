@@ -6,12 +6,22 @@ import { TEMPORAL_REACTIVE_MASK_FORMAT } from "./temporalAaTypes.js";
 import { type TemporalUpscaleOptions, type TemporalUpscaleResult, type TemporalUpscaleSource,
   TEMPORAL_UPSCALE_COLOR_FORMAT, TEMPORAL_UPSCALE_DEPTH_FORMAT, TEMPORAL_UPSCALE_MOTION_FORMAT } from "./temporalUpscaleTypes.js";
 import { TEMPORAL_UPSCALE_WGSL, TEMPORAL_UPSCALE_WORKGROUP_SIZE } from "./temporalUpscaleWgsl.js";
+import { enableTemporalGhostGuardWgsl } from "./temporalReprojection.js";
 
 /** encode source = TAA 同族合同 + 显示/内部尺寸映射与相机切换标记。 */
 export interface TemporalUpscalePassSource extends TemporalUpscaleSource {
   /** 显示画布宽 ÷ 内部渲染宽(>1);上采样输出尺寸 = round(internal × displayScale)。 */
   readonly displayScale: number;
   readonly cameraCut?: boolean;
+}
+
+/** TemporalUpscalePass 构造选项(编译期特性载体,features 表外;与 TemporalAaPassOptions 同族)。 */
+export interface TemporalUpscalePassOptions {
+  /** AA-M2 GHOST_GUARD 决策层(残影修复):开启时经 enableTemporalGhostGuardWgsl 把
+   * 编译期常量翻到 1 再建 shader module(与 temporalAa 同一决策式,box 邻域取内部
+   * texel 网格,reactive 门在 decay 之前)。默认 false:模块代码 = TEMPORAL_UPSCALE_WGSL
+   * 原文,输出与历史生产逐位一致。 */
+  readonly ghostGuard?: boolean;
 }
 
 const PARAMETER_BYTES = 64;
@@ -40,10 +50,11 @@ export class TemporalUpscalePass {
   private lastRevision: number | undefined;
   private lastJitter: readonly [number, number] = [0, 0];
   private disposed = false;
-  constructor(private readonly session: DeviceSession) {
+  constructor(private readonly session: DeviceSession, options: TemporalUpscalePassOptions = {}) {
     if (this.session.state !== "ready") throw new Error("GPU session is not ready for temporal upscale.");
     const device = session.device;
-    const module = device.createShaderModule({ label: "Deep temporal upscale WGSL", code: TEMPORAL_UPSCALE_WGSL });
+    const module = device.createShaderModule({ label: "Deep temporal upscale WGSL",
+      code: options.ghostGuard ? enableTemporalGhostGuardWgsl(TEMPORAL_UPSCALE_WGSL) : TEMPORAL_UPSCALE_WGSL });
     this.layout = device.createBindGroupLayout({ label: "Deep temporal upscale layout", entries: [
       { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "float" } },
       { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "unfilterable-float" } },

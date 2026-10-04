@@ -449,6 +449,38 @@ export const DEEP_GOD_RAYS_ENTRY = "marchVolumetricGodRays";
     constants: "",
     preamble: `export const PBR_BRDF_DIRECT_MULTISCATTERING_WGSL = /* wgsl */ `,
   },
+  {
+    // AA-M2 后续切片(2026-10-04):时域 AA resolve 核。真源 wgsl/temporalAa.wgsl,
+    // 纯 TS 消费(无 Rust 半;TemporalAaPass 直取)。GHOST_GUARD 决策层已接线进历史
+    // 融合段:编译期开关 DEEP_TEMPORAL_GHOST_GUARD 默认 0 = 关(基线分支逐字保留,
+    // 输出与历史生产逐位一致);决策片段字面常量由 temporalReprojection.ts
+    // GHOST_GUARD_REPROJECTION_POLICY 模板化派生,一致性由
+    // temporalAaWgslChecksum.test.ts 锁定(镜像 + sha256 + 派生函数逐字互钉)。
+    source: "temporalAa.wgsl",
+    module: resolve(packageRoot, "src/postprocess/temporalAaWgsl.ts"),
+    gate: "src/postprocess/temporalAaWgslChecksum.test.ts",
+    rustHalf: null,
+    constants: `/** workgroup 尺寸(宿主 dispatch ceil-div 同值;TS 权威,漂移在字节门禁失败)。 */
+export const TEMPORAL_AA_WORKGROUP_SIZE = 8;
+`,
+    preamble: `/** 时域 AA resolve 核(真源 wgsl/temporalAa.wgsl;GHOST_GUARD 决策层编译期开关,默认关 = 历史输出逐位一致)。 */
+export const TEMPORAL_AA_WGSL = /* wgsl */ `,
+  },
+  {
+    // AA-M2 后续切片(2026-10-04):F4 时域上采样核。真源 wgsl/temporalUpscale.wgsl,
+    // 纯 TS 消费(无 Rust 半;TemporalUpscalePass 直取)。GHOST_GUARD 决策层与
+    // temporalAa.wgsl 同名编译期开关、同一派生单源(temporalReprojection.ts),
+    // 一致性由 temporalUpscaleWgslChecksum.test.ts 锁定。
+    source: "temporalUpscale.wgsl",
+    module: resolve(packageRoot, "src/postprocess/temporalUpscaleWgsl.ts"),
+    gate: "src/postprocess/temporalUpscaleWgslChecksum.test.ts",
+    rustHalf: null,
+    constants: `/** workgroup 尺寸(宿主 dispatch ceil-div 同值;TS 权威,漂移在字节门禁失败)。 */
+export const TEMPORAL_UPSCALE_WORKGROUP_SIZE = 8;
+`,
+    preamble: `/** F4 时域上采样核(真源 wgsl/temporalUpscale.wgsl;GHOST_GUARD 决策层编译期开关,默认关 = 历史输出逐位一致)。 */
+export const TEMPORAL_UPSCALE_WGSL = /* wgsl */ `,
+  },
 ];
 
 // A selected family lets concurrent slices regenerate their own mirror without rewriting others.

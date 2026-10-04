@@ -6,7 +6,8 @@ import { TEMPORAL_AA_WGSL } from "../src/postprocess/temporalAaWgsl.ts";
 import { buildAllSequences, buildFenceSequence, buildMovingCharacterSequence } from "../src/postprocess/temporalSequenceScenes.ts";
 import { analyticMotion } from "../src/postprocess/temporalMotionReference.ts";
 import { resolveTemporalAaCpu, temporalAaJitter } from "../src/postprocess/temporalAaCpu.ts";
-import { accumulateTemporalFrameDetailed, GHOST_GUARD_REPROJECTION_POLICY, measureGhostSequence } from "../src/postprocess/temporalReprojection.ts";
+import { accumulateTemporalFrameDetailed, enableTemporalGhostGuardWgsl, GHOST_GUARD_REPROJECTION_POLICY,
+  measureGhostSequence } from "../src/postprocess/temporalReprojection.ts";
 import { internalResolutionReport, DynamicResolutionScaler } from "../src/postprocess/resolutionScaler.ts";
 import { ssrRegionSsim } from "../src/postprocess/screenSpaceReflectionQuality.ts";
 import { t07TemporalPageKernel } from "./t07TemporalGpuPageKernel.mjs";
@@ -17,9 +18,9 @@ import { base64, toF16RgbaBytes, f32Buffer, percentiles, extractRgba, extractMot
 
 // T07 四类序列实机 GPU 采集(headless Chrome + 真机 GPU,复用 T03/T05 采集模式)。
 // 判定:①MV 逐像素对拍(f16 读回容差);②GPU 基线 TAA 与 CPU 镜像 parity;
-// ③残影能量 3 帧 <5%(ghost-guard 决策内核 = 生产 WGSL + temporalReprojection 同式决策注入);
-// ④reactive mask 带内外行为与 CPU 同族公式一致;⑤67% 模式画质(SSIM+边缘保持)与
-// GPU 节省(帧时戳)双数据。禁只报 FPS。
+// ③残影能量 3 帧 <5%(ghost-guard 决策层已接线进生产 WGSL,编译期常量翻转 ——
+// 与 temporalReprojection 同一单源,不再注入);④reactive mask 带内外行为与 CPU
+// 同族公式一致;⑤67% 模式画质(SSIM+边缘保持)与 GPU 节省(帧时戳)双数据。禁只报 FPS。
 
 const require = createRequire(import.meta.url);
 const playwright = require("../../../apps/cloud-render-worker/node_modules/playwright-core/index.js");
@@ -30,32 +31,9 @@ const MASK_ROWS: readonly [number, number] = [0.3, 0.45], MASK_COVERAGE = 128;
 const MV_TOLERANCE_UV = 1.5e-3, TAA_PARITY_TOLERANCE = 0.02, FRAME_PARITY_TOLERANCE = 5e-3;
 
 
-/** 生产 TAA WGSL + ghost-guard 决策注入(与 temporalReprojection.GHOST_GUARD 同式;常量由
- *  策略对象模板化生成,生产体或策略漂移均 fail-fast)。 */
-function deriveGuardWgsl(): string {
-  const anchor = "resolved = mix(color.rgb, clampedHistory, temporalParams.tuning.x * (1.0 - reactive));";
-  if (!TEMPORAL_AA_WGSL.includes(anchor)) throw new Error("Production TAA WGSL drifted; ghost-guard injection anchor missing.");
-  const { fallbackAcceptedRatio, maxHistoryError, decayFactor } = GHOST_GUARD_REPROJECTION_POLICY;
-  const body = `{
-        // T07 decision layer (mirrors postprocess/temporalReprojection.ts GHOST_GUARD_REPROJECTION_POLICY):
-        // acceptedRatio < ${fallbackAcceptedRatio} -> 3x3 neighborhood box fallback; mean clamped-history error > ${maxHistoryError} -> decay feedback x${decayFactor}.
-        let acceptedRatio = historicalColor.a;
-        if (acceptedRatio < ${fallbackAcceptedRatio}) {
-          var boxMean = vec3f(0.0);
-          for (var oy = -1; oy <= 1; oy++) { for (var ox = -1; ox <= 1; ox++) {
-            let neighbor = clamp(coordinate + vec2<i32>(ox, oy), vec2<i32>(0), vec2<i32>(size) - 1);
-            boxMean = boxMean + textureLoad(currentColor, neighbor, 0).rgb / 9.0;
-          } }
-          resolved = max(boxMean, vec3f(0.0));
-        } else {
-          let historyError = dot(abs(clampedHistory - color.rgb), vec3f(1.0)) / 3.0;
-          var feedback = temporalParams.tuning.x * (1.0 - reactive);
-          if (historyError > ${maxHistoryError}) { feedback = feedback * ${decayFactor}; }
-          resolved = mix(color.rgb, clampedHistory, feedback);
-        }
-      }`;
-  return TEMPORAL_AA_WGSL.replace(anchor, body);
-}
+// AA-M2 接线后:guard 变体 = 生产 WGSL 编译期常量翻转(enableTemporalGhostGuardWgsl,
+// 决策层与常量唯一来源在 temporalReprojection.ts;常量行缺失即 fail-fast)。
+const deriveGuardWgsl = (): string => enableTemporalGhostGuardWgsl(TEMPORAL_AA_WGSL);
 
 const buildMask = (width: number, height: number): Uint8Array => {
   const mask = new Uint8Array(width * height);
@@ -251,7 +229,7 @@ try {
   }
   const evidence = { schema: "t07-temporal-sequences-gpu-evidence-v1", createdAt: new Date().toISOString(),
     lane: "t07-temporal-sequences-real-gpu",
-    method: "生产 TEMPORAL_AA_WGSL(baseline)+ 生产 WGSL 注入 ghost-guard 决策层(与 temporalReprojection 同式,fail-fast 锚点)+ pbrShader.geometryOutput 同式 motion 内核;headless Chrome 真机 GPU",
+    method: "生产 TEMPORAL_AA_WGSL(基线 = 编译期开关关,与历史生产逐位一致)+ 同一 WGSL 开关翻转(ghost-guard 决策层,单源 temporalReprojection;fail-fast 常量行)+ pbrShader.geometryOutput 同式 motion 内核;headless Chrome 真机 GPU",
     options: OPTIONS, sequences: cases, quality67: qualityCases,
     cost67: { report: internalResolutionReport(0.67, 1024, 576, { ssim: qualityCases[0]!.ssim as number,
       edgeRetention: qualityCases[0]!.edgeRetention as number,

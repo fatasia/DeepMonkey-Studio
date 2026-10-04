@@ -5,17 +5,28 @@ import { temporalAaJitter, validateTemporalAaJitter, validateTemporalAaOptions }
 import { TEMPORAL_AA_COLOR_FORMAT, TEMPORAL_AA_DEPTH_FORMAT, TEMPORAL_AA_MOTION_FORMAT,
   TEMPORAL_REACTIVE_MASK_FORMAT, type TemporalAaOptions, type TemporalAaResult, type TemporalAaSource } from "./temporalAaTypes.js";
 import { TEMPORAL_AA_WGSL, TEMPORAL_AA_WORKGROUP_SIZE } from "./temporalAaWgsl.js";
+import { enableTemporalGhostGuardWgsl } from "./temporalReprojection.js";
 
 const PARAMETER_BYTES = 48;
 interface Allocation { width: number; height: number; colors: readonly [GPUTexture, GPUTexture]; depths: readonly [GPUTexture, GPUTexture]; parameters: readonly [GPUBuffer, GPUBuffer] }
+
+/** TemporalAaPass 构造选项(编译期特性载体,features 表外;contactShadow steps 编译进 WGSL 同族先例)。 */
+export interface TemporalAaPassOptions {
+  /** AA-M2 GHOST_GUARD 决策层(残影修复):开启时经 enableTemporalGhostGuardWgsl 把
+   * 编译期常量翻到 1 再建 shader module(深度拒绝 disocclusion → 3x3 box fallback;
+   * clamp 后历史误差超线 → feedback 衰减;常量单源 temporalReprojection.ts)。
+   * 默认 false:模块代码 = TEMPORAL_AA_WGSL 原文,输出与历史生产逐位一致。 */
+  readonly ghostGuard?: boolean;
+}
 
 /** Full-resolution HDR TAA history with two-frame color/depth ping-pong. */
 export class TemporalAaPass {
   private readonly layout: GPUBindGroupLayout; private readonly pipeline: GPUComputePipeline;
   private readonly zeroMask: GPUTexture; private readonly zeroMaskView: GPUTextureView;
   private allocation: Allocation | undefined; private historyIndex = 0; private lastRevision: number | undefined; private lastJitter: readonly [number, number] = [0, 0]; private disposed = false;
-  constructor(private readonly session: DeviceSession) {
-    this.assertReady(); const device = session.device, module = device.createShaderModule({ label: "Deep temporal AA WGSL", code: TEMPORAL_AA_WGSL });
+  constructor(private readonly session: DeviceSession, options: TemporalAaPassOptions = {}) {
+    this.assertReady(); const device = session.device, module = device.createShaderModule({ label: "Deep temporal AA WGSL",
+      code: options.ghostGuard ? enableTemporalGhostGuardWgsl(TEMPORAL_AA_WGSL) : TEMPORAL_AA_WGSL });
     this.layout = device.createBindGroupLayout({ label: "Deep temporal AA layout", entries: [
       { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "float" } },
       { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "unfilterable-float" } },
