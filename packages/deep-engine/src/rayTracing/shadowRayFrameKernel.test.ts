@@ -10,8 +10,8 @@ import { TLAS_OCCLUDED_WGSL } from "./bvhTraverseTlasWgsl.js";
  * GBuffer 内联切片基线)。有意变更必须:更新钉值 + 复核遍历片段语义 + 真机对拍
  * (mask==CPU 镜像)后才能入库;片段级合同同探针内核(shadowRayKernel.test)。
  */
-const SHADOW_RAY_FRAME_F32_SHA256 = "047964dc9ac5ee3cf57ad18dd77ab5210a5469937aaf27c64b592c4c6f50f3cc";
-const SHADOW_RAY_FRAME_F16_SHA256 = "9b3c95d74c09a7df1195a4ff65a994cb8d799f28a3a49509572162312f542459";
+const SHADOW_RAY_FRAME_F32_SHA256 = "94264a60d196e6a23fb403220f2b82fc54bc4f8b665f30aaeb9dcc758246ab62";
+const SHADOW_RAY_FRAME_F16_SHA256 = "b0504bb3bd9e4562ce193a4a207e0e2842e1160e53050a22e21477910512a513";
 
 describe("shadow ray frame kernel generation contract", () => {
   const wgsl = emitShadowRayFrameKernelWgsl();
@@ -39,12 +39,15 @@ describe("shadow ray frame kernel generation contract", () => {
   it("declares the 8x8 entry point, background skip and occlusion mask semantics", () => {
     expect(wgsl).toContain(`fn ${SHADOW_RAY_FRAME_ENTRY_POINT}(@builtin(global_invocation_id) gid: vec3u)`);
     expect(wgsl).toContain("@workgroup_size(8, 8, 1)");
-    expect(wgsl).toContain("if (px.x >= params.meta.y || px.y >= params.meta.z) { return; }");
+    expect(wgsl).toContain("if (px.x >= params.frameMeta.y || px.y >= params.frameMeta.z) { return; }");
+    // "meta" 是 WGSL 保留字(Dawn 拒编译,真机 2026-10-05 实证)——字段名锁 frameMeta。
+    expect(wgsl).not.toMatch(/\bparams\.meta\b/);
+    expect(wgsl).toContain("frameMeta: vec4u,");
     // 背景像素(depth≥1)无接收者:写可见,不发射射线。
     expect(wgsl).toContain("if (depthSample >= 1.0) {");
     expect(wgsl).toContain("textureStore(shadowMask, px, vec4f(1.0, 1.0, 1.0, 1.0));");
     // 遮挡=0.0/可见=1.0;溢出 fail-closed 写 0.0(遮挡)——绝不静默采信。
-    expect(wgsl).toContain("let occluded = traceTwoLevelOccluded(origin, dir, inv, params.dirAndMax.w, params.meta.x, &overflow);");
+    expect(wgsl).toContain("let occluded = traceTwoLevelOccluded(origin, dir, inv, params.dirAndMax.w, params.frameMeta.x, &overflow);");
     expect(wgsl).toContain("textureStore(shadowMask, px, vec4f(select(1.0, 0.0, occluded || overflow != 0u), 1.0, 1.0, 1.0));");
   });
 

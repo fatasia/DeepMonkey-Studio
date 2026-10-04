@@ -84,7 +84,8 @@ export function emitShadowRayFrameKernelWgsl(options: ShadowRayFrameKernelOption
 ${bvhTraverseCoreWgsl(options)}${BVH_SLAB_WGSL}${BVH_INTERSECT_WGSL}${TLAS_INSTANCE_STRUCT_WGSL}struct FrameParams {
   invViewProjection: mat4x4f,
   dirAndMax: vec4f,
-  meta: vec4u,
+  // "meta" is a WGSL reserved keyword (Dawn rejects at compile); frameMeta keeps the 96B layout.
+  frameMeta: vec4u,
 }
 
 @group(0) @binding(0) var<storage, read> nodes: array<BvhNode>;
@@ -100,7 +101,7 @@ ${bvhTraverseCoreWgsl(options)}${BVH_SLAB_WGSL}${BVH_INTERSECT_WGSL}${TLAS_INSTA
 ${TLAS_LOCAL_RAY_WGSL}${BVH_BLAS_OCCLUDED_WGSL}${TLAS_OCCLUDED_WGSL}@compute @workgroup_size(8, 8, 1)
 fn ${SHADOW_RAY_FRAME_ENTRY_POINT}(@builtin(global_invocation_id) gid: vec3u) {
   let px = gid.xy;
-  if (px.x >= params.meta.y || px.y >= params.meta.z) { return; }
+  if (px.x >= params.frameMeta.y || px.y >= params.frameMeta.z) { return; }
   // 背景(depth≥1)无接收者:写可见,不发射射线。
   let depthSample = textureLoad(depth, px, 0);
   if (depthSample >= 1.0) {
@@ -108,7 +109,7 @@ fn ${SHADOW_RAY_FRAME_ENTRY_POINT}(@builtin(global_invocation_id) gid: vec3u) {
     return;
   }
   // NDC(uv*2-1, depth)→世界空间:invViewProjection 变换后透视除。
-  let uv = (vec2f(f32(px.x), f32(px.y)) + vec2f(0.5, 0.5)) / vec2f(f32(params.meta.y), f32(params.meta.z));
+  let uv = (vec2f(f32(px.x), f32(px.y)) + vec2f(0.5, 0.5)) / vec2f(f32(params.frameMeta.y), f32(params.frameMeta.z));
   let ndc = vec4f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depthSample, 1.0);
   let world = params.invViewProjection * ndc;
   let origin = world.xyz / world.w;
@@ -117,7 +118,7 @@ fn ${SHADOW_RAY_FRAME_ENTRY_POINT}(@builtin(global_invocation_id) gid: vec3u) {
   var overflow: u32 = 0u;
   // Occlusion semantics (spotShadowRayExtension): hit = occluded (0.0), miss = visible (1.0);
   // stack overflow fails closed to 0.0 (occluded) and raises the frame sentinel.
-  let occluded = traceTwoLevelOccluded(origin, dir, inv, params.dirAndMax.w, params.meta.x, &overflow);
+  let occluded = traceTwoLevelOccluded(origin, dir, inv, params.dirAndMax.w, params.frameMeta.x, &overflow);
   // 全局哨兵由遍历片段内置 atomicAdd 累计(与探针内核同源),此处只消费局部标志。
   textureStore(shadowMask, px, vec4f(select(1.0, 0.0, occluded || overflow != 0u), 1.0, 1.0, 1.0));
 }
