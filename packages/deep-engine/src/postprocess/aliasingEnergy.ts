@@ -75,19 +75,27 @@ export function aliasingReduction(before: number, after: number): number {
   return Math.max(0, (before - after) / before);
 }
 
+/** 阶梯场景包:no-AA 输出、4×SSAA 参考、源对比度与几何覆盖判定器(单一来源)。 */
+export interface StaircaseScenario {
+  readonly noAA: Float32Array;
+  readonly reference: Float32Array;
+  readonly sourceContrast: number;
+  /** 连续像素坐标 (px,py) 的二值几何覆盖判定(场景几何真值单一来源)。 */
+  readonly coverAt: (px: number, py: number) => boolean;
+}
+
 /**
- * 解析 45° 阶梯图案(含细栅栏与圆弧三类走样源)的 RGBA 输出与 4×SSAA 参考:
+ * 欠采样极限口径的解析 45° 阶梯图案(含细栅栏与圆弧三类走样源)的 RGBA 输出与
+ * 4×SSAA 参考:**口径警示(2026-10-04 AA-M2 门①根因实证)**——本场景的 3px 周期
+ * 细栅栏与 1px 圆弧是欠采样纹理,像素网格采样后信息已不可恢复,采样定理下任何
+ * 空间 AA 都无法重建 4×SSAA 参考(SMAA GPU 11.6%/FXAA 7.9%;iryoku AreaTex.py
+ * 对拍证实 SMAA 查表值为官方几何语义)。它保留为**度量 AA 的下界诚实性口径**
+ * (衡量 AA 在不可恢复走样上不产生幻觉残差),门①判定用 `resolvableStaircaseCase`。
  * 覆盖函数按几何解析覆盖率混合双色——no-AA 输出用像素中心覆盖(0/1),参考用
  * 4× 子采样覆盖率(0,.25,.5,.75,1)。这是度量自持的测试与探针场景源。
  */
-export function syntheticStaircaseCase(width: number, height: number): {
-  readonly noAA: Float32Array; readonly reference: Float32Array; readonly sourceContrast: number;
-} {
-  const noAA = new Float32Array(width * height * 4), reference = new Float32Array(width * height * 4);
-  const dark = 0.1, bright = 0.9;
-  const sourceContrast = bright - dark;
-  const covered = (x: number, y: number, sx: number, sy: number): boolean => {
-    const px = x + (sx + 0.5) / 4, py = y + (sy + 0.5) / 4;
+export function syntheticStaircaseCase(width: number, height: number): StaircaseScenario {
+  const covered = (px: number, py: number): boolean => {
     // 三类阶梯源:45° 主阶梯(对角下半)、周期 3px 细栅栏(限底部带,保平坦区占比)、
     // 环距 20px 同心圆弧——密度以"边缘掩码有区分度"为准,不以图案炫技为准。
     const staircase = py > 0.35 * height + px * 0.5;
@@ -95,17 +103,54 @@ export function syntheticStaircaseCase(width: number, height: number): {
     const arc = Math.hypot(px - width * 0.7, py - height * 0.35) % 20 < 1.0;
     return staircase || fence || arc;
   };
+  return buildStaircaseScenario(width, height, covered);
+}
+
+/**
+ * 可采样口径的解析阶梯图案(AA-M2 门①判定场景,2026-10-04 口径修正):
+ * 全部几何特征满足采样定理——大面积区域间的锐利斜边(45° 主斜边,相位随分辨率
+ * 连变、非像素对齐)、≥2px 投影宽度的粗栅栏(周期 8px/杆宽 3px)、粗同心圆弧
+ * (环距 24px/线宽 3px/最小半径 12px≥4px,曲率半径远大于线宽),无任何 ≤2px
+ * 周期结构。这类"可恢复走样"正是 MSAA/SMAA/TSR 的设计目标:覆盖率渐变可由
+ * 有限采样重建,门①(↓≥80%)在此口径上有原理可行性。4×SSAA 参考照旧。
+ */
+export function resolvableStaircaseCase(width: number, height: number): StaircaseScenario {
+  const covered = (px: number, py: number): boolean => {
+    // 三类阶梯源(与欠采样场景同构,特征全部放大到可采样尺度):
+    // 45° 主斜边(大面积区域分割,相位偏移 -0.3×width 避免像素对齐阶梯);
+    // 粗栅栏:周期 8px、杆宽 3px(≥2px 投影宽度),限底部带保平坦区占比;
+    // 粗同心圆弧:环距 24px、线宽 3px,最小半径 12px(≥4px)。
+    const staircase = py > 0.42 * height + px - 0.3 * width;
+    const fence = (px % 8) < 3 && py > 0.72 * height;
+    const radius = Math.hypot(px - width * 0.7, py - height * 0.35);
+    const arc = radius >= 12 && (radius % 24) < 3;
+    return staircase || fence || arc;
+  };
+  return buildStaircaseScenario(width, height, covered);
+}
+
+/** 场景构建公共骨架:几何判定器 → no-AA 像素中心采样 + 4×SSAA 16 子采样参考。 */
+function buildStaircaseScenario(width: number, height: number,
+  covered: (px: number, py: number) => boolean): StaircaseScenario {
+  const noAA = new Float32Array(width * height * 4), reference = new Float32Array(width * height * 4);
+  const dark = 0.1, bright = 0.9;
+  const sourceContrast = bright - dark;
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const pixel = (y * width + x) * 4;
     const value = (level: number): [number, number, number, number] =>
       level > 0 ? [bright, bright, bright, 1] : [dark, dark, dark, 1];
-    const center = covered(x, y, 1, 1) ? 1 : 0;
+    // 历史口径锁:no-AA 中心采样在 (x+0.375, y+0.375)(= 旧实现 covered(x,y,1,1)
+    // 的子采样格点),与 smaaGpuAcceptanceProbe 既有证据(基线 0.1382)同尺;
+    // 不得"顺手修正"为 x+0.5,否则历史能量数字全部静默漂移。
+    const center = covered(x + 0.375, y + 0.375) ? 1 : 0;
     noAA.set(value(center), pixel);
     let sum = 0;
-    for (let sy = 0; sy < 4; sy++) for (let sx = 0; sx < 4; sx++) sum += covered(x, y, sx, sy) ? 1 : 0;
+    for (let sy = 0; sy < 4; sy++) for (let sx = 0; sx < 4; sx++) {
+      sum += covered(x + (sx + 0.5) / 4, y + (sy + 0.5) / 4) ? 1 : 0;
+    }
     const coverage = sum / 16;
     reference.set([dark + (bright - dark) * coverage, dark + (bright - dark) * coverage,
       dark + (bright - dark) * coverage, 1], pixel);
   }
-  return { noAA, reference, sourceContrast };
+  return { noAA, reference, sourceContrast, coverAt: covered };
 }

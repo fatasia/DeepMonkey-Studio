@@ -14,10 +14,17 @@ import { decodeSmaaAreaLut, decodeSmaaSearchLut } from "../src/postprocess/smaaL
 import { resolveSmaaCpu } from "../src/postprocess/smaaCpu.js";
 import { syntheticStaircaseCase, measureAliasingEnergy, aliasingReduction } from "../src/postprocess/aliasingEnergy.js";
 import { resolveSpatialAaCpu } from "../src/postprocess/spatialAaCpu.js";
+import { resolvableStaircaseCase } from "../src/postprocess/aliasingEnergy.js";
+
+// 口径选择(2026-10-04 AA-M2 门①口径修正的最小扩展):AAM2_SCENE=resolvable 切
+// 可采样口径场景(默认 synthetic 保持既有证据语义不变),输出目录随口径区分。
+const AAM2_SCENE = process.env.AAM2_SCENE === "resolvable" ? "resolvable" : "synthetic";
 
 const require = createRequire(import.meta.url);
 const playwright = require("../../../apps/cloud-render-worker/node_modules/playwright-core/index.js");
-const outputDir = fileURLToPath(new URL("../../../test-output/deep-core/AAM2/smaa-gpu-acceptance/", import.meta.url));
+const outputDir = fileURLToPath(new URL(AAM2_SCENE === "resolvable"
+  ? "../../../test-output/deep-core/AAM2/smaa-gpu-acceptance-resolvable/"
+  : "../../../test-output/deep-core/AAM2/smaa-gpu-acceptance/", import.meta.url));
 
 const base64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString("base64");
 
@@ -153,7 +160,7 @@ const PAGE_KERNEL = `async (payload) => {
     return { pixelsB64: (() => { let text = ""; for (let i = 0; i < raw.length; i++) text += String.fromCharCode(raw[i]); return btoa(text); })(),
       timings, srcMaxDiff, srcProbe, payloadProbe, edgesB64: (() => { let text = ""; for (let i = 0; i < edgesRaw.length; i++) text += String.fromCharCode(edgesRaw[i]); return btoa(text); })(), adapter: { vendor: info.vendor ?? "", architecture: info.architecture ?? "", isFallback: adapter.isFallbackAdapter === true }, queueErrors: [] };
 }`;const width = 256, height = 256;
-const scene = syntheticStaircaseCase(width, height);
+const scene = AAM2_SCENE === "resolvable" ? resolvableStaircaseCase(width, height) : syntheticStaircaseCase(width, height);
 const rgbaInput = new Uint8Array(width * height * 4);
 for (let i = 0; i < rgbaInput.length; i++) rgbaInput[i] = Math.round(Math.max(0, Math.min(1, scene.noAA[i]!)) * 255);
 const quantizedInput = new Float32Array(rgbaInput.length);
@@ -212,6 +219,7 @@ try {
   const evidence = {
     schema: "aam2-smaa-gpu-acceptance-v1", createdAt: new Date().toISOString(),
     lane: "aa-m2-l3-smaa-port",
+    scene: AAM2_SCENE === "resolvable" ? "resolvableStaircaseCase(可采样口径,门①判定)" : "syntheticStaircaseCase(欠采样极限口径)",
     method: "headless Chrome WebGPU:生产三 pass WGSL 真机编译 + 合成阶梯场景端到端 readback 对拍 CPU 权威镜像 + 1080p 全链 timestamp 帧时(20 帧,去前 2 帧)",
     energy: {
       baselineEdgeEnergy: Number(baseline.edgeEnergy.toFixed(4)),

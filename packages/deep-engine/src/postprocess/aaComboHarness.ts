@@ -82,6 +82,9 @@ export interface AaComboSample {
   readonly alpha: number;
 }
 
+/** 场景几何真值采样函数(可采样口径扩展点:同一渲染骨架可换场景)。 */
+export type AaComboSampleFn = (input: AaComboSceneInput) => AaComboSample;
+
 /**
  * 组合场景几何真值(单一来源)。三条水平带,全部按相对坐标定义(缩放不变):
  * - 细杆带 y∈[0.04,0.32]:周期 6px、宽 1.4px 的 15° 斜杆——纯二值几何走样源,
@@ -136,6 +139,58 @@ const FOLIAGE_CLUSTERS: readonly { readonly u: number; readonly v: number; reado
     { u: 0.82, v: 0.84, r: 14 },
   ] as const);
 
+/**
+ * 可采样口径组合场景几何真值(AA-M2 门①口径修正,2026-10-04):与 aaComboSample
+ * 三带语义同构,特征全部放大到满足采样定理——斜杆投影宽度 3px(≥2px)、栅栏
+ * 实心半宽 1.25px(全宽 2.5px)+ 半影至 2.25px、叶簇像素半径 13–18(≥4px)、
+ * 渐变带宽 2px,全场景无 ≤2px 周期结构。三带语义保持:粗杆带 alpha=1(a2c
+ * 零增益战场)、栅栏带几何+alpha 双重边缘、植被带 a2c 主战场。
+ */
+export function resolvableComboSample(input: AaComboSceneInput): AaComboSample {
+  const { px, py, width, height } = input;
+  const ny = py / height;
+  // 粗杆:沿 x 平移 + 15° 倾斜,周期 8px、宽 3px(≥2px 投影宽度,4 子采样可解析)。
+  const railBand = ny >= 0.04 && ny < 0.32;
+  if (railBand) {
+    const period = 8;
+    const tilt = px + (ny - 0.18) * height * Math.tan(15 * Math.PI / 180);
+    const phase = mod(tilt, period);
+    const solid = phase < 3;
+    return { solid, alpha: solid ? 1 : 0 };
+  }
+  // 栅栏:45° 斜栅栏,杆体半宽 1.25px 实心(全宽 2.5px)+ 两侧 1px alpha 半影
+  // (渐变带宽 2px,4 级 a2c 阈值阶梯可解析)。
+  const fenceBand = ny >= 0.36 && ny < 0.62;
+  if (fenceBand) {
+    const period = 8;
+    const diagonal = (px + py) * Math.SQRT1_2;
+    const phase = mod(diagonal, period);
+    const distance = Math.min(phase, period - phase); // 到杆中心线的距离(px)
+    const solid = distance <= 1.25;
+    const alpha = distance <= 2.25 ? 1 - smoothstep(1.25, 2.25, distance) : 0;
+    return { solid, alpha: solid ? 1 : alpha };
+  }
+  // 植被:三簇圆形叶簇(像素半径 ≥13 ≥4px),smoothstep 2px 边缘渐变。
+  const foliageBand = ny >= 0.66 && ny < 0.96;
+  if (foliageBand) {
+    let alpha = 0;
+    for (const cluster of RESOLVABLE_FOLIAGE_CLUSTERS) {
+      const distance = Math.hypot(px - cluster.u * width, py - cluster.v * height);
+      alpha = Math.max(alpha, 1 - smoothstep(cluster.r, cluster.r + 2, distance));
+    }
+    return { solid: false, alpha };
+  }
+  return { solid: false, alpha: 0 };
+}
+
+/** 可采样口径叶簇参数(半径 13–18px,全部 ≥4px 采样定理下限)。 */
+const RESOLVABLE_FOLIAGE_CLUSTERS: readonly { readonly u: number; readonly v: number; readonly r: number }[] =
+  Object.freeze([
+    { u: 0.18, v: 0.81, r: 16 },
+    { u: 0.50, v: 0.74, r: 13 },
+    { u: 0.82, v: 0.84, r: 18 },
+  ] as const);
+
 function mod(value: number, period: number): number { return ((value % period) + period) % period; }
 function clamp01(value: number): number { return Math.min(1, Math.max(0, value)); }
 function smoothstep(edge0: number, edge1: number, value: number): number {
@@ -155,15 +210,7 @@ function shaded(coverage: number): number { return DARK + (BRIGHT - DARK) * cove
  *   Deep 引擎在 1x 渲染器上对 a2c 批次 fail-closed,不做此静默降级。
  */
 export function renderAaComboNoAA(width: number, height: number, alphaToCoverage = false): Float32Array {
-  const output = new Float32Array(width * height * 4);
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    const pixel = (y * width + x) * 4;
-    const sample = aaComboSample({ px: x + 0.5, py: y + 0.5, width, height });
-    const covered = alphaToCoverage ? sample.alpha > 0 : sample.solid || sample.alpha >= 0.5;
-    const value = covered ? BRIGHT : DARK;
-    output.set([value, value, value, 1], pixel);
-  }
-  return output;
+  return renderNoAA(width, height, alphaToCoverage, aaComboSample);
 }
 
 /**
@@ -171,7 +218,7 @@ export function renderAaComboNoAA(width: number, height: number, alphaToCoverage
  * 0.5 阈值判决(无 a2c:每 sample 的 alpha 判决是二值)。
  */
 export function renderAaComboMsaa4(width: number, height: number): Float32Array {
-  return renderMsaa(width, height, sample => sample.solid || sample.alpha >= 0.5);
+  return renderMsaa(width, height, aaComboSample, sample => sample.solid || sample.alpha >= 0.5);
 }
 
 /**
@@ -181,7 +228,7 @@ export function renderAaComboMsaa4(width: number, height: number): Float32Array 
  * 几何零增益,与规范一致。
  */
 export function renderAaComboMsaa4A2c(width: number, height: number): Float32Array {
-  return renderMsaa(width, height, (sample, _px, _py, sampleIndex) =>
+  return renderMsaa(width, height, aaComboSample, (sample, _px, _py, sampleIndex) =>
     sample.solid || sample.alpha > A2C_ALPHA_THRESHOLDS[sampleIndex]!);
 }
 
@@ -193,6 +240,53 @@ export function renderAaComboMsaa4A2c(width: number, height: number): Float32Arr
  */
 export function renderAaComboMsaa4Tsr(width: number, height: number, frames = 8,
   alphaToCoverage = false): Float32Array {
+  return renderMsaa4Tsr(width, height, frames, alphaToCoverage, aaComboSample);
+}
+
+/**
+ * 可采样口径组合场景的 TSR 理想化档(语义同 renderAaComboMsaa4Tsr,场景换
+ * resolvableComboSample):供终表的"组合档 → SMAA 叠加"判定行使用。
+ */
+export function renderResolvableComboMsaa4Tsr(width: number, height: number, frames = 8,
+  alphaToCoverage = false): Float32Array {
+  return renderMsaa4Tsr(width, height, frames, alphaToCoverage, resolvableComboSample);
+}
+
+/** no-AA 公共骨架:像素中心单点采样,judge 决定 alphaTest / a2cFallback 语义。 */
+function renderNoAA(width: number, height: number, alphaToCoverage: boolean,
+  sampleFn: AaComboSampleFn): Float32Array {
+  const output = new Float32Array(width * height * 4);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const pixel = (y * width + x) * 4;
+    const sample = sampleFn({ px: x + 0.5, py: y + 0.5, width, height });
+    const covered = alphaToCoverage ? sample.alpha > 0 : sample.solid || sample.alpha >= 0.5;
+    const value = covered ? BRIGHT : DARK;
+    output.set([value, value, value, 1], pixel);
+  }
+  return output;
+}
+
+/** MSAA 公共骨架:4 子样本覆盖投票 → 覆盖率混合。judge 返回该子样本是否被覆盖。 */
+function renderMsaa(width: number, height: number, sampleFn: AaComboSampleFn,
+  judge: (sample: AaComboSample, px: number, py: number, sampleIndex: number) => boolean): Float32Array {
+  const output = new Float32Array(width * height * 4);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const pixel = (y * width + x) * 4;
+    let covered = 0;
+    for (let index = 0; index < MSAA4_SAMPLE_OFFSETS.length; index++) {
+      const [offsetX, offsetY] = MSAA4_SAMPLE_OFFSETS[index]!;
+      const sample = sampleFn({ px: x + 0.5 + offsetX, py: y + 0.5 + offsetY, width, height });
+      if (judge(sample, x + 0.5 + offsetX, y + 0.5 + offsetY, index)) covered++;
+    }
+    const value = shaded(covered / MSAA4_SAMPLE_OFFSETS.length);
+    output.set([value, value, value, 1], pixel);
+  }
+  return output;
+}
+
+/** TSR 公共骨架:Halton 亚像素抖动逐帧累积(静态场景理想化时域档)。 */
+function renderMsaa4Tsr(width: number, height: number, frames: number, alphaToCoverage: boolean,
+  sampleFn: AaComboSampleFn): Float32Array {
   if (!Number.isSafeInteger(frames) || frames < 1 || frames > 64) {
     throw new Error("TSR accumulation frame count must be a safe integer in [1, 64].");
   }
@@ -202,29 +296,11 @@ export function renderAaComboMsaa4Tsr(width: number, height: number, frames = 8,
     const pixel = (y * width + x) * 4;
     let sum = 0;
     for (let frame = 0; frame < frames; frame++) {
-      const sample = aaComboSample({ px: x + jitterX[frame]!, py: y + jitterY[frame]!, width, height });
+      const sample = sampleFn({ px: x + jitterX[frame]!, py: y + jitterY[frame]!, width, height });
       sum += sample.solid || (alphaToCoverage ? sample.alpha > A2C_ALPHA_THRESHOLDS[frame % 4]!
         : sample.alpha >= 0.5) ? 1 : 0;
     }
     const value = shaded(sum / frames);
-    output.set([value, value, value, 1], pixel);
-  }
-  return output;
-}
-
-/** MSAA 公共骨架:4 子样本覆盖投票 → 覆盖率混合。judge 返回该子样本是否被覆盖。 */
-function renderMsaa(width: number, height: number,
-  judge: (sample: AaComboSample, px: number, py: number, sampleIndex: number) => boolean): Float32Array {
-  const output = new Float32Array(width * height * 4);
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    const pixel = (y * width + x) * 4;
-    let covered = 0;
-    for (let index = 0; index < MSAA4_SAMPLE_OFFSETS.length; index++) {
-      const [offsetX, offsetY] = MSAA4_SAMPLE_OFFSETS[index]!;
-      const sample = aaComboSample({ px: x + 0.5 + offsetX, py: y + 0.5 + offsetY, width, height });
-      if (judge(sample, x + 0.5 + offsetX, y + 0.5 + offsetY, index)) covered++;
-    }
-    const value = shaded(covered / MSAA4_SAMPLE_OFFSETS.length);
     output.set([value, value, value, 1], pixel);
   }
   return output;
@@ -244,12 +320,17 @@ function haltonSequence(count: number, base: number): readonly number[] {
  * 阈值判决,保留渐变),与 aliasingEnergy.syntheticStaircaseCase 的参考语义同构。
  */
 export function aaComboReference(width: number, height: number): Float32Array {
+  return comboReferenceFor(width, height, aaComboSample);
+}
+
+/** 参考公共骨架:16 子样本覆盖率连续合成,alpha 保留渐变不判决。 */
+function comboReferenceFor(width: number, height: number, sampleFn: AaComboSampleFn): Float32Array {
   const reference = new Float32Array(width * height * 4);
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const pixel = (y * width + x) * 4;
     let sum = 0;
     for (let sy = 0; sy < 4; sy++) for (let sx = 0; sx < 4; sx++) {
-      const sample = aaComboSample({ px: x + (sx + 0.5) / 4, py: y + (sy + 0.5) / 4, width, height });
+      const sample = sampleFn({ px: x + (sx + 0.5) / 4, py: y + (sy + 0.5) / 4, width, height });
       sum += sample.solid ? 1 : sample.alpha;
     }
     const value = shaded(sum / 16);
@@ -258,29 +339,48 @@ export function aaComboReference(width: number, height: number): Float32Array {
   return reference;
 }
 
+/** 参数化场景的 4×SSAA 参考(终表脚本聚合"组合档 → SMAA"行时复用同一真值)。 */
+export function aaComboReferenceFor(width: number, height: number, sampleFn: AaComboSampleFn): Float32Array {
+  return comboReferenceFor(width, height, sampleFn);
+}
+
 /**
  * 组合档能量表:alphaTest 组(noAA→msaa4)+ a2c 组(noAA+a2cFallback→msaa4+a2c)
  * + TSR 理想化档(相对 alphaTest 基线),AA-M2 组合门(组内降幅 ≥80%)机器判定。
  */
 export function aaComboEnergyTable(width: number, height: number): AaComboEnergyTable {
-  const reference = aaComboReference(width, height);
+  return comboEnergyTableFor(width, height, aaComboSample);
+}
+
+/**
+ * 可采样口径组合档能量表(AA-M2 门①判定口径):同一渲染骨架与档位语义,
+ * 场景换 resolvableComboSample(全特征满足采样定理)——门①在此口径上判定。
+ */
+export function resolvableComboEnergyTable(width: number, height: number): AaComboEnergyTable {
+  return comboEnergyTableFor(width, height, resolvableComboSample);
+}
+
+/** 能量表公共骨架:两组语义对照 + TSR 理想化档,门判定逻辑单一来源。 */
+function comboEnergyTableFor(width: number, height: number, sampleFn: AaComboSampleFn): AaComboEnergyTable {
+  const reference = comboReferenceFor(width, height, sampleFn);
   const measure = (output: Float32Array): AliasingEnergyReport =>
     measureAliasingEnergy({ output, reference, width, height, sourceContrast: AA_COMBO_SOURCE_CONTRAST });
-  const alphaTestBaseline = measure(renderAaComboNoAA(width, height));
-  const a2cBaseline = measure(renderAaComboNoAA(width, height, true));
+  const alphaTestBaseline = measure(renderNoAA(width, height, false, sampleFn));
+  const a2cBaseline = measure(renderNoAA(width, height, true, sampleFn));
   // AA-M2 组合档:MSAA4+a2c+TSR(16 帧理想化累积,与参考同为 16 子样本阶)相对
   // a2c 材质基线的降幅 —— 这是完整 AA 方案对 a2c 植被类资产的门判定;alphaTest
   // 组与各单档如实并列,供与路 7 SMAA 真实链数字合并。
-  const combo = measure(renderAaComboMsaa4Tsr(width, height, 16, true));
+  const combo = measure(renderMsaa4Tsr(width, height, 16, true, sampleFn));
   const rows: AaComboTierRow[] = [
     { tier: "noAA", energy: alphaTestBaseline, reduction: 0 },
   ];
   let best = aliasingReduction(a2cBaseline.edgeEnergy, combo.edgeEnergy);
   for (const [tier, output, baseline] of [
-    ["msaa4", renderAaComboMsaa4(width, height), alphaTestBaseline],
-    ["noAA+a2cFallback", renderAaComboNoAA(width, height, true), a2cBaseline],
-    ["msaa4+a2c", renderAaComboMsaa4A2c(width, height), a2cBaseline],
-    ["msaa4+tsr", renderAaComboMsaa4Tsr(width, height), alphaTestBaseline],
+    ["msaa4", renderMsaa(width, height, sampleFn, sample => sample.solid || sample.alpha >= 0.5), alphaTestBaseline],
+    ["noAA+a2cFallback", renderNoAA(width, height, true, sampleFn), a2cBaseline],
+    ["msaa4+a2c", renderMsaa(width, height, sampleFn, (sample, _px, _py, sampleIndex) =>
+      sample.solid || sample.alpha > A2C_ALPHA_THRESHOLDS[sampleIndex]!), a2cBaseline],
+    ["msaa4+tsr", renderMsaa4Tsr(width, height, 8, false, sampleFn), alphaTestBaseline],
   ] as const) {
     const energy = measure(output);
     const reduction = aliasingReduction(baseline.edgeEnergy, energy.edgeEnergy);
@@ -290,4 +390,41 @@ export function aaComboEnergyTable(width: number, height: number): AaComboEnergy
   rows.push({ tier: "msaa4+a2c+tsr", energy: combo,
     reduction: aliasingReduction(a2cBaseline.edgeEnergy, combo.edgeEnergy) });
   return { width, height, sourceContrast: AA_COMBO_SOURCE_CONTRAST, rows, comboGatePassed: best >= 0.8 };
+}
+
+/**
+ * 二值几何覆盖场景(阶梯家族)的 MSAA4 解析档:rotated-grid 4 子样本对 coverAt
+ * 判定器投票——阶梯场景与组合场景共用同一 MSAA 采样语义,供 SMAA 叠加判定
+ * (SMAA 在 MSAA4 输出上是否再降能)与两口径家族的档间相对比较。
+ */
+export function renderBinaryCoverageMsaa4(width: number, height: number,
+  coverAt: (px: number, py: number) => boolean): Float32Array {
+  return renderMsaa(width, height,
+    ({ px, py }) => ({ solid: coverAt(px, py), alpha: 1 }),
+    sample => sample.solid);
+}
+
+/**
+ * 二值几何覆盖场景的 TSR 理想化档:Halton 亚像素抖动逐帧累积(静态场景、无
+ * 运动矢量的时域累积上限),表达 MSAA4+TSR 完整组合档的解析等价。
+ * 注意:不复用 renderMsaa4Tsr——其 alphaTest 分支(α≥0.5)对 alpha≡1 的覆盖
+ * 采样器恒真,会把全图刷成前景色;此处判定即 coverAt 本身。
+ */
+export function renderBinaryCoverageMsaa4Tsr(width: number, height: number,
+  coverAt: (px: number, py: number) => boolean, frames = 16): Float32Array {
+  if (!Number.isSafeInteger(frames) || frames < 1 || frames > 64) {
+    throw new Error("TSR accumulation frame count must be a safe integer in [1, 64].");
+  }
+  const output = new Float32Array(width * height * 4);
+  const jitterX = haltonSequence(frames, 2), jitterY = haltonSequence(frames, 3);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const pixel = (y * width + x) * 4;
+    let sum = 0;
+    for (let frame = 0; frame < frames; frame++) {
+      if (coverAt(x + jitterX[frame]!, y + jitterY[frame]!)) sum++;
+    }
+    const value = shaded(sum / frames);
+    output.set([value, value, value, 1], pixel);
+  }
+  return output;
 }
