@@ -141,10 +141,21 @@ function shadowPipeline(pipelines: Pipelines, batch: PreparedBatch, authorShadow
 function mainPipeline(pipelines: Pipelines, batch: PreparedBatch, directDisplay: boolean,
   directionalOnly: boolean): GPURenderPipeline {
   const mode = materialMode(batch.textures !== undefined, batch.textures?.normal !== undefined);
-  const key = mainPipelineKey(mode, batch.alphaMode === "BLEND", rasterMode(batch.mirrored, batch.doubleSided));
+  // AA-M2:a2c 变体只在多采样 mainPipelines 中存在(display 直出渲染进 1x swapchain,
+  // WebGPU validation 禁止 alphaToCoverageEnabled × sampleCount=1,物理不支持)。
+  // directDisplay 档 a2c 批次回退普通管线 —— 管线侧退化为 alphaTest 语义(a2c 位
+  // 的 alpha 直通在 1x 无消费),能力边界在能力声明与交付报告中披露。
+  const alphaToCoverage = !directDisplay && batch.alphaToCoverage === true;
+  const key = mainPipelineKey(mode, batch.alphaMode === "BLEND", rasterMode(batch.mirrored, batch.doubleSided), alphaToCoverage);
   const optimized = directDisplay && directionalOnly && mode === "plain"
     ? pipelines.displayDirectionalPipelines.get(key) : undefined;
-  const pipeline = optimized ?? (directDisplay ? pipelines.displayPipelines : pipelines.mainPipelines).get(key);
-  if (!pipeline) throw new Error(`Missing ${directDisplay ? "display" : "main"} pipeline: ${key}`);
+  const source = directDisplay ? pipelines.displayPipelines : pipelines.mainPipelines;
+  const pipeline = optimized ?? source.get(key);
+  if (!pipeline) {
+    if (alphaToCoverage && !directDisplay) {
+      throw new Error(`Missing main pipeline: ${key} (alphaToCoverage requires the MSAA main-pass pipeline set).`);
+    }
+    throw new Error(`Missing ${directDisplay ? "display" : "main"} pipeline: ${key}`);
+  }
   return pipeline;
 }

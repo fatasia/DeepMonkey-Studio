@@ -52,7 +52,8 @@ it("builds deformation variants for all main and shadow modes without a fourth v
   const f = fixture();
   const result = await createPipelines(f.device, "bgra8unorm", {} as GPUBindGroupLayout, true, false, true, { deformation: true });
   expect(result.deformationPlainLayout).toBeDefined();
-  expect(result.mainPipelines.size).toBe(18);
+  // AA-M2:MSAA4 缺省档 depth 变体 × a2c(2) = 27 条 main(18 普通 + 9 a2c)。
+  expect(result.mainPipelines.size).toBe(27);
   expect(result.shadowPipelines.size).toBe(18);
   for (const descriptor of f.descriptors.filter(item => item.label?.startsWith("Deep forward"))) {
     expect(descriptor.vertex.entryPoint).toMatch(/^vertexDeformed/);
@@ -95,44 +96,60 @@ describe("PBR pipeline texture variants", () => {
     // AA-M1 采样数合同(置于易随并行任务变动的管线计数断言之前,单独可判):
     // HDR 主管线 4x;阴影管线无多采样(1x 图集;直出 display 见下方 color-only 用例)。
     expect(f.descriptors[0]!.multisample?.count).toBe(4);
-    expect(f.descriptors[18]!.multisample).toBeUndefined();
-    expect(f.descriptors[21]!.multisample).toBeUndefined();
+    const forward = f.descriptors.filter(descriptor => descriptor.label?.startsWith("Deep forward PBR "));
+    const shadows = f.descriptors.filter(descriptor => descriptor.label?.startsWith("Deep shadow "));
+    // AA-M2:MSAA4 档 depth 变体 × a2c → main 27 条;阴影仍 9 条(1x 图集,a2c 不适用)。
+    expect(forward).toHaveLength(27);
+    expect(shadows[0]!.multisample).toBeUndefined();
+    expect(shadows[3]!.multisample).toBeUndefined();
     // B1 Brief-VSM:+3 页物化管线(solid×3 raster)+ 1 页清屏管线(pageShadowPipelines)。
-    expect(f.descriptors).toHaveLength(32);
-    expect(result.mainPipelines.size).toBe(18); expect(result.shadowPipelines.size).toBe(9);
+    expect(f.descriptors).toHaveLength(41);
+    expect(result.mainPipelines.size).toBe(27); expect(result.shadowPipelines.size).toBe(9);
     expect(result.pageShadowPipelines.size).toBe(4);
-    expect(f.descriptors.slice(0, 18).map(value => value.fragment && value.fragment.entryPoint)).toEqual([
-      ...Array(3).fill("fragmentMain"), ...Array(3).fill("fragmentMainTransparent"),
-      ...Array(3).fill("fragmentMaterial"), ...Array(3).fill("fragmentMaterialTransparent"),
-      ...Array(3).fill("fragmentMaterial"), ...Array(3).fill("fragmentMaterialTransparent"),
+    // depth 变体按 (mode, raster) 各 2 条(普通 + a2c,entryPoint 相同);blend 变体各 1 条。
+    const depthVariants = forward.filter(value => value.label!.includes("/depth/"));
+    const blendVariants = forward.filter(value => value.label!.includes("/blend/"));
+    const depthEntryPoints = [...Array(3).fill("fragmentMain"), ...Array(6).fill("fragmentMaterial")];
+    expect(depthVariants.filter(value => !value.label!.endsWith("/a2c")).map(value => value.fragment?.entryPoint))
+      .toEqual(depthEntryPoints);
+    expect(depthVariants.filter(value => value.label!.endsWith("/a2c")).map(value => value.fragment?.entryPoint))
+      .toEqual(depthEntryPoints);
+    expect(blendVariants.map(value => value.fragment?.entryPoint)).toEqual([
+      ...Array(3).fill("fragmentMainTransparent"), ...Array(6).fill("fragmentMaterialTransparent"),
     ]);
+    expect(result.mainPipelines.get("plain/blend/ccw")).toBeDefined();
+    expect(result.mainPipelines.has("plain/blend/ccw/a2c")).toBe(false);
     const vertex = f.descriptors[0]!.vertex.buffers![0]!;
     expect(vertex.arrayStride).toBe(40);
     expect(vertex.attributes).toContainEqual({ shaderLocation: 10, offset: 24, format: "float32x4" });
     expect(f.descriptors[0]!.vertex.buffers![1]).toMatchObject({ arrayStride: 144,
       attributes: expect.arrayContaining([{ shaderLocation: 12, offset: 128, format: "float32x4" }]) });
     expect(f.descriptors[0]!.vertex.buffers![2]).toEqual(PBR_PREVIOUS_INSTANCE_BUFFER_LAYOUT);
-    expect(f.descriptors[12]!.vertex.entryPoint).toBe("vertexNormalMapped");
-    expect(f.descriptors[12]!.vertex.buffers![3]).toEqual({ arrayStride: 16,
+    // AA-M2:normal 模式 depth 变体起点移到 18(plain 6+3、material 6+3 之后)。
+    expect(f.descriptors[18]!.vertex.entryPoint).toBe("vertexNormalMapped");
+    expect(f.descriptors[18]!.vertex.buffers![3]).toEqual({ arrayStride: 16,
       attributes: [{ shaderLocation: 11, offset: 0, format: "float32x4" }] });
     expect(f.descriptors[0]!.primitive?.cullMode).toBe("back");
-    expect(f.descriptors[2]!.primitive?.cullMode).toBe("none");
-    expect(f.descriptors[3]!.depthStencil?.depthWriteEnabled).toBe(false);
+    // double raster 的 depth 变体现在位于 4(0 ccw、1 ccw/a2c、2 cw、3 cw/a2c、4 double)。
+    expect(f.descriptors[4]!.primitive?.cullMode).toBe("none");
+    // blend 变体在 plain depth(6 条)之后从 6 开始;仍为 OIT 双目标、无深度写。
+    expect(f.descriptors[6]!.depthStencil?.depthWriteEnabled).toBe(false);
     expect(f.descriptors[0]!.fragment!.targets.map(target => target!.format)).toEqual([
       "rgba16float", "r32float", "rgba8unorm", "rg16float",
     ]);
-    expect(f.descriptors[3]!.fragment!.targets).toHaveLength(2);
-    expect(f.descriptors[3]!.fragment!.targets.map(target => target!.format)).toEqual(["rgba16float", "r16float"]);
-    expect(f.descriptors[3]!.fragment!.targets[0]!.blend).toEqual({
+    expect(f.descriptors[6]!.fragment!.targets).toHaveLength(2);
+    expect(f.descriptors[6]!.fragment!.targets.map(target => target!.format)).toEqual(["rgba16float", "r16float"]);
+    expect(f.descriptors[6]!.fragment!.targets[0]!.blend).toEqual({
       color: { operation: "add", srcFactor: "one", dstFactor: "one" },
       alpha: { operation: "add", srcFactor: "one", dstFactor: "one" },
     });
-    expect(f.descriptors[20]!.primitive?.cullMode).toBe("none");
-    expect(f.descriptors[21]!.fragment?.entryPoint).toBe("shadowMaskPlain");
-    expect(f.descriptors[24]!.fragment?.entryPoint).toBe("shadowMaskTextured");
-    expect(f.descriptors[18]!.vertex.buffers?.map(buffer => buffer.attributes.map(attribute => attribute.shaderLocation)))
+    // 阴影区起点随 main 27 条移到 27:solid×3、maskPlain×3、maskMaterial×3。
+    expect(f.descriptors[29]!.primitive?.cullMode).toBe("none");
+    expect(f.descriptors[30]!.fragment?.entryPoint).toBe("shadowMaskPlain");
+    expect(f.descriptors[33]!.fragment?.entryPoint).toBe("shadowMaskTextured");
+    expect(f.descriptors[27]!.vertex.buffers?.map(buffer => buffer.attributes.map(attribute => attribute.shaderLocation)))
       .toEqual([[0], [2, 3, 4]]);
-    expect(f.descriptors[21]!.vertex.buffers?.map(buffer => buffer.attributes.map(attribute => attribute.shaderLocation)))
+    expect(f.descriptors[30]!.vertex.buffers?.map(buffer => buffer.attributes.map(attribute => attribute.shaderLocation)))
       .toEqual([[0, 10], [2, 3, 4, 9, 12]]);
     expect(f.layouts[1]!.entries.map(entry => entry.binding)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(f.layouts[3]).toMatchObject({ label: "Deep cascaded shadow group 2", entries: [
@@ -168,32 +185,59 @@ describe("PBR pipeline texture variants", () => {
   it("uses color-only opaque pipelines when geometry buffers have no consumer", async () => {
     const f = fixture();
     const result = await createPipelines(f.device, "bgra8unorm", {} as GPUBindGroupLayout, false);
-    const opaque = f.descriptors.slice(0, 18).filter((_, index) => Math.floor(index / 3) % 2 === 0);
+    // AA-M2:main depth 变体 ×a2c(27 条)在前,display 直出 9 条随后。
+    const opaque = f.descriptors.slice(0, 27).filter(value => value.label!.includes("/depth/"));
     expect(opaque.every(value => value.fragment?.targets.length === 1)).toBe(true);
-    expect(opaque.map(value => value.fragment?.entryPoint)).toEqual([
+    expect(opaque.filter(value => !value.label!.endsWith("/a2c")).map(value => value.fragment?.entryPoint)).toEqual([
       ...Array(3).fill("fragmentMainColor"),
-      ...Array(3).fill("fragmentMaterialColor"),
-      ...Array(3).fill("fragmentMaterialColor"),
+      ...Array(6).fill("fragmentMaterialColor"),
     ]);
     expect(result.displayPipelines.size).toBe(9);
-    expect(f.descriptors.slice(18, 27).map(value => value.fragment?.entryPoint)).toEqual([
+    expect(f.descriptors.slice(27, 36).map(value => value.fragment?.entryPoint)).toEqual([
       ...Array(3).fill("fragmentMainDisplay"), ...Array(6).fill("fragmentMaterialDisplay"),
     ]);
-    expect(f.descriptors[18]!.vertex).toMatchObject({ entryPoint: "vertexDirectDisplay", buffers: { length: 2 } });
-    expect(f.descriptors[21]!.vertex).toMatchObject({ entryPoint: "vertexMaterialDirectDisplay", buffers: { length: 2 } });
-    expect(f.descriptors[24]!.vertex).toMatchObject({ entryPoint: "vertexNormalMaterialDirectDisplay", buffers: { length: 3 } });
+    expect(f.descriptors[27]!.vertex).toMatchObject({ entryPoint: "vertexDirectDisplay", buffers: { length: 2 } });
+    expect(f.descriptors[30]!.vertex).toMatchObject({ entryPoint: "vertexMaterialDirectDisplay", buffers: { length: 2 } });
+    expect(f.descriptors[33]!.vertex).toMatchObject({ entryPoint: "vertexNormalMaterialDirectDisplay", buffers: { length: 3 } });
     // AA-M1:直出 display 管线渲染进 1x swapchain,恒不参与 MSAA。
-    expect(f.descriptors.slice(18, 27).every(value => value.multisample?.count === 1)).toBe(true);
-    expect(f.descriptors.slice(18, 27).every(value => value.fragment?.targets[0]?.format === "bgra8unorm")).toBe(true);
+    expect(f.descriptors.slice(27, 36).every(value => value.multisample?.count === 1)).toBe(true);
+    expect(f.descriptors.slice(27, 36).every(value => value.fragment?.targets[0]?.format === "bgra8unorm")).toBe(true);
   });
 
   it("specializes the plain display shader when static visual effects are disabled", async () => {
     const f = fixture();
     const result = await createPipelines(f.device, "bgra8unorm", {} as GPUBindGroupLayout, false, true, true);
-    expect(f.descriptors[18]!.fragment?.entryPoint).toBe("fragmentMainDisplayNoEffectsOneCascade");
-    expect(f.descriptors[21]!.fragment?.entryPoint).toBe("fragmentMaterialDisplay");
+    expect(f.descriptors[27]!.fragment?.entryPoint).toBe("fragmentMainDisplayNoEffectsOneCascade");
+    expect(f.descriptors[30]!.fragment?.entryPoint).toBe("fragmentMaterialDisplay");
     expect(result.displayDirectionalPipelines.size).toBe(3);
     expect(result.displayDirectionalMain).toBeDefined();
+  });
+
+  it("builds alphaToCoverageEnabled variants only for the multisampled main depth set (AA-M2)", async () => {
+    const f = fixture();
+    const result = await createPipelines(f.device, "bgra8unorm", {} as GPUBindGroupLayout);
+    const a2c = result.mainPipelines.get("material/depth/ccw/a2c");
+    expect(a2c).toBeDefined();
+    const descriptor = f.descriptors.find(value => value.label === "Deep forward PBR material/depth/ccw/a2c")!;
+    // a2c 仅作用于 target0(G-buffer color / HDR color);其余 G-buffer 附件语义不变。
+    expect(descriptor.fragment!.targets[0]!.alphaToCoverageEnabled).toBe(true);
+    expect(descriptor.fragment!.targets.slice(1).every(target => !target.alphaToCoverageEnabled)).toBe(true);
+    expect(descriptor.multisample!.count).toBe(4);
+    // 透明(OIT)与 1x 档不建 a2c;阴影/直出 display 集合无 a2c key。
+    expect(result.mainPipelines.has("material/blend/ccw/a2c")).toBe(false);
+    expect(result.shadowPipelines.has("maskMaterial/ccw/a2c")).toBe(false);
+    expect(result.displayPipelines.get("material/depth/ccw/a2c")).toBeUndefined();
+    const plainA2c = f.descriptors.find(value => value.label === "Deep forward PBR plain/depth/ccw/a2c")!;
+    expect(plainA2c.fragment!.targets[0]!.alphaToCoverageEnabled).toBe(true);
+    expect(result.mainPipelines.get("normal/depth/double/a2c")).toBeDefined();
+  });
+
+  it("omits a2c variants entirely in the 1x pipeline set (fail-closed draw-time error)", async () => {
+    const f = fixture();
+    const result = await createPipelines(f.device, "bgra8unorm", {} as GPUBindGroupLayout, true, false, false, { mainSampleCount: 1 });
+    expect(result.mainPipelines.size).toBe(18);
+    expect(result.mainPipelines.has("plain/depth/ccw/a2c")).toBe(false);
+    expect(f.descriptors.every(value => !value.fragment?.targets[0]?.alphaToCoverageEnabled)).toBe(true);
   });
 });
 
@@ -209,7 +253,8 @@ describe("first-frame critical pipeline subset", () => {
     await build.criticalReady;
     build.releaseDeferredQueues();
     await build.ready;
-    expect(build.pipelines.mainPipelines.size).toBe(18);
+    // AA-M2:MSAA4 档 depth ×a2c → 27 条 main。
+    expect(build.pipelines.mainPipelines.size).toBe(27);
     expect(build.pipelines.mainPipelines.get("material/blend/ccw")).toBeDefined();
   });
 
@@ -218,7 +263,7 @@ describe("first-frame critical pipeline subset", () => {
     const build = await createPipelinesBuild(f.device, "bgra8unorm", {} as GPUBindGroupLayout, true, false, false);
     await build.criticalReady;
     await build.ready;
-    expect(build.pipelines.mainPipelines.size).toBe(18);
+    expect(build.pipelines.mainPipelines.size).toBe(27);
     expect(build.pipelines.shadowPipelines.size).toBe(9);
   });
 });

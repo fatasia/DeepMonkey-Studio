@@ -66,6 +66,14 @@ export interface PbrMaterial {
   readonly alphaMode?: AlphaMode;
   /** MASK 默认 0.5；BLEND/OPAQUE 中保留但不参与覆盖率（仅阴影 mask）。与 MASK/BLEND 互斥由单值 alphaMode 保证。 */
   readonly alphaCutoff?: number;
+  /**
+   * alpha-to-coverage 请求(three r185 material.alphaToCoverage 投影;AA-M2):
+   * 片元 alpha 由硬件转为 MSAA sample coverage(边缘平滑),替代 alpha blend 排序。
+   * 仅 OPAQUE/MASK 合法——BLEND 走 1x weighted OIT,无多采样语义,组合 fail-closed。
+   * 管线侧仅在 MSAA≥4 主 pass 构建对应变体(pipelines.ts),1x 渲染器绘制 a2c 批次
+   * 显式报错,不静默降级。
+   */
+  readonly alphaToCoverage?: boolean;
   /** true 时关闭背面剔除，并在背面光照前翻转法线。 */
   readonly doubleSided?: boolean;
   /**
@@ -212,6 +220,8 @@ export interface PreparedBatch {
   readonly alphaCutoff?: number;
   /** BLEND 材质声明 premultipliedAlpha 时的批次显式标记；缺省为 straight。 */
   readonly premultipliedAlpha?: boolean;
+  /** 批次任一材质请求 alpha-to-coverage;仅 OPAQUE/MASK 批次可能为 true(pipelines.ts MSAA4 变体)。 */
+  readonly alphaToCoverage?: boolean;
   readonly castShadow?: boolean;
   /** 旧透明排序桥接可选中心；默认 weighted OIT 会合并兼容批次且不生成该字段。 */
   readonly sortCenter?: readonly [number, number, number];

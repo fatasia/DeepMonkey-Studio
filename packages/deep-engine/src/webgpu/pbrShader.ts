@@ -262,7 +262,11 @@ fn clipUv(clip: vec4f) -> vec2f {
 }
 fn coverage(alpha: f32, material: vec4f) -> f32 {
   if (flag(material.w, 2u) && alpha < material.y) { discard; }
-  return select(1.0, alpha, flag(material.w, 4u));
+  // 512 = alpha-to-coverage(AA-M2):片元 alpha 直通,target0 侧由硬件按 alpha 生成
+  // MSAA sample mask(alphaToCoverageEnabled 管线变体)。MASK 的 alphaTest discard 与
+  // three r185 一致地先于 a2c 发生(alphaTest 剪裁 + 剩余片元抖动覆盖共存);
+  // 512 位未置时保持历史语义:OPAQUE 输出 1.0、BLEND 直通 alpha。
+  return select(select(1.0, alpha, flag(material.w, 4u)), alpha, flag(material.w, 512u));
 }
 fn slotUv(uv0: vec2f, uv1: vec2f, row0: vec4f, row1: vec4f) -> vec2f {
   let uv = vec3f(select(uv0, uv1, row0.w > 1.5), 1.0);

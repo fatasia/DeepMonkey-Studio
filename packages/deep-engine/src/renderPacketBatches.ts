@@ -19,6 +19,7 @@ interface MutableBatch {
   readonly doubleSided: boolean;
   readonly alphaMode: AlphaMode;
   readonly premultiplied: boolean;
+  readonly alphaToCoverage: boolean;
   readonly alphaCutoff?: number;
   readonly castShadow: boolean;
   readonly offsets: number[];
@@ -67,9 +68,16 @@ export function packInstanceBatches(
     const alphaMode = material.alphaMode ?? "OPAQUE";
     const doubleSided = material.doubleSided === true;
     const premultiplied = alphaMode === "BLEND" && material.premultipliedAlpha === true;
+    // AA-M2:a2c 仅 OPAQUE/MASK(BLEND 走 1x OIT 无多采样语义);batchKey 条件后缀,
+    // 非 a2c 材质的批次 key 字节不变(包缓存稳定)。
+    const alphaToCoverage = material.alphaToCoverage === true;
+    if (alphaToCoverage && alphaMode === "BLEND") {
+      throw new Error(`Material ${material.id} requests alphaToCoverage with BLEND alpha mode.`);
+    }
     const batchMirrored = doubleSided ? false : mirrored;
     const castShadow = instance.castShadow !== false;
     const key = batchKey(instance.geometry, batchMirrored, doubleSided, alphaMode, premultiplied, textures, lod)
+      + (alphaToCoverage ? "/a2c" : "")
       + (lod?.strategy === "author-selected" ? `/author-lod:${JSON.stringify(instance.id)}` : "")
       + (castShadow ? "" : "/no-shadow") + (instance.pose === undefined ? "" : `/pose:${JSON.stringify(instance.pose)}`);
     let batch = grouped.get(key);
@@ -82,6 +90,7 @@ export function packInstanceBatches(
         doubleSided,
         alphaMode,
         premultiplied,
+        alphaToCoverage,
         ...(material.alphaCutoff === undefined ? {} : { alphaCutoff: material.alphaCutoff }),
         castShadow,
         offsets: [],
@@ -115,10 +124,12 @@ function packMaterialRecord(
   const alphaMode = material.alphaMode ?? "OPAQUE";
   const doubleSided = material.doubleSided === true;
   // 位图与 Native surface_flags 逐位对拍：1 double、2 mask、4 blend、(+2) blend cutoff、
-  // 16 不接收阴影、32 fog off、64 unlit、128 premultiplied、256 对象级 outline。
+  // 16 不接收阴影、32 fog off、64 unlit、128 premultiplied、256 对象级 outline、
+  // 512 alpha-to-coverage(AA-M2;低 10 位至此用满,新语义位需上位段协商)。
   const premultiplied = alphaMode === "BLEND" && material.premultipliedAlpha === true;
   target[offset + 31] = (doubleSided ? 1 : 0) + (alphaMode === "MASK" ? 2 : alphaMode === "BLEND" ? 4 + (material.alphaCutoff !== undefined ? 2 : 0) : 0)
-    + (material.fog === false ? 32 : 0) + (material.shadingModel === "unlit" ? 64 : 0) + (premultiplied ? 128 : 0);
+    + (material.fog === false ? 32 : 0) + (material.shadingModel === "unlit" ? 64 : 0) + (premultiplied ? 128 : 0)
+    + (material.alphaToCoverage === true ? 512 : 0);
   const emissiveFactor = material.emissiveFactor ?? [0, 0, 0];
   // v1 plain ABI 没有空闲标量，故无材质组时预乘 strength；材质组路径在 WGSL 显式乘 emissiveRow1.w。
   const emissiveScale = textures ? 1 : material.emissiveStrength ?? 1;
@@ -150,6 +161,7 @@ function finalizeBatches(
       doubleSided: group.doubleSided,
       alphaMode: group.alphaMode,
       ...(group.premultiplied ? { premultipliedAlpha: true } : {}),
+      ...(group.alphaToCoverage ? { alphaToCoverage: true } : {}),
       ...(group.alphaCutoff === undefined ? {} : { alphaCutoff: group.alphaCutoff }),
       ...(group.castShadow ? {} : { castShadow: false }),
       data,

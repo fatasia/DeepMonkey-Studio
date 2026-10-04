@@ -10,7 +10,7 @@ export interface MaterialEffectValues {
   readonly alpha: number;
   readonly emissiveStrength: number;
   readonly pipeline: Readonly<{ alphaMode: "OPAQUE" | "MASK" | "BLEND"; doubleSided: boolean;
-    premultipliedAlpha: boolean; alphaCutoff?: number; castShadow: boolean }>;
+    premultipliedAlpha: boolean; alphaToCoverage: boolean; alphaCutoff?: number; castShadow: boolean }>;
   readonly textures: Readonly<Partial<Record<"baseColor" | "metallicRoughness" | "normal" | "occlusion" | "emissive", string>>>;
 }
 
@@ -82,12 +82,14 @@ function authorValues(material: PbrMaterial, receiveShadow: boolean, castShadow:
       + (receiveShadow ? 0 : 16) + (material.fog === false ? 32 : 0)
       + (material.shadingModel === "unlit" ? 64 : 0)
       + (alphaMode === "BLEND" && material.premultipliedAlpha === true ? 128 : 0)
-      + (outline ? 256 : 0),
+      + (outline ? 256 : 0)
+      + (material.alphaToCoverage === true ? 512 : 0),
     emissive: emissiveFactor.map(value => Math.fround(value * packedEmissiveStrength)) as unknown as readonly [number, number, number],
     alpha: Math.fround(material.baseColorAlpha ?? 1),
     emissiveStrength: Math.fround(textured ? emissiveStrength : 1),
     pipeline: Object.freeze({ alphaMode, doubleSided: material.doubleSided === true,
       premultipliedAlpha: alphaMode === "BLEND" && material.premultipliedAlpha === true,
+      alphaToCoverage: material.alphaToCoverage === true,
       ...(material.alphaCutoff === undefined ? {} : { alphaCutoff: material.alphaCutoff }), castShadow }),
     textures: authorTextures(material),
   });
@@ -104,6 +106,7 @@ function consumedValues(batch: PreparedBatch, record: number): MaterialEffectVal
     alpha: data[offset + 35]!, emissiveStrength: batch.textures?.emissiveStrength ?? 1,
     pipeline: Object.freeze({ alphaMode: batch.alphaMode, doubleSided: batch.doubleSided,
       premultipliedAlpha: batch.premultipliedAlpha === true,
+      alphaToCoverage: batch.alphaToCoverage === true,
       ...(batch.alphaCutoff === undefined ? {} : { alphaCutoff: batch.alphaCutoff }), castShadow: batch.castShadow !== false }),
     textures: consumedTextures(batch),
   });

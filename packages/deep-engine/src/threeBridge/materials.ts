@@ -28,7 +28,7 @@ export interface ProjectedMaterial {
 
 /** advancedMaterials=true 表示渲染器带 advancedMaterials 变体:clearcoat / sheen / iridescence / 透射体积按 three r185 语义投影,否则维持"非中性即 fail-closed"。 */
 export function projectMaterial(value: unknown, id: string, hooks: ThreeProjectionHooks,
-  textures: ThreeTextureProjector, advancedMaterials = false): ProjectedMaterial {
+  textures: ThreeTextureProjector, advancedMaterials = false, alphaToCoverageSupported = false): ProjectedMaterial {
   const m = record(value, "material"), physical = m.isMeshPhysicalMaterial === true;
   const basic = m.type === "MeshBasicMaterial" && m.isMeshBasicMaterial === true;
   const standard = m.type === "MeshStandardMaterial" && m.isMeshStandardMaterial === true && !physical;
@@ -39,7 +39,12 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
   if (basic) for (const key of ["aoMap", "specularMap"] as const) if (m[key] != null) unsupported(`material.${key}`);
   const lobes = physical ? validatePhysicalLobes(m, advancedMaterials) : undefined;
   for (const key of unsupportedTextureFields) if (m[key] != null) unsupported(`material.${key}`);
-  if (m.alphaHash || m.alphaToCoverage) unsupported("material stochastic alpha");
+  // alphaHash(stochastic transparency)维持 fail-closed;alphaToCoverage(AA-M2)在
+  // 渲染器声明 MSAA 主 pass 能力时按 three r185 语义投影(opt-in,见下)。
+  if (m.alphaHash) unsupported("material alphaHash");
+  if (m.alphaToCoverage !== undefined && typeof m.alphaToCoverage !== "boolean") invalid("material.alphaToCoverage");
+  const alphaToCoverage = m.alphaToCoverage === true;
+  if (alphaToCoverage && !alphaToCoverageSupported) unsupported("material alphaToCoverage");
   // DE26/C03：premultipliedAlpha 缺省=未请求(straight)；true 仅在 BLEND 支持矩阵内，否则 fail-closed。
   if (m.premultipliedAlpha !== undefined && typeof m.premultipliedAlpha !== "boolean") invalid("material.premultipliedAlpha");
   if (m.blending !== THREE.normalBlending) unsupported("material.blending");
@@ -48,6 +53,9 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
   if (m.transparent !== true && m.transparent !== false) invalid("material.transparent");
   if (typeof m.fog !== "boolean") invalid("material.fog");
   const alphaMode: AlphaMode = m.transparent ? "BLEND" : alphaTest > 0 ? "MASK" : "OPAQUE";
+  // AA-M2:a2c 的 sample-mask 语义只存在于多采样主 pass;BLEND 走 1x weighted OIT,
+  // 组合无定义 → fail-closed(three 侧 a2c 与 transparent 共存时 a2c 实际不生效,这里显式拒绝)。
+  if (alphaToCoverage && alphaMode === "BLEND") unsupported("material alphaToCoverage with transparent");
   if (alphaMode === "OPAQUE" && opacity !== 1) unsupported("material opacity without alpha mode");
   // 透明语义矩阵(DE26/C03)：alphaMode 单值——transparent 压过 alphaTest，投影为 BLEND+alphaCutoff，
   // 不存在 MASK 与 BLEND 同时声明的表达；premultiplied 只描述 BLEND 的混合公式。
@@ -101,6 +109,7 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
     ...(emissiveMap ? { emissiveTexture: emissiveMap.slot } : {}),
     ...(alphaMode === "OPAQUE" ? {} : { alphaMode, baseColorAlpha: opacity }),
     ...(alphaTest > 0 ? { alphaCutoff: alphaTest } : {}),
+    ...(alphaToCoverage ? { alphaToCoverage: true } : {}),
     ...(m.premultipliedAlpha === true ? { premultipliedAlpha: true } : {}),
     ...(side === THREE.doubleSide ? { doubleSided: true } : {}) };
   return { material, textures: [base, metallicRoughness, normal?.texture, occlusion?.texture, emissiveMap]

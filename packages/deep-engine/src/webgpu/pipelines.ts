@@ -66,8 +66,10 @@ export type ShadowMode = "solid" | "maskPlain" | "maskMaterial";
 export function rasterMode(mirrored: boolean, doubleSided: boolean): RasterMode {
   return doubleSided ? "double" : mirrored ? "cw" : "ccw";
 }
-export function mainPipelineKey(mode: MainMaterialMode, transparent: boolean, raster: RasterMode): string {
-  return `${mode}/${transparent ? "blend" : "depth"}/${raster}`;
+export function mainPipelineKey(mode: MainMaterialMode, transparent: boolean, raster: RasterMode, alphaToCoverage = false): string {
+  // AA-M2:a2c 条件后缀 —— 非 a2c key 字节不变(管线缓存/预热计划稳定);a2c 变体
+  // 仅在 MSAA≥4 主 pass 档存在(见 createPipelinesBuild),1x 集合查 a2c key 即 miss。
+  return `${mode}/${transparent ? "blend" : "depth"}/${raster}${alphaToCoverage ? "/a2c" : ""}`;
 }
 export function shadowPipelineKey(mode: ShadowMode, raster: RasterMode): string { return `${mode}/${raster}`; }
 
@@ -267,27 +269,37 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     readonly create: () => Promise<GPURenderPipeline> }> = [];
   for (const mode of ["plain", "material", "normal"] as const) for (const transparent of [false, true]) {
     for (const raster of ["ccw", "cw", "double"] as const) {
-      const key = mainPipelineKey(mode, transparent, raster), doubleSided = raster === "double";
-      const targets: readonly GPUColorTargetState[] = transparent ? weightedOitColorTargets()
-        : (writeGeometryBuffers ? PBR_OPAQUE_ATTACHMENT_FORMATS : [PBR_HDR_FORMAT]).map(format => ({ format }));
-      const opaqueEntry = mode === "plain" ? "fragmentMain" : "fragmentMaterial";
-      const descriptor: GPURenderPipelineDescriptor = {
-        label: `Deep forward PBR ${key}`,
-        layout: mode === "plain" ? plainLayout : materialPipelineLayout,
-        vertex: { module, entryPoint: deformation ? mode === "normal" ? "vertexDeformedNormalMapped" : "vertexDeformed"
-          : mode === "normal" ? "vertexNormalMapped" : "vertexMain",
-          buffers: mode === "normal" && !deformation ? [...buffers, PBR_PREVIOUS_INSTANCE_BUFFER_LAYOUT, tangentBuffer]
-            : [...buffers, PBR_PREVIOUS_INSTANCE_BUFFER_LAYOUT] },
-        fragment: { module, entryPoint: transparent
-          ? mode === "plain" ? "fragmentMainTransparent" : "fragmentMaterialTransparent"
-          : writeGeometryBuffers ? opaqueEntry : `${opaqueEntry}Color`, targets },
-        primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : "back", frontFace: raster === "cw" ? "cw" : "ccw" },
-        depthStencil: { format: PBR_DEPTH_FORMAT, depthWriteEnabled: !transparent, depthCompare: "less" },
-        // 透明(blend/OIT)变体恒 1x:绘制目标是 1x OIT 累积 pass(主方案纪律:
-        // 混合链不进 MSAA 主目标,加权 OIT 的逐片元权重无多采样语义)。
-        multisample: { count: transparent ? 1 : mainSampleCount },
-      };
-      mainFactories.push({ key, descriptor, create: () => createPipeline(descriptor) });
+      const doubleSided = raster === "double";
+      // AA-M2:a2c 变体仅在多采样主 pass 档构建(WebGPU validation:alphaToCoverageEnabled
+      // 要求 sampleCount>1);透明(OIT,恒 1x)与 1x 集合不建 —— 1x 渲染器绘制 a2c 批次
+      // 在 packetDraw 显式报错,不静默降级。a2c 分支仅追加 alphaToCoverageEnabled:
+      // G-buffer target0 的 alpha 通道由 coverage() 的 a2c 位直通材质 alpha(采样掩码
+      // 来源),editorOverlay 的 alpha 强度语义随之对 a2c 材质变为真实覆盖率。
+      const a2cVariants: readonly boolean[] = transparent || mainSampleCount === 1 ? [false] : [false, true];
+      for (const alphaToCoverage of a2cVariants) {
+        const key = mainPipelineKey(mode, transparent, raster, alphaToCoverage);
+        const targets: readonly GPUColorTargetState[] = (transparent ? weightedOitColorTargets()
+          : (writeGeometryBuffers ? PBR_OPAQUE_ATTACHMENT_FORMATS : [PBR_HDR_FORMAT]).map(format => ({ format })))
+          .map((target, index) => index === 0 && alphaToCoverage ? { ...target, alphaToCoverageEnabled: true } : target);
+        const opaqueEntry = mode === "plain" ? "fragmentMain" : "fragmentMaterial";
+        const descriptor: GPURenderPipelineDescriptor = {
+          label: `Deep forward PBR ${key}`,
+          layout: mode === "plain" ? plainLayout : materialPipelineLayout,
+          vertex: { module, entryPoint: deformation ? mode === "normal" ? "vertexDeformedNormalMapped" : "vertexDeformed"
+            : mode === "normal" ? "vertexNormalMapped" : "vertexMain",
+            buffers: mode === "normal" && !deformation ? [...buffers, PBR_PREVIOUS_INSTANCE_BUFFER_LAYOUT, tangentBuffer]
+              : [...buffers, PBR_PREVIOUS_INSTANCE_BUFFER_LAYOUT] },
+          fragment: { module, entryPoint: transparent
+            ? mode === "plain" ? "fragmentMainTransparent" : "fragmentMaterialTransparent"
+            : writeGeometryBuffers ? opaqueEntry : `${opaqueEntry}Color`, targets },
+          primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : "back", frontFace: raster === "cw" ? "cw" : "ccw" },
+          depthStencil: { format: PBR_DEPTH_FORMAT, depthWriteEnabled: !transparent, depthCompare: "less" },
+          // 透明(blend/OIT)变体恒 1x:绘制目标是 1x OIT 累积 pass(主方案纪律:
+          // 混合链不进 MSAA 主目标,加权 OIT 的逐片元权重无多采样语义)。
+          multisample: { count: transparent ? 1 : mainSampleCount },
+        };
+        mainFactories.push({ key, descriptor, create: () => createPipeline(descriptor) });
+      }
     }
   }
   // 首帧关键子集立即排队（plain/ccw 恒含）；其余 main 变体等 release 后再排队。
