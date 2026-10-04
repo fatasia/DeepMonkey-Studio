@@ -96,6 +96,30 @@ export function debugFullRenderEnabled(): boolean {
   return value === "1" || value === "true" || value === "on";
 }
 
+/**
+ * MegaLights 万灯 RIS 开关：`mega-lights=1`（opt-in，默认关）。
+ * 开启后 >64 本地灯走 MegaLights RIS 路径（≤64 簇光路径逐位零变化）；
+ * 灯数超 MAX_MEGA_LIGHTS 引擎侧 fail-closed 拒绝。
+ */
+export function megaLightsEnabled(): boolean {
+  const params = typeof location !== "undefined" && location.search
+    ? new URLSearchParams(location.search) : undefined;
+  const value = params?.get("mega-lights")?.toLowerCase();
+  return value === "1" || value === "true" || value === "on";
+}
+
+/**
+ * 方向光 RT 阴影开关：`ray-traced-shadows=1`（opt-in，默认关）。
+ * 开启后渲染器构建 RT 资源与管线变体；**场景几何供给（TLAS）宿主链未接时
+ * features 快照 RT 位自动清 0 回级联（引擎 fail-closed，不静默假开）**。
+ */
+export function rayTracedShadowsEnabled(): boolean {
+  const params = typeof location !== "undefined" && location.search
+    ? new URLSearchParams(location.search) : undefined;
+  const value = params?.get("ray-traced-shadows")?.toLowerCase();
+  return value === "1" || value === "true" || value === "on";
+}
+
 /** F3 虚拟纹理开关：`f3-virtual-textures=1`（opt-in，默认整纹理驻留路径零变化）。 */
 export function f3VirtualTexturesEnabled(): boolean {
   const params = typeof location !== "undefined" && location.search

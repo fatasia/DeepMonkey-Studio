@@ -39,11 +39,13 @@ import { flowProbe, recordProbeSample, type DeepFlowProbe } from "./studioDeepWe
 import { cameraSnapshot, renderViewFingerprint, sameSnapshot, resolveAuthorWorldTransform, threePrototypeHooks,
   nextFrame, type BridgeModuleLoader, type RuntimeSession, type DeepRenderView } from "./studioDeepWebGpuBridgeSceneHelpers";
 import { markSwitchPhase, t11PipelineBootstrap, t07DynamicResolutionPolicy, b4HlodClusterEnabled, g1ClusterLodEnabled,
-  t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled, debugFullRenderEnabled, sdfGiEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
+  t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled, debugFullRenderEnabled, sdfGiEnabled,
+  megaLightsEnabled, rayTracedShadowsEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
 import type { StudioDeepWebGpuBridgeOptions, StudioRendererSwitchResult } from "./studioDeepWebGpuBridgeOptions";
 
 export { t11PipelineBootstrap, t07DynamicResolutionPolicy, b4HlodClusterEnabled, g1ClusterLodEnabled,
-  t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled, sdfGiEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
+  t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled, sdfGiEnabled,
+  megaLightsEnabled, rayTracedShadowsEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
 export type { StudioDeepWebGpuBridgeOptions, StudioRendererSwitchResult } from "./studioDeepWebGpuBridgeOptions";
 
 /**
@@ -276,6 +278,8 @@ export class StudioDeepWebGpuBridge {
           const temporalUpscale = resolutionScalePolicy !== undefined && f4TemporalUpscaleEnabled();
           const virtualTextures = f3VirtualTexturesEnabled();
           const debugFullRender = debugFullRenderEnabled();
+          const megaLights = megaLightsEnabled();
+          const rayTracedShadows = rayTracedShadowsEnabled();
           const backend = await module.DeepWebGpuBackend.create({
             canvas, gpu: navigator.gpu,
             ...(this.projectionBridge ? { projection: this.projectionBridge, root: this.projectionRoot() } : {}),
@@ -315,6 +319,8 @@ export class StudioDeepWebGpuBridge {
               // 按包场景 revision 变化自动烘焙；关闭时不带该字段，帧逐位零变化。
               features: { ...(temporalUpscale ? { temporalUpscale: true } : {}),
                 ...(debugFullRender ? { debugForceFullRender: true } : {}),
+                ...(megaLights ? { megaLights: true } : {}),
+                ...(rayTracedShadows ? { rayTracedShadows: true } : {}),
                 ...(sdfGiEnabled() ? { sdfGi: true } : {}),
                 environment: true, groundPlane: false,
                 groundGrid: false, screenSpaceReflection: true, volumetricFog: true,
