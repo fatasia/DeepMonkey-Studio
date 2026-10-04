@@ -131,7 +131,10 @@ describe("H-C7-P4 C2 real history → applyScene chain", () => {
     const pending = action.undoSceneEdit();
     await action.undoSceneEdit(); await action.redoSceneEdit();
     expect(f.applyScene).toHaveBeenCalledTimes(1);
-    expect(f.applyScene.mock.calls[0]?.slice(3)).toEqual([false, false, false, true]);
+    // undo 恢复路径合同(刀 5 起):readOnly/fastRuntime/safeAuthoringEntry 关,
+    // requireComplete 开,incrementalPlay 关,playhead undefined,restoreLiveCamera 关,
+    // keepUserMaterialPresets 开(撤销不回卷用户材质预设库)。
+    expect(f.applyScene.mock.calls[0]?.slice(3)).toEqual([false, false, false, true, false, undefined, false, true]);
     reject(new Error("模型加载失败")); await pending;
     expect(f.history.sceneHistoryRef.current.getState()).toMatchObject({ canUndo: true, canRedo: false });
     expect(f.engine.getModelTransform("victim")!.position.x).toBe(2);
