@@ -49,8 +49,10 @@ export interface A2cVariantEvidence {
   readonly presentAlpha: AlphaBuckets;
   /** opaque-hdr(主 pass target0 resolve)alpha 桶分布 —— present 链之前。 */
   readonly targetAlpha: AlphaBuckets;
-  /** opaque-hdr RGB 图案统计:实心板 ≈ 少色无边,抖动图案 ≈ 多色多边。 */
-  readonly targetRgb: { readonly uniqueColors: number; readonly edgePixels: number };
+  /** 主 pass target0 的实际格式(A2C-P1 A/B 实验的自报字段)。 */
+  readonly targetFormat: GPUTextureFormat;
+  /** opaque-hdr RGB 图案统计:实心板 ≈ 少色无边,抖动图案 ≈ 多色多边;saturated = HDR 截断量。 */
+  readonly targetRgb: { readonly uniqueColors: number; readonly edgePixels: number; readonly saturatedPixels: number };
   readonly verdict: {
     /** coverage() 512 位到达 WGSL 并写进 target0 alpha。 */
     readonly wgslAlphaPassthrough: boolean;
@@ -126,27 +128,35 @@ function alphaBuckets(channel: (index: number) => number, pixelCount: number): A
   return { transparent, partial, opaque };
 }
 
-/** opaque-hdr(rgba16float)RGB 图案统计:量化唯一色数 + 水平边缘像素数。 */
-function targetRgbStats(pixels: Uint8Array, bytesPerRow: number, width: number, height: number) {
+/** 主 pass target0 读回的 RGB 图案统计(按实际读回格式自适应):唯一色数 + 水平边缘像素数
+ * + 饱和像素数(任一通道 ≥0.999 —— 8-bit 档 HDR 截断的量化证据;float 档作为对照基线)。 */
+function targetRgbStats(pixels: Uint8Array, bytesPerRow: number, width: number, height: number,
+  format: GPUTextureFormat) {
+  const float16 = format === "rgba16float";
+  if (!float16 && format !== "rgba8unorm") throw Error(`Unsupported opaque-hdr readback format ${format}`);
+  const stride = float16 ? 8 : 4;
   const colors = new Set<number>();
-  let edgePixels = 0;
+  let edgePixels = 0, saturatedPixels = 0;
   for (let y = 0; y < height; y++) {
     const row = y * bytesPerRow;
     let previousR = NaN, previousG = NaN, previousB = NaN;
     for (let x = 0; x < width; x++) {
-      const offset = row + x * 8;
-      // 线性 HDR 显示域粗量化(0..1 截断到 32 阶);目标是区分"平坦"与"抖动图案",
-      // 不是色彩度量。
-      const to8 = (bits: number): number => Math.min(255, Math.max(0, Math.round(halfToFloat(bits) * 255)));
-      const r = to8(pixels[offset]! | (pixels[offset + 1]! << 8));
-      const g = to8(pixels[offset + 2]! | (pixels[offset + 3]! << 8));
-      const b = to8(pixels[offset + 4]! | (pixels[offset + 5]! << 8));
+      const offset = row + x * stride;
+      // float16:半精度解码;rgba8unorm:字节直读。线性 HDR 显示域粗量化(0..1 截断到
+      // 32 阶);目标是区分"平坦"与"抖动图案",不是色彩度量。
+      const channel = (bits: number): number => float16
+        ? Math.min(255, Math.max(0, Math.round(halfToFloat(bits) * 255)))
+        : bits;
+      const r = float16 ? channel(pixels[offset]! | (pixels[offset + 1]! << 8)) : pixels[offset]!;
+      const g = float16 ? channel(pixels[offset + 2]! | (pixels[offset + 3]! << 8)) : pixels[offset + 1]!;
+      const b = float16 ? channel(pixels[offset + 4]! | (pixels[offset + 5]! << 8)) : pixels[offset + 2]!;
       colors.add(((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3));
       if (x > 0 && (Math.abs(r - previousR) > 12 || Math.abs(g - previousG) > 12 || Math.abs(b - previousB) > 12)) edgePixels++;
+      if (r >= 254 || g >= 254 || b >= 254) saturatedPixels++;
       previousR = r; previousG = g; previousB = b;
     }
   }
-  return { uniqueColors: colors.size, edgePixels };
+  return { uniqueColors: colors.size, edgePixels, saturatedPixels };
 }
 
 async function runVariant(alphaTest: number, mrt: boolean): Promise<A2cVariantEvidence> {
@@ -219,14 +229,14 @@ async function runVariant(alphaTest: number, mrt: boolean): Promise<A2cVariantEv
     const rmse = Math.sqrt(squared / (WIDTH * HEIGHT * 3));
     const presentAlpha = alphaBuckets(pixel => frames.present[pixel * 4 + 3]! / 255, WIDTH * HEIGHT);
     const targetAlpha = alphaBuckets(pixel => frames.hdrAlpha[pixel]!, WIDTH * HEIGHT);
-    const targetRgb = targetRgbStats(frames.hdrBytes, frames.hdrBytesPerRow, WIDTH, HEIGHT);
+    const targetRgb = targetRgbStats(frames.hdrBytes, frames.hdrBytesPerRow, WIDTH, HEIGHT, frames.hdrFormat);
     // 判据读法:主 pass 面片内部 alpha 出现非 1 ⇒ 512 位到达 WGSL;RGB 边缘密度超过
     // 轮廓量级 ⇒ 硬件按 alpha 生成了采样掩码(抖动覆盖);present 与主 pass 的 alpha
     // 分布同号 ⇒ present 判据未被污染。
     const dithered = targetRgb.edgePixels > 8 * WIDTH;
     const alphaNonOpaque = targetAlpha.partial + targetAlpha.transparent > 0;
     return { alphaTest, mrt, three: threeDataUrl, deep: frames.presentDataUrl, rmse,
-      deepMsaa: metrics.msaa ?? null, presentAlpha, targetAlpha, targetRgb,
+      deepMsaa: metrics.msaa ?? null, presentAlpha, targetAlpha, targetFormat: frames.hdrFormat, targetRgb,
       verdict: { wgslAlphaPassthrough: alphaNonOpaque, hardwareCoverageDither: dithered,
         presentAlphaPreserved: (presentAlpha.partial + presentAlpha.transparent > 0) === alphaNonOpaque } };
   } finally {
@@ -247,7 +257,8 @@ async function readVariantFrames(runtime: PbrRenderer) {
     const [snapshots] = await Promise.all([bounded(pending), bounded(buffer.mapAsync(GPUMapMode.READ))]);
     const hdr = snapshots.find((value): value is PbrFrameReadbackSnapshot =>
       isPbrFrameReadbackSnapshot(value) && value.resourceId === "opaque-hdr"
-      && value.width === WIDTH && value.height === HEIGHT && value.format === "rgba16float");
+      && value.width === WIDTH && value.height === HEIGHT
+      && (value.format === "rgba16float" || value.format === "rgba8unorm"));
     if (!hdr) throw Error("opaque-hdr main-pass readback missing or wrong extent/format");
     if (session.format !== "bgra8unorm" && session.format !== "rgba8unorm") throw Error(`Unsupported actual surface format ${session.format}`);
     const bytes = new Uint8Array(buffer.getMappedRange()), present = new Uint8Array(WIDTH * HEIGHT * 4);
@@ -259,10 +270,15 @@ async function readVariantFrames(runtime: PbrRenderer) {
     const view = new DataView(hdr.bytes.buffer, hdr.bytes.byteOffset, hdr.bytes.byteLength);
     const hdrAlpha = new Float32Array(WIDTH * HEIGHT);
     for (let pixel = 0; pixel < WIDTH * HEIGHT; pixel++) {
-      hdrAlpha[pixel] = halfToFloat(view.getUint16(pixel * 8 + 6, true));
+      // A2C-P1 A/B:主 pass target0 格式随实验钩子切换,读回按快照实际格式解析
+      // (float16 = alpha 半精度第 4 个分量;rgba8unorm = 第 4 字节)。
+      hdrAlpha[pixel] = hdr.format === "rgba16float"
+        ? halfToFloat(view.getUint16(pixel * 8 + 6, true))
+        : hdr.bytes[pixel * 4 + 3]! / 255;
     }
     const presentDataUrl = await rgbaToPngDataUrl(present, WIDTH, HEIGHT);
-    return { present, presentDataUrl, hdrBytes: hdr.bytes, hdrBytesPerRow: hdr.bytesPerRow, hdrAlpha };
+    return { present, presentDataUrl, hdrBytes: hdr.bytes, hdrBytesPerRow: hdr.bytesPerRow,
+      hdrFormat: hdr.format, hdrAlpha };
   } finally { buffer.destroy(); }
 }
 

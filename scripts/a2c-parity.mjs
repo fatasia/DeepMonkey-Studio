@@ -83,7 +83,7 @@ try {
   await saveDataUrl(result.singleTarget.deep, "a2c-parity-deep-single-target.png");
   const verdict = variant => ({
     rmse: +variant.rmse.toFixed(3), deepMsaa: variant.deepMsaa, mrt: variant.mrt,
-    presentAlpha: variant.presentAlpha, targetAlpha: variant.targetAlpha, targetRgb: variant.targetRgb,
+    targetFormat: variant.targetFormat, presentAlpha: variant.presentAlpha, targetAlpha: variant.targetAlpha, targetRgb: variant.targetRgb,
     verdict: variant.verdict });
   const evidence = { probe: "a2c-parity", date: new Date().toISOString(), width: result.width, height: result.height,
     userAgent: await page.evaluate(() => navigator.userAgent),

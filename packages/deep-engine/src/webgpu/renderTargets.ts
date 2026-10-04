@@ -17,7 +17,31 @@ export function resolvePbrMsaaSampleCount(requested: number | undefined): 1 | 4 
   throw new RangeError(`PBR main MSAA sample count must be 1 or 4; got ${String(requested)}.`);
 }
 
-export const PBR_HDR_FORMAT = "rgba16float" as const satisfies GPUTextureFormat;
+/**
+ * A2C-P1 A/B 实验钩子(2026-10-05):主 pass target0 格式的编译期外唯一注入口。
+ * 仅取证脚本(scripts/a2c-format-ab.mjs)经 addInitScript 在**任何模块求值之前**写
+ * `globalThis.__deepEngineExperimentHdrFormat`,使本模块及全部 load-time 消费方
+ * (PBR_OPAQUE_ATTACHMENT_FORMATS、pbrFramePlanResources 静态目录)与逐帧 claim 的
+ * 运行时读取读到同一格式 —— plan/actual 对拍因此天然一致,零运行时突变。
+ * 生产代码从不写该全局,缺省路径逐位不变(常量仍为 rgba16float)。
+ *
+ * 兼容性自查(任务硬要求):白名单只有 rgba8unorm ——
+ * - rgba8unorm:RENDER_ATTACHMENT/blend/MSAA resolve/STORAGE_BINDING(pbrFullHdrTransientUsage)
+ *   全部核心支持,读回编码器(frameCaptureReadback 4B/px)支持;
+ * - bgra8unorm:**无 storage 档**(需 bgra8unorm-storage 特性),与既有
+ *   STORAGE_BINDING usage 冲突,拒入白名单(fail-closed,不静默)。
+ * 已知实验档限制:8-bit UNORM 在进入后处理链(tone mapping/bloom/AO/SSR)之前截断
+ * HDR 动态范围到 [0,1] —— 属实验取证语义,见 A2C-P1-HANDOFF.md 画质影响评估。
+ */
+const EXPERIMENT_HDR_FORMAT_KEY = "__deepEngineExperimentHdrFormat";
+function resolveExperimentHdrFormat(): "rgba16float" | "rgba8unorm" {
+  const requested = (globalThis as Record<string, unknown>)[EXPERIMENT_HDR_FORMAT_KEY];
+  if (requested === undefined) return "rgba16float";
+  if (requested === "rgba8unorm") return "rgba8unorm";
+  throw new Error(`Unsupported experiment HDR format override: ${String(requested)}. Only "rgba8unorm" is allowlisted `
+    + "(bgra8unorm lacks a storage tier and conflicts with pbrFullHdrTransientUsage).");
+}
+export const PBR_HDR_FORMAT = resolveExperimentHdrFormat();
 export const PBR_LINEAR_DEPTH_FORMAT = "r32float" as const satisfies GPUTextureFormat;
 // rgba8snorm is not renderable on all WebGPU adapters (notably Vulkan/ANGLE).
 // Store view normals in a renderable UNORM target and decode them in GTAO.
