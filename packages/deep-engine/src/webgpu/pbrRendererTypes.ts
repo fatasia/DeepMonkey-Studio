@@ -64,6 +64,17 @@ export interface PbrRendererOptions {
   readonly shadows?: CascadedShadowResourceOptions;
   /** C10 接触阴影资源配置;features.contactShadows 打开时生效,默认(不带)关闭。 */
   readonly contactShadows?: import("../shadows/contactShadowResources.js").ContactShadowResourceOptions;
+  /** Brief-GI M2 SDF GI 运行时配置;features.sdfGi 打开时生效,默认(不带)关闭。 */
+  readonly sdfGi?: import("../gi/sdfGiRuntimeTypes.js").SdfGiRuntimeOptions;
+  /**
+   * M2 方向光 RT 阴影场景供给(opt-in,features.rayTracedShadows):调用方打包的
+   * TLAS 场景(rayTracing/tlasLayout.packTlasScene 产物)。缺省 = 构造期 fail-closed
+   * 回级联(features 快照的 RT 位清 0,原因经 rayTracedShadowStatus 披露,不静默假开);
+   * 后续场景更新经 stageRayTracedShadowScene 注入(一帧后生效)。
+   */
+  readonly rayTracedShadowScene?: import("../rayTracing/tlasLayout.js").TlasPackedScene;
+  /** M2 RT 阴影 f16 压缩节点档(需 adapter "shader-f16";缺省 false)。 */
+  readonly rayTracedShadowF16?: boolean;
   /**
    * F3 虚拟纹理采样接线(opt-in,缺省关闭 = 零行为变化):`enabled:true` 时安装
    * 页 atlas 预算驻留控制器,渲染循环逐帧 反馈采集 → 预算驻留 → atlas 独立绑定组,

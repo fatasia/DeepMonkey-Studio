@@ -15,7 +15,7 @@ describe("PBR renderer feature selection", () => {
       occlusionCulling: false, contactShadows: false, toneMapping: "three-aces-r185" })).toEqual({ environment: false, fog: false, groundPlane: true, groundGrid: false,
       ambientOcclusion: false, screenSpaceReflection: false, temporalAa: false, spatialAa: false, bloom: false, vignette: false,
       volumetricFog: false, visibilityBuffer: false, softRasterizeFallback: false, textureArrays: false, layeredMaterials: false,
-      occlusionCulling: false, contactShadows: false, temporalUpscale: false, toneMapping: "three-aces-r185", debugForceFullRender: false, rayTracedShadows: false });
+      occlusionCulling: false, contactShadows: false, temporalUpscale: false, toneMapping: "three-aces-r185", debugForceFullRender: false, rayTracedShadows: false, sdfGi: false });
     expect(DEFAULT_PBR_RENDERER_FEATURES.environment).toBe(true);
   });
   it("keeps the soft-rasterize fallback opt-in and dependent on the visibility buffer", () => {
@@ -39,6 +39,12 @@ describe("PBR renderer feature selection", () => {
     expect(resolvePbrRendererFeatures().rayTracedShadows).toBe(false);
     expect(resolvePbrRendererFeatures({ rayTracedShadows: true }).rayTracedShadows).toBe(true);
     expect(() => resolvePbrRendererFeatures({ rayTracedShadows: 1 as never })).toThrow("must be boolean");
+  });
+  it("keeps Brief-GI SDF GI opt-in off by default and strictly boolean", () => {
+    expect(DEFAULT_PBR_RENDERER_FEATURES.sdfGi).toBe(false);
+    expect(resolvePbrRendererFeatures().sdfGi).toBe(false);
+    expect(resolvePbrRendererFeatures({ sdfGi: true }).sdfGi).toBe(true);
+    expect(() => resolvePbrRendererFeatures({ sdfGi: 1 as never })).toThrow("must be boolean");
   });
   it("keeps the debug full-render comparison switch off by default and strictly boolean", () => {
     expect(resolvePbrRendererFeatures().debugForceFullRender).toBe(false);

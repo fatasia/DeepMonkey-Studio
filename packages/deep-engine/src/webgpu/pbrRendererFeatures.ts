@@ -45,6 +45,11 @@ export interface PbrRendererFeatureOptions {
    * 需调用方提供 TlasPackedScene;关闭时渲染管线零变化。
    */
   readonly rayTracedShadows?: boolean;
+  /**
+   * Brief-GI M2 生产 SDF GI(opt-in,默认关):场景 SDF 烘焙 + 天光遮蔽圆锥追踪 +
+   * 探针 SH 更新的帧循环 dispatch。关闭时运行时不构建,既有帧逐位零变化。
+   */
+  readonly sdfGi?: boolean;
 }
 
 export interface PbrRendererFeatures {
@@ -69,6 +74,7 @@ export interface PbrRendererFeatures {
   readonly toneMapping: PbrToneMapping;
   readonly debugForceFullRender: boolean;
   readonly rayTracedShadows: boolean;
+  readonly sdfGi: boolean;
 }
 
 export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze({
@@ -80,6 +86,7 @@ export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze(
   occlusionCulling: true, bloom: true, vignette: true, contactShadows: true, temporalUpscale: false, toneMapping: "three-aces-r185",
   debugForceFullRender: false,
   rayTracedShadows: false,
+  sdfGi: false,
 });
 
 export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = {}): PbrRendererFeatures {
@@ -110,5 +117,6 @@ export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = 
     temporalUpscale: boolean("temporalUpscale"),
     bloom: boolean("bloom"), vignette: boolean("vignette"), toneMapping,
     debugForceFullRender: boolean("debugForceFullRender"),
-    rayTracedShadows: boolean("rayTracedShadows") });
+    rayTracedShadows: boolean("rayTracedShadows"),
+    sdfGi: boolean("sdfGi") });
 }

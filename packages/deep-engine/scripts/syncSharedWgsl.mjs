@@ -398,6 +398,36 @@ export const DEEP_GOD_RAYS_ENTRY = "marchVolumetricGodRays";
     preamble: `/** 体积光 god rays 半分辨率 ray-march 核(真源 wgsl/volumetricGodRays.wgsl)。 */\nexport const VOLUMETRIC_GOD_RAYS_MARCH_WGSL = /* wgsl */ `,
   },
   {
+    // Brief-GI M2 探针 SH 更新核(2026-10-04)。真源 wgsl/sdfGiProbeUpdate.wgsl,
+    // 纯 TS 消费(无 Rust 半;每 lane = 更新窗口内一个探针:天光可见度加权天空 + 静态
+    // 1 bounce 能量哨兵 + 时域滤波 α)。记录行 = probeClipmapSampling 的 96B
+    // IrradianceProbeRecord ABI(vec4[6]/探针;F5 words[12..23] 绝不写)。CPU 权威
+    // 镜像在 gi/probeShUpdate.ts(同式同序),互钉常量在 sdfGiProductionRuntime.ts
+    // (窗口分摊/参数打包),一致性由 sdfGiProbeUpdateWgslChecksum.test.ts 锁定。
+    source: "sdfGiProbeUpdate.wgsl",
+    module: resolve(packageRoot, "src/gi/sdfGiProbeUpdateWgsl.ts"),
+    gate: "src/gi/sdfGiProbeUpdateWgslChecksum.test.ts",
+    rustHalf: null,
+    constants: `/**
+ * Brief-GI M2 探针 SH 更新核的生成镜像。唯一真源 wgsl/sdfGiProbeUpdate.wgsl,
+ * 纯 TS 消费(无 Rust 半)。常量与 sdfGiProductionRuntime.ts(打包/派发)及
+ * probeClipmapSampling 的 96B 记录 ABI 互钉。
+ */
+
+/** workgroup 尺寸:每 lane 独立处理更新窗口内的一个探针,无跨 lane 通信。 */
+export const SDF_GI_PROBE_UPDATE_WORKGROUP_SIZE = 64;
+/** ProbeUpdateParams uniform 总字节(8 标量 + bounceAlbedo vec4 = 48B)。 */
+export const SDF_GI_PROBE_UPDATE_PARAMS_BYTES = 48;
+/** compute 入口名(运行时与宿主按名取 entry point)。 */
+export const SDF_GI_PROBE_UPDATE_ENTRY = "sdfGiProbeUpdateMain";
+/** 96B 记录 ABI 的 vec4 步长(=6;与 probeClipmapSampling DEEP_GI_PROBE_RECORD_BYTES 互钉)。 */
+export const SDF_GI_PROBE_RECORD_VEC4_STRIDE = 6;
+/** bounce 能量哨兵上限(与 probeShUpdate BOUNCE_ENERGY_LIMIT 同值:ρ≤1 上界 ×2 +1% 余量)。 */
+export const SDF_GI_PROBE_UPDATE_BOUNCE_ENERGY_LIMIT = 2.01;
+`,
+    preamble: `/** 探针 SH 更新核:天光加权 + bounce 哨兵 + 时域滤波(真源 wgsl/sdfGiProbeUpdate.wgsl)。 */\nexport const DEEP_SDF_GI_PROBE_UPDATE_WGSL = /* wgsl */ `,
+  },
+  {
     source: "displayColor.wgsl",
     module: resolve(packageRoot, "src/webgpu/pbrDisplayColorWgsl.ts"),
     gate: "src/webgpu/outputFamilyWgslChecksum.test.ts",

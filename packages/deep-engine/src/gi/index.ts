@@ -20,3 +20,13 @@ export { createSdfGiDayNightState, stepSdfGiDayNightFrame, referenceRoomBakeInst
   type SdfGiDayNightOptions, type SdfGiDayNightState } from "./sdfGiDayNight.js";
 export { shadeSdfGiFrame, frameDiffP99, SDF_GI_DEFAULT_CAMERA,
   type SdfGiCamera, type SdfGiFrame, type SdfGiFrameShadeInput } from "./sdfGiShade.js";
+export { sdfGiBakeInstancesFromPackets, deriveSdfGiProbeLattice, unpackTransformRow,
+  SDF_GI_INSTANCE_ROW_FLOATS, SDF_GI_INSTANCE_TRANSFORM_FLOATS,
+  type SdfGiPacketSnapshot, type CachedPacketGeometrySource } from "./sdfGiSceneAdapter.js";
+export { SdfGiProductionRuntime } from "./sdfGiProductionRuntime.js";
+export { planSdfGiProbeWindow, packSdfGiProbeUpdateParams, packSdfGiSkyTraceParams,
+  packSdfGiSkyRadianceTable, packSdfGiDirectionTable, packSdfGiProbePositions,
+  packInitialSdfGiRecords, sdfGiTimedPassRegistration, SDF_GI_TIMED_PASS_IDS,
+  SDF_GI_CAPABILITY_ID } from "./sdfGiPacking.js";
+export type { SdfGiRuntimeOptions, SdfGiFrameInput, SdfGiFramePlan, SdfGiMetrics,
+  SdfGiPassTiming } from "./sdfGiRuntimeTypes.js";

@@ -1,6 +1,5 @@
 //! PBR 帧编排(原 PbrRenderer.renderPreparedFrame 私有方法域,整体迁出守住 800 行体量门)。
 //! host 为类型层结构视图(运行时即 PbrRenderer 实例本体);成员语义与原类内一致,函数体逐字未改。
-import * as THREE from "three";
 import { DeviceSession } from "./deviceSession.js";
 import { RendererDeviceEpoch } from "./rendererDeviceEpoch.js";
 import { uploadBuffer } from "./meshBuffers.js";
@@ -26,6 +25,7 @@ import { scalePbrEnvironmentRadiance } from "./pbrEnvironmentIntensity.js";
 import { PreviousHiZVisibility, type PreviousHiZFramePlan } from "./previousHiZVisibility.js";
 import { PbrShadowState } from "./pbrShadowState.js";
 import { ContactShadowResources, describeContactShadowPass, describeContactApplyPass } from "../shadows/contactShadowResources.js";
+import type { SdfGiProductionRuntime } from "../gi/sdfGiProductionRuntime.js";
 import { hasClusteredLights, resolvePbrSceneLighting } from "../lighting/pbrSceneLighting.js";
 import { resolveDeepGiProducerDirectionCount } from "../lighting/probeRadianceDirectionGate.js";
 import type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
@@ -100,6 +100,8 @@ export interface PbrRendererFrameHost {
   capturePlanKey: string | undefined;
   clusterLodSlot: ClusterLodRenderSlot | undefined;
   readonly contactShadows: ContactShadowResources | undefined;
+  /** Brief-GI M2 生产 SDF GI dispatch;opt-in(features.sdfGi),默认不存在。 */
+  readonly sdfGi: SdfGiProductionRuntime | undefined;
   readonly deviceEpoch: RendererDeviceEpoch;
   readonly depthResolve: PbrDepthResolvePass | undefined;
   readonly diagnostics: PbrRendererDiagnostics;
@@ -162,12 +164,14 @@ export interface PbrRendererFrameHost {
   readonly virtualTileLookup: VirtualTextureTileLookupPass | undefined;
   readonly visibility: VisibilityBufferPath | undefined;
   readonly writeGeometryBuffers: boolean;
+  /** 宿主时钟注入(37c98eab 先例:runtime 模块不触全局 performance,时钟由宿主下发)。 */
+  now(): number;
 }
 
 /** 原类私有帧编排(体逐字未改;this → host)。 */
 
 export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView): FrameMetrics | undefined {
-    const begin = performance.now();
+    const begin = host.now();
     if (host.session.state !== "ready") return undefined;
     if (host.session.hasErrors) throw new Error("GPU validation failed; inspect device diagnostics.");
     validatePbrRenderView(view);
@@ -363,6 +367,19 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       capturePlan.plan.mappedPassIds.filter(passId => executedPasses.has(passId))) : undefined;
     const timing = passTiming ? undefined : host.gpuTimer.begin(host.frame + 1, detailedTiming);
     const timingStart = timing ? { timestampWrites: { querySet: timing.queries, beginningOfPassWriteIndex: 0 } } : {};
+    // Brief-GI M2 生产 SDF GI dispatch(opt-in,默认关 = 运行时不存在,帧逐位零变化):
+    // 场景 dirty(revision 变化)帧 CPU 增量烘焙 + 上传 + 派发天光圆锥追踪(静态层,
+    // 烘焙一次);每帧按 ddgiUpdateBudget 同族预算分摊探针 SH 更新滑动窗口(动态层)。
+    // 天空辐射 = 环境均值 × environmentIntensity(与 F1 ambient 合同同源,miss 方向
+    // 同一口径);pass 为主 encoder 上的 compute,不依赖 HDR 链拓扑。
+    if (host.sdfGi) {
+      host.sdfGi.syncScene(host.packets.visibilityInputs());
+      host.sdfGi.encodeFrame(encoder, {
+        sceneRevision: host.packets.visibilityRevision,
+        skyRadianceRgb: scalePbrEnvironmentRadiance(host.environmentAmbient, view.environmentIntensity),
+        budgetProbes: host.adaptiveQuality?.state().knobs.ddgiUpdateBudget ?? 64,
+      }, passTiming ?? undefined);
+    }
     // B1 Brief-VSM 主阴影档分派:virtual = 三环 clipmap 页物化(逐帧 Top-K,动态页
     // 最高优先);级联保持回退档 —— author 阴影/虚拟未装配/构造失败/动态禁用均回级联,
     // 不静默。级联 prepare 以 enabled=false 保活(重启用时自动失效重建)。
@@ -624,7 +641,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     timing?.resolve(encoder);
     passTiming?.resolve(encoder);
     const commands = encoder.finish();
-    const encoded = host.performanceTelemetry.enabled ? performance.now() : 0;
+    const encoded = host.performanceTelemetry.enabled ? host.now() : 0;
     if (host.frameCapture && captureOpen) {
       const executedPassIds = executedPasses;
       host.frameCapture.recordPasses(host.captureActualPasses ?? [], executedPassIds, present?.sourceMapRefs);
@@ -638,7 +655,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     host.targets.commitFrame();
     if (host.frameCapture && captureOpen) host.lastFrameReadback = host.frameCapture.collectReadbacksAfterSubmit();
     host.postProcess.commitFrame(history.revision);
-    const submitted = host.performanceTelemetry.enabled ? performance.now() : 0;
+    const submitted = host.performanceTelemetry.enabled ? host.now() : 0;
     if (host.frameCapture && captureOpen) {
       host.frameCapture.mark("submitted", "queue submitted");
       host.frameCapture.end();
@@ -655,7 +672,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     passTiming?.read();
     host.shadowDirty = false; host.historyDirty = false;
     host.diagnostics.recordFrame(frameNumber, begin, encoded, submitted, present!.acquireMs);
-    const metrics: FrameMetrics = { frame: ++host.frame, cpuSubmitMs: performance.now() - begin, drawCalls, triangles, ...lodWork.snapshot(),
+    const metrics: FrameMetrics = { frame: ++host.frame, cpuSubmitMs: host.now() - begin, drawCalls, triangles, ...lodWork.snapshot(),
       width: size.width, height: size.height, resources: host.session.resourceCount, shadowUpdated, transientTextures: host.targets.transientStats,
       deviceResourceMemory: host.session.resourceMemory,
       ...(host.msaaMetrics ? { msaa: host.msaaMetrics } : {}),
@@ -672,7 +689,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
         // 毫秒随读回异步完成,发布在 gpuPassTimings(带实测帧号)。本回执的 samples
         // 对缺测 pass 保持显式 unavailable(注明异步发布/未请求),不伪零。
         frameGraphReceipt: createPbrFrameReceipt(frameNumber, capturePlan.plan, [], begin,
-          Math.max(performance.now(), begin + 0.001), executedPasses,
+          Math.max(host.now(), begin + 0.001), executedPasses,
           (host.gpuTimer.passTimingEnabled ? "deferred-to-gpu-pass-timings" : "not-requested") satisfies PbrReceiptTimingAvailability),
         // F1 真实执行 coverage:登记 vs 编码差集读数(量,非时),与回执同源。
         frameExecutionCoverage: computePbrFrameExecutionCoverage(capturePlan.plan, executedPasses, frameNumber),
@@ -689,7 +706,8 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       ...(host.virtualShadows ? host.virtualShadows.metrics : {}),
       ...(virtualShadowMetrics ? { virtualShadow: virtualShadowMetrics } : {}),
       ...(virtualTexturesMetrics ? { virtualTextures: virtualTexturesMetrics } : {}),
-      ...(host.contactShadows ? host.contactShadows.metrics : {}) };
+      ...(host.contactShadows ? host.contactShadows.metrics : {}),
+      ...(host.sdfGi ? host.sdfGi.metrics : {}) };
     sampleAdaptiveQuality(host, metrics);
     if (!host.adaptiveQuality) return metrics;
     const hotspots = host.adaptiveQuality.hotspotSummary();

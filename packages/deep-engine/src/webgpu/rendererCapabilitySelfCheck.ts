@@ -112,12 +112,18 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
     },
   },
   {
-    // Brief-GI M1（2026-10-04）：场景级 SDF 烘焙 + 天光遮蔽圆锥追踪 + 探针 SH 更新
-    // （时域滤波 α，F5 words[12..23] 捕获块不动）。观测值从实现常量派生（步数档/α
-    // 漂移即红）。生产 pbrRenderer dispatch 接线未达 —— web = degraded/harness-only，
-    // 与 contracts 登记表/native 自检三方逐词对拍。
-    capabilityId: "sdf-gi", support: "degraded", reason: "harness-only",
+    // Brief-GI M2（2026-10-04）：生产 dispatch 接线达成 —— 场景 dirty 帧增量烘焙 +
+    // 天光圆锥追踪真 dispatch（gi/sdfGiProductionRuntime.encodeFrame，接入
+    // pbrRendererFrames 主 encoder 前 opaque 计算槽）+ 探针 SH 更新逐帧预算分摊
+    // （wgsl/sdfGiProbeUpdate 单源核，ddgiUpdateBudget 同族滑动窗口）。opt-in
+    // （features.sdfGi，默认关 = 运行时不构建，既有帧逐位零变化）。仍 degraded：
+    // 探针记录（96B probeClipmapSampling ABI）尚未被主 pass 着色消费（探针 clipmap
+    // 绑定不变，像素零变化）；记录消费与逐 pass 计时登记（PBR_TIMED_PASS_IDS 原子
+    // diff，见 sdfGiProductionRuntime 文件头）属后续切片。观测值从实现常量派生
+    // （步数档/α/开关默认漂移即红）。
+    capabilityId: "sdf-gi", support: "degraded", reason: "opt-in-default-off",
     observed: {
+      sdfGi: FEATURE_DEFAULTS.sdfGi,
       skyTraceStepsMin: SDF_SKY_VISIBILITY_MIN_STEPS,
       skyTraceStepsMax: SDF_SKY_VISIBILITY_MAX_STEPS,
       probeTemporalAlpha: DEEP_GI_PROBE_TEMPORAL_ALPHA,
