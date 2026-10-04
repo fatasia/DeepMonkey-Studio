@@ -82,7 +82,8 @@ export class ShadowRayFramePass {
       if (error) throw new Error(`Shadow ray frame WGSL validation failed: ${error.message}`);
     });
     const storage = USAGE_STORAGE | USAGE_COPY_DST;
-    const make = (label: string, size: number): GPUBuffer => device.createBuffer({ label, size, usage: storage });
+    const make = (label: string, size: number, extraUsage = 0): GPUBuffer =>
+      device.createBuffer({ label, size, usage: storage | extraUsage });
     // 场景缓冲持久驻留:构造期一次上传,帧循环只写 uniform 与哨兵清零。
     const nodes = make("shadow-frame-nodes", Math.max(4, packed.nodeBytes.byteLength));
     const instances = make("shadow-frame-instances", Math.max(128, packed.recordBytes.byteLength));
