@@ -16,6 +16,8 @@ import { syncSpaceVisualTransforms } from "./spaceVisualSync";
 import { fitPerspectiveBox } from "./cameraFraming";
 import { createModelFireEffect, disposeModelFireEffect, setModelFireAllocation, updateModelFireEffect } from "./modelFireEffect";
 import { planSceneFireBudget, type FireBudgetReport } from "./modelFireParticles";
+import { createModelVfxEffect, disposeModelVfxEffect, setModelVfxAllocation, updateModelVfxEffect } from "./modelVfxEffect";
+import { planSceneVfxBudget, type VfxBudgetReport } from "./modelVfxParticles";
 import type { DeepTransformGizmoInput } from "./deepOverlayPrimitives";
 import { deepOutlineSnapshot, syncDeepOutlineTags, type DeepOutlineSnapshot } from "./deepOutlineTags";
 
@@ -172,6 +174,11 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
         delete runtime.fire;
         this.fireBudgetDirty = true;
       }
+      if (runtime.vfx) {
+        disposeModelVfxEffect(runtime.vfx, (object) => this.disposeObject(object));
+        delete runtime.vfx;
+        this.vfxBudgetDirty = true;
+      }
       if (runtime.helper) {
         this.disposeObject(runtime.helper);
         delete runtime.helper;
@@ -184,7 +191,8 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
       let runtime = this.modelEffectRuntimes.get(id);
       if (runtime) this.restoreModelEffectMaterials(id);
       const fireEnabled = state?.fire?.enabled === true;
-      const enabled = state && (state.outline || state.glow || state.xray || state.scanline || state.heatmap || state.dissolve > 0 || state.edgeLight || fireEnabled);
+      const vfxEnabled = state?.vfx?.enabled === true;
+      const enabled = state && (state.outline || state.glow || state.xray || state.scanline || state.heatmap || state.dissolve > 0 || state.edgeLight || fireEnabled || vfxEnabled);
       if (!model || !state || !enabled) {
         if (runtime) this.modelEffectRuntimes.delete(id);
         this.updatePostProcessingSelection();
@@ -194,7 +202,7 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
       const requiresMaterialOverride = Boolean(
         state.glow || state.xray || state.scanline || state.heatmap || state.dissolve > 0 || state.edgeLight,
       );
-      if (!requiresMaterialOverride && !fireEnabled) {
+      if (!requiresMaterialOverride && !fireEnabled && !vfxEnabled) {
         this.modelEffectRuntimes.delete(id);
         this.updatePostProcessingSelection();
         return;
@@ -276,6 +284,13 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
           this.fireBudgetDirty = true;
         }
       }
+      if (vfxEnabled && state.vfx) {
+        const vfx = createModelVfxEffect(model.object, state.vfx, { perParticleSize: this.rendererBackend !== "webgpu" });
+        if (vfx) {
+          runtime.vfx = vfx;
+          this.vfxBudgetDirty = true;
+        }
+      }
       this.rebalanceFireBudget();
       this.updatePostProcessingSelection();
       this.scheduleRendererPipelineWarmup();
@@ -287,6 +302,14 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
       }
       return planSceneFireBudget(requests);
     }
+  /** VFX 图层独立的场景粒子预算报告（与火焰图层互不挤占）。 */
+  getVfxBudgetReport(): VfxBudgetReport {
+      const requests: { id: string; requested: number }[] = [];
+      for (const [id, runtime] of this.modelEffectRuntimes) {
+        if (runtime.vfx) requests.push({ id, requested: runtime.vfx.requestedCount });
+      }
+      return planSceneVfxBudget(requests);
+    }
   /** 按场景总预算重新分配所有火焰发射器；超限时只缩绘制范围，不重建几何。 */
   protected rebalanceFireBudget(): void {
       this.fireBudgetDirty = false;
@@ -296,14 +319,25 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
         if (fire && fire.allocatedCount !== emitter.allocated) setModelFireAllocation(fire, emitter.allocated);
       }
     }
+  /** VFX 图层预算再分配，与火焰层同构但走独立预算池。 */
+  protected rebalanceVfxBudget(): void {
+      this.vfxBudgetDirty = false;
+      const report = this.getVfxBudgetReport();
+      for (const emitter of report.emitters) {
+        const vfx = this.modelEffectRuntimes.get(emitter.id)?.vfx;
+        if (vfx && vfx.allocatedCount !== emitter.allocated) setModelVfxAllocation(vfx, emitter.allocated);
+      }
+    }
   protected updateModelEffects(delta: number): void {
       if (this.fireBudgetDirty) this.rebalanceFireBudget();
+      if (this.vfxBudgetDirty) this.rebalanceVfxBudget();
       for (const runtime of this.modelEffectRuntimes.values()) {
         if (runtime.scan) {
           runtime.scan.phase = (runtime.scan.phase + delta * 0.32) % 1;
           runtime.scan.mesh.position.y = THREE.MathUtils.lerp(runtime.scan.minY, runtime.scan.maxY, runtime.scan.phase);
         }
         if (runtime.fire) updateModelFireEffect(runtime.fire, delta, this.camera.position);
+        if (runtime.vfx) updateModelVfxEffect(runtime.vfx, delta, this.camera.position);
       }
     }
   protected removeSelectionHelper(): void {

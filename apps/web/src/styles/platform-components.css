@@ -537,6 +537,28 @@
 .model-effects-editor > label { display: grid; grid-template-columns: 62px minmax(0,1fr) auto; align-items: center; gap: 6px; color: #89959b; font-size: 9px; }
 .model-effects-editor input[type=color] { width: 30px; height: 24px; padding: 1px; border: 1px solid #3a474d; background: transparent; }
 .fire-effect-editor { display: grid; gap: 7px; margin-top: 3px; padding: 8px; border: 1px solid #3b3224; border-radius: 6px; background: linear-gradient(145deg,rgba(107,50,24,.15),rgba(20,27,30,.7)); }
+/* VFX 图层(编辑器刀 8):全令牌化配色,深浅主题自适应;不与火焰层的硬编码暖色耦合。 */
+.vfx-effect-editor { display: grid; gap: 7px; margin-top: 3px; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); }
+.vfx-template-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.vfx-template-card { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 6px; align-items: center; min-height: 34px; padding: 4px 6px; text-align: left; color: var(--text-muted); border: 1px solid var(--line); border-radius: 5px; background: var(--surface-1); cursor: pointer; transition: border-color .15s, background .15s, color .15s; }
+.vfx-template-card:hover:not(:disabled) { color: var(--text-strong); border-color: var(--line-strong); }
+.vfx-template-card:disabled { opacity: .55; cursor: default; }
+.vfx-template-card.active { color: var(--text-strong); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: var(--accent-soft); }
+.vfx-template-swatch { grid-row: span 2; width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 2px rgba(255,255,255,.5); }
+.vfx-template-name { overflow: hidden; font-size: 9px; font-weight: 600; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.vfx-template-hint { overflow: hidden; font-size: 8px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; color: var(--text-faint); }
+.vfx-template-card.active .vfx-template-hint { color: var(--text-muted); }
+.vfx-detach-row { display: flex; justify-content: flex-end; }
+.vfx-detach { min-height: 24px; padding: 0 8px; color: var(--text-muted); border: 1px solid var(--line); border-radius: 4px; background: var(--surface-1); font-size: 9px; cursor: pointer; }
+.vfx-detach:hover:not(:disabled) { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+/* 火焰图层区为深色硬编码的既有样式;浅色主题下做最小令牌覆盖,不改深色现状。 */
+:root[data-theme="light"] .fire-effect-editor { border-color: var(--line); background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 6%, transparent), var(--surface-2)); }
+:root[data-theme="light"] .fire-effect-heading strong { color: var(--text-strong); }
+:root[data-theme="light"] .fire-effect-heading small { color: var(--text-muted); }
+:root[data-theme="light"] .fire-effect-heading button { color: var(--text-muted); border-color: var(--line); background: var(--surface-1); }
+:root[data-theme="light"] .fire-effect-heading button.active { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--accent-soft); }
+:root[data-theme="light"] .fire-effect-fields { border-top-color: var(--line-subtle); }
+:root[data-theme="light"] .fire-effect-fields > label { color: var(--text-muted); }
 .fire-effect-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .fire-effect-heading > span { display: grid; gap: 2px; min-width: 0; }
 .fire-effect-heading strong { color: #e4d5c9; font-size: 10px; }

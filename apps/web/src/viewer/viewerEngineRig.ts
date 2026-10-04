@@ -12,7 +12,7 @@ import { toValue } from "./sceneObjectUtils";
 import { DEFAULT_MODEL_EFFECTS, DEFAULT_SCENE_LIGHTS } from "./viewerEngineTypes";
 import { ViewerEngineInteraction } from "./viewerEngineInteraction";
 import { normalizeRobotKinematicsState } from "./robotKinematics";
-import { normalizeFireEffect } from "./modelEffectState";
+import { normalizeFireEffect, normalizeVfxEffect } from "./modelEffectState";
 import { materialTextureTransformState } from "./materialTextureTransform";
 import { setStudioDeepEnvironmentMips } from "./studioDeepEnvironmentMips";
 
@@ -314,7 +314,8 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
         edgeLight: Boolean(state.edgeLight),
         color: /^#[0-9a-f]{6}$/i.test(state.color) ? state.color : DEFAULT_MODEL_EFFECTS.color,
         intensity: THREE.MathUtils.clamp(state.intensity, 0, 5),
-        ...(state.fire ? { fire: normalizeFireEffect(state.fire) } : {})
+        ...(state.fire ? { fire: normalizeFireEffect(state.fire) } : {}),
+        ...(state.vfx ? { vfx: normalizeVfxEffect(state.vfx) } : {})
       };
       this.modelEffects.set(id, normalized);
       this.rebuildModelEffects(id);

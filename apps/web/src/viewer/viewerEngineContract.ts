@@ -134,6 +134,7 @@ import {
   type RendererInfoLike,
 } from "./viewerEngineTypes";
 import type { FireBudgetReport } from "./modelFireParticles";
+import type { VfxBudgetReport } from "./modelVfxParticles";
 import type { RendererInstance } from "./viewerRendererTypes";
 
 /** 跨职责层使用的完整方法契约；受保护成员不会暴露到最终公共 API。 */
@@ -255,6 +256,8 @@ export abstract class ViewerEngineContract {
   abstract getModelEffects(id: string): SceneModelEffectsState;
   /** 场景火焰粒子预算报告（申请/分配/是否降级），供属性面板展示。 */
   abstract getParticleBudgetReport(): FireBudgetReport;
+  /** 场景 VFX 图层独立粒子预算报告，供属性面板展示。 */
+  abstract getVfxBudgetReport(): VfxBudgetReport;
   abstract setModelEffects(id: string, state: SceneModelEffectsState): void;
   abstract getPostProcessing(): ScenePostProcessingState;
   abstract setPostProcessing(state: ScenePostProcessingState): void;

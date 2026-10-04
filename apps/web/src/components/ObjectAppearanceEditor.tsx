@@ -12,8 +12,10 @@ import { useEffect, useState } from "react";
 import { translate as tr, type AppLocale } from "../i18n";
 import type { RendererBackend } from "../viewer/ViewerEngine";
 import type { FireBudgetReport } from "../viewer/modelFireParticles";
+import type { VfxBudgetReport } from "../viewer/modelVfxParticles";
 import { ModelScreenEditor } from "./ModelScreenEditor";
 import { ModelEffectsEditor } from "./ModelEffectsEditor";
+import type { ModelEffectsPatch } from "../viewer/modelEffectState";
 import { MaterialTextureSettings } from "./MaterialTextureSettings";
 import { ProjectMaterialResourcePicker } from "./ProjectAppearanceResources";
 import { CustomShaderEditor } from "./CustomShaderEditor";
@@ -37,8 +39,11 @@ interface ObjectAppearanceEditorProps {
   /** 场景火焰粒子预算报告；缺省时面板不显示预算读数。 */
   particleBudget?: FireBudgetReport | undefined;
   particleEmitterId?: string | undefined;
+  /** 场景 VFX 图层独立粒子预算报告；缺省时 VFX 区不显示预算读数。 */
+  vfxBudget?: VfxBudgetReport | undefined;
   onMaterialChange: (patch: SceneMaterialState) => void;
-  onEffectsChange: (patch: Partial<SceneModelEffectsState>) => void;
+  /** 接受 fire/vfx 嵌套 patch;显式 vfx:undefined 卸载 VFX 图层。 */
+  onEffectsChange: (patch: ModelEffectsPatch) => void;
   onChooseTexture: (kind: MaterialTextureKind, slotId?: string) => void;
   projectAssets?: ProjectAssetRecord[];
   materialSlots?: readonly SelectionMaterialSlot[];
@@ -85,6 +90,7 @@ function ObjectAppearanceFields({
   onEffectsChange,
   particleBudget,
   particleEmitterId,
+  vfxBudget,
   onChooseTexture,
   projectAssets = [],
   customMaterialPresets,
@@ -288,7 +294,7 @@ function ObjectAppearanceFields({
 
       <ModelScreenEditor locale={locale} disabled={disabled} screen={material.screen} onChange={onMaterialChange} />
 
-      {effects && <ModelEffectsEditor locale={locale} rendererBackend={rendererBackend} disabled={disabled} effects={effects} onChange={onEffectsChange} particleBudget={particleBudget} particleEmitterId={particleEmitterId} />}
+      {effects && <ModelEffectsEditor locale={locale} rendererBackend={rendererBackend} disabled={disabled} effects={effects} onChange={onEffectsChange} particleBudget={particleBudget} particleEmitterId={particleEmitterId} vfxBudget={vfxBudget} />}
     </>
   );
 }

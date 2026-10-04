@@ -301,6 +301,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                   projectAssets={project?.assets ?? []}
                   {...(selectedEffects ? { effects: selectedEffects } : {})}
                   particleBudget={engine?.getParticleBudgetReport?.()}
+                  vfxBudget={engine?.getVfxBudgetReport?.()}
                   particleEmitterId={selected.id}
                   onMaterialChange={updateSelectionMaterial}
                   onEffectsChange={updateSelectedEffects}

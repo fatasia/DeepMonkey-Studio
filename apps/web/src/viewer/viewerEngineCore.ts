@@ -242,6 +242,8 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   protected readonly modelEffectRuntimes = new Map<string, ModelEffectRuntime>();
   /** 火焰粒子集合变化后需按场景预算重新分配；在下一帧 updateModelEffects 中统一处理。 */
   protected fireBudgetDirty = false;
+  /** VFX 图层粒子集合变化后需按独立场景预算重新分配；与 fireBudgetDirty 同帧统一处理。 */
+  protected vfxBudgetDirty = false;
   protected readonly layerObjects = new Map<string, Map<string, THREE.Object3D>>();
   protected readonly layerStates = new Map<string, Map<string, SceneLayerState>>();
   protected readonly fragmentModels = new Map<string, FRAGS.FragmentsModel>();

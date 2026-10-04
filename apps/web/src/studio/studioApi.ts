@@ -3,6 +3,8 @@ import type {
   ModelTransform,
   SceneEnvironmentState,
   SceneFireEffectState,
+  SceneVfxEffectState,
+  SceneVfxTemplateId,
   SceneMaterialScreenState,
   SceneMaterialState,
   ScenePhysicsState,
@@ -45,6 +47,8 @@ export interface StudioObjectHandle {
   setMaterial(patch: SceneMaterialState): void;
   setCollision(enabled: boolean): void;
   setFire(enabled: boolean, options?: Partial<Omit<SceneFireEffectState, "enabled">>): void;
+  /** 挂载/更新 VFX 模板图层(排气/泄漏/告警环等);只传 enabled 可直接触发既有模板。 */
+  setVfx(template: SceneVfxTemplateId, options?: Partial<Omit<SceneVfxEffectState, "template">>): void;
   explode(factor: number, mode?: "radial" | "vertical" | "x" | "y" | "z"): void;
   playAnimation(clipName?: string): void;
   pauseAnimation(clipName?: string): void;
@@ -165,6 +169,14 @@ export function createStudioViewerAPI(engine: ViewerEngineContract | undefined, 
         engine.setModelEffects(
           model.id,
           mergeModelEffectsPatch(engine.getModelEffects(model.id), { fire: { enabled, ...fireOptions } }),
+        );
+      },
+      /** VFX 图层脚本入口:同 fire 走嵌套合并,可只传 enabled 触发(如告警脉冲环)。 */
+      setVfx: (template: SceneVfxTemplateId, options: Partial<Omit<SceneVfxEffectState, "template">> = {}) => {
+        if (!engine) return objectAction("effects", { vfx: { template, ...options } });
+        engine.setModelEffects(
+          model.id,
+          mergeModelEffectsPatch(engine.getModelEffects(model.id), { vfx: { template, ...options } }),
         );
       },
       explode: (factor: number, mode: "radial" | "vertical" | "x" | "y" | "z" = "radial") => engine?.setExplosion(model.id, Math.max(0, factor), mode),

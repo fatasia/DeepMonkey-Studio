@@ -450,6 +450,31 @@ function validateModelEffects(value: unknown, path: string): void {
       }
     }, firePath);
   }, path);
+  optional(object, "vfx", (vfx, vfxPath) => {
+    const vfxObject = expectObject(vfx, vfxPath);
+    requiredLiteral(vfxObject, "template", [
+      "exhaust-steam", "leak-drip", "sparks", "alarm-ring", "dust", "airflow", "smoke-leak", "spray-mist",
+    ], vfxPath);
+    required(vfxObject, "enabled", expectBoolean, vfxPath);
+    required(vfxObject, "color", expectString, vfxPath);
+    for (const key of ["intensity", "rate", "range", "lifetime"] as const) required(vfxObject, key, expectNumber, vfxPath);
+    if (typeof vfxObject.color === "string" && !/^#[0-9a-f]{6}$/i.test(vfxObject.color)) invalid(`${vfxPath}.color`, "必须是 #RRGGBB");
+    validateNumberRange(vfxObject.intensity, `${vfxPath}.intensity`, 0, 5);
+    validateNumberRange(vfxObject.rate, `${vfxPath}.rate`, 0.25, 2);
+    validateNumberRange(vfxObject.range, `${vfxPath}.range`, 0.1, 50);
+    validateNumberRange(vfxObject.lifetime, `${vfxPath}.lifetime`, 0.2, 8);
+    optionalLiteral(vfxObject, "blend", ["additive", "alpha"], vfxPath);
+    optional(vfxObject, "maxParticles", (value, valuePath) => {
+      expectNumber(value, valuePath);
+      validateNumberRange(value, valuePath, 16, 512);
+    }, vfxPath);
+    optional(vfxObject, "curves", (curves, curvesPath) => {
+      const curvesObject = expectObject(curves, curvesPath);
+      for (const [key, maximum] of [["size", 4], ["alpha", 1], ["color", 1]] as const) {
+        optional(curvesObject, key, (keys, keysPath) => validateFireCurve(keys, keysPath, maximum), curvesPath);
+      }
+    }, vfxPath);
+  }, path);
 }
 
 function validateFireCurve(keys: unknown, path: string, maximum: number): void {

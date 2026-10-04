@@ -250,7 +250,7 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
       || this.interactionScripts.some(script => script.enabled)
       || this.postProcessingState.enabled && (this.postProcessingState.filmGrain || this.postProcessingState.afterimage)) return true;
     for (const prefab of this.modelPrefabStates.values()) if (prefab.motionRoute && prefab.operatingState === "running") return true;
-    for (const runtime of this.modelEffectRuntimes.values()) if (runtime.scan || runtime.fire) return true;
+    for (const runtime of this.modelEffectRuntimes.values()) if (runtime.scan || runtime.fire || runtime.vfx) return true;
     if (this.materialActivityDirty) { this.materialActivity.refresh(this.scene); this.materialActivityDirty = false; }
     return this.materialActivity.active();
   }

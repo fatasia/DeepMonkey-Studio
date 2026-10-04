@@ -121,6 +121,44 @@ export interface SceneModelEffectsState {
   intensity: number;
   /** 附着于模型/基础体顶部的轻量火焰图层；省略时保持旧场景行为。 */
   fire?: SceneFireEffectState;
+  /** 轻量 VFX 粒子图层（模板化：排气/泄漏/火花/告警环等）；省略时保持旧场景行为。 */
+  vfx?: SceneVfxEffectState;
+}
+
+/** VFX 模板 id；每个模板固定一种运动形态与默认曲线，参数在挂载后可调。 */
+export type SceneVfxTemplateId =
+  | "exhaust-steam"
+  | "leak-drip"
+  | "sparks"
+  | "alarm-ring"
+  | "dust"
+  | "airflow"
+  | "smoke-leak"
+  | "spray-mist";
+
+/**
+ * 轻量 VFX 图层状态：与火焰图层同一档运行时（单批次 THREE.Points、确定性种子、
+ * 曲线 LUT、场景粒子预算），不做通用 VFX Graph。曲线与混合字段复用火焰定义。
+ */
+export interface SceneVfxEffectState {
+  /** 模板 id；决定运动形态（上升/滴落/迸溅/环/扬尘/气流）。 */
+  template: SceneVfxTemplateId;
+  enabled: boolean;
+  color: string;
+  /** 亮度与运动速度，运行时限制在 0..5。 */
+  intensity: number;
+  /** 发射密度倍率，运行时限制在 0.25..2。 */
+  rate: number;
+  /** 效果范围，语义随模板：上升/下落高度、扩散半径或流线长度，0.1..50（模型局部米）。 */
+  range: number;
+  /** 粒子寿命秒数，0.2..8。 */
+  lifetime: number;
+  /** 生命周期曲线；省略时使用模板默认曲线。 */
+  curves?: SceneFireCurves;
+  /** 混合模式；alpha 按相机距离排序绘制，省略按模板默认。 */
+  blend?: SceneFireBlend;
+  /** 单发射器粒子上限（16..512）；VFX 图层与火焰图层各自独立场景预算。 */
+  maxParticles?: number;
 }
 
 export interface SceneFireEffectState {

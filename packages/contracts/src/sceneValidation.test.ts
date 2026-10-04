@@ -84,6 +84,51 @@ describe("scene material validation", () => {
       expect(() => validateScene(sceneWithFire(fire), "scene")).toThrow(needle);
     });
   });
+
+  describe("vfx layer templates", () => {
+    const sceneWithVfx = (vfx: Record<string, unknown>) => ({
+      id: "scene-vfx", name: "VFX 车间",
+      camera: { position: { x: 1, y: 2, z: 3 }, target: { x: 0, y: 0, z: 0 }, mode: "orbit" },
+      models: [{
+        modelId: "vent-1", name: "排气口", visible: true, opacity: 1, transform,
+        effects: {
+          outline: false, glow: false, xray: false, scanline: false, heatmap: false, dissolve: 0, edgeLight: false,
+          color: "#36a3ff", intensity: 1,
+          vfx: { template: "exhaust-steam", enabled: true, color: "#cfd8dc", intensity: 1.2, rate: 1, range: 2.5, lifetime: 2.4, ...vfx },
+        },
+      }],
+      primitives: [], measurements: [],
+    });
+
+    it.each([
+      "exhaust-steam", "leak-drip", "sparks", "alarm-ring", "dust", "airflow", "smoke-leak", "spray-mist",
+    ])("accepts template %s", (template) => {
+      expect(() => validateScene(sceneWithVfx({ template }), "scene")).not.toThrow();
+    });
+
+    it("accepts curves, blend and particle cap", () => {
+      expect(() => validateScene(sceneWithVfx({
+        blend: "additive", maxParticles: 256,
+        curves: {
+          size: [{ time: 0, value: 0.5 }, { time: 1, value: 2 }],
+          alpha: [{ time: 0, value: 0 }, { time: 1, value: 0 }],
+        },
+      }), "scene")).not.toThrow();
+    });
+
+    it.each([
+      ["template", { template: "firework-grand" }],
+      ["color", { color: "orange" }],
+      ["rate", { rate: 8 }],
+      ["range", { range: 0 }],
+      ["lifetime", { lifetime: 20 }],
+      ["maxParticles", { maxParticles: 8 }],
+      ["blend", { blend: "screen" }],
+      ["value", { curves: { alpha: [{ time: 0, value: 3 }] } }],
+    ])("rejects invalid %s", (needle, vfx) => {
+      expect(() => validateScene(sceneWithVfx(vfx), "scene")).toThrow(needle);
+    });
+  });
   it("accepts a persistent UV animation configuration", () => {
     expect(() => validateScene({
       id: "scene-1",

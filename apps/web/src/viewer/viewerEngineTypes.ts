@@ -8,6 +8,7 @@ import type {
 } from "@bim-studio/contracts";
 import type { LayerTreeNode, RendererBackend } from "./viewerTypes";
 import type { ModelFireEffectRuntime } from "./modelFireEffect";
+import type { ModelVfxEffectRuntime } from "./modelVfxEffect";
 import type { MountedRapierCharacter } from "./rapierCharacterController";
 
 /** ViewerEngine 的内部运行类型与默认值，和渲染生命周期分离，便于单独审查。 */
@@ -83,6 +84,7 @@ export interface ModelEffectRuntime {
   helper?: Group;
   scan?: { mesh: Mesh; minY: number; maxY: number; phase: number };
   fire?: ModelFireEffectRuntime;
+  vfx?: ModelVfxEffectRuntime;
 }
 
 export type MaterialTextureSlot = "map" | "normalMap" | "emissiveMap" | "aoMap" | "roughnessMap" | "metalnessMap";

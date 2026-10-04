@@ -181,12 +181,12 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     setRevision((value) => value + 1);
   }
 
-  function updateSelectedEffects(patch: Partial<SceneModelEffectsState>) {
+  function updateSelectedEffects(patch: ModelEffectsPatch) {
     if (!engine || !selected || !selectedEffects) return;
     const groupedIds = groupedObjectIds(true);
     for (const id of groupedIds) {
       dispatchEngineEditCommand(engine, modelEffectsCommand(locale, id,
-        mergeModelEffectsPatch(engine.getModelEffects(id), patch as ModelEffectsPatch)));
+        mergeModelEffectsPatch(engine.getModelEffects(id), patch)));
     }
     setRevision((value) => value + 1);
   }
