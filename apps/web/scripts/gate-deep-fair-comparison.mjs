@@ -277,11 +277,20 @@ async function measureInputTrajectory(page, bounds, backend, presentCanvas) {
   await page.evaluate(() => {
     const state = { intervals: [], longTasks: [], pointerEvents: 0, active: true, last: performance.now(),
       pointerSerial: 0, pointerAt: 0, backendSerial: 0, gpuFenceSerial: 0,
-      pointerToBackendSubmit: [], pointerToGpuComplete: [], submitTimestamps: [] };
+      pointerToBackendSubmit: [], pointerToGpuComplete: [], submitTimestamps: [],
+      // 呈现口径:指针事件后首个 rAF = 含该输入的帧已提交合成器(rAF 回调跑在
+      // 帧渲染前,第二个 rAF 才保证上一帧已上屏)。onSubmittedWorkDone 是队列级
+      // 排空(含历史提交排队),不等于单帧 GPU/呈现延迟——双轨并存,呈现口径
+      // 为手感真值,队列口径仅作历史对比。
+      pendingPointerAt: undefined, pointerToPresent: [] };
     const tick = now => {
       if (!state.active) return;
       state.intervals.push(now - state.last);
       state.last = now;
+      if (state.pendingPointerAt !== undefined) {
+        state.pointerToPresent.push(now - state.pendingPointerAt);
+        state.pendingPointerAt = undefined;
+      }
       requestAnimationFrame(tick);
     };
     const observer = new PerformanceObserver(list => {
@@ -292,6 +301,7 @@ async function measureInputTrajectory(page, bounds, backend, presentCanvas) {
       state.pointerEvents++;
       state.pointerSerial++;
       state.pointerAt = performance.now();
+      if (state.pendingPointerAt === undefined) state.pendingPointerAt = state.pointerAt;
     };
     const recordBackend = queue => {
       state.submitTimestamps.push(performance.now());
@@ -382,6 +392,7 @@ async function measureInputTrajectory(page, bounds, backend, presentCanvas) {
       longTaskCount: session.state.longTasks.length,
       pointerToBackendSubmit: summarize(session.state.pointerToBackendSubmit),
       pointerToGpuComplete: summarize(session.state.pointerToGpuComplete),
+      pointerToPresent: summarize(session.state.pointerToPresent),
       submitGap: summarize(submitGaps) };
   });
   const luminance = [];

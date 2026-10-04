@@ -60,6 +60,9 @@ let publishedQualityTelemetry: StudioQualityTelemetryStatus | undefined;
 /** Deep 桥发布/撤销当前会话遥测(镜像 studioFrameCaptureDiagnostics 的模块注册表模式)。 */
 export function publishStudioQualityTelemetry(status: StudioQualityTelemetryStatus | undefined): void {
   publishedQualityTelemetry = status;
+  // T25 性能探针调试钩子:遥测是模块变量,页面外(Playwright/性能探针)读不到;
+  // 挂 window 供刀 B 类探针采集输入轨迹下的逐 pass 分解(只读镜像,非数据源)。
+  (globalThis as { __deepQualityTelemetry?: unknown }).__deepQualityTelemetry = status;
 }
 
 export function readStudioQualityTelemetry(): StudioQualityTelemetryStatus | undefined {
