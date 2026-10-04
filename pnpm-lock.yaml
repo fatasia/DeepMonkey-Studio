@@ -483,6 +483,9 @@ importers:
       fake-indexeddb:
         specifier: 6.2.4
         version: 6.2.4
+      fflate:
+        specifier: 0.8.3
+        version: 0.8.3
       three:
         specifier: 0.185.1
         version: 0.185.1(patch_hash=9fda16ec002347dc9c74981d01e891278d3b27e57f3987792221b92d7f075b16)

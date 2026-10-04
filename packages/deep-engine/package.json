@@ -282,11 +282,12 @@
     "test:shadow-ray-gpu": "node scripts/shadowRayGpuTest.mjs"
   },
   "devDependencies": {
-    "@webgpu/types": "0.1.72",
     "@types/node": "^24.10.0",
     "@types/three": "0.185.4",
+    "@webgpu/types": "0.1.72",
     "esbuild": "0.28.1",
     "fake-indexeddb": "6.2.4",
+    "fflate": "0.8.3",
     "three": "0.185.1",
     "three-mesh-bvh": "0.9.14",
     "typescript": "^5.9.3",
