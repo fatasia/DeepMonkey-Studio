@@ -12,11 +12,29 @@ export class PbrShadowState {
   private disposed = false;
   private readonly retired = new Set<CascadedShadowResources>();
   private readonly options: CascadedShadowResourceOptions;
+  /** M2 光追阴影:group(2) binding(3) mask 视图(RT 管线变体才非 undefined);
+   *  stage() 的新候选必须携带同一视图。 */
+  private rayTracedMaskView: GPUTextureView | undefined;
 
   constructor(private readonly session: DeviceSession, private readonly pipelines: Pipelines,
-    options: CascadedShadowResourceOptions = {}) {
+    options: CascadedShadowResourceOptions = {}, rayTracedShadowMaskView?: GPUTextureView) {
     this.options = { ...options, ...(options.exactProfile ? { exactProfile: { ...options.exactProfile } } : {}) };
-    this.active = new CascadedShadowResources(session, pipelines, this.options);
+    this.rayTracedMaskView = rayTracedShadowMaskView;
+    this.active = new CascadedShadowResources(session, pipelines, this.maskedOptions());
+  }
+
+  private maskedOptions(overrides?: Partial<CascadedShadowResourceOptions>): CascadedShadowResourceOptions {
+    const base = this.rayTracedMaskView === undefined ? this.options
+      : { ...this.options, rayTracedShadowMaskView: this.rayTracedMaskView };
+    return overrides === undefined ? base : { ...base, ...overrides };
+  }
+
+  /** M2 光追阴影:resize 后换 mask 视图(重建活动级联资源的 group(2) bind group);
+   *  非 RT 管线变体传 view 会在 CascadedShadowResources 侧 fail-closed 抛错。 */
+  setRayTracedShadowMaskView(view: GPUTextureView): void {
+    if (this.disposed) throw new Error("PBR shadow state is unavailable.");
+    this.rayTracedMaskView = view;
+    this.active.replaceRayTracedShadowMaskView(view);
   }
 
   get current(): CascadedShadowResources { return this.active; }
@@ -40,8 +58,9 @@ export class PbrShadowState {
     device.pushErrorScope("validation");
     let scopeOpen = true;
     try {
-      candidate = new CascadedShadowResources(this.session, this.pipelines,
-        { ...this.options, exactProfile: { ...this.options.exactProfile, shadowMapSize: mapSize } });
+      candidate = new CascadedShadowResources(this.session, this.pipelines, this.maskedOptions({
+        ...(this.options.exactProfile ? { exactProfile: { ...this.options.exactProfile, shadowMapSize: mapSize } } : {}),
+      }));
       if (signal) {
         signal.addEventListener("abort", request.cancel, { once: true });
         unlink = () => signal.removeEventListener("abort", request.cancel);

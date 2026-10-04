@@ -115,7 +115,7 @@ async function switchBackend(page, backend) {
   if (current !== preference) {
     const dialog = await openRendererDialog(page);
     const button = backend === "webgl" ? "切换到兼容模式"
-      : backend === "webgpu" ? "启用 Deep WebGPU Beta" : "启用 Deep WASM";
+      : backend === "webgpu" ? "启用 Deep WebGPU" : "启用 Deep WASM";
     await dialog.getByRole("button", { name: button, exact: true }).click();
     if (backend === "webgl") {
       await page.waitForFunction(() => {

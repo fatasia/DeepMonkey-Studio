@@ -6,6 +6,9 @@ import type { PbrRendererFeatures } from "./pbrRendererFeatures.js";
 export function pbrDirectDisplayClear(view: PbrFrameUniformView, features: PbrRendererFeatures,
   hasTransparent: boolean, writeGeometryBuffers = false): readonly [number, number, number] | undefined {
   // MRT/deformation-capable pipeline sets do not create direct-display pipelines, even for a static packet.
+  // M2 光追阴影:RT 档强制完整 HDR 链(fail-closed)—— 直出 display 快路径只有单级联
+  // legacy 采样语义,不消费 RT mask;与 B1 虚拟档强制走完整链同族(帧签名对拍)。
+  if (features.rayTracedShadows) return undefined;
   if (writeGeometryBuffers || view.authorColorEffects?.vignette || view.authorColorEffects?.colorGrading
     || view.fog || view.panoramaBackground || hasTransparent || features.ambientOcclusion || features.temporalAa || features.spatialAa || features.occlusionCulling
     || features.screenSpaceReflection || features.bloom || (features.vignette && view.authorColorEffects === undefined)) return undefined;

@@ -70,3 +70,29 @@ describe("updatePbrFrameUniforms：camera-relative 增量", () => {
     expect(writeBuffer.mock.calls.map(call => call[0])).toEqual([target.groundInstance, target.frameBuffer, target.outputBuffer]);
   });
 });
+
+describe("M2 方向光 RT 阴影开关位(frame.output.bloom 保留槽复用)", () => {
+  const rtFeatures = { ...DEFAULT_PBR_RENDERER_FEATURES, rayTracedShadows: true } as const;
+  it("features.rayTracedShadows=true 时 outputData[1]=1,其余输出槽位不变", () => {
+    const target = resources();
+    run(baseView, target);
+    expect(target.outputData[1]).toBe(0);
+    const rtTarget = resources();
+    updatePbrFrameUniforms({ writeBuffer: vi.fn() } as unknown as GPUQueue, new CameraFrameHistory(),
+      baseView, 800, 600, false, rtTarget, undefined, rtFeatures);
+    expect(rtTarget.outputData[1]).toBe(1);
+    // 帧数据除开关位槽(frameData[89] = Frame.output.bloom)外与默认打包逐位一致。
+    const baseline = resources(); run(baseView, baseline);
+    for (let index = 0; index < 96; index++) {
+      if (index === 89) { expect(rtTarget.frameData[89]).toBe(1); continue; }
+      expect(rtTarget.frameData[index]).toBe(baseline.frameData[index]);
+    }
+    const rtOutput = [...rtTarget.outputData]; rtOutput[1] = baseline.outputData[1];
+    expect(rtOutput).toEqual(Array.from(baseline.outputData));
+  });
+  it("默认 features(关)写 0 —— 打包行为与历史逐位一致", () => {
+    const target = resources();
+    run(baseView, target);
+    expect(target.outputData[1]).toBe(0);
+  });
+});

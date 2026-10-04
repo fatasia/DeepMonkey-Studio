@@ -1,4 +1,4 @@
-import { sceneShader } from "./pbrShader.js";
+import { sceneShader, sceneShaderRayTracedShadows } from "./pbrShader.js";
 
 /** 48-byte current/previous streams share material group 1 without adding vertex attributes. */
 export const PBR_DEFORMATION_VERTEX_WGSL = /* wgsl */ `
@@ -52,3 +52,7 @@ fn deepPoseVertex(v: Input, previous: PreviousInstanceInput, index: u32, normalM
 
 /** Consumers must supply bindings 11/12 and preserve indexed vertex ordering for each pose. */
 export const deformedSceneShader = `${sceneShader}\n${PBR_DEFORMATION_VERTEX_WGSL}`;
+
+/** M2 光追阴影变形变体(features.rayTracedShadows):mask 采样分支随 RT 主 shader 注入,
+ *  顶点位流与默认变形变体逐字节一致。 */
+export const deformedSceneShaderRayTracedShadows = `${sceneShaderRayTracedShadows}\n${PBR_DEFORMATION_VERTEX_WGSL}`;

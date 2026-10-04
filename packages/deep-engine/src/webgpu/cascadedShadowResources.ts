@@ -22,6 +22,10 @@ export interface CascadedShadowResourceOptions {
     splitLambda?: number; blendRatio?: number; depthBias?: number;
     depthPadding?: number; maxShadowDistance?: number;
     receiverNormalBias?: "slope-scaled" | "constant-one-texel" }>;
+  /** M2 光追阴影:group(2) binding(3) 的 r32float mask 视图。仅
+   *  pipelines.rayTracedShadowMaskBinding === true(RT 管线变体)的构建允许且必须提供
+   *  (两侧不匹配即构造抛错,fail-closed);resize 经 replaceRayTracedShadowMaskView 更新。 */
+  readonly rayTracedShadowMaskView?: GPUTextureView;
 }
 
 interface ExactShadowSelection {
@@ -53,16 +57,20 @@ export interface CascadedShadowFrame {
 /** Owns the array texture, fixed ABI and per-cascade shadow vertex uniforms. */
 export class CascadedShadowResources {
   readonly selection: CascadedShadowQualitySelection | ExactShadowSelection;
-  readonly binding: GPUBindGroup;
+  get binding(): GPUBindGroup { return this.bindingGroup; }
   readonly legacyView: GPUTextureView;
   readonly sampler: GPUSampler;
   readonly layerViews: readonly GPUTextureView[];
   readonly frameBindings: readonly GPUBindGroup[];
+  private bindingGroup: GPUBindGroup;
   private readonly texture: GPUTexture;
   private readonly uniform: GPUBuffer;
   private readonly arrayView: GPUTextureView;
   private readonly createdDevice: GPUDevice;
   private readonly frameBuffers: readonly GPUBuffer[];
+  /** M2 光追阴影:group(2) 第 4 条装配合同(RT 管线变体才为 true)。 */
+  private readonly rayTracedMaskBinding: boolean;
+  private readonly layout: GPUBindGroupLayout;
   private lastSignature: readonly number[] | undefined;
   private pendingSignature: readonly number[] | undefined;
   private plan: CascadedShadowPlan | undefined;
@@ -77,7 +85,12 @@ export class CascadedShadowResources {
     options: CascadedShadowResourceOptions = {}) {
     const device = session.device;
     this.createdDevice = device;
+    this.layout = pipelines.cascadedShadowLayout;
+    this.rayTracedMaskBinding = pipelines.rayTracedShadowMaskBinding === true;
     const validatedOptions = validateResourceOptions(options);
+    if (this.rayTracedMaskBinding !== (validatedOptions.rayTracedShadowMaskView !== undefined)) {
+      throw new Error("Ray-traced shadow mask view must match the pipeline variant (group 2 binding 3).");
+    }
     this.depthBias = exactNumber(validatedOptions.exactProfile?.depthBias ?? 0.00075, 0, 0.1, "depth bias");
     this.exactDepthPadding = validatedOptions.exactProfile?.depthPadding === undefined ? undefined
       : exactNumber(validatedOptions.exactProfile.depthPadding, 0, 1_000_000, "depth padding");
@@ -107,6 +120,9 @@ export class CascadedShadowResources {
       created.push(uniform);
       const binding = device.createBindGroup({ layout: pipelines.cascadedShadowLayout, entries: [
         { binding: 0, resource: { buffer: uniform } }, { binding: 1, resource: arrayView }, { binding: 2, resource: sampler },
+        // M2 光追阴影:第 4 条仅 RT 管线变体装配(构造期已校验两侧一致)。
+        ...(this.rayTracedMaskBinding
+          ? [{ binding: 3, resource: validatedOptions.rayTracedShadowMaskView! }] : []),
       ] });
       const frameBuffers: GPUBuffer[] = [];
       for (let index = 0; index < cascadeCount; index += 1) {
@@ -119,12 +135,23 @@ export class CascadedShadowResources {
         layout: shadowFrameLayout, entries: [{ binding: 0, resource: { buffer } }],
       })));
       this.texture = texture; this.layerViews = layerViews; this.legacyView = legacyView; this.sampler = sampler;
-      this.uniform = uniform; this.arrayView = arrayView; this.binding = binding; this.frameBuffers = Object.freeze(frameBuffers);
+      this.uniform = uniform; this.arrayView = arrayView; this.bindingGroup = binding; this.frameBuffers = Object.freeze(frameBuffers);
       this.frameBindings = frameBindings;
     } catch (error) {
       for (const resource of created.reverse()) session.release(resource);
       throw error;
     }
+  }
+
+  /** M2 光追阴影:resize 后换 RT mask 视图并重建 group(2) bind group。旧 bind group
+   *  对象由在途命令缓冲继续持有,替换即弃(WebGPU 无显式 destroy);非 RT 变体调用即抛。 */
+  replaceRayTracedShadowMaskView(view: GPUTextureView): void {
+    if (this.disposed) throw new Error("Cascaded shadow resources are disposed.");
+    if (!this.rayTracedMaskBinding) throw new Error("Ray-traced shadow mask binding requires the RT pipeline variant.");
+    this.bindingGroup = this.createdDevice.createBindGroup({ layout: this.layout, entries: [
+      { binding: 0, resource: { buffer: this.uniform } }, { binding: 1, resource: this.arrayView },
+      { binding: 2, resource: this.sampler }, { binding: 3, resource: view },
+    ] });
   }
 
   prepare(input: CascadedShadowFrameInput, force: boolean, enabled = true): CascadedShadowFrame {

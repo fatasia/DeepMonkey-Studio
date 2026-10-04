@@ -82,6 +82,13 @@ export function updatePbrFrameUniforms(queue: GPUQueue, cameraHistory: CameraFra
     ...primaryLight.surfaceToLightWorld, environmentIntensity, ...jitterDeltaUv, view.roughness, 0.11 / extent,
     ...primaryLight.color, primaryLight.intensity], 64);
   resources.frameData[83] = features.fog ? 0.11 / extent : 0;
+  // M2 方向光 RT 阴影开关位:frame.output.bloom 保留槽复用(background.w 复用 castShadow
+  // 的同族先例;该槽此前全仓零写入零消费,ABI 尺寸与后续偏移不变)。WGSL 端
+  // deepPrimaryShadow 以 frame.output.bloom > 0.5 采样 r32float RT mask;0 = fail-closed
+  // 回级联(mask 供给异常的帧清 0 位即回退,无需重建管线)。features 关时写 0,
+  // 与历史打包逐位一致。写 outputData 槽(经下方 set 拷入 frameData[89],frame ABI
+  // 的 Frame.output.bloom),不直写 frameData —— 那会被 output 段拷贝覆写。
+  resources.outputData[1] = features.rayTracedShadows ? 1 : 0;
   resources.outputData[0] = view.exposure;
   resources.outputData[2] = features.vignette ? 0.25 : 0;
   resources.outputData[3] = features.toneMapping === "three-aces-r185" ? 1 : 0;

@@ -134,3 +134,63 @@ describe("author shadow resource publication", () => {
     expect(await next).toBe("staged"); expect(f.state.publish(4096, vi.fn())).toBe(true); f.state.dispose();
   });
 });
+
+describe("M2 ray-traced shadow mask binding passthrough", () => {
+  function rtFixture(maskBinding: boolean, maskView?: GPUTextureView) {
+    vi.stubGlobal("GPUTextureUsage", { RENDER_ATTACHMENT: 1, TEXTURE_BINDING: 2 });
+    vi.stubGlobal("GPUBufferUsage", { UNIFORM: 4, COPY_DST: 8 });
+    const bindGroups: Array<{ entries: Array<{ binding: number; resource: unknown }> }> = [];
+    const drained = new Promise<void>(resolve => { setTimeout(resolve, 0); });
+    const device = {
+      limits: { maxTextureDimension2D: 4096, maxTextureArrayLayers: 8 },
+      pushErrorScope: vi.fn(), popErrorScope: vi.fn(async () => null as GPUError | null),
+      queue: { writeBuffer: vi.fn(), onSubmittedWorkDone: vi.fn(() => drained) },
+      createTexture: vi.fn(() => ({ destroy: vi.fn(), createView: vi.fn(() => ({})) })),
+      createBuffer: vi.fn(() => ({ destroy: vi.fn() })), createSampler: vi.fn(() => ({})),
+      createBindGroup: vi.fn((descriptor: { entries: Array<{ binding: number; resource: unknown }> }) => {
+        bindGroups.push(descriptor); return { entries: descriptor.entries };
+      }),
+    };
+    const owned = new Set<{ destroy(): void }>();
+    const session = { state: "ready", device,
+      own<T extends { destroy(): void }>(resource: T): T { owned.add(resource); return resource; },
+      release(resource: { destroy(): void }): void { if (owned.delete(resource)) resource.destroy(); } } as unknown as DeviceSession;
+    const pipelines = { cascadedShadowLayout: {}, rayTracedShadowMaskBinding: maskBinding,
+      shadow: { getBindGroupLayout: () => ({}) } } as unknown as Pipelines;
+    const state = new PbrShadowState(session, pipelines,
+      { exactProfile: { cascadeCount: 1, shadowMapSize: 1024 } }, maskView);
+    return { state, bindGroups };
+  }
+  const view = { __maskView: true } as unknown as GPUTextureView;
+  const nextView = { __maskView: 2 } as unknown as GPUTextureView;
+
+  it("attaches the mask view as the fourth group(2) entry on the RT variant", () => {
+    const f = rtFixture(true, view);
+    const shadowGroups = () => f.bindGroups.filter(group => group.entries.length === 4);
+    expect(shadowGroups()).toHaveLength(1);
+    expect(shadowGroups()[0]!.entries[3]).toEqual({ binding: 3, resource: view });
+    f.state.setRayTracedShadowMaskView(nextView);
+    expect(f.state.current.binding.entries[3]).toEqual({ binding: 3, resource: nextView });
+    expect(shadowGroups()).toHaveLength(2);
+    f.state.dispose();
+  });
+  it("keeps three entries on the default variant and rejects the mismatched pairs", () => {
+    const f = rtFixture(false);
+    expect(f.bindGroups.some(group => group.entries.length === 4)).toBe(false);
+    expect(() => f.state.setRayTracedShadowMaskView(view)).toThrow("RT pipeline variant");
+    f.state.dispose();
+    expect(() => rtFixture(true)).toThrow("group 2 binding 3");
+    expect(() => rtFixture(false, view)).toThrow("group 2 binding 3");
+  });
+  it("re-staged candidates carry the same mask view (map resize keeps RT slot wired)", async () => {
+    const f = rtFixture(true, view);
+    const validation = new Promise<GPUError | null>(resolve => setTimeout(() => resolve(null), 0));
+    (f.state as unknown as { session: { device: { popErrorScope: () => Promise<GPUError | null> } } })
+      .session.device.popErrorScope = () => validation;
+    await f.state.stage(2048);
+    expect(f.state.publish(2048, vi.fn())).toBe(true);
+    expect(f.state.current.binding.entries).toHaveLength(4);
+    expect(f.state.current.binding.entries[3]).toEqual({ binding: 3, resource: view });
+    f.state.dispose();
+  });
+});

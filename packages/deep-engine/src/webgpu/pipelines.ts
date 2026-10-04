@@ -1,7 +1,7 @@
 import type { AlphaMode } from "../renderPacket.js";
 export { authoredShadowPipelines } from "./authoredShadowPipelines.js";
-import { sceneShader, outputShader } from "./pbrShader.js";
-import { deformedSceneShader } from "./pbrDeformationShader.js";
+import { sceneShader, sceneShaderRayTracedShadows, outputShader } from "./pbrShader.js";
+import { deformedSceneShader, deformedSceneShaderRayTracedShadows } from "./pbrDeformationShader.js";
 import type { MaterialLayouts } from "./materialBindings.js";
 import { PBR_DEPTH_FORMAT, PBR_HDR_FORMAT, resolvePbrMsaaSampleCount, PBR_OPAQUE_ATTACHMENT_FORMATS } from "./renderTargets.js";
 import { weightedOitColorTargets } from "./weightedOit.js";
@@ -51,6 +51,9 @@ export interface Pipelines {
   readonly outputShaderProvenance?: PbrOutputShaderProvenance | undefined;
   readonly materialLayout: MaterialLayouts;
   readonly cascadedShadowLayout: GPUBindGroupLayout;
+  /** M2 光追阴影:group(2) 追加 binding(3) r32float mask 槽(仅 features.rayTracedShadows
+   *  构建档为 true;CascadedShadowResources 据此追加第 4 条 bind group entry 并支持运行时换 view)。 */
+  readonly rayTracedShadowMaskBinding: boolean;
   readonly deformationPlainLayout?: GPUBindGroupLayout;
   /** Conventional D2 variant used by materials that cannot enter an array. */
   readonly textureArrayFallback?: Pipelines;
@@ -98,6 +101,9 @@ export interface PipelinesBuildOptions {
   readonly layeredMaterials?: boolean;
   /** sheen / iridescence / clearcoat IBL / 体积透射着色变体(材质 uniform 240B);与 layered、textureArrays 互斥。 */
   readonly advancedMaterials?: boolean;
+  /** M2 方向光 RT 阴影(opt-in):主 shader 换 sceneShaderRayTracedShadows 变体,group(2)
+   *  追加 binding(3) r32float mask 槽。默认关 —— 与默认构建逐管线逐字节一致。 */
+  readonly rayTracedShadows?: boolean;
   /**
    * AA-M1 主 pass 采样数(能力解析后的生效值,1 或 4):只作用于 HDR 主 opaque 管线
    * (mainPipelines)与主 pass 内绘制的全景背景/簇级 bundle;直出 display 管线渲染进
@@ -147,6 +153,9 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   const textureArrays = options.textureArrays === true;
   const layeredMaterials = options.layeredMaterials === true;
   const advancedMaterials = options.advancedMaterials === true;
+  // M2 方向光 RT 阴影(opt-in):主 shader 走 RT 变体(deepPrimaryShadow 的 mask 采样
+  // 分支 + group(2) binding(3));默认关时 moduleCode 与历史逐字节一致。
+  const rayTracedShadows = options.rayTracedShadows === true;
   // AA-M1:主 pass 采样数在构建期定死(渲染器构造期已按设备能力解析),undefined = 请求常量。
   const mainSampleCount = resolvePbrMsaaSampleCount(options.mainSampleCount);
   if (advancedMaterials && (layeredMaterials || textureArrays)) throw new Error("Advanced materials cannot combine with layered or texture-array pipelines.");
@@ -171,7 +180,9 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   const poseEntries: GPUBindGroupLayoutEntry[] = deformation ? [11, 12].map(binding => ({
     binding, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage", minBindingSize: 48 },
   })) : [];
-  const source = deformation ? deformedSceneShader : sceneShader;
+  const source = deformation
+    ? (rayTracedShadows ? deformedSceneShaderRayTracedShadows : deformedSceneShader)
+    : (rayTracedShadows ? sceneShaderRayTracedShadows : sceneShader);
   const moduleCode = textureArrays ? composeTextureArraySceneShader(source)
     : layeredMaterials ? composeLayeredMaterialSceneShader(source)
       : advancedMaterials ? composeAdvancedMaterialSceneShader(source) : source;
@@ -235,6 +246,11 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     { binding: 1, visibility: GPUShaderStage.FRAGMENT,
       texture: { sampleType: "depth", viewDimension: "2d-array" } },
     { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "comparison" } },
+    // M2 光追阴影:mask 槽仅 RT 构建档存在(默认 3 条,与历史 layout 逐条目一致);
+    // r32float 不可过滤 → sampleType 必须 "unfilterable-float"(WGSL textureLoad 无需
+    // 过滤器,但 layout 合同必须匹配纹理格式)。
+    ...(rayTracedShadows ? [{ binding: 3, visibility: GPUShaderStage.FRAGMENT,
+      texture: { sampleType: "unfilterable-float" as const, viewDimension: "2d" as const } }] : []),
   ] });
   const plainLayout = device.createPipelineLayout({
     bindGroupLayouts: [frameLayout, emptyMaterialLayout, cascadedShadowLayout, forwardPlusLayout],
@@ -424,6 +440,7 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     get output() { return outputPipeline!; },
     get outputShaderProvenance() { return outputProvenance; },
     materialLayout: { material, ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}) }, cascadedShadowLayout,
+    rayTracedShadowMaskBinding: rayTracedShadows,
     ...(deformation ? { deformationPlainLayout: emptyMaterialLayout } : {}),
   };
   // 对象展开会立即求值访问器，条件可选字段必须用 defineProperty 挂 getter，

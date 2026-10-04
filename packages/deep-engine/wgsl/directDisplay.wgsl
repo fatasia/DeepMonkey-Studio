@@ -14,6 +14,11 @@ fn deepPrimaryShadow(world: vec3f, normal: vec3f, nDotL: f32, authorShadow: vec4
   // 虚拟档分支(params2.x=1)。级联档 params2.x 恒 0,该分支不进入,既有级联行为
   // 逐字节保持(j3 shadow-visibility 门不受影响)。
   if (deepCascade.params2.x > 0.5) { return deepVirtualShadow(world, normal, nDotL, pixel, grad0, grad1, grad2); }
+  // M2 方向光 RT 阴影分支(光追 M2 集成):开关位 = frame.output.bloom 保留槽复用
+  // (background.w 复用 castShadow 的同族先例;全仓零消费,宿主 pbrFrameUniforms 打包)。
+  // 1 = 采样 r32float mask(1.0 可见 / 0.0 遮挡,ShadowRayFramePass 产出);0 = 回退级联。
+  // 默认档由 pbrShader.ts 剥离本块(RT_SHADOW_BRANCH_BLOCK 锚),最终 shader 与历史逐字节一致。
+  if (frame.output.bloom > 0.5) { return textureLoad(deepRayTracedShadowMask, vec2i(pixel), 0).r; }
   return deepCascadedShadow(max(-(frame.worldToView * vec4f(world, 1.0)).z, 0.0), world, normal, nDotL);
 }
 struct DirectDisplayVertex {

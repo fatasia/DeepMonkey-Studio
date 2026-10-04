@@ -18,7 +18,33 @@ import { PBR_REFLECTION_PROBE_WGSL } from "./pbrReflectionProbeWgsl.js";
 export { outputShader } from "./pbrOutputShader.js";
 
 /** 自研验证管线：GGX / Smith / Schlick，线性 HDR，中间过程不做显示编码。 */
-export const sceneShaderCore = /* wgsl */ `
+// M2 方向光 RT 阴影(2026-10-04):真源 wgsl/directDisplay.wgsl 中 deepPrimaryShadow 的
+// RT 分支块(注释 4 行 + 分支 1 行,与 RT_SHADOW_BRANCH_BLOCK 逐字节互钉)。默认档
+// sceneShader 在此剥离该块 —— strip 结果与历史文本逐字节一致(hash "76611dda…" 钉值
+// 保持不更新,断言见 outputFamilyWgslChecksum.test.ts);RT 档 sceneShaderRayTracedShadows
+// 保留原文,并追加 group(2) binding(3) 的 r32float mask 纹理声明(槽位避让
+// 0=deepCascade/1=deepShadowMap/2=deepShadowSampler;虚拟档页表在 group 0 尾部 12..14)。
+// WGSL 无宏,replace 锚缺失会静默跳过 —— 锚不命中即抛错(fail-fast,模块加载期)。
+// 导出供 outputFamilyWgslChecksum.test.ts 的 strip 恒等断言复用(单一真源,禁止测试侧重抄)。
+export const RT_SHADOW_BRANCH_BLOCK = `  // M2 方向光 RT 阴影分支(光追 M2 集成):开关位 = frame.output.bloom 保留槽复用
+  // (background.w 复用 castShadow 的同族先例;全仓零消费,宿主 pbrFrameUniforms 打包)。
+  // 1 = 采样 r32float mask(1.0 可见 / 0.0 遮挡,ShadowRayFramePass 产出);0 = 回退级联。
+  // 默认档由 pbrShader.ts 剥离本块(RT_SHADOW_BRANCH_BLOCK 锚),最终 shader 与历史逐字节一致。
+  if (frame.output.bloom > 0.5) { return textureLoad(deepRayTracedShadowMask, vec2i(pixel), 0).r; }
+`;
+/** group(2) binding(3) mask 声明:仅 RT 变体拼接(texture_2d<f32>;r32float 不可过滤,
+ *  layout 侧 sampleType 必须 "unfilterable-float",见 pipelines cascadedShadowLayout)。
+ *  导出供 WGSL 变体门测试复用(单一真源,禁止测试侧重抄)。 */
+export const DEEP_RAY_TRACED_SHADOW_MASK_WGSL = `// M2 方向光 RT 阴影 mask(ShadowRayFramePass 写 r32float,直接光 pass textureLoad 采样)。
+@group(2) @binding(3) var deepRayTracedShadowMask: texture_2d<f32>;
+`;
+function stripRtShadowBranch(body: string): string {
+  const stripped = body.replace(RT_SHADOW_BRANCH_BLOCK, "");
+  if (stripped === body) throw new Error(
+    "directDisplay.wgsl RT shadow branch block drifted; run `pnpm --filter @bim-studio/deep-engine wgsl:sync`.");
+  return stripped;
+}
+const buildSceneShaderCore = (directDisplay: string): string => /* wgsl */ `
 ${WEIGHTED_OIT_FRAGMENT_WGSL}
 ${PBR_DISPLAY_COLOR_WGSL}
 ${PBR_FOG_WGSL}
@@ -268,7 +294,7 @@ fn geometryOutput(v: Vertex, color: vec4f, worldNormal: vec3f, roughness: f32) -
     v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb, v.authorShadow, v.material.w, v.dielectric, true);
   return vec4f(color, coverage(v.emissiveAlpha.w, v.material));
 }
-${PBR_DIRECT_DISPLAY_WGSL}
+${directDisplay}
 @fragment fn fragmentMainTransparent(v: Vertex, @builtin(front_facing) frontFacing: bool) -> DeepWeightedOitOutput {
   let ground = flag(v.material.w, 8u); let normal = orientedNormal(v.normal, v.material, frontFacing);
   let color = shade(v.clip.xy, v.world, normal, normal, ground, v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb, v.authorShadow, v.material.w, v.dielectric, true);
@@ -362,11 +388,25 @@ fn extendedShade(v: Vertex, normal: vec3f, geometryNormal: vec3f, surface: Surfa
   return deepWeightedOit(color, alpha, depth);
 }
 `;
+// 默认档:剥离 RT 分支块(与历史 sceneShader 逐字节一致 —— 改动前 baseline 的字节等价
+// 由 outputFamilyWgslChecksum.test.ts 的 strip 恒等断言机器证明)。
+const sceneShaderCore = buildSceneShaderCore(stripRtShadowBranch(PBR_DIRECT_DISPLAY_WGSL));
 
 /** Ready-to-compile default module with the fixed Forward+ group-3 library.
  *  B1 Brief-VSM:虚拟阴影采样库紧随级联库注入(params2.x=0 时虚拟分支全部不进入,
- *  级联档 WGSL 行为逐字节等价;stock WGSL 变更 diff 见交付报告)。 */
+ *  级联档 WGSL 行为逐字节等价;stock WGSL 变更 diff 见交付报告)。
+ *  M2 光追阴影:默认档剥离 RT 分支块,本导出与历史文本逐字节一致(零变化证明见
+ *  outputFamilyWgslChecksum.test.ts 的 strip 恒等断言)。 */
 export const sceneShader = composeForwardPlusPbrShader(
   `${CASCADED_SHADOW_WGSL}\n${VIRTUAL_SHADOW_WGSL}\n${sceneShaderCore}`, "direct-multiscattering");
+
+/** M2 方向光 RT 阴影变体(2026-10-04,opt-in,features.rayTracedShadows=true):
+ *  deepPrimaryShadow 保留 frame.output.bloom 开关的 mask 采样分支 + 追加
+ *  group(2) binding(3) mask 纹理声明。开关位=0 时分支不进入,与默认档行为一致
+ *  (运行时 fail-closed 回退通道:mask 供给异常的帧清 0 位即回级联,无需重建管线)。
+ *  分支放在 author/虚拟档之后、级联 return 之前 —— RT 只替代级联档,author/VSM 语义不变。 */
+export const sceneShaderRayTracedShadows = composeForwardPlusPbrShader(
+  `${CASCADED_SHADOW_WGSL}\n${VIRTUAL_SHADOW_WGSL}\n${buildSceneShaderCore(PBR_DIRECT_DISPLAY_WGSL)}\n${DEEP_RAY_TRACED_SHADOW_MASK_WGSL}`,
+  "direct-multiscattering");
 
 export { currentToPreviousUvMotion } from "./pbrMotionCpu.js";

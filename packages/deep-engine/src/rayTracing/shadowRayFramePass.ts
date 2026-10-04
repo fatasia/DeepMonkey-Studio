@@ -21,7 +21,7 @@ import { emitShadowRayFrameKernelWgsl, packShadowRayFrameUniform, SHADOW_RAY_FRA
   SHADOW_RAY_FRAME_ENTRY_POINT, SHADOW_RAY_FRAME_PARAMS_BYTES, type ShadowRayFrameParams } from "./shadowRayFrameKernel.js";
 import type { TlasPackedScene } from "./tlasLayout.js";
 
-const USAGE_STORAGE = 0x80, USAGE_COPY_DST = 0x8, USAGE_UNIFORM = 0x40;
+const USAGE_STORAGE = 0x80, USAGE_COPY_DST = 0x8, USAGE_UNIFORM = 0x40, USAGE_COPY_SRC = 0x4;
 const MAX_CACHED_BINDINGS = 4;
 
 export interface ShadowRayFramePassOptions {
@@ -95,7 +95,10 @@ export class ShadowRayFramePass {
     device.queue.writeBuffer(indices, 0, packed.indices.buffer, packed.indices.byteOffset, packed.indices.byteLength);
     device.queue.writeBuffer(order, 0, packed.order.buffer, packed.order.byteOffset, packed.order.byteLength);
     this.sceneBuffers = [nodes, instances, vertices, indices, order];
-    this.stackOverflows = make("shadow-frame-overflows", 4);
+    // 哨兵须 COPY_SRC:readbackStackOverflows 验收通道拷贝到 map-read 缓冲;
+    // 缺该 usage 会令整个 command buffer Invalid、同 encoder 的 dispatch 被静默丢弃
+    // (路 6 真机实证)。生产不读回时 COPY_SRC 无成本。
+    this.stackOverflows = make("shadow-frame-overflows", 4, USAGE_COPY_SRC);
     this.uniform = device.createBuffer({ label: "shadow-frame-params", size: SHADOW_RAY_FRAME_PARAMS_BYTES,
       usage: USAGE_UNIFORM | USAGE_COPY_DST });
   }

@@ -24,9 +24,12 @@ import { updatePbrFrameUniforms } from "./pbrFrameUniforms.js";
 import { scalePbrEnvironmentRadiance } from "./pbrEnvironmentIntensity.js";
 import { PreviousHiZVisibility, type PreviousHiZFramePlan } from "./previousHiZVisibility.js";
 import { PbrShadowState } from "./pbrShadowState.js";
+import { RtShadowFrameController } from "./rtShadowFrame.js";
+import type { TlasPackedScene } from "../rayTracing/tlasLayout.js";
 import { VirtualShadowResources } from "./virtualShadowResources.js";
 import { VirtualShadowPageTable, VIRTUAL_SHADOW_PHYSICAL_PAGES } from "../shadows/virtualShadowPages.js";
 import { ContactShadowResources, describeContactShadowPass, describeContactApplyPass } from "../shadows/contactShadowResources.js";
+import { SdfGiProductionRuntime } from "../gi/sdfGiProductionRuntime.js";
 import { hasClusteredLights, resolvePbrSceneLighting } from "../lighting/pbrSceneLighting.js";
 import { resolveDeepGiProducerDirectionCount } from "../lighting/probeRadianceDirectionGate.js";
 import type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
@@ -106,6 +109,8 @@ export class PbrRenderer {
   /** C10 屏幕空间接触阴影;opt-in(features.contactShadows),默认不存在。 */
   private readonly contactShadows: ContactShadowResources | undefined;
   private adaptiveContactShadowTier: "performance" | "balanced" | "quality" | undefined;
+  /** Brief-GI M2 生产 SDF GI dispatch;opt-in(features.sdfGi),默认不存在(帧逐位零变化)。 */
+  readonly sdfGi: SdfGiProductionRuntime | undefined;
   private readonly targets: RenderTargets; private readonly transientTextures: PbrTransientTexturePool;
   private readonly postProcess: PbrPostProcessChain;
   private readonly transparency: PbrTransparencyPass; private readonly lighting: ForwardPlusPbrRuntime;
@@ -113,7 +118,12 @@ export class PbrRenderer {
   private readonly cameraHistory = new CameraFrameHistory();
   private readonly previousHiZ = new PreviousHiZVisibility();
   private pendingHiZ: PreviousHiZFramePlan | undefined; private readonly outputs: PbrOutputBindings;
-  private readonly features: PbrRendererFeatures; private frame = 0;
+  private features: PbrRendererFeatures; private frame = 0;
+  /** M2 方向光 RT 阴影控制器(opt-in features.rayTracedShadows):mask 纹理生命周期
+   *  +ShadowRayFramePass 供给。构造期场景供给未就绪或 staging 降级时 features 快照的
+   *  RT 位回退(开关位 0 → WGSL 回级联),后置 stage 成功再切回(下一帧生效)。 */
+  readonly rtShadows: RtShadowFrameController | undefined;
+  private rtShadowsFallbackReason: string | undefined;
   private readonly frameCapture: PbrFrameCapture | undefined;
   private lastFrameReadback: Promise<readonly PbrFrameReadbackResult[]> | undefined;
   get frameReadbackResults(): Promise<readonly PbrFrameReadbackResult[]> | undefined { return this.lastFrameReadback; }
@@ -219,7 +229,17 @@ export class PbrRenderer {
     this.ground = createPbrGround(session);
     this.frameBuffer = uploadBuffer(session, "Deep frame", this.frameData, GPUBufferUsage.UNIFORM);
     this.outputs = new PbrOutputBindings(session, pipelines, () => performance.now(), features.spatialAa, session.hdrDisplayCapability?.policy);
-    this.shadowState = new PbrShadowState(session, pipelines, options.shadows);
+    // M2 方向光 RT 阴影(opt-in):RT 管线变体下 group(2) binding(3) 必须装配;控制器
+    // 先建(占位 1×1 mask),场景供给未就绪/staging 降级 → features 快照 RT 位清 0
+    // (fail-closed 回级联,原因经 rayTracedShadowStatus 披露,不静默假开)。
+    if (features.rayTracedShadows) {
+      this.rtShadows = new RtShadowFrameController(session, { ...(options.rayTracedShadowF16 ? { f16: true } : {}) });
+      if (options.rayTracedShadowScene !== undefined) this.stageRayTracedShadowScene(options.rayTracedShadowScene);
+      else this.rtShadowsFallbackReason = "scene-not-supplied";
+    }
+    const rtShadowMaskView = this.rtShadows !== undefined && this.rtShadows.sceneStaged
+      ? this.rtShadows.maskView : undefined;
+    this.shadowState = new PbrShadowState(session, pipelines, options.shadows, rtShadowMaskView);
     this.optionsExactShadowCascade = options.shadows?.exactProfile?.cascadeCount;
     // B1 Brief-VSM:虚拟档资源(opt-in shadowMode="virtual";构造失败 fail-closed 回
     // 级联档,原因随遥测披露 —— 不静默,不阻塞渲染循环)。
@@ -245,12 +265,19 @@ export class PbrRenderer {
     this.probeDirectionsOverride = options.probeDirections;
     this.lastAuthorShadowSize = options.shadows?.exactProfile?.shadowMapSize;
     this.contactShadows = features.contactShadows ? new ContactShadowResources(session, options.contactShadows ?? {}) : undefined;
+    this.sdfGi = features.sdfGi ? new SdfGiProductionRuntime(session, options.sdfGi ?? {}) : undefined;
     this.environment = new PbrEnvironmentState(environment);
     this.mainBindings = new PbrMainBindings(session, pipelines, this.frameBuffer, this.shadows, environment);
     this.transientTextures = new PbrTransientTexturePool(session, options.transientTextureBudgetBytes);
     this.targets = new RenderTargets(session, pipelines.output.getBindGroupLayout(0), this.outputs.buffer,
       this.transientTextures, msaa.sampleCount);
-    this.features = features;
+    // M2 方向光 RT 阴影 fail-closed:场景供给未就绪/staging 降级时 features 快照的 RT 位
+    // 清 0(开关位 0 → WGSL 分支不进;管线保持 RT 变体,占位 mask 值 1.0 无黑影)。
+    this.features = this.rtShadows === undefined || this.rtShadows.sceneStaged ? features
+      : Object.freeze({ ...features, rayTracedShadows: false });
+    if (this.features.rayTracedShadows === false && this.rtShadows !== undefined) {
+      this.rtShadowsFallbackReason ??= this.rtShadows.disabled?.reason ?? "scene-not-staged";
+    }
     this.resolutionScaler = options.resolutionScalePolicy === undefined ? undefined
       : new DynamicResolutionScaler(options.resolutionScalePolicy);
     // P0-2 可见性切片（opt-in）：共享 frame uniform 与 transient 池；默认 features.visibilityBuffer=false 时不构建。
@@ -266,6 +293,32 @@ export class PbrRenderer {
     this.postProcess = new PbrPostProcessChain(session, this.features, this.transientTextures);
     this.transparency = new PbrTransparencyPass(session, this.transientTextures, features.temporalAa);
     this.lighting = lighting; this.localShadows = localShadows;
+  }
+  /**
+   * M2 方向光 RT 阴影:注入/更新 TLAS 打包场景(features.rayTracedShadows 构造档;
+   * BLAS 段计数不变走增量 TLAS,变化整体重建 pass)。构造期未供给而此处后置供给成功时,
+   * features 快照的 RT 位切回 true —— 下一帧起 WGSL 开关位=1、直出快路径按 RT 档禁用;
+   * 本帧已在途的编码仍按位 0(级联)执行,一帧收敛,如实披露。staging 失败降级并在
+   * rayTracedShadowStatus 披露原因,不抛穿渲染循环。
+   */
+  stageRayTracedShadowScene(packed: TlasPackedScene): void {
+    const controller = this.rtShadows;
+    if (controller === undefined) throw new Error("Ray-traced shadows require features.rayTracedShadows.");
+    controller.stageScene(packed);
+    if (controller.sceneStaged) {
+      this.rtShadowsFallbackReason = undefined;
+      if (!this.features.rayTracedShadows) {
+        this.features = Object.freeze({ ...this.features, rayTracedShadows: true });
+      }
+    } else {
+      this.rtShadowsFallbackReason = controller.disabled?.reason ?? "scene-not-staged";
+    }
+  }
+  /** M2 RT 阴影诊断:构造档 disabled=true 时给出回退原因(级联档生效),否则 active。 */
+  get rayTracedShadowStatus(): { active: boolean; reason?: string } {
+    if (this.rtShadows === undefined) return { active: false };
+    if (this.rtShadowsFallbackReason !== undefined) return { active: false, reason: this.rtShadowsFallbackReason };
+    return this.features.rayTracedShadows ? { active: true } : { active: false, reason: "features-fallback" };
   }
   get frameCaptureSession(): FrameCaptureSession | undefined { return this.frameCapture?.session; }
   get hdrDisplay() {
@@ -492,13 +545,17 @@ export class PbrRenderer {
       ...(this.visibility ? [this.visibility] : []), ...(this.clusterLodSlot ? [this.clusterLodSlot] : []),
       ...(this.virtualTextures ? [this.virtualTextures] : []),
       ...(this.virtualTileLookup ? [this.virtualTileLookup] : []),
-      ...(this.virtualShadows ? [this.virtualShadows] : [])];
+      ...(this.virtualShadows ? [this.virtualShadows] : []),
+      ...(this.sdfGi ? [this.sdfGi] : []),
+      ...(this.rtShadows ? [this.rtShadows] : [])];
     // 释放背景排队门：未 release 就销毁的宿主也能让挂起的门禁 promise 结算。
     this.releasePipelines?.();
     runResourceCleanup("PBR renderer cleanup failed.", [...owners.map(owner => () => owner.dispose()),
       () => this.cameraHistory.reset(), () => this.session.dispose()]);
   }
   private sceneChanged(): void { this.shadowDirty = true; this.historyDirty = true; }
+  /** 帧编排宿主时钟注入(PbrRendererFrameHost.now;本类是 performance 白名单面)。 */
+  now(): number { return performance.now(); }
   private outlinePrewarmScheduled = false;
   private outlinePrewarmHandle: { kind: "idle" | "timeout"; id: number } | undefined;
 }
