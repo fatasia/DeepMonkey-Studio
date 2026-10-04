@@ -37,7 +37,7 @@ export interface AppRoute {
 }
 
 const operationsTabs = new Set(["maintenance", "commissioning", "battery", "logistics", "energy", "whatif", "monitoring"]);
-const systemTabs = new Set(["users", "health", "cloud-render", "notifications", "audit", "ai", "mcp", "performance"]);
+const systemTabs = new Set(["users", "health", "cloud-render", "notifications", "audit", "ai", "mcp", "performance", "shortcuts"]);
 
 export function readRoute(): AppRoute {
   try {

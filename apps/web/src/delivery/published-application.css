@@ -21,6 +21,11 @@
 .published-application-details p:last-child { margin-bottom: 0; }
 .published-application-notice { bottom: 66px; left: 16px; max-width: calc(100vw - 32px); padding: 10px 12px; display: flex; align-items: center; gap: 14px; overflow-wrap: anywhere; font-size: 13px; }
 .published-application-notice a { color: var(--accent); }
+/* 匿名 Web 发布场景页：引擎画布铺满视口，加载态浮层居中。 */
+.published-scene-viewer-viewport { position: fixed; inset: 0; }
+.published-scene-viewer-viewport canvas { display: block; }
+.published-scene-viewer-status { position: fixed; inset: 0; display: grid; place-items: center; align-content: center; gap: 12px; color: var(--text); pointer-events: none; font-size: 13px; }
+.published-scene-viewer-status svg { color: var(--accent); }
 .dashboard-public-restriction { display: flex; flex-direction: column; gap: 6px; height: 100%; color: var(--text); font-size: 12px; overflow: auto; }
 .dashboard-public-restriction span { color: var(--muted); line-height: 1.6; }
 @media (max-width: 600px) { .published-application-header { max-width: calc(100vw - 32px); } .published-application-details { top: 100px; } }

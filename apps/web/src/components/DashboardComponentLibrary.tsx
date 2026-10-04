@@ -102,12 +102,12 @@ export function DashboardComponentLibrary({ locale, projectId, sceneAvailable, t
             placeholder={tr(locale, "搜索组件", "Search components")}
           />
         </label>
-        {activeSource === "resources" && <div className="dashboard-library-quick-actions">
+        <div className="dashboard-library-quick-actions">
           <button className="dashboard-library-template-button" title={tr(locale, `行业模板（${DASHBOARD_TEMPLATES.length}）`, `Templates (${DASHBOARD_TEMPLATES.length})`)} onClick={onOpenTemplates}>
             <LayoutTemplate size={14} />
             {tr(locale, "模板", "Templates")}
           </button>
-        </div>}
+        </div>
       </div>
 
       {!normalizedQuery && <div className="dashboard-library-sources" role="tablist" aria-label={tr(locale, "组件来源", "Component source")}>

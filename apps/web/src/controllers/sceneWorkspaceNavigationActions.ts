@@ -47,10 +47,17 @@ export function createSceneWorkspaceNavigationActions(context: WorkspaceNavigati
     return application;
   }
 
-  async function openSceneDashboard(scene: SceneSnapshot, replace = false): Promise<void> {
+  async function openSceneDashboard(scene: SceneSnapshot, replace = false, options: { workspace?: "dashboard" | "studio" } = {}): Promise<void> {
     setBusy(true);
     try {
       const application = await ensureApplicationForScene(scene);
+      if (options.workspace === "studio") {
+        // 新建场景「创建并进入」等明确要三维落点的入口跳过项目记忆，直接进三维工作台。
+        setActiveScene(scene);
+        navigate({ view: "studio", projectId: scene.projectId, sceneId: scene.id }, replace);
+        setMessage(`已打开“${scene.name}”三维编辑`);
+        return;
+      }
       const page =
         application.pages.find((candidate) => candidate.nodes.some((node) => node.kind === "scene-viewport" && node.sceneId === scene.id)) ??
         application.pages[0];

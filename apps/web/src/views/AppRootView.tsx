@@ -10,6 +10,7 @@ const AppOverlays = lazy(() => import("./AppOverlays").then((module) => ({ defau
 const AppPlatformRoutes = lazy(() => import("./AppPlatformRoutes").then((module) => ({ default: module.AppPlatformRoutes })));
 const AppStudioShell = lazy(() => import("./AppStudioShell").then((module) => ({ default: module.AppStudioShell })));
 const AppBehaviorOverlay = lazy(() => import("./AppBehaviorOverlay").then((module) => ({ default: module.AppBehaviorOverlay })));
+const PublishedSceneViewerRoot = lazy(() => import("../delivery/PublishedSceneViewerRoot").then((module) => ({ default: module.PublishedSceneViewerRoot })));
 
 interface AppRootViewProps {
   bindings: AppViewBindings;
@@ -41,6 +42,21 @@ export function AppRootView({ bindings, onOpenDocs, onCloseDocs }: AppRootViewPr
       <div className="app-auth-loading">
         <LoaderCircle className="spin" size={24} /> 正在验证本地会话
       </div>
+    );
+  }
+  // 发布场景链接（/published/:sceneId）允许匿名访问：服务端公开只读端点已就绪，
+  // 未登录访客进入独立只读查看页，登录用户仍走完整工作台发布视图。
+  if (route.view === "published" && !currentUser) {
+    return (
+      <Suspense
+        fallback={
+          <div className="app-auth-loading">
+            <LoaderCircle className="spin" size={24} /> 正在加载发布场景
+          </div>
+        }
+      >
+        <PublishedSceneViewerRoot {...(route.sceneId ? { sceneId: route.sceneId } : {})} />
+      </Suspense>
     );
   }
   if (!currentUser) return <LoginPage branding={branding} locale={locale} onLogin={setCurrentUser} />;

@@ -104,6 +104,17 @@ describe("app route", () => {
     }
   });
 
+  it("restores the shortcuts tab from a shareable route", () => {
+    expect(routePath({ view: "system", systemTab: "shortcuts" })).toBe("/system?tab=shortcuts");
+    const originalWindow = globalThis.window;
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { location: { pathname: "/system", search: "?tab=shortcuts" }, history: { state: null } },
+    });
+    try { expect(readRoute()).toEqual({ view: "system", systemTab: "shortcuts" }); }
+    finally { Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow }); }
+  });
+
   it("restores only known operations tasks from the URL", () => {
     const originalWindow = globalThis.window;
     Object.defineProperty(globalThis, "window", {

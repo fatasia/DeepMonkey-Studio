@@ -60,7 +60,11 @@ type SceneCreationContext = Pick<
   | "setWeather"
 >;
 
-type OpenSceneDashboard = (scene: SceneSnapshot) => Promise<void>;
+type OpenSceneDashboard = (
+  scene: SceneSnapshot,
+  replace?: boolean,
+  options?: { workspace?: "dashboard" | "studio" },
+) => Promise<void>;
 
 /** 新建场景的重置顺序集中在这里，防止旧场景的运行状态泄漏到新应用。 */
 export function createSceneCreationAction(context: SceneCreationContext, openSceneDashboard: OpenSceneDashboard) {
@@ -204,8 +208,8 @@ export function createSceneCreationAction(context: SceneCreationContext, openSce
     setDefaultCameraViewId(saved.defaultCameraViewId);
     setAnimationTime(0);
     setAnimationPlaying(false);
-    await openSceneDashboard(saved);
-    setMessage(`应用“${saved.name}”已创建，默认进入二维设计`);
+    await openSceneDashboard(saved, false, { workspace: "studio" });
+    setMessage(`应用“${saved.name}”已创建，已进入三维工作台`);
     setRevision((value) => value + 1);
   };
 }

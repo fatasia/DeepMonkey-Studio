@@ -85,6 +85,17 @@ describe("scene creation isolation", () => {
       "sample-status-beacon",
     ]);
   });
+
+  it("lands the create-and-open entry in the 3D workspace instead of the dashboard", async () => {
+    const { context } = fixture();
+    const openSceneDashboard = vi.fn(async () => undefined);
+    const createScene = createSceneCreationAction(context, openSceneDashboard);
+
+    await createScene("示例场景");
+
+    expect(openSceneDashboard).toHaveBeenCalledOnce();
+    expect(openSceneDashboard).toHaveBeenCalledWith(expect.anything(), false, { workspace: "studio" });
+  });
 });
 
 function fixture() {
