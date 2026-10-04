@@ -24,6 +24,24 @@ describe("production web hosting", () => {
     await app.close();
   });
 
+  it("serves brotli sidecars when accepted and raw bytes otherwise", async () => {
+    const root = await createWebRoot();
+    await writeFile(path.join(root, "asset.js.br"), "brotli-bytes");
+    const app = Fastify();
+    await registerProductionWeb(app, { enabled: true, root });
+
+    const compressed = await app.inject({ url: "/asset.js", headers: { "accept-encoding": "br, gzip" } });
+    expect(compressed.statusCode).toBe(200);
+    expect(compressed.headers["content-encoding"]).toBe("br");
+    expect(compressed.body).toBe("brotli-bytes");
+
+    const plain = await app.inject({ url: "/asset.js" });
+    expect(plain.statusCode).toBe(200);
+    expect(plain.headers["content-encoding"]).toBeUndefined();
+    expect(plain.body).toBe("console.log('ready')");
+    await app.close();
+  });
+
   it("does not turn unknown API routes into HTML", async () => {
     const root = await createWebRoot();
     const app = Fastify();

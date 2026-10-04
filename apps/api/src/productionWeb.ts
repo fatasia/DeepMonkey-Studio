@@ -29,6 +29,10 @@ export async function registerProductionWeb(app: FastifyInstance, options: Produ
     cacheControl: true,
     immutable: false,
     maxAge: "1h",
+    // 构建链末位（apps/web/scripts/precompress-dist.mjs）已生成 .br sidecar；
+    // 开启后按 Accept-Encoding 协商直传 brotli（如参数化 CAD wasm 21.9MiB -> 4.8MiB），
+    // sidecar 缺失的资源自动回退原文件，桌面(Tauri)内嵌协议不受影响。
+    preCompressed: true,
   });
 
   app.setNotFoundHandler((request, reply) => {

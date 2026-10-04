@@ -245,6 +245,16 @@ pnpm studio deploy
 
 部署会安装锁定依赖、构建正式产物并注册 Windows 计划任务，提供开机启动和失败重启；API 在生产模式下同源托管 `apps/web/dist`。非管理员运行只能创建当前会话后台进程，不具备可靠的开机自启能力。
 
+#### 静态资源 brotli 预压缩（默认启用）
+
+`pnpm --filter @bim-studio/web build` 的构建链末位会执行 `scripts/precompress-dist.mjs`，为全部可压缩产物
+（JS/CSS/HTML/wasm/TTF）生成 brotli-11 sidecar（`<file>.br`，实测 284 个产物 84.3MiB → 19.7MiB，
+参数化 CAD 内核 `replicad_single.wasm` 21.9MiB → 4.6MiB）。API 端 `productionWeb.ts` 以
+`@fastify/static` 的 `preCompressed: true` 按 `Accept-Encoding` 协商直传，sidecar 缺失的资源自动回退原文件。
+因此**无需**在 Nginx/Caddy 再配动态压缩；若前面另有网关，保留透传 `Accept-Encoding` 即可，勿重复压缩。
+磁盘代价：dist 约多 21MB sidecar（桌面安装器内嵌后约 +2.7%），换浏览器传输体积约砍 77%。
+开发迭代想加速构建时可 `PRECOMPRESS_QUALITY=5` 降低压缩档（仅影响体积，不影响正确性）。
+
 ### Linux 服务器
 
 在具有 sudo 权限的部署账号下执行同一命令：

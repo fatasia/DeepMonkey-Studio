@@ -7,7 +7,7 @@
     "predev": "node scripts/copy-wasm.mjs",
     "dev": "vite",
     "prebuild": "node scripts/copy-wasm.mjs && pnpm --filter @bim-studio/parametric-modeling-plugin build",
-    "build": "tsc --noEmit && vite build && node scripts/check-bundle-budget.mjs",
+    "build": "tsc --noEmit && vite build && node scripts/check-bundle-budget.mjs && node scripts/precompress-dist.mjs",
     "build:scene-viewer": "node scripts/copy-wasm.mjs && tsc --noEmit && vite build",
     "build:engine-wasm": "node ../../scripts/build-wasm-bundle.mjs",
     "build:engine-wasm-bench": "node ../../scripts/build-wasm-bundle.mjs --features bench-viewer --out-dir public/dev/pkg",
