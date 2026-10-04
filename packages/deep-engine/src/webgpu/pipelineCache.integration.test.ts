@@ -33,17 +33,18 @@ function fixture(): Fixture {
 }
 
 describe("C26 pipelines integration", () => {
-  it("produces a per-pipeline compile ledger for a full build (28 pipelines, labels attached)", async () => {
+  it("produces a per-pipeline compile ledger for a full build (36 pipelines, labels attached)", async () => {
     const f = fixture();
     const build = await createPipelinesBuild(f.device, "bgra8unorm", {} as GPUBindGroupLayout);
     build.releaseDeferredQueues();
     await build.ready;
     const records = build.pipelineCompileRecords();
-    // 18 main + 9 shadow 经 C26 编译缓存进清单;HDR output 走 T11
-    // sharedOutputPipeline 独立路径(其指纹失效由 pbrOutputPipelineCache 覆盖)。
-    expect(build.pipelineCompileRecords().length).toBe(27);
+    // 27 main(AA-M2:MSAA4 档 depth 变体 ×a2c)+ 9 shadow 经 C26 编译缓存进清单;
+    // HDR output 走 T11 sharedOutputPipeline 独立路径(其指纹失效由 pbrOutputPipelineCache 覆盖)。
+    expect(build.pipelineCompileRecords().length).toBe(36);
     expect(build.pipelineCompileRecords().every(record => record.fingerprint.startsWith("pso-sha256-"))).toBe(true);
     expect(records.filter(record => record.label === "Deep forward PBR plain/depth/ccw")).toHaveLength(1);
+    expect(records.filter(record => record.label === "Deep forward PBR plain/depth/ccw/a2c")).toHaveLength(1);
     expect(records.every(record => record.cacheHit === false)).toBe(true);
   });
 
@@ -76,7 +77,8 @@ describe("C26 pipelines integration", () => {
     expect(forwardLabels()).toBe(2);
     build.releaseDeferredQueues();
     await build.ready;
-    expect(forwardLabels()).toBe(18);
+    // AA-M2:MSAA4 档 depth 变体 ×a2c → 27 条 main。
+    expect(forwardLabels()).toBe(27);
     const hitRecords = build.pipelineCompileRecords().filter(record => record.cacheHit);
     expect(hitRecords).toHaveLength(0);
   });
