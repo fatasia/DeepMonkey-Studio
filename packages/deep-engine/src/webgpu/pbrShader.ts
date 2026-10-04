@@ -394,7 +394,7 @@ fn extendedShade(v: Vertex, normal: vec3f, geometryNormal: vec3f, surface: Surfa
 `;
 // 默认档:剥离 RT 分支块(与历史 sceneShader 逐字节一致 —— 改动前 baseline 的字节等价
 // 由 outputFamilyWgslChecksum.test.ts 的 strip 恒等断言机器证明)。
-const sceneShaderCore = buildSceneShaderCore(stripRtShadowBranch(PBR_DIRECT_DISPLAY_WGSL));
+export const sceneShaderCore = buildSceneShaderCore(stripRtShadowBranch(PBR_DIRECT_DISPLAY_WGSL));
 
 /** Ready-to-compile default module with the fixed Forward+ group-3 library.
  *  B1 Brief-VSM:虚拟阴影采样库紧随级联库注入(params2.x=0 时虚拟分支全部不进入,
