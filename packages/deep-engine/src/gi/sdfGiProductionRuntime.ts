@@ -1,57 +1,59 @@
 /// <reference types="@webgpu/types" />
 import type { DeviceSession } from "../webgpu/deviceSession.js";
-import { createAdmittedBuffer } from "../webgpu/resourceAdmission.js";
-import { uploadBuffer } from "../webgpu/meshBuffers.js";
-import { bakeSdfSceneGrid, createSdfSceneBakeCache,
-  type SdfSceneBakeInstance, type SdfSceneBakeReport } from "./sdfSceneBake.js";
+import { createSdfSceneBakeCache, type SdfSceneBakeInstance, type SdfSceneBakeReport } from "./sdfSceneBake.js";
 import { resolveSdfSkyVisibilityTraceConfig, SDF_SKY_VISIBILITY_ENTRY,
   SDF_SKY_VISIBILITY_PARAMS_BYTES, SDF_SKY_VISIBILITY_WORKGROUP_SIZE,
   DEEP_SDF_SKY_VISIBILITY_TRACE_WGSL } from "./sdfSkyVisibility.js";
 import { resolveDeepGiTemporalAlpha } from "./probeShUpdate.js";
 import { DEEP_SDF_GI_PROBE_UPDATE_WGSL, SDF_GI_PROBE_UPDATE_ENTRY,
-  SDF_GI_PROBE_UPDATE_PARAMS_BYTES, SDF_GI_PROBE_UPDATE_WORKGROUP_SIZE,
-  SDF_GI_PROBE_RECORD_VEC4_STRIDE } from "./sdfGiProbeUpdateWgsl.js";
+  SDF_GI_PROBE_UPDATE_PARAMS_BYTES, SDF_GI_PROBE_UPDATE_WORKGROUP_SIZE } from "./sdfGiProbeUpdateWgsl.js";
 import { deriveSdfGiProbeLattice, sdfGiBakeInstancesFromPackets,
   type SdfGiPacketSnapshot } from "./sdfGiSceneAdapter.js";
-import { packInitialSdfGiRecords, packSdfGiDirectionTable, packSdfGiProbePositions,
-  packSdfGiProbeUpdateParams, packSdfGiSkyRadianceTable, packSdfGiSkyTraceParams,
+import { bakeSdfSceneWithRetries, probeLatticeBounds, resolveSdfGiBakeCellSize } from "./sdfGiBakePlan.js";
+import { encodeSdfSceneBakeGpu, type SdfGiBakedGrid } from "./sdfSceneBakeGpu.js";
+import { SdfGiPublishRuntime, sdfGiPublishLevel } from "./sdfGiPublish.js";
+import { buildSdfGiSlots, sdfGiSlotBuffers } from "./sdfGiBakeSlots.js";
+import { packSdfGiProbeUpdateParams, packSdfGiSkyRadianceTable,
   planSdfGiProbeWindow, sdfGiTimedPassRegistration } from "./sdfGiPacking.js";
 import { readbackStorageBuffer } from "./sdfGiReadback.js";
-import { instanceMaxExtent } from "./sdfGiSceneAdapter.js";
 import type { SdfGiFrameInput, SdfGiFramePlan, SdfGiGpuSlots, SdfGiMetrics, SdfGiPassTiming,
   SdfGiRuntimeOptions } from "./sdfGiRuntimeTypes.js";
+import type { ProbeClipmapLevel } from "../lighting/probeClipmapPlan.js";
+import type { ProbeClipmapLightingBinding } from "../lighting/pbrLightingBindings.js";
 
 /**
- * Brief-GI M2 生产 dispatch 运行时:把 M1 引擎侧通路(bakeSdfSceneGrid → 天光圆锥
- * 追踪 → 探针 SH 更新)接进 pbrRendererFrames 帧循环。帧合同类型见
+ * Brief-GI M2/M3 生产 dispatch 运行时:把引擎侧通路(场景 SDF 烘焙 → 天光圆锥
+ * 追踪 → 探针 SH 更新 → 探针场物化)接进 pbrRendererFrames 帧循环。帧合同类型见
  * sdfGiRuntimeTypes.ts,纯函数/预算窗口/计时登记暂存见 sdfGiPacking.ts 文件头。
  *
- * - 烘焙(静态层,场景 dirty 一次):CPU 增量烘焙 → 上传 → 天光追踪真 dispatch;
+ * - 烘焙(静态层,场景 dirty 一次):GPU compute 距离场优先(sdfSceneBakeGpu,同
+ *   encoder 写后读零拷贝;失败/超预算回退 CPU 增量烘焙,墙钟如实报告)→ 天光追踪;
  * - SH 更新(动态层,每帧):ddgiUpdateBudget 同族滑动窗口分摊,天空辐射表逐帧刷新;
+ * - 探针消费(M3):每帧 update 窗口后物化探针场为 clipmap 采样纹理(sdfGiPublish),
+ *   宿主经 setProbeClipmap 发布 —— 主 pass ambient 项真实消费探针记录;
  * - 开关:features.sdfGi(默认关 = 不构建,既有帧逐位零变化)。SSGDI 动态直接层
  *   的 GPU 核消费属后续切片(如实声明,当前不接入)。
  */
 
-// WebGPU usage 规范数值(rayTracing/shadowRayPass.ts 同款先例):node/vitest stub
+// WebGPU usage 数值常量(rayTracing/shadowRayPass.ts 同款先例):node/vitest stub
 // 环境无 GPUBufferUsage 全局,模块顶层禁止求值 GPU 全局(否则 host.test 等
 // pbrRenderer→host 单链 suite 级炸)。
-const USAGE_STORAGE = 0x80, USAGE_COPY_DST = 0x8, USAGE_COPY_SRC = 0x4, USAGE_UNIFORM = 0x40;
-const USAGE_MAP_READ = 0x1;
-const STORAGE_READ = USAGE_STORAGE | USAGE_COPY_DST;
-const STORAGE_RW = USAGE_STORAGE | USAGE_COPY_DST | USAGE_COPY_SRC;
+const STORAGE_RW = 0x80 | 0x8 | 0x4; // STORAGE | COPY_DST | COPY_SRC(可见度/记录读写)
 
-/** Brief-GI M2 生产 dispatch 运行时(帧循环 host 持有;features.sdfGi 开启才构造)。 */
+/** Brief-GI M2/M3 生产 dispatch 运行时(帧循环 host 持有;features.sdfGi 开启才构造)。 */
 export class SdfGiProductionRuntime {
   private readonly tracePipeline: GPUComputePipeline;
   private readonly updatePipeline: GPUComputePipeline;
   private readonly traceLayout: GPUBindGroupLayout;
   private readonly updateLayout: GPUBindGroupLayout;
+  private readonly publish: SdfGiPublishRuntime;
   private slots: SdfGiGpuSlots | undefined;
   private readonly bakeCache = createSdfSceneBakeCache();
   private lastBakedRevision = Number.NaN;
   private dispatchedWindows = 0;
-  private metricsSnapshot: SdfGiMetrics = { sdfGiBakes: 0, sdfGiBakeCells: 0, sdfGiProbeCount: 0,
-    sdfGiProbesUpdated: 0, sdfGiProbeWindowOffset: 0, sdfGiSkyTraceDispatches: 0 };
+  private metricsSnapshot: SdfGiMetrics = { sdfGiBakes: 0, sdfGiBakesGpu: 0, sdfGiBakeCells: 0,
+    sdfGiProbeCount: 0, sdfGiProbesUpdated: 0, sdfGiProbeWindowOffset: 0,
+    sdfGiSkyTraceDispatches: 0, sdfGiPublishDispatches: 0 };
   private pendingSnapshot: SdfGiPacketSnapshot | undefined;
   private lastLattice: readonly (readonly number[])[] | undefined;
   private disposed = false;
@@ -89,6 +91,7 @@ export class SdfGiProductionRuntime {
     this.updatePipeline = device.createComputePipeline({ label: "Deep SDF GI probe update pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.updateLayout] }),
       compute: { module: updateModule, entryPoint: SDF_GI_PROBE_UPDATE_ENTRY } });
+    this.publish = new SdfGiPublishRuntime(session);
   }
 
   get metrics(): Readonly<SdfGiMetrics> { return this.metricsSnapshot; }
@@ -103,7 +106,8 @@ export class SdfGiProductionRuntime {
   }
 
   /**
-   * 帧步进:场景 dirty 时烘焙 + 上传 + 派发天光追踪;随后按预算派发探针 SH 更新窗口。
+   * 帧步进:场景 dirty 时烘焙(GPU 距离场优先)+ 追踪派发;随后按预算派发探针 SH
+   * 更新窗口;最后物化探针场为 clipmap 采样纹理(消费接线,同 encoder 写后读)。
    * 全部挂调用方 encoder;无静态场景(空包/全透明/全动态)时跳过(fail-visible 不产 NaN)。
    */
   encodeFrame(encoder: GPUCommandEncoder, input: SdfGiFrameInput,
@@ -112,11 +116,13 @@ export class SdfGiProductionRuntime {
     const timing = sdfGiTimedPassRegistration().registered ? passTiming : undefined;
     let baked = false;
     let bakeReport: SdfSceneBakeReport | undefined;
+    let gpuBaked = false;
     if (input.sceneRevision !== this.lastBakedRevision) {
       this.lastBakedRevision = input.sceneRevision;
       const result = this.encodeBake(encoder, timing);
       baked = result.baked;
       bakeReport = result.report;
+      gpuBaked = result.gpuBaked;
     }
     const slots = this.slots;
     const window = planSdfGiProbeWindow(slots?.probeCount ?? 0, input.budgetProbes,
@@ -139,56 +145,88 @@ export class SdfGiProductionRuntime {
       timing?.endMarker(encoder, "sdf-gi-probe-update");
       this.dispatchedWindows += 1;
     }
+    // 探针消费物化(每帧;update 窗口之后的写后读,≤4096 texel 一次 dispatch)。
+    let published = false;
+    if (slots && this.publish.published) {
+      this.publish.encode(encoder);
+      published = true;
+      this.metricsSnapshot = { ...this.metricsSnapshot,
+        sdfGiPublishDispatches: this.metricsSnapshot.sdfGiPublishDispatches + 1 };
+    }
     this.metricsSnapshot = { ...this.metricsSnapshot,
       sdfGiProbesUpdated: window.count, sdfGiProbeWindowOffset: window.offset };
     return { baked, ...(bakeReport ? { bakeReport } : {}),
-      probeWindow: Object.freeze({ ...window }), probeCount: slots?.probeCount ?? 0 };
+      probeWindow: Object.freeze({ ...window }), probeCount: slots?.probeCount ?? 0,
+      published, gpuBaked };
+  }
+
+  /** 主 pass 发布面(setProbeClipmap 参数;场景未烘焙 = undefined 回 F1 fallback)。 */
+  get publishBinding(): ProbeClipmapLightingBinding | undefined {
+    return this.publish.published;
+  }
+
+  /** 真机探针/验收读回:物化纹理与格几何(消费接线对拍面;未就绪 = undefined)。 */
+  get publishedTextures(): { readonly volume: GPUTexture; readonly moments: GPUTexture;
+    readonly level: ProbeClipmapLevel } | undefined {
+    return this.publish.publishedTextures;
   }
 
   private get directionCount(): number {
     return this.options.directionCount === 32 ? 32 : 16;
   }
 
-  /** 场景 dirty 烘焙:适配包 → CPU 增量烘焙 → 上传 → 天光追踪 dispatch;
-   * cells 超规模墙时确定性倍增 cellSize 重试(六次仍超 fail-visible 上抛,不静默降质)。 */
+  /** 场景 dirty 烘焙:适配包 → GPU compute 距离场(失败/超预算回退 CPU 增量烘焙,
+   * 墙钟口径如实报告)→ 天光追踪 dispatch → 物化资源就绪。 */
   private encodeBake(encoder: GPUCommandEncoder, timing?: SdfGiPassTiming):
-    { baked: boolean; report?: SdfSceneBakeReport } {
+    { baked: boolean; report?: SdfSceneBakeReport; gpuBaked: boolean } {
     const snapshot = this.pendingSnapshot;
-    if (!snapshot) return { baked: false };
+    if (!snapshot) return { baked: false, gpuBaked: false };
     const instances: readonly SdfSceneBakeInstance[] = sdfGiBakeInstancesFromPackets(snapshot);
-    if (!instances.length) return { baked: false };
+    if (!instances.length) return { baked: false, gpuBaked: false };
     const domain = this.options.instanceDomain ?? "aabb";
-    const maxExtent = instanceMaxExtent(instances);
-    let cellSize = clampFinite(this.options.cellSize, 0.05, 1,
-      clampFinite(maxExtent / 64, 0.05, 1, 0.25));
-    let bake: ReturnType<typeof bakeSdfSceneGrid> | undefined;
+    const cellSize = resolveSdfGiBakeCellSize(instances, this.options.cellSize);
+    // GPU compute 距离场(同 encoder 写后读;三角形超预算/不支持返回 undefined)。
+    let gpu: ReturnType<typeof encodeSdfSceneBakeGpu>;
     try {
-      bake = bakeSdfSceneGrid(instances, { cellSize, cache: this.bakeCache, instanceDomain: domain });
-    } catch (error) {
-      let lastError: unknown = error;
-      for (let attempt = 0; attempt < 6 && bake === undefined; attempt++) {
-        cellSize = Math.min(cellSize * 2, 8);
-        try {
-          bake = bakeSdfSceneGrid(instances, { cellSize, cache: this.bakeCache, instanceDomain: domain });
-        } catch (retryError) { lastError = retryError; }
-      }
-      if (!bake) throw lastError;
+      gpu = encodeSdfSceneBakeGpu(this.session, encoder,
+        { instances, cellSize, instanceDomain: domain });
+    } catch {
+      gpu = undefined;
     }
-    const grid = bake.grid;
+    if (gpu) {
+      this.afterBake(encoder, gpu.grid, gpu.field, timing);
+      this.metricsSnapshot = { ...this.metricsSnapshot,
+        sdfGiBakesGpu: this.metricsSnapshot.sdfGiBakesGpu + 1 };
+      return { baked: true, report: gpu.report, gpuBaked: true };
+    }
+    const plan = bakeSdfSceneWithRetries(instances, { cellSize, instanceDomain: domain });
+    this.afterBake(encoder, plan.bake.grid, undefined, timing);
+    return { baked: true, report: plan.bake.report, gpuBaked: false };
+  }
+
+  /** 烘焙公共尾:探针格 → GPU 槽位(上传或零拷贝)→ 天光追踪 → 物化资源就绪。 */
+  private afterBake(encoder: GPUCommandEncoder,
+    rawGrid: SdfGiBakedGrid | import("./sdfSceneBake.js").SdfSceneBakeResult["grid"],
+    gpuField: GPUBuffer | undefined, timing?: SdfGiPassTiming): void {
+    const grid: SdfGiBakedGrid = { ...rawGrid,
+      cells: "cells" in rawGrid ? rawGrid.cells : rawGrid.distances.length };
     const config = resolveSdfSkyVisibilityTraceConfig(grid,
       this.options.traceSteps === undefined ? {} : { steps: this.options.traceSteps });
     // 探针 lattice:内缩半格起采样,避免探针贴面(贴面探针 SDF=0 → 全向假遮蔽)。
-    const inset = Math.max(grid.cellSize * 0.5, 1e-3);
-    const bounds = {
-      min: [grid.origin[0]! + inset, grid.origin[1]! + inset, grid.origin[2]! + inset] as const,
-      max: [grid.origin[0]! + (grid.dimensions[0]! - 1) * grid.cellSize - inset,
-        grid.origin[1]! + (grid.dimensions[1]! - 1) * grid.cellSize - inset,
-        grid.origin[2]! + (grid.dimensions[2]! - 1) * grid.cellSize - inset] as const,
-    };
+    const bounds = probeLatticeBounds(grid);
     const lattice = deriveSdfGiProbeLattice(bounds,
-      this.options.probeSpacing ?? Math.max(grid.cellSize * 4, 0.25),
-      this.options.maxProbes ?? 4096);
-    this.uploadSlots(grid, lattice.positions, config);
+      this.options.probeSpacing ?? Math.max(grid.cellSize * 4, 0.25), this.options.maxProbes ?? 4096);
+    // GPU 槽位装配(上传或零拷贝直用;失败回滚自持,旧槽位保留语义与 M2 一致)。
+    const candidate = gpuField
+      ? buildSdfGiSlots({ session: this.session, grid, positions: lattice.positions,
+        config, gpuField, traceLayout: this.traceLayout, updateLayout: this.updateLayout,
+        directionCount: this.directionCount })
+      : buildSdfGiSlots({ session: this.session, grid, positions: lattice.positions,
+        config, traceLayout: this.traceLayout, updateLayout: this.updateLayout,
+        directionCount: this.directionCount });
+    this.releaseSlots();
+    this.slots = candidate;
+    this.lastLattice = lattice.positions;
     const slots = this.slots!;
     timing?.beginMarker(encoder, "sdf-gi-sky-trace");
     const pass = encoder.beginComputePass({ label: "Deep SDF GI sky trace" });
@@ -199,78 +237,19 @@ export class SdfGiProductionRuntime {
     pass.end();
     timing?.endMarker(encoder, "sdf-gi-sky-trace");
     this.dispatchedWindows = 0;
+    // 消费物化资源就绪(格几何/记录 buffer 就位;内容每帧 encode 覆写)。
+    this.publish.prepare(sdfGiPublishLevel(lattice.positions[0]!, lattice.spacing,
+      lattice.dimensions), slots.records);
     this.metricsSnapshot = { ...this.metricsSnapshot,
       sdfGiBakes: this.metricsSnapshot.sdfGiBakes + 1, sdfGiBakeCells: slots.cells,
       sdfGiProbeCount: slots.probeCount,
       sdfGiSkyTraceDispatches: this.metricsSnapshot.sdfGiSkyTraceDispatches + 1 };
-    return { baked: true, report: bake.report };
-  }
-
-  /** 重建 GPU 槽位并上传静态层输入(烘焙帧;失败时新建资源回滚,旧槽位保留)。 */
-  private uploadSlots(grid: { origin: readonly [number, number, number]; cellSize: number;
-    dimensions: readonly [number, number, number]; distances: Float32Array<ArrayBuffer> },
-    positions: readonly (readonly number[])[],
-    config: { steps: number; coneTan: number; maxDistance: number }): void {
-    const directionCount = this.directionCount;
-    const probeCount = positions.length;
-    const field = uploadBuffer(this.session, "Deep SDF GI scene field", grid.distances, STORAGE_READ);
-    const probePositions = uploadBuffer(this.session, "Deep SDF GI probe positions",
-      packSdfGiProbePositions(positions), STORAGE_READ);
-    const directions = uploadBuffer(this.session, "Deep SDF GI directions",
-      packSdfGiDirectionTable(directionCount), STORAGE_READ);
-    const visibilities = createAdmittedBuffer(this.session, { label: "Deep SDF GI sky visibility",
-      size: Math.max(16, probeCount * directionCount * 4), usage: STORAGE_RW });
-    // 记录行 = 24 float = 96B/探针(SDF_GI_PROBE_RECORD_VEC4_STRIDE=6 vec4 × 16B)。
-    const records = createAdmittedBuffer(this.session, { label: "Deep SDF GI probe records",
-      size: Math.max(16, probeCount * SDF_GI_PROBE_RECORD_VEC4_STRIDE * 16), usage: STORAGE_RW });
-    const skyRadiance = createAdmittedBuffer(this.session, { label: "Deep SDF GI sky radiance",
-      size: Math.max(16, directionCount * 16), usage: STORAGE_READ });
-    const traceParams = uploadBuffer(this.session, "Deep SDF GI trace params",
-      new Float32Array(SDF_SKY_VISIBILITY_PARAMS_BYTES / 4), USAGE_UNIFORM);
-    const updateParams = uploadBuffer(this.session, "Deep SDF GI update params",
-      new Float32Array(SDF_GI_PROBE_UPDATE_PARAMS_BYTES / 4), USAGE_UNIFORM);
-    const created = [field, probePositions, directions, visibilities, records, skyRadiance,
-      traceParams, updateParams];
-    try {
-      this.session.device.queue.writeBuffer(traceParams, 0, packSdfGiSkyTraceParams({
-        origin: grid.origin, cellSize: grid.cellSize, dimensions: grid.dimensions,
-        steps: config.steps, coneTan: config.coneTan, maxDistance: config.maxDistance,
-        directionCount, probeCount }));
-      this.session.device.queue.writeBuffer(records, 0,
-        packInitialSdfGiRecords(probeCount, config.maxDistance));
-      const traceBindGroup = this.session.device.createBindGroup({
-        label: "Deep SDF GI sky trace bindings", layout: this.traceLayout, entries: [
-          { binding: 0, resource: { buffer: traceParams } },
-          { binding: 1, resource: { buffer: field } },
-          { binding: 2, resource: { buffer: probePositions } },
-          { binding: 3, resource: { buffer: directions } },
-          { binding: 4, resource: { buffer: visibilities } },
-        ] });
-      const updateBindGroup = this.session.device.createBindGroup({
-        label: "Deep SDF GI probe update bindings", layout: this.updateLayout, entries: [
-          { binding: 0, resource: { buffer: updateParams } },
-          { binding: 1, resource: { buffer: visibilities } },
-          { binding: 2, resource: { buffer: skyRadiance } },
-          { binding: 3, resource: { buffer: records } },
-        ] });
-      this.releaseSlots();
-      this.slots = { field, probePositions, directions, visibilities, records, skyRadiance,
-        traceParams, updateParams, traceBindGroup, updateBindGroup, probeCount,
-        cells: grid.distances.length };
-      this.lastLattice = positions;
-    } catch (error) {
-      for (const buffer of created.reverse()) this.session.release(buffer);
-      throw error;
-    }
   }
 
   private releaseSlots(): void {
     const slots = this.slots;
     if (!slots) return;
-    for (const buffer of [slots.field, slots.probePositions, slots.directions, slots.visibilities,
-      slots.records, slots.skyRadiance, slots.traceParams, slots.updateParams]) {
-      this.session.release(buffer);
-    }
+    for (const buffer of sdfGiSlotBuffers(slots)) this.session.release(buffer);
     this.slots = undefined;
   }
 
@@ -286,14 +265,16 @@ export class SdfGiProductionRuntime {
     return readbackStorageBuffer(this.session, this.slots.visibilities);
   }
 
+  /** 真机验收读回:探针场距离场快照(GPU 烘焙帧与 CPU 帧同口径,f32/cell)。 */
+  readField(): Promise<Float32Array<ArrayBuffer>> {
+    if (!this.slots) throw new Error("SDF GI runtime has no baked scene.");
+    return readbackStorageBuffer(this.session, this.slots.field);
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.releaseSlots();
+    this.publish.dispose();
   }
-}
-
-function clampFinite(value: number | undefined, min: number, max: number, fallback: number): number {
-  if (value === undefined || !Number.isFinite(value)) return fallback;
-  return Math.min(max, Math.max(min, value));
 }

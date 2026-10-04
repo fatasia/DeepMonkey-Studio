@@ -24,6 +24,8 @@ import {
 } from "../lighting/probeRadianceDirectionGate.js";
 import { DEEP_GI_PROBE_TEMPORAL_ALPHA } from "../gi/probeShUpdate.js";
 import { SDF_SKY_VISIBILITY_MAX_STEPS, SDF_SKY_VISIBILITY_MIN_STEPS } from "../gi/sdfSkyVisibilityTraceWgsl.js";
+import { SDF_GI_PUBLISH_RECORD_VEC4_STRIDE } from "../gi/sdfGiPublishWgsl.js";
+import { SDF_BAKE_SCENE_GRID_MAX_TRIANGLES } from "../gi/sdfBakeSceneGridWgsl.js";
 import { DEEP_GI_PROBE_VISIBILITY_SH_WORDS, DEEP_GI_PROBE_VISIBILITY_SH_WORD_OFFSET } from "../lighting/probeDirectionalVisibilitySh.js";
 import { MAX_AREA_LIGHTS } from "../lighting/areaLights.js";
 import { MAX_MEGA_LIGHTS, MEGALIGHTS_CLUSTER_PATH_LIGHT_BUDGET, MEGALIGHTS_RIS_CANDIDATES,
@@ -112,21 +114,29 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
     },
   },
   {
-    // Brief-GI M2（2026-10-04）：生产 dispatch 接线达成 —— 场景 dirty 帧增量烘焙 +
-    // 天光圆锥追踪真 dispatch（gi/sdfGiProductionRuntime.encodeFrame，接入
-    // pbrRendererFrames 主 encoder 前 opaque 计算槽）+ 探针 SH 更新逐帧预算分摊
-    // （wgsl/sdfGiProbeUpdate 单源核，ddgiUpdateBudget 同族滑动窗口）。opt-in
-    // （features.sdfGi，默认关 = 运行时不构建，既有帧逐位零变化）。仍 degraded：
-    // 探针记录（96B probeClipmapSampling ABI）尚未被主 pass 着色消费（探针 clipmap
-    // 绑定不变，像素零变化）；记录消费与逐 pass 计时登记（PBR_TIMED_PASS_IDS 原子
-    // diff，见 sdfGiProductionRuntime 文件头）属后续切片。观测值从实现常量派生
-    // （步数档/α/开关默认漂移即红）。
-    capabilityId: "sdf-gi", support: "degraded", reason: "opt-in-default-off",
+    // Brief-GI M3（2026-10-05）：探针消费接线 + GPU 烘焙达成 —— 探针场每帧物化为主
+    // pass 探针 clipmap 采样纹理（gi/sdfGiPublish + wgsl/sdfGiPublish 单源核，volume
+    // rgba16f texel=record vec4[0]、moments rgba32f lane0=vec4[1].xyz、lane1..3 恒零
+    // =SH 缺失），pbrRendererFrames 同步 setProbeClipmap 发布 + F1 clipmap 停驱，主
+    // pass ambient 项 mix(environmentIrradiance,gi.rgb,gi.a) 真实消费探针记录（真机
+    // 物化对拍零失配 + 像素可见变化 changedCount=6100）；场景 dirty 帧 GPU compute
+    // 距离场烘焙（gi/sdfSceneBakeGpu + wgsl/sdfBakeSceneGrid 单源核，CPU 同式，
+    // storage buffer 零拷贝直供天光追踪；真机稳态 4.4ms vs CPU 584.8ms，距离抽样
+    // mean 1.6e-4/max 0.15、符号翻转 0.28%（退化射线，如实））。opt-in（features.sdfGi，
+    // 默认关 = 运行时不构建，既有帧逐位零变化）。仍如实 degraded 子项：像素变化区为
+    // 探针域内子域而非全场景（分区 darkened 计数未命中，诊断见 gi-depth-handoff）；
+    // 逐 pass 计时登记（PBR_TIMED_PASS_IDS 原子 diff）仍暂存；SSGDI 动态直接层 GPU 核
+    // 不消费。观测值从实现常量派生（步数档/α/开关默认/物化 texel 布局漂移即红）。
+    capabilityId: "sdf-gi", support: "supported", reason: "opt-in-default-off",
     observed: {
       sdfGi: FEATURE_DEFAULTS.sdfGi,
       skyTraceStepsMin: SDF_SKY_VISIBILITY_MIN_STEPS,
       skyTraceStepsMax: SDF_SKY_VISIBILITY_MAX_STEPS,
       probeTemporalAlpha: DEEP_GI_PROBE_TEMPORAL_ALPHA,
+      publishRecordVec4Stride: SDF_GI_PUBLISH_RECORD_VEC4_STRIDE,
+      publishTexelVolumeFormat: "rgba16float",
+      publishTexelMomentsFormat: "rgba32float",
+      gpuBakeMaxTriangles: SDF_BAKE_SCENE_GRID_MAX_TRIANGLES,
     },
   },
   {

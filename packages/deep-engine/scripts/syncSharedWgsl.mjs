@@ -428,6 +428,63 @@ export const SDF_GI_PROBE_UPDATE_BOUNCE_ENERGY_LIMIT = 2.01;
     preamble: `/** 探针 SH 更新核:天光加权 + bounce 哨兵 + 时域滤波(真源 wgsl/sdfGiProbeUpdate.wgsl)。 */\nexport const DEEP_SDF_GI_PROBE_UPDATE_WGSL = /* wgsl */ `,
   },
   {
+    // Brief-GI M3 探针消费物化核(2026-10-05)。真源 wgsl/sdfGiPublish.wgsl,
+    // 纯 TS 消费(无 Rust 半;每 lane = 一个探针格 cell:96B 记录 → 主 pass 探针
+    // clipmap 采样纹理 texel)。texel 布局与 probeClipmapTextureSampling 的
+    // realMoments 判据互钉;常量与 sdfGiPublish.ts(发布资源/打包)互钉,
+    // 一致性由 sdfGiPublishWgslChecksum.test.ts 锁定。
+    source: "sdfGiPublish.wgsl",
+    module: resolve(packageRoot, "src/gi/sdfGiPublishWgsl.ts"),
+    gate: "src/gi/sdfGiPublishWgslChecksum.test.ts",
+    rustHalf: null,
+    constants: `/**
+ * Brief-GI M3 探针消费物化核的生成镜像。唯一真源 wgsl/sdfGiPublish.wgsl,
+ * 纯 TS 消费(无 Rust 半)。常量与 sdfGiPublish.ts(发布资源/打包)互钉。
+ */
+
+/** workgroup 尺寸:每 lane 独立物化一个探针格 cell,无跨 lane 通信。 */
+export const SDF_GI_PUBLISH_WORKGROUP_SIZE = 64;
+/** PublishParams uniform 总字节(vec3u@0(对齐16)+3×u32 → struct 尺寸 32B;
+ * Chrome 按 struct 全长取 minBindingSize,16 会在真机 CreateComputePipeline 处爆)。 */
+export const SDF_GI_PUBLISH_PARAMS_BYTES = 32;
+/** compute 入口名(运行时与测试按名取 entry point)。 */
+export const SDF_GI_PUBLISH_ENTRY = "sdfGiPublishMain";
+/** 96B 记录 ABI 的 vec4 步长(与 sdfGiProbeUpdateWgsl 互钉)。 */
+export const SDF_GI_PUBLISH_RECORD_VEC4_STRIDE = 6;
+`,
+    preamble: `/** 探针消费物化核:96B 记录 → 主 pass 探针 clipmap 采样纹理(真源 wgsl/sdfGiPublish.wgsl)。 */\nexport const DEEP_SDF_GI_PUBLISH_WGSL = /* wgsl */ `,
+  },
+  {
+    // Brief-GI M3 SDF 场景烘焙 compute 核(2026-10-05)。真源 wgsl/sdfBakeSceneGrid.wgsl,
+    // 纯 TS 消费(无 Rust 半;每 lane = 一个场景格 cell:点到三角形精确距离 min +
+    // +X 射线奇偶定号)。CPU 权威 = gi/sdfSceneBakeGrid.ts + physics/sdfGrid.ts
+    // (triangleDistance/rayX 同式);距离抽样容差对拍与退化射线差异如实报告。
+    // 常量与 sdfSceneBakeGpu.ts(打包/预算)互钉,一致性由
+    // sdfBakeSceneGridWgslChecksum.test.ts 锁定。
+    source: "sdfBakeSceneGrid.wgsl",
+    module: resolve(packageRoot, "src/gi/sdfBakeSceneGridWgsl.ts"),
+    gate: "src/gi/sdfBakeSceneGridWgslChecksum.test.ts",
+    rustHalf: null,
+    constants: `/**
+ * Brief-GI M3 SDF 场景烘焙 compute 核的生成镜像。唯一真源 wgsl/sdfBakeSceneGrid.wgsl,
+ * 纯 TS 消费(无 Rust 半)。常量与 sdfSceneBakeGpu.ts(打包/预算)互钉。
+ */
+
+/** workgroup 尺寸:每 lane 独立烘焙一个场景格 cell,无跨 lane 通信。 */
+export const SDF_BAKE_SCENE_GRID_WORKGROUP_SIZE = 64;
+/** BakeParams uniform 总字节(vec3u@0+u32@12+f32@16+**vec3f 对齐16→origin@32**+f32@44
+ * +u32@48 → struct 52 舍入 64;Chrome 按 struct 全长取 minBindingSize)。 */
+export const SDF_BAKE_SCENE_GRID_PARAMS_BYTES = 64;
+/** compute 入口名(运行时与测试按名取 entry point)。 */
+export const SDF_BAKE_SCENE_GRID_ENTRY = "sdfBakeSceneGridMain";
+/** 每三角形 vec4 槽数(3 顶点 + 2 域行)。 */
+export const SDF_BAKE_SCENE_GRID_TRIANGLE_VEC4S = 5;
+/** GPU 烘焙三角形上限(超限回退 CPU 增量烘焙;内存 16k×80B=1.3MB/万三角形)。 */
+export const SDF_BAKE_SCENE_GRID_MAX_TRIANGLES = 65536;
+`,
+    preamble: `/** SDF 场景烘焙 compute 核:距离 min + 射线奇偶定号(真源 wgsl/sdfBakeSceneGrid.wgsl)。 */\nexport const DEEP_SDF_BAKE_SCENE_GRID_WGSL = /* wgsl */ `,
+  },
+  {
     source: "displayColor.wgsl",
     module: resolve(packageRoot, "src/webgpu/pbrDisplayColorWgsl.ts"),
     gate: "src/webgpu/outputFamilyWgslChecksum.test.ts",

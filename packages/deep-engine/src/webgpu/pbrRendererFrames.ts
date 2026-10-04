@@ -298,7 +298,9 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     try {
       const frameNumber = host.frame + 1;
       host.driveParticles(frameNumber, view.particleFlow);
-      host.driveProbeClipmap(frameNumber, size, view.eye, history.cameraCut);
+      // M3 消费接线:sdfGi 开启时探针 clipmap 由 SDF GI 发布(同步、每帧),F1 clipmap
+      // 停驱 —— 消除异步发布对同步发布的覆盖竞争;关闭时 F1 行为逐位不变。
+      if (!host.sdfGi) host.driveProbeClipmap(frameNumber, size, view.eye, history.cameraCut);
       // AA-M1 深度消费判定(主 pass 编码与计划对拍共用;必须在 captureForFrame 前得出):
       // 主 pass 之后读取/加载硬件深度的全部消费方 —— Hi-Z(采样 depthTexture)、
       // 透明 OIT(load 测试)、粒子/样条/作者网格(附件 load)、可见性合成、对象描边
@@ -391,18 +393,21 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       capturePlan.plan.mappedPassIds.filter(passId => executedPasses.has(passId))) : undefined;
     const timing = passTiming ? undefined : host.gpuTimer.begin(host.frame + 1, detailedTiming);
     const timingStart = timing ? { timestampWrites: { querySet: timing.queries, beginningOfPassWriteIndex: 0 } } : {};
-    // Brief-GI M2 生产 SDF GI dispatch(opt-in,默认关 = 运行时不存在,帧逐位零变化):
-    // 场景 dirty(revision 变化)帧 CPU 增量烘焙 + 上传 + 派发天光圆锥追踪(静态层,
-    // 烘焙一次);每帧按 ddgiUpdateBudget 同族预算分摊探针 SH 更新滑动窗口(动态层)。
+    // Brief-GI M2/M3 生产 SDF GI dispatch(opt-in,默认关 = 运行时不存在,帧逐位零变化):
+    // 场景 dirty(revision 变化)帧 GPU 距离场烘焙(失败回退 CPU 增量)+ 天光圆锥追踪
+    // (静态层,烘焙一次);每帧按 ddgiUpdateBudget 同族预算分摊探针 SH 更新滑动窗口
+    // (动态层)后物化探针场为 clipmap 采样纹理(M3 消费接线,同 encoder 写后读),
+    // 并同步发布 group3 GI 绑定 —— 主 pass ambient 项自此真实消费探针记录。
     // 天空辐射 = 环境均值 × environmentIntensity(与 F1 ambient 合同同源,miss 方向
     // 同一口径);pass 为主 encoder 上的 compute,不依赖 HDR 链拓扑。
     if (host.sdfGi) {
       host.sdfGi.syncScene(host.packets.visibilityInputs());
-      host.sdfGi.encodeFrame(encoder, {
+      const sdfGiPlan = host.sdfGi.encodeFrame(encoder, {
         sceneRevision: host.packets.visibilityRevision,
         skyRadianceRgb: scalePbrEnvironmentRadiance(host.environmentAmbient, view.environmentIntensity),
         budgetProbes: host.adaptiveQuality?.state().knobs.ddgiUpdateBudget ?? 64,
       }, passTiming ?? undefined);
+      host.lighting.setProbeClipmap(sdfGiPlan.published ? host.sdfGi.publishBinding : undefined);
     }
     // B1 Brief-VSM 主阴影档分派:virtual = 三环 clipmap 页物化(逐帧 Top-K,动态页
     // 最高优先);级联保持回退档 —— author 阴影/虚拟未装配/构造失败/动态禁用均回级联,

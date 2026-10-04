@@ -155,11 +155,11 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
   },
   {
     id: "sdf-gi",
-    title: "静态 SDF 遮蔽 + 探针混合 GI M2 生产 dispatch(Brief-GI)",
+    title: "静态 SDF 遮蔽 + 探针混合 GI M3 探针消费 + GPU 烘焙(Brief-GI)",
     webFeatureKeys: ["sdfGi"],
     web: {
-      support: "degraded", reason: "opt-in-default-off",
-      evidence: "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:sdfGi(默认 false,opt-in;关闭 = 运行时不构建,既有帧逐位零变化) + gi/sdfSceneBake.ts:bakeSdfSceneGrid(场景级 SDF 烘焙:静态实例世界系 min 合成闭体并集,资产哈希增量缓存,动态/BLEND 实例排除,内存档复用) + gi/sdfSkyVisibility.ts(wgsl/sdfSkyVisibilityTrace.wgsl 单源 compute 真派发:每 lane=探针方向×SDF 8..16 步圆锥软阴影,域外 fail-open=1) + wgsl/sdfGiProbeUpdate.wgsl 单源核(每 lane=预算窗口内一个探针:天光加权+bounce 能量哨兵+时域滤波 α,96B IrradianceProbeRecord ABI,F5 words[12..23] 绝不写) + gi/sdfGiProductionRuntime.ts(pbrRendererFrames 主 encoder 前 opaque 计算槽:场景 dirty 帧重烘焙+追踪,探针 SH 更新按 ddgiUpdateBudget 同族滑动窗口分摊,FrameMetrics.sdfGi* 遥测) + gi/sdfGiSceneAdapter.ts(包快照 batches+geometries→烘焙实例,packed 36 float 行变换转置) + gi/sdfGiDayNight.ts 昼夜 harness(逐帧 p99≤3/255);M2 仍 degraded:探针记录尚未被主 pass 着色消费(探针 clipmap 绑定不变,像素零变化),记录消费与逐 pass 计时登记(PBR_TIMED_PASS_IDS 原子 diff)属后续切片;SSGDI 动态直接层 GPU 核不消费(CPU 域保留)",
+      support: "supported", reason: "opt-in-default-off",
+      evidence: "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:sdfGi(默认 false,opt-in;关闭 = 运行时不构建,既有帧逐位零变化) + gi/sdfSceneBake.ts:bakeSdfSceneGrid(CPU 增量烘焙,保留为回退与验收参考) + gi/sdfSceneBakeGpu.ts + wgsl/sdfBakeSceneGrid.wgsl(M3 GPU compute 距离场:每 lane=场景 cell 点到三角形精确距离 min + +X 射线奇偶定号,CPU 同式;实例烘焙域逐三角形携带 round 舍入界;距离场 storage buffer 直供天光追踪零拷贝;真机 60,192 cells 稳态烘焙帧墙钟 4.4ms vs CPU 584.8ms,距离抽样 mean 误差 1.6e-4/max 0.15(一格距,域界 round 差异)/符号翻转 0.28%(退化射线,无排序去重,如实) + gi/sdfGiSkyVisibility 同 M2 天光圆锥追踪 + wgsl/sdfGiProbeUpdate.wgsl 同 M2 探针 SH 更新(96B ABI,F5 words[12..23] 绝不写) + gi/sdfGiPublish.ts + wgsl/sdfGiPublish.wgsl(M3 探针消费物化核:每帧 update 窗口后把探针场物化为主 pass 探针 clipmap 采样纹理(volume=rgba16float[dx,dy,dz] texel=record vec4[0];moments=rgba32float[dx,dy,dz×4] lane0=vec4[1].xyz+valid,lane1..3 恒零=SH 缺失;metadata=packProbeLevels 单层),pbrRendererFrames 同步 setProbeClipmap 发布 + F1 clipmap 停驱——pbrShader ambient 项 mix(environmentIrradiance,gi.rgb,gi.a) 真实消费探针记录;真机对拍 volume texel vs CPU 记录镜像零失配(f16 量化内 max 6.1e-5)、moments lane0 逐位零失配;像素验收开启后 changedCount=6100>0(变化区空间集中,质心画面内,中心行采样 0.08→0.02 门内暗化可见);M3 仍 degraded 子项如实:变化区为探针域内子域而非全场景(分区 darkened 计数未命中,候选根因 realMoments 判据/Chebyshev 权重域,见 docs/handoffs/gi-depth-handoff.md),逐 pass 计时登记(PBR_TIMED_PASS_IDS 原子 diff)仍暂存,SSGDI 动态直接层 GPU 核不消费(CPU 域保留) + gi/sdfGiDayNight.ts 昼夜 harness(逐帧 p99≤3/255)",
     },
     native: {
       support: "unavailable", reason: "absent",

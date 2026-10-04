@@ -40,15 +40,23 @@ export interface SdfGiFramePlan {
   readonly probeWindow: Readonly<{ offset: number; count: number }>;
   /** 已就绪探针数(0 = 场景未烘焙,更新跳过)。 */
   readonly probeCount: number;
+  /** 本帧探针场已物化为 clipmap 采样纹理(宿主据此 setProbeClipmap 发布)。 */
+  readonly published: boolean;
+  /** 本帧 GPU 烘焙执行(compute 距离场;false = CPU 增量路径或无烘焙)。 */
+  readonly gpuBaked: boolean;
 }
 
 export interface SdfGiMetrics {
   sdfGiBakes: number;
+  /** GPU compute 距离场烘焙次数(sdfSceneBakeGpu;CPU 回退帧不计入)。 */
+  sdfGiBakesGpu: number;
   sdfGiBakeCells: number;
   sdfGiProbeCount: number;
   sdfGiProbesUpdated: number;
   sdfGiProbeWindowOffset: number;
   sdfGiSkyTraceDispatches: number;
+  /** 探针消费物化 dispatch 次数(主 pass clipmap 纹理每帧覆写)。 */
+  sdfGiPublishDispatches: number;
 }
 
 /** passTiming marker 括夹面(与 GpuTimer.beginPasses 的 marker 对齐;登记前不括夹)。 */
