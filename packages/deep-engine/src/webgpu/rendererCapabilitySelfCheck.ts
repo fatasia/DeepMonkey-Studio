@@ -146,6 +146,12 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
     observed: { debugForceFullRender: FEATURE_DEFAULTS.debugForceFullRender },
   },
   {
+    // 方向光 RT 阴影(帧内核 shadowRayFramePass):需调用方供给 TlasPackedScene;
+    // GPU mask→直接光采样接线进行中(切片 3),登记随接线状态如实更新。
+    capabilityId: "ray-traced-shadows", support: "supported", reason: "opt-in-default-off",
+    observed: { rayTracedShadows: FEATURE_DEFAULTS.rayTracedShadows },
+  },
+  {
     capabilityId: "virtual-textures", support: "supported", reason: "opt-in-default-off",
     observed: {},
   },

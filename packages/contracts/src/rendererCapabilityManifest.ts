@@ -209,6 +209,16 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     native: { support: "unavailable", reason: "absent", evidence: "packages/deep-engine-native/src/lib.rs(排查开关仅 web 链路)" },
   },
   {
+    id: "ray-traced-shadows",
+    title: "方向光 RT 阴影(帧内联 BVH)",
+    webFeatureKeys: ["rayTracedShadows"],
+    web: {
+      support: "supported", reason: "opt-in-default-off",
+      evidence: "packages/deep-engine/src/rayTracing/shadowRayFrameKernel.ts+shadowRayFramePass.ts(GBuffer depth 重建着色点,两级 TLAS→BLAS 遮挡射线,r32float mask 纹理供直接光采样;场景缓冲持久+增量 TLAS;无 readback;需调用方供给 TlasPackedScene)",
+    },
+    native: { support: "unavailable", reason: "absent", evidence: "packages/deep-engine-native/src/lib.rs(native 无 compute BVH 模块)" },
+  },
+  {
     id: "virtual-textures",
     title: "虚拟纹理驻留/采样(F3)",
     webFeatureKeys: [],

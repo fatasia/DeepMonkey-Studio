@@ -39,6 +39,12 @@ export interface PbrRendererFeatureOptions {
    * 不改变 pass 拓扑与带宽,关闭后逐字节回到常规路径。
    */
   readonly debugForceFullRender?: boolean;
+  /**
+   * 方向光 RT 阴影(opt-in,默认关):主帧 depth 重建着色点沿光源方向发射
+   * 两级 BVH 遮挡射线,写 r32float mask 纹理供直接光采样,替代/混合级联阴影。
+   * 需调用方提供 TlasPackedScene;关闭时渲染管线零变化。
+   */
+  readonly rayTracedShadows?: boolean;
 }
 
 export interface PbrRendererFeatures {
@@ -62,6 +68,7 @@ export interface PbrRendererFeatures {
   readonly vignette: boolean;
   readonly toneMapping: PbrToneMapping;
   readonly debugForceFullRender: boolean;
+  readonly rayTracedShadows: boolean;
 }
 
 export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze({
@@ -72,6 +79,7 @@ export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze(
   layeredMaterials: false,
   occlusionCulling: true, bloom: true, vignette: true, contactShadows: true, temporalUpscale: false, toneMapping: "three-aces-r185",
   debugForceFullRender: false,
+  rayTracedShadows: false,
 });
 
 export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = {}): PbrRendererFeatures {
@@ -101,5 +109,6 @@ export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = 
     contactShadows: boolean("contactShadows"),
     temporalUpscale: boolean("temporalUpscale"),
     bloom: boolean("bloom"), vignette: boolean("vignette"), toneMapping,
-    debugForceFullRender: boolean("debugForceFullRender") });
+    debugForceFullRender: boolean("debugForceFullRender"),
+    rayTracedShadows: boolean("rayTracedShadows") });
 }
