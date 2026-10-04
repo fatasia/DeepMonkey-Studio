@@ -104,6 +104,9 @@ export function useSceneHistoryActions({ state, history, playModeActive = false,
   useEffect(() => {
     if (playModeActive || route.view !== "studio" || !project || !activeScene || !engine || recoveryDraft || revision <= lastAutoSavedSceneRevisionRef.current) return;
     const timer = window.setTimeout(() => {
+      // 触发时重读最新 revision:恢复完成晚于保存会抬高 revision,旧闭包值会让
+      // 已删除的草稿在成功保存后复活(断网恢复验收的竞态根因)。
+      if (latestState.current.revision <= lastAutoSavedSceneRevisionRef.current) return;
       const snapshot = sceneSnapshotFactoryRef.current?.();
       if (!snapshot) return;
       const applicationDraft = activeApplication?.metadata.id === route.applicationId ? activeApplication : undefined;

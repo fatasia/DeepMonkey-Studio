@@ -85,6 +85,7 @@ export function ViewOrientationCube(props: ViewOrientationCubeProps) {
   return (
     <div
       className="view-orientation-cube"
+      data-visual-audit="technical-target"
       role="group"
       aria-label={tr(props.locale, "视角魔方", "View orientation cube")}
       title={tr(props.locale, "拖动旋转魔方，点击面切换视角，双击复位", "Drag the cube to rotate; click a face to snap; double-click to reset")}

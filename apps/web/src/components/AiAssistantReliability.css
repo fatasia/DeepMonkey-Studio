@@ -616,3 +616,16 @@
     display: none;
   }
 }
+
+/* "显示全部"展开:目录默认跨命名空间取 8 项,成熟任务入口必须可达。 */
+.ai-capability-show-all {
+  margin: 6px 0 0;
+  padding: 3px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  background: transparent;
+  border: 1px dashed var(--line-subtle);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.ai-capability-show-all:hover { color: var(--text-strong); border-color: var(--line-strong); }

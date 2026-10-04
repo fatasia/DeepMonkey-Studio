@@ -3,16 +3,17 @@ import { resolve } from "node:path";
 /** 覆盖高频移动和动画设置入口，避免能力存在但真实用户路径不可达。 */
 export async function verifySceneMoveAndAnimation({ page, outputRoot }) {
   const dock = page.getByRole("toolbar", { name: "场景编辑工具" });
-  const rotate = dock.getByRole("button", { name: "旋转", exact: true });
-  const move = dock.getByRole("button", { name: "移动", exact: true });
+  const rotate = dock.getByRole("button", { name: /^旋转/ });
+  const move = dock.getByRole("button", { name: /^移动/ });
   await rotate.click();
   if (await rotate.getAttribute("aria-pressed") !== "true") throw new Error("三维旋转模式没有形成明确反馈");
   await move.click();
   if (await move.getAttribute("aria-pressed") !== "true") throw new Error("三维移动模式没有形成明确反馈");
 
-  await dock.getByRole("button", { name: /仿真与开发/ }).click();
-  await page.getByRole("menuitem", { name: "动画与时间线", exact: true }).click();
-  const timeline = page.getByLabel("场景动画编辑器");
+  // 动画入口已随信息架构调整并入"查看与分析"菜单(现名"场景导演台")。
+  await dock.getByRole("button", { name: /查看与分析/ }).click();
+  await page.getByRole("menuitem", { name: "场景导演台", exact: true }).click();
+  const timeline = page.getByLabel("场景导演台");
   await timeline.waitFor({ state: "visible" });
   await timeline.getByRole("button", { name: "播放设置", exact: true }).click();
   const animationOptions = {

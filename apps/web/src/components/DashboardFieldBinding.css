@@ -1,7 +1,8 @@
-.dashboard-field-panel-shell { grid-area: canvas; z-index: 24; justify-self: end; align-self: stretch; min-height: 0; width: 38px; padding-top: 48px; pointer-events: none; }
+.dashboard-field-panel-shell { grid-area: canvas; z-index: 24; justify-self: end; align-self: stretch; min-height: 0; width: 46px; padding-top: 48px; pointer-events: none; }
 .dashboard-field-panel-shell.is-open { width: min(300px, 100%); }
 .dashboard-field-panel-shell button { cursor: pointer; }
-.dashboard-field-panel-handle { display: grid; justify-items: center; gap: 5px; width: 36px; padding: 10px 2px; border: 1px solid var(--line-strong); border-radius: 6px 0 0 6px; color: var(--text); background: var(--panel); font-size: 11px; pointer-events: auto; }
+/* 44px 宽度门槛:竖排审计以 width<max(44, fontSize*3.5) 判压缩,窄轨把手必须达到该下限。 */
+.dashboard-field-panel-handle { display: grid; justify-items: center; gap: 5px; width: 44px; padding: 10px 2px; border: 1px solid var(--line-strong); border-radius: 6px 0 0 6px; color: var(--text); background: var(--panel); font-size: 12px; pointer-events: auto; }
 .dashboard-field-panel-handle span { white-space: nowrap; }
 .dashboard-field-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; box-sizing: border-box; color: var(--text); background: var(--panel); border-left: 1px solid var(--line-strong); box-shadow: -8px 0 24px #0002; pointer-events: auto; font-size: 12px; }
 .dashboard-field-panel > header { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-bottom: 1px solid var(--line-strong); }

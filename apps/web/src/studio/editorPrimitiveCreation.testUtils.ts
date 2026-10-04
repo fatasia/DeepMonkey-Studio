@@ -13,6 +13,9 @@ export function primitiveCreationHarness() {
   const authorModelTransforms = new Map();
   Object.assign(engine, {
     primitiveGeometryCache, primitiveMaterialCache, authorModelTransforms, collisionOriginalMaterials: new Map(),
+    // clearSceneModels(5acb8b31 起)经 repeatedAssetBatcher.clear() 解引用批处理代理;
+    // fixture 引擎没有批处理层,空 clear 即满足语义。
+    repeatedAssetBatcher: { clear: vi.fn(), dispose: vi.fn() },
     registerObject: Reflect.get(ViewerEngine.prototype, "registerObject"),
     getModelTransform: ViewerEngine.prototype.getModelTransform, setModelTransform: ViewerEngine.prototype.setModelTransform,
     applyModelState: ViewerEngine.prototype.applyModelState,

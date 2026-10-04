@@ -35,7 +35,7 @@ export function BehaviorEditorToolbar(props: {
       <input aria-label={tr(locale, "脚本名称", "Script name")} title={tr(locale, "脚本名称", "Script name")} value={draft.name} onChange={(event) => props.onChange({ ...draft, name: event.target.value })} />
     </label>
     <SceneBehaviorTargetPicker locale={locale} value={draft.target} targets={props.targets} {...(props.preferredTarget ? { preferredTarget: props.preferredTarget } : {})} onChange={props.onTargetChange} />
-    <label className="behavior-enabled" title={enabledLabel}>
+    <label className="behavior-enabled" title={enabledLabel} aria-label={enabledLabel}>
       <input aria-label={enabledLabel} type="checkbox" checked={draft.enabled} onChange={(event) => props.onChange({ ...draft, enabled: event.target.checked })} /><Power size={13} aria-hidden="true" />
     </label>
     <button type="button" className="behavior-save-action" aria-label={tr(locale, "保存脚本", "Save script")} title={tr(locale, "保存脚本（Ctrl/Cmd+S）", "Save script (Ctrl/Cmd+S)")} disabled={props.saving || !draft.name.trim()} onClick={props.onSave}>

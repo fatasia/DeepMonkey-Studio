@@ -89,7 +89,7 @@ export function PlaybackView({ session, ...props }: Props & { session: Applicati
       <button type="button" disabled={!active} onClick={() => session.togglePause()} aria-label={tr(props.locale, session.paused ? "继续生命周期" : "暂停生命周期", session.paused ? "Resume lifecycle" : "Pause lifecycle")} title={tr(props.locale, "暂停或继续生命周期调度，不是代码断点", "Pause or resume lifecycle scheduling, not a code breakpoint")}>
         {session.paused ? <Play size={14} /> : <Pause size={14} />}
       </button>
-      <button type="button" onClick={() => setConsoleOpen((open) => !open)} aria-expanded={consoleOpen} aria-label={tr(props.locale, "运行日志", "Runtime logs")}><Terminal size={14} /></button>
+      <button type="button" onClick={() => setConsoleOpen((open) => !open)} aria-expanded={consoleOpen} aria-label={tr(props.locale, "运行日志", "Runtime logs")} title={tr(props.locale, "运行日志", "Runtime logs")}><Terminal size={14} /></button>
     </aside>
     {consoleOpen && <aside className="playback-console" aria-label={tr(props.locale, "运行日志", "Runtime logs")}>
       <header><strong>{tr(props.locale, "运行日志", "Runtime logs")}</strong><small>{tr(props.locale, "运行态不写入草稿", "Runtime changes are not saved")}</small><button type="button" onClick={() => setConsoleOpen(false)} aria-label={tr(props.locale, "关闭运行日志", "Close runtime logs")}><X size={14} /></button></header>

@@ -181,7 +181,7 @@ export function createScenePublicationActions(context: PublicationContext, saveS
           .map((issue) => `${issue.title}：${issue.detail} ${issue.remediation}`).join("\n");
         throw new Error(tr(locale, "发布检查未通过", "Publication checks failed") + `\n${details}`);
       }
-      const renderer = mode === "webgl" ? "webgl" as const : "webgl" as const;
+      const renderer = mode === "webgl" ? "webgl" as const : "webgpu-preferred" as const;
       let nativeCandidateId: string | undefined;
       if (clientTarget === "deep-native") {
         const candidate = await api.createNativeSceneCandidate(project.id, configured.id, configured);

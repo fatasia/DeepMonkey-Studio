@@ -5,8 +5,10 @@ export async function publishWithViewerToolbar({ page, sceneCard, apiOrigin, out
   await sceneCard.getByRole("button", { name: "发布场景", exact: true }).click();
   const dialog = page.locator(".publication-dialog");
   await dialog.waitFor({ state: "visible" });
-  const showTools = dialog.getByRole("button", { name: /显示查看工具/ });
-  const hideTools = dialog.getByRole("button", { name: /隐藏工具栏/ });
+  // 工具栏选择已重构为"浏览工具栏"分区下的 显示/隐藏 双 ModeButton(aria-pressed 承载选中态)。
+  const toolbarOptions = dialog.locator(".publication-toolbar-options");
+  const showTools = toolbarOptions.getByRole("button", { name: "显示", exact: true });
+  const hideTools = toolbarOptions.getByRole("button", { name: "隐藏", exact: true });
   await showTools.waitFor({ state: "visible" });
   await hideTools.click();
   if (await hideTools.getAttribute("aria-pressed") !== "true") throw new Error("发布工具栏隐藏选项没有可读的选中状态");

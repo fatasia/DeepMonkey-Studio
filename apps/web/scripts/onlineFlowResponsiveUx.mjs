@@ -125,7 +125,8 @@ function assertResponsiveAudit(audit) {
       smallTextAll: (audit.smallText ?? []).slice(0, 6).map(x => x.identity ?? x),
       inaccessibleIcons: (audit.inaccessibleIconControls ?? []).slice(0, 6).map(x => x.identity ?? x),
       iconNoTooltip: (audit.iconControlsWithoutTooltip ?? audit.iconControlsWithoutTooltipList ?? (audit.inaccessibleIconControls ?? [])).slice(0, 6).map(x => x.identity ?? x),
-      compressed: (audit.compressedTextControls ?? []).slice(0, 6).map(x => x.identity ?? x),
+      compressed: (audit.compressedTextControls ?? []).slice(0, 6),
+      smallTargets: (audit.smallTargets ?? []).slice(0, 8),
     }, null, 1));
     throw new Error(`${audit.id} 视觉质量失败：${audit.qualityFailures.join("；")}`);
   }

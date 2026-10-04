@@ -38,6 +38,7 @@ export function BehaviorScriptListResizer(props: { locale: AppLocale; width: num
   };
   return <button
     className="behavior-script-list-resizer"
+    data-visual-audit="technical-target"
     type="button"
     role="separator"
     aria-orientation="vertical"

@@ -55,8 +55,8 @@ interface CachedDepthBinding {
 
 /** Owns the half-resolution contact occlusion mask, its uniform and the trace pipeline. */
 export class ContactShadowResources {
-  readonly selection: ContactShadowQualitySelection;
-  private readonly pipeline: GPUComputePipeline;
+  selection: ContactShadowQualitySelection;
+  private pipeline: GPUComputePipeline;
   private readonly applyPipeline: GPUComputePipeline;
   private readonly applySampler: GPUSampler;
   private applyBindings: Array<{ readonly color: GPUTexture; readonly binding: GPUBindGroup }> = [];
@@ -114,6 +114,34 @@ export class ContactShadowResources {
       for (const resource of created.reverse()) session.release(resource);
       throw error;
     }
+  }
+
+  /** 自适应压力热切档:重建 trace 管线(步数编译进 WGSL)。trace bindings 逐帧
+   *  以 pipeline.getBindGroupLayout(0) 现取(见 encode),换管线即自动换布局;
+   *  遮蔽贴尺寸与格式不随档位变化,无需重建。签名缓存作废强制下帧重签。
+   *  档位相同为 no-op;返回是否发生重建(遥测/单测断言用)。 */
+  retier(tier: ContactShadowQualityTier): boolean {
+    if (this.disposed) throw new Error("Contact shadow resources are disposed.");
+    if (tier === this.selection.selectedTier) return false;
+    const previousSelection = this.selection;
+    this.selection = resolveContactShadowQuality(tier);
+    if (this.selection.profile.options.steps === previousSelection.profile.options.steps) return false;
+    const device = this.session.device;
+    const module = device.createShaderModule({ label: "Deep contact shadow trace WGSL",
+      code: contactShadowWgsl(this.selection.profile.options.steps) });
+    const layout = device.createBindGroupLayout({ label: "Deep contact shadow layout", entries: [
+      { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform",
+        minBindingSize: CONTACT_SHADOW_UNIFORM_BYTES } },
+      { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "unfilterable-float" } },
+      { binding: 2, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: "rgba16float" } },
+    ] });
+    this.pipeline = device.createComputePipeline({
+      label: `Deep contact shadow trace pipeline (${this.selection.profile.tier})`,
+      layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+      compute: { module, entryPoint: "contactShadowMain" } });
+    this.lastSignature = undefined;
+    this.pendingSignature = undefined;
+    return true;
   }
 
   get metrics(): Readonly<{ contactShadowTier: ContactShadowQualityTier; contactShadowMaskBytes: number }> {

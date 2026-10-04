@@ -2,6 +2,8 @@ import { resolve } from "node:path";
 
 export async function verifyScriptAgentEntry({ page, behaviorPanel, outputRoot }) {
   const fingerprint = await behaviorPanel.locator(".professional-code-editor").getAttribute("data-content-fingerprint");
+  // AI 脚本助手已收纳进"更多工具"下拉;先展开菜单再点。
+  await behaviorPanel.locator(".behavior-more-menu > summary").click();
   await behaviorPanel.getByRole("button", { name: "AI 脚本助手", exact: true }).click();
   const agentSurface = behaviorPanel.locator(".behavior-agent-workspace");
   await agentSurface.waitFor({ state: "visible" });
@@ -79,6 +81,8 @@ export async function verifyIndustrialAgentBrowser({ page, assistantPanel, proje
       return json(route, 200, firstApproved ? completed() : waiting());
     }
     if (request.method() === "GET" && url.pathname.includes("/agent-runs/browser-agent-2")) return json(route, 200, base("browser-agent-2", "验证取消路径"));
+    // 设置读取走真实 API(mock 模式过宽,兜底 409 只服务 runs 语义,不能吞掉 agent-settings)。
+    if (url.pathname.endsWith("/agent-settings")) return route.fallback();
     return json(route, 409, { message: "运行正在推进" });
   });
 
@@ -93,7 +97,7 @@ export async function verifyIndustrialAgentBrowser({ page, assistantPanel, proje
     }));
     if (initialDisclosure.open || initialDisclosure.overflow) throw new Error(`Agent 渐进披露不合格：${JSON.stringify(initialDisclosure)}`);
 
-    await workspace.getByLabel("用一句话说明要完成的目标").fill("检查设备风险，涉及控制时先确认");
+    await workspace.getByLabel("任务目标").fill("检查设备风险，涉及控制时先确认");
     await workspace.locator(".industrial-agent-capabilities > summary").click();
     await page.screenshot({ path: resolve(outputRoot, "03ab-agent-capability-preview.png"), fullPage: true });
     await workspace.getByRole("button", { name: "预览并运行", exact: true }).click();
@@ -106,7 +110,7 @@ export async function verifyIndustrialAgentBrowser({ page, assistantPanel, proje
     await page.screenshot({ path: resolve(outputRoot, "03ad-agent-evidence.png"), fullPage: true });
 
     await workspace.getByRole("button", { name: "开始新任务", exact: true }).click();
-    await workspace.getByLabel("用一句话说明要完成的目标").fill("验证取消路径");
+    await workspace.getByLabel("任务目标").fill("验证取消路径");
     await workspace.getByRole("button", { name: "预览并运行", exact: true }).click();
     await workspace.getByRole("button", { name: "取消", exact: true }).click();
     await workspace.getByText("已取消", { exact: true }).waitFor({ state: "visible" });
@@ -117,7 +121,7 @@ export async function verifyIndustrialAgentBrowser({ page, assistantPanel, proje
       evidenceVisible: true,
       cancellationVisible: true,
     };
-    await assistantPanel.getByRole("tab", { name: "问答与生成", exact: true }).click();
+    await assistantPanel.getByRole("tab", { name: "对话", exact: true }).click();
     await assistantPanel.locator(".ai-capability-catalog:not(.is-loading)").waitFor({ state: "visible" });
     return result;
   } finally {

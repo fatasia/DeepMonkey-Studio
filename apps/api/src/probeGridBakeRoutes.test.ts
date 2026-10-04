@@ -56,7 +56,10 @@ describe("probe-bake routes（探针烘焙持久化端点）", () => {
   it("GET 未命中（不同 hash）返回 404；缺 sourceHash 参数返回 400", async () => {
     const f = await setup();
     await f.app.inject({ method: "PUT", url: "/api/scenes/scene-1/probe-bake", headers: f.headers, payload: bakeDocument() });
-    expect((await f.app.inject({ method: "GET", url: `/api/scenes/scene-1/probe-bake?sourceHash=${hashB}`, headers: f.headers })).statusCode).toBe(404);
+    // 未命中契约:200 {hit:false}(404 会被浏览器记 console error,而缓存未命中是正常路径)。
+    const miss = await f.app.inject({ method: "GET", url: `/api/scenes/scene-1/probe-bake?sourceHash=${hashB}`, headers: f.headers });
+    expect(miss.statusCode).toBe(200);
+    expect(miss.json()).toEqual({ hit: false });
     expect((await f.app.inject({ method: "GET", url: "/api/scenes/scene-1/probe-bake", headers: f.headers })).statusCode).toBe(400);
   });
 

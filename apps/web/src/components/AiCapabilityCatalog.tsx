@@ -42,9 +42,11 @@ export function AiCapabilityCatalog({ locale, canOpenTask, onOpenTask, onAskExam
     "loading",
   );
   const [reloadToken, setReloadToken] = useState(0);
+  // 目录默认跨命名空间取 8 项;成熟任务入口必须在 UI 可达,提供"显示全部"展开。
+  const [showAll, setShowAll] = useState(false);
   const summary = useMemo(
-    () => summarizeCapabilityCatalog(capabilities),
-    [capabilities],
+    () => summarizeCapabilityCatalog(capabilities, showAll ? Math.max(capabilities.length, 1) : 8),
+    [capabilities, showAll],
   );
   const t = (zh: string, en: string) => tr(locale, zh, en);
 
@@ -142,6 +144,11 @@ export function AiCapabilityCatalog({ locale, canOpenTask, onOpenTask, onAskExam
         })}
         {summary.hiddenCount > 0 && <span>+{summary.hiddenCount}</span>}
       </div>
+      {!showAll && summary.hiddenCount > 0 && (
+        <button type="button" className="ai-capability-show-all" onClick={() => setShowAll(true)}>
+          {t(`显示全部 ${summary.total} 项能力`, `Show all ${summary.total} capabilities`)}
+        </button>
+      )}
       {summary.visible.length > 0 && (
         <AiCapabilityExamples locale={locale} capabilities={summary.visible}
           {...(onAskExample ? { onAskExample } : {})} {...(askDisabled ? { disabled: true } : {})} />

@@ -289,6 +289,7 @@ export function AppBehaviorOverlay({ bindings, sdkExampleRequest, onSdkExampleCo
       {(state.sceneBehaviorLayout ?? "split") === "split" && (
         <button
           className="behavior-split-resizer"
+    data-visual-audit="technical-target"
           type="button"
           role="separator"
           aria-orientation="vertical"

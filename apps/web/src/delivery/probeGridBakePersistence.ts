@@ -53,7 +53,7 @@ export async function fetchPersistedProbeGridBake(scene: SceneSnapshot): Promise
   const sourceHash = probeGridBakeSourceHash(scene);
   try {
     const record = await api.loadProbeGridBake(scene.id, sourceHash);
-    if (!record || record.sourceHash !== sourceHash || !record.bake) return undefined;
+    if (!("sourceHash" in record) || record.sourceHash !== sourceHash || !record.bake) return undefined;
     return {
       bake: record.bake,
       ...(record.probeCount !== undefined ? { probeCount: record.probeCount } : {}),

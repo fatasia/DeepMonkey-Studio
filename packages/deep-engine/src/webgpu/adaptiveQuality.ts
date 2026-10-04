@@ -7,6 +7,8 @@ export interface AdaptiveQualityKnobs {
   readonly ddgiUpdateBudget: number;
   readonly fogSteps: number;
   readonly shadowTier: CascadedShadowQualityTier;
+  /** C10 接触阴影档位:压力升档时收敛步数(quality 14 步 → performance 6 步)。 */
+  readonly contactShadowTier: "performance" | "balanced" | "quality";
   readonly lodDetailScale: number;
   readonly residencyBudgetScale: number;
 }
@@ -80,10 +82,10 @@ export interface AdaptiveQualityHotspotSummary {
 }
 
 const PROFILES: readonly Readonly<AdaptiveQualityKnobs>[] = Object.freeze([
-  Object.freeze({ ssrConeLevels: 6, ddgiUpdateBudget: 64, fogSteps: 64, shadowTier: "ultra", lodDetailScale: 1, residencyBudgetScale: 1 }),
-  Object.freeze({ ssrConeLevels: 5, ddgiUpdateBudget: 48, fogSteps: 48, shadowTier: "high", lodDetailScale: 0.9, residencyBudgetScale: 0.9 }),
-  Object.freeze({ ssrConeLevels: 4, ddgiUpdateBudget: 32, fogSteps: 40, shadowTier: "balanced", lodDetailScale: 0.75, residencyBudgetScale: 0.8 }),
-  Object.freeze({ ssrConeLevels: 3, ddgiUpdateBudget: 16, fogSteps: 32, shadowTier: "performance", lodDetailScale: 0.6, residencyBudgetScale: 0.7 }),
+  Object.freeze({ ssrConeLevels: 6, ddgiUpdateBudget: 64, fogSteps: 64, shadowTier: "ultra", contactShadowTier: "quality", lodDetailScale: 1, residencyBudgetScale: 1 }),
+  Object.freeze({ ssrConeLevels: 5, ddgiUpdateBudget: 48, fogSteps: 48, shadowTier: "high", contactShadowTier: "balanced", lodDetailScale: 0.9, residencyBudgetScale: 0.9 }),
+  Object.freeze({ ssrConeLevels: 4, ddgiUpdateBudget: 32, fogSteps: 40, shadowTier: "balanced", contactShadowTier: "balanced", lodDetailScale: 0.75, residencyBudgetScale: 0.8 }),
+  Object.freeze({ ssrConeLevels: 3, ddgiUpdateBudget: 16, fogSteps: 32, shadowTier: "performance", contactShadowTier: "performance", lodDetailScale: 0.6, residencyBudgetScale: 0.7 }),
 ]);
 
 /** Convert the scene-authored quality name into deterministic adaptive budgets. */
@@ -229,6 +231,8 @@ function validateKnobs(value: AdaptiveQualityOverrides): void {
     throw new RangeError(`Adaptive ${name} must be an integer.`);
   }
   if (value.shadowTier !== undefined && !["performance", "balanced", "high", "ultra"].includes(value.shadowTier)) throw new RangeError("Unknown adaptive shadowTier.");
+  if (value.contactShadowTier !== undefined
+    && !["performance", "balanced", "quality"].includes(value.contactShadowTier)) throw new RangeError("Unknown adaptive contactShadowTier.");
 }
 
 function validateSample(sample: AdaptiveQualitySample): void {

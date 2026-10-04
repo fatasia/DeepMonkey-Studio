@@ -47,7 +47,9 @@ export async function verifyTopologyFlow({
   await inspector.getByRole("button", { name: "添加", exact: true }).click();
   await inspector.getByLabel("扩展属性“vendor”的值").waitFor();
 
-  await editor.getByTitle("分层视图（按标高投影）").click();
+  await editor.getByTitle("自动分层布局").click();
+  // 自动布局只做分层排布;2.5D 等轴视图是独立开关,需显式切换。
+  await editor.getByTitle("2.5D 等轴视图").click();
   await editor.locator(".topology-editor__viewport.is-2-5d").waitFor();
   const layeredProof = await nodes.nth(0).evaluate((node) => ({
     elevation: node.querySelector(".topology-editor__elevation")?.textContent?.trim(),
@@ -59,15 +61,27 @@ export async function verifyTopologyFlow({
   report.pageAudits.push(await auditPage(page, "topology-layered-selected"));
   await page.screenshot({ path: resolve(outputRoot, "04b-topology-layered.png"), fullPage: true });
 
-  await editor.getByRole("button", { name: "保存", exact: true }).click();
+  // 编辑经 Enter 即时提交时 dirty 可能已为 false(保存钮禁用);以保存态文案为准。
+  const topologySave = editor.getByRole("button", { name: "保存", exact: true });
+  await topologySave.waitFor({ state: "visible" });
+  if (await topologySave.isEnabled()) await topologySave.click();
   await editor.getByText("所有修改已保存", { exact: true }).waitFor({ state: "visible" });
   await page.reload({ waitUntil: "networkidle" });
   await editor.waitFor({ state: "visible" });
+  const { dismissRecoveryDialogs } = await import("./onlineFlowAuditSupport.mjs");
+  await dismissRecoveryDialogs(page);
+  // 恢复对话框自带 Escape=稍后处理语义;轮询式补按,确保点击前必无遮罩。
+  for (let attempt = 0; attempt < 10; attempt++) {
+    if (!(await page.locator(".workspace-recovery-backdrop").isVisible().catch(() => false))) break;
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(400);
+  }
   const restored = {
     nodes: await editor.locator(".topology-editor__node").count(),
     edges: await editor.locator(".topology-editor__edge-line").count(),
   };
   if (restored.nodes !== 2 || restored.edges !== 1) throw new Error(`刷新后拓扑未完整恢复：${JSON.stringify(restored)}`);
+  await dismissRecoveryDialogs(page);
   await editor.locator(".topology-editor__node").nth(0).click();
   const restoredAssetCode = await inspector.getByLabel("资产编码").inputValue();
   const restoredDescription = await inspector.getByLabel("描述").inputValue();
@@ -93,13 +107,22 @@ export async function verifyTopologyFlow({
   report.pageAudits.push(await auditPage(page, "topology-canvas-maximized"));
   await page.screenshot({ path: resolve(outputRoot, "04b-topology-canvas-maximized.png"), fullPage: true });
   recordStep(report, "collapse-persist-and-restore-topology-panels", { canvasBeforeCollapse, canvasAfterCollapse });
+  if (await page.locator(".workspace-recovery-backdrop").isVisible().catch(() => false)) {
+    console.error("RECOVERY_STUCK:", await page.locator(".workspace-recovery-dialog").evaluateAll(els => els.map(e => ({
+      label: e.getAttribute("aria-label"),
+      buttons: [...e.querySelectorAll("button")].map(b => `${b.textContent?.trim()}${b.disabled ? "(disabled)" : ""}`),
+    }))));
+  }
   await editor.getByRole("button", { name: "展开设备库", exact: true }).click();
   await editor.getByRole("button", { name: "展开属性面板", exact: true }).click();
 
   await editor.getByRole("button", { name: "插入看板", exact: true }).click();
   const dashboardTopology = page.locator(".dashboard-topology-widget");
   await dashboardTopology.waitFor({ state: "visible" });
-  await page.getByRole("button", { name: "保存", exact: true }).click();
+  // 同前:编辑即时提交时保存钮可能禁用;以保存态文案为准。
+  const dashboardSave = page.getByRole("button", { name: "保存", exact: true });
+  await dashboardSave.waitFor({ state: "visible" });
+  if (await dashboardSave.isEnabled()) await dashboardSave.click();
   await page.getByText("所有修改已保存", { exact: true }).waitFor({ state: "visible" });
   await page.reload({ waitUntil: "networkidle" });
   await dashboardTopology.waitFor({ state: "visible" });

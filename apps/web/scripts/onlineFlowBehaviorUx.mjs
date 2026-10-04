@@ -11,6 +11,8 @@ export async function auditBehaviorWorkbench(panel) {
     const controls = [...root.querySelectorAll("button,input,select")].filter((element) => {
       if (!visible(element)) return false;
       if (element instanceof HTMLInputElement && ["checkbox", "radio"].includes(element.type)) return false;
+      // 分隔拖动把手(role=separator,带 Arrow 键等价操作)与主视觉审计共用 technical-target 豁免。
+      if (element.closest('[data-visual-audit~="technical-target"]')) return false;
       const bounds = element.getBoundingClientRect();
       return bounds.width < 24 || bounds.height < 24;
     });

@@ -57,6 +57,22 @@ const assessmentSchema: CapabilityJsonSchema = {
     sampleCount: { type: "integer", minimum: 0 },
     topContributors: { type: "array", maxItems: 64, items: contributorSchema },
     message: { type: "string" },
+    // 运行时自 2026-10 起在评估上记录实际读取证据;schema 必须跟进而非拒绝。
+    sourceEvidence: {
+      type: "object",
+      additionalProperties: false,
+      required: ["datasetId", "datasetName", "connectionId", "connectionType", "rowCount", "fieldKeys", "sampledAt", "durationMs"],
+      properties: {
+        datasetId: nonEmptyString,
+        datasetName: nonEmptyString,
+        connectionId: nonEmptyString,
+        connectionType: nonEmptyString,
+        rowCount: { type: "integer", minimum: 0 },
+        fieldKeys: { type: "array", items: nonEmptyString },
+        sampledAt: nonEmptyString,
+        durationMs: { type: "number", minimum: 0 },
+      },
+    },
     evidenceFingerprint: nonEmptyString,
   },
 };

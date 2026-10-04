@@ -102,6 +102,8 @@ export function collectOnlineFlowVisualEvidence(options) {
     // 正文内联链接允许随行高排版；导航、按钮式链接仍执行 28px 目标门槛。
     if (element instanceof HTMLAnchorElement && getComputedStyle(element).display === "inline" && !element.getAttribute("role")) return false;
     if (element instanceof HTMLLabelElement && !element.htmlFor && !element.querySelector("input,select,textarea")) return false;
+    // htmlFor 指向 textarea 的 label 是文字说明(点击仅聚焦文本域,文本域自身才是目标)。
+    if (element instanceof HTMLLabelElement && element.control instanceof HTMLTextAreaElement) return false;
     return true;
   });
   const smallTargets = [];
@@ -126,7 +128,11 @@ export function collectOnlineFlowVisualEvidence(options) {
       const lines = [...range.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0);
       const fontSize = Number.parseFloat(getComputedStyle(element).fontSize) || 12;
       if (lines.length >= 3 && bounds.width < Math.max(44, fontSize * 3.5)) {
-        compressedTextControls.push(evidence(element, { width: Math.round(bounds.width), lineCount: lines.length }));
+        const style = getComputedStyle(element);
+        compressedTextControls.push(evidence(element, { width: Math.round(bounds.width), lineCount: lines.length,
+          fontSize,
+          whiteSpace: style.whiteSpace, display: style.display, writingMode: style.writingMode,
+          lineRects: lines.slice(0, 6).map((rect) => ({ w: Math.round(rect.width * 10) / 10, h: Math.round(rect.height * 10) / 10 })) }));
       }
     }
   }

@@ -192,9 +192,9 @@ export function createModelSceneApi(request: ApiRequest) {
           body: JSON.stringify(record),
         },
       ),
-    /** 未命中（404=无）由调用方降级处理；此处把 404 归一为 undefined 之外的状态交上层 catch。 */
+    /** 未命中返回 {hit:false}（200；缓存未命中是正常路径，不用 404 以免浏览器记 console error）。 */
     loadProbeGridBake: (sceneId: string, sourceHash: string) =>
-      request<ProbeGridBakePersistRecord>(
+      request<ProbeGridBakePersistRecord | { hit: false }>(
         `/api/scenes/${encodeURIComponent(sceneId)}/probe-bake?sourceHash=${encodeURIComponent(sourceHash)}`,
       ),
   };

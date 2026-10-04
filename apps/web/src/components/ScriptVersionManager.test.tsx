@@ -86,7 +86,9 @@ describe("ScriptVersionManager", () => {
     expect(resolveFocusTrapIndex(3, 2, false)).toBe(0);
     expect(resolveFocusTrapIndex(3, 1, false)).toBeUndefined();
     const source = readFileSync(new URL("./ScriptVersionManager.tsx", import.meta.url), "utf8");
-    expect(source).toContain("previousFocus?.focus()");
+    // 焦点恢复自 2026-10-04 起处理"入口在闭合 details 下拉"情形:恢复到 summary 保住键盘位置。
+    expect(source).toContain("const restore = owner && !owner.open ? owner.querySelector<HTMLElement>(\"summary\") ?? previousFocus : previousFocus;");
+    expect(source).toContain("restore?.focus();");
     expect(source).toContain('role="alertdialog"');
   });
 });

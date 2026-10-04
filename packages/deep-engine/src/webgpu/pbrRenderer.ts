@@ -105,6 +105,7 @@ export class PbrRenderer {
   readonly virtualShadowFallbackReason: string | undefined;
   /** C10 屏幕空间接触阴影;opt-in(features.contactShadows),默认不存在。 */
   private readonly contactShadows: ContactShadowResources | undefined;
+  private adaptiveContactShadowTier: "performance" | "balanced" | "quality" | undefined;
   private readonly targets: RenderTargets; private readonly transientTextures: PbrTransientTexturePool;
   private readonly postProcess: PbrPostProcessChain;
   private readonly transparency: PbrTransparencyPass; private readonly lighting: ForwardPlusPbrRuntime;
@@ -428,6 +429,9 @@ export class PbrRenderer {
     if (state.knobs.shadowTier === this.adaptiveShadowTier) return;
     this.adaptiveShadowTier = state.knobs.shadowTier;
     this.adaptiveShadowSize = adaptiveShadowMapSize(state.knobs.shadowTier, authorShadowSize);
+    // C10 自适应压力同轴驱动接触阴影档位:quality→…→performance(14→6 步)。
+    // prepare 签名缓存被 retier 作废,下一帧按新步数重步进,无需额外失效。
+    this.contactShadows?.retier(state.knobs.contactShadowTier);
   }
   private stageAdaptiveShadow(mapSize: number): void {
     if (this.optionsExactShadowCascade !== 1) return;

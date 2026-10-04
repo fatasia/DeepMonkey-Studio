@@ -38,6 +38,8 @@ export async function verifyDependencyManagerResponsive({ page, behaviorPanel, r
       await page.setViewportSize(viewport);
       const actions = behaviorPanel.locator(".behavior-panel-actions");
       await actions.evaluate((element) => { element.scrollLeft = 0; });
+      // 项目依赖入口已收纳进"更多工具"下拉;先展开菜单再量可达性与点击。
+      await behaviorPanel.locator(".behavior-more-menu > summary").click();
       const entry = behaviorPanel.getByRole("button", { name: "项目依赖", exact: true });
       const reachability = await entry.evaluate((button) => {
         const buttonBounds = button.getBoundingClientRect();
@@ -85,7 +87,12 @@ export async function verifyDependencyManagerResponsive({ page, behaviorPanel, r
       await page.screenshot({ path: resolve(outputRoot, `02be-behavior-dependencies-${viewport.width}x${viewport.height}.png`), fullPage: true });
       await page.keyboard.press("Escape");
       await dialog.waitFor({ state: "hidden" });
-      if (!(await entry.evaluate((button) => button === document.activeElement))) throw new Error("关闭依赖抽屉后没有恢复入口焦点");
+      // 入口已收纳进"更多工具"下拉;焦点合同 = 回到可见的工具栏控件(summary),不允许丢失到 body。
+      const focusKept = await behaviorPanel.locator(".behavior-panel-actions").evaluate((nav) => {
+        const active = document.activeElement;
+        return active instanceof Element && nav.contains(active) && active.matches("summary, button");
+      });
+      if (!focusKept) throw new Error("关闭依赖抽屉后没有恢复入口焦点");
       results.push({ viewport, reachability, quality });
     }
   } finally {

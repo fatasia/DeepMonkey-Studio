@@ -7,8 +7,8 @@ export async function verifyDashboardPanelCollapse({ page, report, outputRoot })
   const canvas = workspace.locator(".dashboard-canvas-scroll");
   const canvasBeforeCollapse = await canvas.boundingBox();
 
-  await workspace.getByRole("button", { name: "收起资源面板", exact: true }).click();
-  await workspace.getByRole("button", { name: "收起属性面板", exact: true }).click();
+  await workspace.getByRole("button", { name: "收起左侧面板", exact: true }).click();
+  await workspace.getByRole("button", { name: "收起右侧面板", exact: true }).click();
   await Promise.all([
     workspace.locator(".dashboard-pages-panel").waitFor({ state: "hidden" }),
     workspace.locator(".dashboard-inspector-panel").waitFor({ state: "hidden" }),
@@ -21,8 +21,8 @@ export async function verifyDashboardPanelCollapse({ page, report, outputRoot })
   report.pageAudits.push(await auditPage(page, "dashboard-canvas-maximized"));
   await page.screenshot({ path: resolve(outputRoot, "02ab-dashboard-canvas-maximized.png"), fullPage: true });
 
-  await workspace.getByRole("button", { name: "展开资源面板", exact: true }).click();
-  await workspace.getByRole("button", { name: "展开属性面板", exact: true }).click();
+  await workspace.getByRole("button", { name: "展开左侧面板", exact: true }).click();
+  await workspace.getByRole("button", { name: "展开右侧面板", exact: true }).click();
   await workspace.locator(".dashboard-pages-panel").waitFor({ state: "visible" });
   await workspace.locator(".dashboard-inspector-panel").waitFor({ state: "visible" });
   recordStep(report, "collapse-and-restore-2d-side-panels", { canvasBeforeCollapse, canvasAfterCollapse });

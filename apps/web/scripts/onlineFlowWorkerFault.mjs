@@ -14,7 +14,7 @@ export async function verifyBehaviorWorkerCrash({ page, behaviorPanel, report })
   await workerProblem.waitFor({ state: "visible", timeout: 15_000 });
 
   // 重跑必须创建新 Worker 并清空运行时错误，不要求用户重新打开场景或刷新页面。
-  await behaviorPanel.getByRole("button", { name: /^(应用并运行|重新运行)$/ }).click();
+  await behaviorPanel.locator(".behavior-run-action").click();
   await behaviorPanel.locator(".professional-code-problems.healthy").waitFor({ state: "visible", timeout: 15_000 });
   const replacement = await waitForReplacementWorker(page, worker);
   if (!replacement) throw new Error("行为 Worker 故障后未创建隔离的新实例");

@@ -121,7 +121,7 @@ describe("RendererDiagnosticsPanel", () => {
             discardedCount: 0, evictedCount: 0 },
           adaptiveQuality: { enabled: true, level: 1, reason: "gpu-pressure", changedAtFrame: 9,
             explanation: "GPU pressure", knobs: { ssrConeLevels: 4, ddgiUpdateBudget: 32, fogSteps: 40,
-              shadowTier: "high", lodDetailScale: .9, residencyBudgetScale: .8 } } } } }} />);
+              shadowTier: "high", contactShadowTier: "balanced", lodDetailScale: .9, residencyBudgetScale: .8 } } } } }} />);
     expect(html).toContain("Deep runtime evidence");
     expect(html).toContain("Light clusters");
     expect(html).toContain("DDGI update budget");

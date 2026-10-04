@@ -34,7 +34,8 @@ export async function seedAskDataDataset({ page, apiOrigin, projectId, report })
 
 /** 在真实 AI 面板中执行受控问数，结果必须来自 capability 读链并携带证据指纹。 */
 export async function verifyAskDataBrowser({ page, assistantPanel, dataset, report, screenshotPath }) {
-  await assistantPanel.getByRole("button", { name: "问数据", exact: true }).click();
+  // 问数据入口已从按钮收敛为"提问范围"模式下拉的选项。
+  await assistantPanel.getByLabel("提问范围").selectOption({ label: "问数据" });
   const quickQuery = assistantPanel.locator(".ask-data-quick");
   await quickQuery.waitFor({ state: "visible" });
   await quickQuery.getByLabel("数据集").selectOption(dataset.id);
@@ -63,4 +64,35 @@ async function postJson(url, headers, body, expectedStatus) {
   const payload = await response.json();
   if (response.status !== expectedStatus) throw new Error(`创建受控问数夹具失败（HTTP ${response.status}）：${JSON.stringify(payload)}`);
   return payload;
+}
+
+
+/** 种子一个可运行的 native-json 维护模型(导入即 candidate,无需 ONNX 制品)。 */
+export async function seedMaintenanceModel({ page, apiOrigin, projectId }) {
+  const token = await page.evaluate(() => localStorage.getItem("bim-studio-auth-token") ?? sessionStorage.getItem("bim-studio-auth-token"));
+  if (!token) throw new Error("维护模型种子缺少登录令牌");
+  const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+  return postJson(`${apiOrigin}/api/projects/${encodeURIComponent(projectId)}/operations/maintenance/models`, headers, {
+    name: "在线验收维护评分模型",
+    version: `gate-${Date.now()}`,
+    algorithm: "linear-score",
+    evaluationProtocol: "门禁固定样例回放",
+    dataFingerprint: "gate-fixture-2026",
+    trainRows: 120,
+    validationRows: 30,
+    metrics: { auroc: 0.91 },
+    artifact: {
+      engine: "native-json",
+      modelKind: "regression",
+      features: ["temperature", "vibration"],
+      // 标准化后加权:score = linear*outputStd + outputMean,稳定落在 (0,1) 概率域。
+      means: [24, 0.2],
+      stds: [2, 0.1],
+      weights: [0.35, 0.6],
+      bias: 0,
+      outputMean: 0.6,
+      outputStd: 0.06,
+      threshold: 0.5,
+    },
+  }, 200);
 }

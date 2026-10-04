@@ -7,12 +7,13 @@ import { readBrowserRecoveryDraft, verifyOfflineWorkspaceRecovery } from "./onli
 import { verifyBehaviorWorkerCrash } from "./onlineFlowWorkerFault.mjs";
 import { createProductServer } from "./onlineFlowProductServer.mjs";
 import { verifyUnityRuntimeReliability } from "./onlineFlowUnityRuntime.mjs";
-import { seedAskDataDataset, verifyAskDataBrowser } from "./onlineFlowAskData.mjs";
+import { seedAskDataDataset, seedMaintenanceModel, verifyAskDataBrowser } from "./onlineFlowAskData.mjs";
 import { auditBehaviorWorkbench, behaviorUxFailures } from "./onlineFlowBehaviorUx.mjs";
 import { verifyBehaviorPanelCollapse, verifyDependencyManagerResponsive } from "./onlineFlowBehaviorPanels.mjs";
 import { verifyDashboardPanelCollapse } from "./onlineFlowDashboardPanels.mjs";
 import { verifyIndustrialAgentBrowser, verifyScriptAgentEntry } from "./onlineFlowIndustrialAgent.mjs";
 import { auditResponsiveWorkspace } from "./onlineFlowResponsiveUx.mjs";
+import { verifyAiOperationsFlow } from "./onlineFlowOperations.mjs";
 import { publishWithViewerToolbar } from "./onlineFlowPublication.mjs";
 import { verifySceneMoveAndAnimation } from "./onlineFlowSceneEditing.mjs";
 import { verifyTopologyFlow } from "./onlineFlowTopology.mjs";
@@ -41,6 +42,22 @@ const outputRoot = resolve(repositoryRoot, "test-output/online-flow");
 const dataRoot = resolve(outputRoot, "data");
 const modelFixturePath = resolve(outputRoot, "online-flow-triangle.gltf");
 const chromePath = process.env.BIM_STUDIO_CHROME_PATH ?? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+/** 两类恢复对话框会在草稿存在且 activeScene.updatedAt 刷新时随时弹出;交互前统一处置。 */
+async function dismissRecoveryDialogs(page) {
+  const sceneDialog = page.locator('section[aria-label="恢复未保存工作"]');
+  const appDialog = page.locator('section[aria-label="恢复应用修改"]');
+  for (let round = 0; round < 4; round++) {
+    if (await sceneDialog.isVisible().catch(() => false)) {
+      await sceneDialog.getByRole("button", { name: "丢弃副本" }).click();
+      await sceneDialog.waitFor({ state: "hidden", timeout: 15_000 }).catch(() => {});
+    } else if (await appDialog.isVisible().catch(() => false)) {
+      await appDialog.getByRole("button", { name: "稍后处理" }).click();
+      await appDialog.waitFor({ state: "hidden", timeout: 15_000 }).catch(() => {});
+    } else break;
+    await page.waitForTimeout(300);
+  }
+}
+
 if (!existsSync(webDistRoot) || !existsSync(apiEntry)) throw new Error("缺少生产产物，请先执行 pnpm build");
 if (!existsSync(chromePath)) throw new Error(`Chrome 不存在：${chromePath}`);
 // 清理范围固定在 test-output/online-flow，绝不触碰用户项目数据。
@@ -108,7 +125,9 @@ try {
     // 临时在线流使用本地对象存储，不装载公共素材目录；页面需降级为可重试空态，不能把可选目录当作主交付链失败。
     const expectedAssetCatalog503 = entry.includes("/asset-library") && entry.includes("503");
     const expectedOfflineFailure = entry.includes("ERR_INTERNET_DISCONNECTED");
-    if ((injectingWorkspaceFailure && (expectedWorkspace503 || expectedOfflineFailure)) || expectedAssetCatalog503) report.expectedConsoleErrors.push(entry);
+    // 页面卸载/导航时浏览器中止在途请求(ERR_ABORTED),不构成服务端或前端缺陷。
+    const expectedAbort = entry.includes("ERR_ABORTED");
+    if ((injectingWorkspaceFailure && (expectedWorkspace503 || expectedOfflineFailure)) || expectedAssetCatalog503 || expectedAbort) report.expectedConsoleErrors.push(entry);
     else report.consoleErrors.push(entry);
   });
   page.on("pageerror", (error) => {
@@ -117,7 +136,9 @@ try {
   });
   page.on("requestfailed", (request) => {
     const entry = `${request.method()} ${request.url()} · ${request.failure()?.errorText ?? "unknown"}`;
-    if (injectingWorkspaceFailure) report.expectedRequestFailures.push(entry);
+    // 页面卸载/导航中止在途请求(ERR_ABORTED)是浏览器标准行为,不算失败。
+    const expectedAbort = entry.includes("ERR_ABORTED");
+    if (injectingWorkspaceFailure || expectedAbort) report.expectedRequestFailures.push(entry);
     else report.requestFailures.push(entry);
   });
   await page.goto(productOrigin, { waitUntil: "networkidle" });
@@ -137,6 +158,8 @@ try {
   const project = await readJsonResponse(projectResponse, 201);
   await page.getByLabel("当前项目").selectOption(project.id);
   const askDataDataset = await seedAskDataDataset({ page, apiOrigin, projectId: project.id, report });
+  // 维护任务需要可运行模型;种子 native-json 模型(导入即 candidate,无需 ONNX 制品)。
+  await seedMaintenanceModel({ page, apiOrigin, projectId: project.id });
   recordStep(report, "create-project", project.id);
 
   // 项目级开发流程必须可见、可导航，并在刷新后恢复用户上下文。
@@ -221,7 +244,8 @@ try {
   await verifyDashboardPanelCollapse({ page, report, outputRoot });
   closeUnityRuntime = await verifyUnityRuntimeReliability({ page, report, outputRoot });
   // 先在二维图层中选中一个组件，脚本入口必须继承这个对象而不是退回整个场景。
-  await page.getByRole("button", { name: "页面与图层", exact: true }).click();
+  // 左栏默认页签是"页面";图层树按需切页签进入(产品已移除"页面与图层"合并页签)。
+  await page.locator(".dashboard-workspace").getByRole("button", { name: "图层", exact: true }).click();
   const firstDashboardLayer = page.locator(".dashboard-layer-select").first();
   await firstDashboardLayer.waitFor({ state: "visible" });
   await firstDashboardLayer.click();
@@ -230,7 +254,7 @@ try {
   await page.getByRole("button", { name: "脚本", exact: true }).click();
   const behaviorPanel = page.locator(".behavior-panel");
   await behaviorPanel.waitFor({ state: "visible" });
-  await behaviorPanel.getByRole("button", { name: "新建行为", exact: true }).click();
+  await behaviorPanel.getByRole("button", { name: "新建", exact: true }).click();
   await behaviorPanel.locator(".professional-code-editor").waitFor({ state: "visible", timeout: 30_000 });
   await behaviorPanel.locator(".monaco-editor, .professional-code-fallback").first().waitFor({ state: "visible", timeout: 30_000 });
   const attachedTarget = await behaviorPanel.locator(".behavior-context-badge").innerText();
@@ -238,10 +262,13 @@ try {
   report.behaviorUx = await auditBehaviorWorkbench(behaviorPanel);
   const behaviorFailures = behaviorUxFailures(report.behaviorUx);
   if (behaviorFailures.length) throw new Error(`脚本首屏体验验收失败：${behaviorFailures.join("；")}`);
-  const behaviorHeaderAudit = await behaviorPanel.locator(".behavior-panel-actions button").evaluateAll((buttons) => buttons.map((button) => {
+  // 只量常驻可见的工具栏图标按钮;下拉菜单项(分屏/悬浮等)本就允许文字,
+  // Chrome 对闭合 details 内容保留布局(content-visibility),须用 checkVisibility 过滤。
+  const behaviorHeaderAudit = await behaviorPanel.locator(".behavior-panel-actions button").evaluateAll((buttons) => buttons.filter((button) => button.checkVisibility()).map((button) => {
     const bounds = button.getBoundingClientRect();
     const style = getComputedStyle(button);
     return {
+      runAction: button.classList.contains("behavior-run-action"),
       label: button.getAttribute("aria-label") || button.getAttribute("title") || button.textContent?.trim(),
       width: Math.round(bounds.width),
       height: Math.round(bounds.height),
@@ -249,7 +276,10 @@ try {
       whiteSpace: style.whiteSpace,
     };
   }));
-  if (behaviorHeaderAudit.some((button) => button.width < 28 || button.height > 38 || button.whiteSpace !== "nowrap" || button.fontSize !== "0px")) {
+  // 图标按钮须 fontSize 0(纯图标);主操作(behavior-run-action)保留文字标签是有意设计,
+  // 只执行尺寸与 nowrap 纪律(防挤压换行),不强制去文字。
+  if (behaviorHeaderAudit.some((button) => button.width < 28 || button.height > 38 || button.whiteSpace !== "nowrap"
+    || (button.fontSize !== "0px" && !button.runAction))) {
     throw new Error(`脚本分屏工具栏出现文字竖排或点击区异常：${JSON.stringify(behaviorHeaderAudit)}`);
   }
   recordStep(report, "keep-script-split-toolbar-icon-only", behaviorHeaderAudit);
@@ -270,7 +300,8 @@ try {
   await page.keyboard.insertText(`function onStart(ctx) {\n  throw new Error("${runtimeErrorMessage}");`);
   await behaviorPanel.getByText("有未应用的修改", { exact: true }).waitFor({ state: "visible" });
   recordStep(report, "edit-runtime-error-script", await monacoEditor.locator(".view-lines").innerText());
-  await behaviorPanel.getByRole("button", { name: "应用并运行", exact: true }).click();
+  // 应用+运行已合并为工具栏"试运行"主按钮(applyAndRun),旧"应用并运行"按钮不存在了。
+  await behaviorPanel.locator(".behavior-run-action").click();
   const problemsButton = behaviorPanel.locator(".professional-code-problems.has-problems");
   await problemsButton.waitFor({ state: "visible", timeout: 15_000 });
   await problemsButton.click();
@@ -295,14 +326,17 @@ try {
   await page.keyboard.press("Backspace");
   await page.keyboard.insertText('function onStart(ctx) {\n  ctx.log("online-flow-script-recovered");');
   await behaviorPanel.getByText("有未应用的修改", { exact: true }).waitFor({ state: "visible" });
-  await behaviorPanel.getByRole("button", { name: "应用并运行", exact: true }).click();
+  // 应用+运行已合并为工具栏"试运行"主按钮(applyAndRun),旧"应用并运行"按钮不存在了。
+  await behaviorPanel.locator(".behavior-run-action").click();
   await behaviorPanel.locator(".professional-code-problems.healthy").waitFor({ state: "visible", timeout: 15_000 });
-  await behaviorPanel.getByText("修改已应用，正在运行", { exact: true }).waitFor({ state: "visible" });
+  await behaviorPanel.getByText("试运行已提交，请查看运行状态与日志", { exact: true }).waitFor({ state: "visible" });
   recordStep(report, "recover-runtime-script-error", { target: attachedTarget, line: 2 });
   await page.screenshot({ path: resolve(outputRoot, "02bb-behavior-editor-recovered.png"), fullPage: true });
   const popoutFingerprint = await behaviorPanel.locator(".professional-code-editor").getAttribute("data-content-fingerprint");
+  // 独立窗口入口在"切换窗口布局"下拉里;先展开菜单再点(与真实用户路径一致)。
   const [scriptWindow] = await Promise.all([
     page.waitForEvent("popup"),
+    behaviorPanel.locator(".behavior-layout-menu > summary").click(),
     behaviorPanel.getByRole("button", { name: "独立窗口", exact: true }).click(),
   ]);
   const popoutPanel = scriptWindow.locator(".behavior-panel.layout-window");
@@ -311,9 +345,10 @@ try {
   const windowFingerprint = await popoutPanel.locator(".professional-code-editor").getAttribute("data-content-fingerprint");
   if (!popoutFingerprint || popoutFingerprint !== windowFingerprint) throw new Error(`脚本独立窗口丢失编辑内容：${popoutFingerprint} -> ${windowFingerprint}`);
   await scriptWindow.screenshot({ path: resolve(outputRoot, "02bd-behavior-editor-window.png"), fullPage: true });
+  // 独立窗口的收回入口在主窗口"回到分屏"(changeLayout 会关闭 popup),旧"收回主窗口"按钮已移除。
   await Promise.all([
     scriptWindow.waitForEvent("close"),
-    popoutPanel.getByRole("button", { name: "收回主窗口", exact: true }).click(),
+    page.locator(".behavior-window-return").getByRole("button", { name: "回到分屏", exact: true }).click(),
   ]);
   await behaviorPanel.locator(`.professional-code-editor[data-content-fingerprint="${popoutFingerprint}"]`).waitFor({ state: "visible", timeout: 5_000 });
   recordStep(report, "open-script-window-and-return-with-state", { fingerprint: popoutFingerprint });
@@ -326,6 +361,8 @@ try {
   } finally {
     injectingBehaviorWorkerFailure = false;
   }
+  // 行为编辑的草稿防抖可能随时弹出恢复对话框并拦截点击;交互前统一处置。
+  await dismissRecoveryDialogs(page);
   await behaviorPanel.getByRole("button", { name: "定位目标", exact: true }).click();
   await behaviorPanel.waitFor({ state: "hidden" });
   await page.locator(".dashboard-workspace").waitFor({ state: "visible" });
@@ -360,14 +397,28 @@ try {
   const sceneEditorUrl = `${productOrigin}/studio/${encodeURIComponent(project.id)}/applications/${encodeURIComponent(application.metadata.id)}/scenes/${encodeURIComponent(scene.id)}`;
   await page.goto(sceneEditorUrl, { waitUntil: "networkidle" });
   await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
+  // 前面工作区的编辑可能留下本地恢复副本;直连场景编辑器时先"稍后处理"恢复对话框。
+  const recoveryBackdrop = page.locator(".workspace-recovery-backdrop");
+  if (await recoveryBackdrop.isVisible().catch(() => false)) {
+    await recoveryBackdrop.getByRole("button", { name: "稍后处理" }).click();
+    await recoveryBackdrop.waitFor({ state: "hidden" });
+  }
   // 从规则数据生成 GeoJSON 设备方盒，并同时创建可绑定数据的模型标签。
-  await page.getByTitle("导入模型与转换设置").click();
+  // 批量设备布局已收纳进"更多场景工具"菜单;导入模型直连文件选择器(不再有导入面板)。
+  // 设备必须只落在本地恢复副本里:自动保存若开着,设备会先上服务器,草稿就与服务器等价,
+  // 恢复判定会正确地按 discard-equivalent 静默丢弃,后面的故障注入测试失去意义。
+  if (await page.getByLabel("自动保存").isChecked().catch(() => false)) {
+    await page.getByLabel("自动保存").click();
+  }
+  await page.getByTitle("更多场景工具").click();
   await page.getByRole("button", { name: "批量设备布局" }).click();
   const deviceLayout = page.locator(".device-layout-workbench");
   await deviceLayout.waitFor({ state: "visible" });
   await page.screenshot({ path: resolve(outputRoot, "02c-device-layout-workbench.png"), fullPage: true });
   await deviceLayout.getByRole("button", { name: "创建 12 台设备" }).click();
-  await page.getByLabel("关闭导入面板").click();
+  // 设备创建完成后工作台可能已自动收起(completed → onClose);仍在才需要手动关。
+  const deviceLayoutClose = page.getByLabel("关闭设备布局");
+  if (await deviceLayoutClose.isVisible().catch(() => false)) await deviceLayoutClose.click();
   await showFlatSceneObjects(page);
   await page.locator(".scene-object-row").filter({ hasText: "设备 001" }).first().waitFor({ state: "visible" });
   const generatedDeviceAudit = await page.evaluate(() => ({
@@ -395,13 +446,31 @@ try {
   if (!recoveryDraftBeforeReload?.scene?.primitives?.length) throw new Error("保存失败后未落盘本地恢复副本");
   await page.unroute("**/workspace", failWorkspaceSave);
   await page.reload({ waitUntil: "networkidle" });
-  const recoveryDialog = page.locator(".workspace-recovery-dialog");
-  await recoveryDialog.waitFor({ state: "visible", timeout: 30_000 });
+  // 两类恢复对话框共用 .workspace-recovery-dialog 类,按 aria-label 区分:
+  // 场景级"恢复未保存修改"(本步被试对象) vs 应用级"恢复应用修改"(行为工作区遗留,
+  // 先弹且压住场景级;稍前已"稍后处理"过会保留副本,重载后会再次弹出)。
+  // 两类恢复对话框共用 .workspace-recovery-dialog 类且场景草稿异步加载,谁先弹不确定:
+  // 场景级=被试对象直接进入断言;应用级=遗留副本,"稍后处理"后继续等场景级。
+  const appRecoveryDialog = page.locator('section[aria-label="恢复应用修改"]');
+  const recoveryDialog = page.locator('section[aria-label="恢复未保存工作"]');
+  for (let attempt = 0; attempt < 60; attempt++) {
+    if (await recoveryDialog.isVisible().catch(() => false)) break;
+    if (await appRecoveryDialog.isVisible().catch(() => false)) {
+      await appRecoveryDialog.getByRole("button", { name: "稍后处理" }).click();
+      await appRecoveryDialog.waitFor({ state: "hidden" });
+    }
+    await page.waitForTimeout(500);
+  }
+  await recoveryDialog.waitFor({ state: "visible", timeout: 10_000 });
   await recoveryDialog.getByRole("button", { name: "恢复到当前页" }).waitFor({ state: "visible" });
   report.pageAudits.push(await auditPage(page, "workspace-local-recovery"));
   await page.screenshot({ path: resolve(outputRoot, "02d-workspace-local-recovery.png"), fullPage: true });
   await recoveryDialog.getByRole("button", { name: "恢复到当前页" }).click();
   await recoveryDialog.waitFor({ state: "hidden" });
+  if (await appRecoveryDialog.isVisible().catch(() => false)) {
+    await appRecoveryDialog.getByRole("button", { name: "稍后处理" }).click();
+    await appRecoveryDialog.waitFor({ state: "hidden" });
+  }
   await showFlatSceneObjects(page);
   await page.locator(".scene-object-row").filter({ hasText: "设备 001" }).first().waitFor({ state: "visible" });
   if (await page.getByLabel("自动保存").isChecked()) throw new Error("恢复本地副本后未暂停自动保存");
@@ -423,7 +492,10 @@ try {
   const firstDeviceRow = page.locator(".scene-object-row").filter({ hasText: "设备 001" }).filter({ hasText: "基础元素" }).first();
   const objectCountBeforeDelete = await page.locator(".scene-object-row").filter({ hasText: "基础元素" }).count();
   const labelCountBeforeDelete = await page.locator(".scene-object-row .annotation-badge").count();
-  await firstDeviceRow.getByTitle("删除基础元素").click();
+  // 行级操作已收纳进行内"更多操作"菜单;先展开再删。
+  await firstDeviceRow.locator(".scene-row-menu > summary").click();
+  // 菜单弹层带外侧 dismiss,Playwright 悬停预检会触发关闭;force 跳过可动性检查直点。
+  await firstDeviceRow.getByTitle("删除基础元素").click({ force: true });
   await page.waitForFunction(({ objects, labels }) => {
     const currentObjects = [...document.querySelectorAll(".scene-object-row")].filter((element) => element.textContent?.includes("基础元素")).length;
     return currentObjects === objects - 1 && document.querySelectorAll(".scene-object-row .annotation-badge").length === labels - 1;
@@ -456,8 +528,31 @@ try {
   await page.locator('input[type="file"][accept*=".glb"]').setInputFiles(modelFixturePath);
   const uploadedModel = await readJsonResponse(uploadResponse, 202);
   await waitForModelReady(page, project.id, uploadedModel.id);
+  // 上传完成后产品会弹"选择模型处理方式"(直接插入/进入优化/取消);插入场景后才进模型树。
+  const uploadChoice = page.locator('section[aria-label="选择模型处理方式"]');
+  await uploadChoice.waitFor({ state: "visible", timeout: 15_000 });
+  await uploadChoice.getByRole("button", { name: "直接插入" }).click();
+  await uploadChoice.waitFor({ state: "hidden", timeout: 30_000 });
+  // 直接插入只作用于活动会话;等模型进入场景树并显式保存后再 reload,否则插入会丢。
+  await page.locator(".asset-row").filter({ hasText: "online-flow-triangle.gltf" }).first()
+    .waitFor({ state: "visible", timeout: 30_000 });
+  const insertSaveResponse = page.waitForResponse((response) => response.url().endsWith("/workspace") && response.request().method() === "PUT");
+  await page.getByRole("button", { name: "保存项目" }).click();
+  await insertSaveResponse;
   await page.reload({ waitUntil: "networkidle" });
   await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
+  // 离线保存测试的场景恢复副本(内容服务器已有,丢弃)与行为工作区的应用级恢复副本
+  // (稍后处理保留)都可能在 reload 后弹出,逐个处置后再继续。
+  const staleRecovery = page.locator('section[aria-label="恢复未保存工作"]');
+  if (await staleRecovery.isVisible().catch(() => false)) {
+    await staleRecovery.getByRole("button", { name: "丢弃副本" }).click();
+    await staleRecovery.waitFor({ state: "hidden", timeout: 15_000 });
+  }
+  const appRecoveryAfterReload = page.locator('section[aria-label="恢复应用修改"]');
+  if (await appRecoveryAfterReload.isVisible().catch(() => false)) {
+    await appRecoveryAfterReload.getByRole("button", { name: "稍后处理" }).click();
+    await appRecoveryAfterReload.waitFor({ state: "hidden", timeout: 15_000 });
+  }
   await showFlatSceneObjects(page);
   const modelRow = page.locator(".asset-row").filter({ hasText: "online-flow-triangle.gltf" });
   await modelRow.waitFor({ state: "visible" });
@@ -508,8 +603,10 @@ try {
   await page.screenshot({ path: resolve(outputRoot, "03-scene-editor-model-loaded.png"), fullPage: true });
   await auditResponsiveWorkspace({ page, report, outputRoot, id: "03-scene-editor", scopeSelector: ".app-shell" });
   // 资源树与属性检查器应能独立收起，释放三维画布而不改变场景状态。
+  // 容器是 display:contents(无盒,Playwright 视为 hidden);等 attached,子按钮有盒可点。
+  await dismissRecoveryDialogs(page);
   const panelControls = page.locator(".workspace-panel-controls");
-  await panelControls.waitFor({ state: "visible" });
+  await panelControls.waitFor({ state: "attached" });
   const canvasBeforePanels = await page.locator(".workspace").boundingBox();
   await panelControls.getByRole("button", { name: "收起场景目录" }).click();
   await panelControls.getByRole("button", { name: "收起属性检查器" }).click();
@@ -532,9 +629,12 @@ try {
   await page.getByTitle("AI 场景助手").click();
   const assistantPanel = page.locator(".ai-assistant-panel");
   await assistantPanel.waitFor({ state: "visible" });
+  // T9:能力目录收进"可用能力"折叠行,展开才挂载(避免双请求);先展开再断言。
+  await assistantPanel.locator(".ai-capability-drawer > summary").click();
   await assistantPanel.locator(".ai-capability-catalog:not(.is-loading)").waitFor({ state: "visible" });
   const assistantAudit = await assistantPanel.evaluate((element) => ({
-    tabCount: element.querySelectorAll(".ai-assistant-tabs button").length,
+    // 五页签已收敛为"模式下拉 + 对话/执行任务双体验页签"(信息架构简化)。
+    tabCount: element.querySelectorAll('.ai-assistant-experience [role="tab"]').length,
     suggestionCount: element.querySelectorAll(".ai-platform-suggestions button").length,
     capabilityCount: Number(element.querySelector(".ai-capability-catalog > header strong")?.textContent ?? 0),
     capabilitySamples: element.querySelectorAll(".ai-capability-catalog > div > *").length,
@@ -542,7 +642,7 @@ try {
     explainsPluginLoading: /插件按需装载/.test(element.textContent ?? ""),
     hasApprovalQueue: /审批人|审批中心|待审批/.test(element.textContent ?? "")
   }));
-  if (assistantAudit.tabCount < 5 || assistantAudit.suggestionCount < 2 || assistantAudit.capabilityCount < 5 || assistantAudit.capabilitySamples < 4 || assistantAudit.capabilityCatalogUnavailable || !assistantAudit.explainsPluginLoading || assistantAudit.hasApprovalQueue) {
+  if (assistantAudit.tabCount < 2 || assistantAudit.suggestionCount < 2 || assistantAudit.capabilityCount < 5 || assistantAudit.capabilitySamples < 4 || assistantAudit.capabilityCatalogUnavailable || !assistantAudit.explainsPluginLoading || assistantAudit.hasApprovalQueue) {
     throw new Error(`AI 助手简化交互验收失败：${JSON.stringify(assistantAudit)}`);
   }
   report.pageAudits.push(await auditPage(page, "scene-ai-assistant"));
@@ -595,6 +695,7 @@ try {
 
   await page.goto(applicationPageUrl(productOrigin, project.id, application), { waitUntil: "networkidle" });
   await page.locator(".dashboard-workspace").waitFor({ state: "visible" });
+  await dismissRecoveryDialogs(page);
 
   await page.getByRole("button", { name: "浏览", exact: true }).click();
   await page.locator(".dashboard-runtime-preview").waitFor({ state: "visible" });
@@ -611,144 +712,8 @@ try {
   await page.locator(".scene-manager-page").waitFor({ state: "visible" });
   await page.getByLabel("当前项目").selectOption(project.id);
 
-  // AI 目录来自插件注册表；成熟任务必须直接进入对应工作台，且路由可刷新恢复。
-  await page.locator(".manager-capability-nav").getByRole("button", { name: "AI 助手", exact: true }).click();
-  const platformAssistant = page.locator(".ai-assistant-panel");
-  await platformAssistant.locator(".ai-capability-catalog:not(.is-loading)").waitFor({ state: "visible" });
-  await platformAssistant.getByTitle("simulation.virtual-debug.run").click();
-  await page.waitForURL(/\/operations\?task=commissioning$/);
-  await page.locator(".operations-page").waitFor({ state: "visible" });
-  await page.locator(".commissioning-workbench").waitFor({ state: "visible" });
-  recordStep(report, "ai-capability-opens-controlled-workspace", page.url());
-
-  // 高频 AI 不依赖用户编写提示词：回到维护任务，运行真实模型后一键得到结构化诊断。
-  await page.getByRole("button", { name: "预测维护", exact: true }).click();
-
-  const maintenanceRun = page.getByRole("button", { name: "运行源数据验证", exact: true });
-  await maintenanceRun.waitFor({ state: "visible" });
-  await page.waitForFunction(() => {
-    const button = [...document.querySelectorAll("button")].find((item) => item.textContent?.trim() === "运行源数据验证");
-    return button instanceof HTMLButtonElement && !button.disabled;
-  });
-  await maintenanceRun.click();
-  await page.locator(".operations-result").waitFor({ state: "visible" });
-  await page.getByRole("button", { name: "AI 诊断与下一步", exact: true }).click();
-  const diagnosis = page.locator(".maintenance-diagnosis");
-  await diagnosis.waitFor({ state: "visible" });
-  const diagnosisEvidence = await diagnosis.evaluate((element) => ({
-    headline: element.querySelector("header strong")?.textContent?.trim(),
-    hypothesisCount: element.querySelectorAll(".maintenance-hypotheses > div").length,
-    actionCount: element.querySelectorAll(".maintenance-diagnosis-actions button").length,
-    hasPromptInput: Boolean(element.querySelector("input, textarea"))
-  }));
-  if (!diagnosisEvidence.headline || diagnosisEvidence.actionCount < 2 || diagnosisEvidence.hasPromptInput) {
-    throw new Error(`零提示词工业 AI 诊断验收失败：${JSON.stringify(diagnosisEvidence)}`);
-  }
-  report.pageAudits.push(await auditPage(page, "maintenance-ai-diagnosis"));
-  await page.screenshot({ path: resolve(outputRoot, "04a-maintenance-ai-diagnosis.png"), fullPage: true });
-  const maintenanceWideLayout = await auditMaintenanceWideLayout({ page, report, outputRoot, auditPage });
-  recordStep(report, "maintenance-ai-diagnosis", { ...diagnosisEvidence, wideLayout: maintenanceWideLayout });
-  await diagnosis.getByRole("button", { name: "虚拟验证", exact: true }).click();
-
-  await page.getByRole("button", { name: "机器人与控制验证", exact: true }).click();
-  const commissioning = page.locator(".commissioning-workbench");
-  await commissioning.waitFor({ state: "visible" });
-  await commissioning.locator(".commissioning-ai-draft strong").filter({ hasText: "验证任务已保存" }).waitFor({ state: "visible" });
-  await commissioning.getByRole("button", { name: "确认用于本次验证", exact: true }).click();
-  await commissioning.getByRole("button", { name: "运行快速验证", exact: true }).click();
-  await commissioning.locator('.commissioning-steps button').filter({ hasText: "验证控制逻辑" }).click();
-  const configuredBindingCount = await commissioning.locator(".commissioning-bindings article").count();
-  if (configuredBindingCount < 2) throw new Error(`控制逻辑验证缺少信号映射：${configuredBindingCount}`);
-  await commissioning.locator(".commissioning-control-stage .commissioning-run").click();
-  await commissioning.locator(".commissioning-evidence > header.passed").waitFor({ state: "visible" });
-  const commissioningEvidence = await commissioning.evaluate((element, bindingCount) => ({
-    bindings: bindingCount,
-    signals: element.querySelectorAll(".commissioning-signal-grid button").length,
-    fingerprintLength: element.querySelector(".commissioning-fingerprint code")?.textContent?.trim().length ?? 0,
-    hasOverflow: element.scrollWidth > element.clientWidth + 1
-  }), configuredBindingCount);
-  if (commissioningEvidence.bindings < 2 || commissioningEvidence.signals < 2 || commissioningEvidence.fingerprintLength !== 64 || commissioningEvidence.hasOverflow) {
-    throw new Error(`虚拟调试工作台验收失败：${JSON.stringify(commissioningEvidence)}`);
-  }
-  const validationStudyEvidence = await page.evaluate(async (projectId) => {
-    const token = localStorage.getItem("bim-studio-auth-token") ?? sessionStorage.getItem("bim-studio-auth-token");
-    const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/operations`, {
-      headers: token ? { authorization: `Bearer ${token}` } : {}
-    });
-    if (!response.ok) throw new Error(`读取验证任务卡失败：HTTP ${response.status}`);
-    const snapshot = await response.json();
-    const studies = snapshot.validationStudies ?? [];
-    const study = studies[0];
-    const baseline = studies.find((candidate) => candidate.id === study?.baselineStudyId);
-    return study ? {
-      status: study.status,
-      revision: study.revision,
-      studyType: study.studyType,
-      hasLineage: Boolean(
-        baseline
-          && study.baselineStudyId === study.reproductionOf
-          && baseline.sourceKind === "maintenance-diagnosis",
-      ),
-      baselineSourceKind: baseline?.sourceKind,
-      baselineRevision: baseline?.revision,
-      objectCount: study.objectIds?.length ?? 0,
-      fingerprintLength: study.latestResult?.evidenceFingerprint?.length ?? 0
-    } : undefined;
-  }, project.id);
-  if (!validationStudyEvidence
-    || validationStudyEvidence.status !== "passed"
-    || validationStudyEvidence.revision < 1
-    || validationStudyEvidence.studyType !== "virtual-commissioning"
-    || !validationStudyEvidence.hasLineage
-    || validationStudyEvidence.objectCount < 1
-    || validationStudyEvidence.fingerprintLength !== 64) {
-    throw new Error(`轻量验证任务卡未完成留证：${JSON.stringify(validationStudyEvidence)}`);
-  }
-  report.pageAudits.push(await auditPage(page, "virtual-commissioning-passed"));
-  await page.screenshot({ path: resolve(outputRoot, "04a-virtual-commissioning.png"), fullPage: true });
-
-  // 物流 Study 必须走完“运行—改参—对比—精确复现—持久化”，不能只验证公式接口。
-  await page.getByRole("button", { name: "工厂规划", exact: true }).click();
-  // 解析快速估算保留默认入口；DES 有独立按钮，不能让门禁依赖已废弃的泛化文案。
-  await page.getByRole("button", { name: "运行快速估算", exact: true }).click();
-  await page.locator(".logistics-study-panel .operations-result").waitFor({ state: "visible" });
-  await page.getByLabel("工况名称").fill("在线门禁优化工况");
-  await page.getByLabel("AGV 数量").fill("7");
-  await page.getByRole("button", { name: "运行快速估算", exact: true }).click();
-  await page.getByRole("button", { name: "精确复现基线", exact: true }).waitFor({ state: "visible" });
-  await page.getByRole("button", { name: "精确复现基线", exact: true }).click();
-  await page.getByText("复现校验通过：输入、引擎版本和关键结果完全一致。").waitFor({ state: "visible" });
-  const logisticsStudyEvidence = await page.evaluate(async (projectId) => {
-    const token = localStorage.getItem("bim-studio-auth-token") ?? sessionStorage.getItem("bim-studio-auth-token");
-    const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/operations`, {
-      headers: token ? { authorization: `Bearer ${token}` } : {}
-    });
-    if (!response.ok) throw new Error(`读取物流 Study 失败：HTTP ${response.status}`);
-    const experiments = (await response.json()).logisticsExperiments ?? [];
-    const latest = experiments[0];
-    const source = experiments.find((item) => item.id === latest?.reproductionOf);
-    return {
-      count: experiments.length,
-      hasLineage: Boolean(source),
-      fingerprintMatches: Boolean(source?.execution?.inputFingerprint)
-        && source.execution.inputFingerprint === latest?.execution?.inputFingerprint
-    };
-  }, project.id);
-  if (logisticsStudyEvidence.count < 3 || !logisticsStudyEvidence.hasLineage || !logisticsStudyEvidence.fingerprintMatches) {
-    throw new Error(`物流 Study 追溯链验收失败：${JSON.stringify(logisticsStudyEvidence)}`);
-  }
-  report.pageAudits.push(await auditPage(page, "logistics-study-reproduced"));
-  await page.screenshot({ path: resolve(outputRoot, "04b-logistics-study.png"), fullPage: true });
-  recordStep(report, "logistics-study-compare-and-reproduce", logisticsStudyEvidence);
-
-  await page.getByRole("button", { name: "机器人与控制验证", exact: true }).click();
-  await commissioning.waitFor({ state: "visible" });
-  await commissioning.locator(".commissioning-signal-grid button").first().click();
-  await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
-  await showFlatSceneObjects(page);
-  await page.locator(".scene-object-row").filter({ hasText: "设备 001" }).first().waitFor({ state: "visible" });
-  recordStep(report, "virtual-commissioning-evidence-and-focus", commissioningEvidence);
-  recordStep(report, "validation-study-persisted", validationStudyEvidence);
+  // AI 目录 → 运维工作台全链验收(已模块化:onlineFlowOperations.mjs)。
+  await verifyAiOperationsFlow({ page, productOrigin, project, report, outputRoot });
 
   await verifyTopologyFlow({ page, productOrigin, projectId: project.id, report, outputRoot });
 

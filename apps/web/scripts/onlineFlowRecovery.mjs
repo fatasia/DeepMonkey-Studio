@@ -24,7 +24,9 @@ export async function verifyOfflineWorkspaceRecovery({ page, report, identity })
   const originalObjects = await deviceRows.count();
   const originalLabels = await page.locator(".scene-object-row .annotation-badge").count();
   const firstDevice = page.locator(".scene-object-row").filter({ hasText: "设备 001" }).filter({ hasText: "基础元素" }).first();
-  await firstDevice.getByTitle("删除基础元素").click();
+  // 行级操作已收纳进行内"更多操作"菜单;先展开再删(force 跳过悬停预检以免弹层提前收起)。
+  await firstDevice.locator(".scene-row-menu > summary").click();
+  await firstDevice.getByTitle("删除基础元素").click({ force: true });
   await waitForSceneCounts(page, originalObjects - 1, originalLabels - 1);
 
   await page.context().setOffline(true);
@@ -75,7 +77,7 @@ export async function verifyOfflineWorkspaceRecovery({ page, report, identity })
   await page.getByRole("button", { name: "保存项目" }).click();
   await restoreSave;
   const remaining = await readBrowserRecoveryDraft(page, identity);
-  if (remaining) throw new Error("断网恢复后正式保存未清理本地副本");
+  if (remaining) throw new Error(`断网恢复后正式保存未清理本地副本(remaining.savedAt=${remaining.savedAt}, scene.prims=${remaining.scene?.primitives?.length})`);
   report.faultChecks.push({ id: "offline-reconnect-workspace-recovery", expected: "local draft + reconnect save", actual: "passed" });
 }
 

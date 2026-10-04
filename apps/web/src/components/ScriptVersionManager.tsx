@@ -122,7 +122,11 @@ export function ScriptVersionManager(props: ScriptVersionManagerProps) {
     window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
-      previousFocus?.focus();
+      // 入口若在"更多工具"下拉里(点击后菜单已闭合),原元素不可聚焦,焦点会丢失到 body;
+      // 此时恢复到所属 details 的 summary,保住键盘位置。
+      const owner = previousFocus?.closest("details");
+      const restore = owner && !owner.open ? owner.querySelector<HTMLElement>("summary") ?? previousFocus : previousFocus;
+      restore?.focus();
     };
   }, []);
 

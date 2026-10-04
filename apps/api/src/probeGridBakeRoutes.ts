@@ -48,7 +48,8 @@ export async function registerProbeGridBakeRoutes(app: FastifyInstance, dependen
       } catch (reason) {
         return failBake(reply, reason);
       }
-      if (!document) return reply.code(404).send({ message: "该场景语义哈希下没有已持久化的探针烘焙" });
+      // 未命中返回 200 {hit:false}:404 会被浏览器记为 console error,而缓存未命中是正常路径。
+      if (!document) return reply.send({ hit: false });
       return reply.header("cache-control", "private, max-age=31536000, immutable").send(document);
     });
 }
