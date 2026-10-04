@@ -60,3 +60,15 @@ export { PhysicsDebugRecorder, fingerprintFloat32, comparePhysicsDebugRecordingT
   type PhysicsDebugCompareResult, type ParsedPhysicsDebugRecording } from "./debugRecorder.js";
 
 export { projectSoftBodyRenderPacket, type SoftBodyRenderBinding } from "./softBodyRenderProjection.js";
+
+export { buildPreFracture, planTotalMass, type PreFracturePlan, type FracturePiece,
+  type FractureConnection } from "./fractureReference.js";
+export { FractureSolver, energyLedgerResidual, locateImpactPiece,
+  type FracturePropagationConfig, type ImpactInput, type FractureBreakEvent,
+  type FragmentActivationEvent, type FractureSolverSnapshot } from "./fractureDynamics.js";
+export { pacejkaTireForce, tireLongitudinalStiffness, tirePeakSlip, tireStiffnessB,
+  engineTorqueAt, wheelSpeedToEngineRpm, gearboxStep, gearboxDriveForce,
+  type TireModelConfig, type TireForce, type EngineConfig, type GearboxConfig,
+  type GearboxState } from "./vehicleTire.js";
+export { VehicleDynamicsSim, computeStaticPose, createDefaultVehicleConfig,
+  type VehicleConfig, type DriverInput, type VehicleSnapshot } from "./vehicleDynamics.js";
