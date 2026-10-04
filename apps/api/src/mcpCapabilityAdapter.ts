@@ -217,7 +217,8 @@ async function callTool(
 }
 
 function validateProtocol(request: FastifyRequest, body: JsonRpcRequest): string | undefined {
-  if (body.jsonrpc !== undefined && body.jsonrpc !== "2.0") return "jsonrpc 必须为 2.0";
+  // JSON-RPC 2.0 规范要求 jsonrpc 字段恒为 "2.0";缺字段与错值同等拒绝(不宽容缺省)。
+  if (body.jsonrpc !== "2.0") return "jsonrpc 必须为 2.0";
   const version = request.headers["mcp-protocol-version"];
   if (typeof version === "string" && !SUPPORTED_VERSIONS.includes(version as typeof SUPPORTED_VERSIONS[number])) return `不支持 MCP 协议版本：${version}`;
   if (version !== MODERN_VERSION) return undefined;

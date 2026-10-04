@@ -214,6 +214,23 @@ describe("industrial capability host", () => {
     expect(called.json().result.isError).toBe(true);
   });
 
+  it("rejects JSON-RPC requests missing the jsonrpc version field", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bim-mcp-jsonrpc-"));
+    cleanups.push(() => rm(directory, { recursive: true, force: true }));
+    const operations = new OperationsService(directory);
+    await operations.init();
+    const host = await createIndustrialCapabilityHost(operations);
+    const app = createApiServer();
+    cleanups.push(() => app.close());
+    await registerMcpCapabilityRoute(app, { host, store: { getProject: () => undefined } as never });
+    const missing = await app.inject({ method: "POST", url: "/api/mcp", payload: { id: 1, method: "tools/list" } });
+    expect(missing.statusCode).toBe(400);
+    expect(missing.json().error).toMatchObject({ code: -32600, message: expect.stringContaining("jsonrpc") });
+    const wrong = await app.inject({ method: "POST", url: "/api/mcp", payload: { jsonrpc: "1.0", id: 2, method: "tools/list" } });
+    expect(wrong.statusCode).toBe(400);
+    expect(wrong.json().error).toMatchObject({ code: -32600 });
+  });
+
   it("supports stateless MCP 2026 discovery and filters tools by authenticated role", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "bim-mcp-modern-"));
     cleanups.push(() => rm(directory, { recursive: true, force: true }));
