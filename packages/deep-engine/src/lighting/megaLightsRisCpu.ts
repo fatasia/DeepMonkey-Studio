@@ -15,9 +15,13 @@ import { evaluateMegaLightCpu, MEGALIGHTS_RIS_CANDIDATES, MEGALIGHTS_RIS_M,
  * 与 y 无关、恒等于精确和 Σ shade(i)**——这是验收⑤「退化一致性」的数学基础
  * (MegaLights 穷举模式 ↔ 既有簇光逐灯路径同式对拍)。
  *
- * 时域/空间复用按标准蓄水池合并(M 钳制 20× 本帧候选数,压 bias;相似门:深度比 +
- * 法线夹角)合并后统一以 M_total 重算 W_Y;复用引入的近似(无 MIS)由门与钳制控制,
- * 与真机闪烁门(③)共同验收。胜者可见性槽 M1 恒 1.0(硬阴影走 M2 BVH,任务书边界)。
+ * 时域复用按标准蓄水池合并(单候选合并,M 钳制 20× 本帧候选数;相似门:深度比)。
+ * 空间复用(M2 定案 2026-10-04)= **值域无偏平均**:每源独立 RIS 估计 W_src·shade 的
+ * 邻域均值,精确无偏(WRS 恒等式,见 spatialUnbiasedAverageCpu 注释),取代旧式
+ * 「邻居胜者单候选并入 + 全局 ÷m」——旧式把 resampled 胜者当均匀候选,系统性过亮
+ * +17.7%,是 M2 验收① 16% 偏差的主源;标准 Alg.6 权重(W_j×t、Σw 不除 m)同因 T̂
+ * 失配 +19%,一并弃用。复用引入的近似(无 MIS/visibility)残差由门与颜色 EMA 控制。
+ * 胜者可见性槽 M1 恒 1.0(硬阴影走 M2 BVH,任务书边界)。
  */
 
 /** 蓄水池(单像素单 M 流)。 */
@@ -211,9 +215,56 @@ export function buildReservoirPassCpu(input: MegaLightsFrameInput): RisReservoir
   return reservoirs;
 }
 
-/** 趟二:5×5 空间合并 + 胜者着色(与 WGSL reuseAndShade 入口同式)。 */
+/**
+ * 趟二空间复用(M2 定案 2026-10-04):值域无偏平均(与 WGSL reuseAndShade spatial 分支同式)。
+ *
+ * 旧式(邻居胜者按 t(y_j, 本像素) 单候选并入 reservoir + 全局 ÷m)把 importance-resampled
+ * 的邻居胜者当均匀候选:其期望权重 = E_p̂[t] >> E_U[t] = T/N,且相邻像素胜者高度重复,
+ * 每重复一次多骗一份均匀权重 → 系统性过亮(实测 biasMeanRatio 1.177;双开时偏置跨帧同号,
+ * EMA 无法消除 → 验收① 15.6%)。标准 Bitterli Alg.6 权重(W_j×t(y_j,x)、W_final=Σw 不除 m)
+ * 同因 T̂ 失配仍 +19%(原型实测 39.4% relRMSE),两式皆弃。
+ *
+ * 值域平均:每源输出一个独立 RIS 估计 W_src·shade(y_src, 本像素),其中
+ *   W_src = N·wSum_src/(m_src·t(y_src, 源像素))  (t 在**源像素**评价——恒等式要求)
+ * 由 WRS 恒等式 E[(Σ_k t_k)·g(胜者)] = Σ_k E[t(x_k)·g(x_k)] 得
+ *   E[W_src·shade] = (N/K)·K·(1/N)Σ_i shade_i = Σ_i shade_i(精确,无需几何相似近似),
+ * J+1 源平均零偏置,方差按源相关性收缩(实测 8×8 场景单帧 15%→6%,双开 EMA 后 0.98%)。
+ * 邻域越界槽跳过(非 clamp):clamp 重复最近源会减少边界像素的独立源数(实测单帧
+ * RMSE +0.3~0.6pt),比率分母(实际计入源数)的边界效应在真实分辨率下可忽略,
+ * 测试口径以后 16 帧均值吸收 8×8 小图的边界波动。
+ * 相似门(法线+深度)保留:gate 失败的源无偏但高方差(几何断裂),条件剔除与旧 gate 语义一致。
+ * 返回 null = 无有效源(调用方回落 self reservoir 着色)。
+ */
+function spatialUnbiasedAverageCpu(lights: readonly MegaLight[],
+  surfaces: readonly (readonly (number | LightVector3)[])[], surface: readonly (number | LightVector3)[],
+  built: readonly RisReservoir[], x: number, y: number, width: number, height: number,
+  radius: number, lightCount: number): LightVector3 | null {
+  let accR = 0, accG = 0, accB = 0, sources = 0;
+  for (let offsetY = -radius; offsetY <= radius; offsetY++) {
+    for (let offsetX = -radius; offsetX <= radius; offsetX++) {
+      const nx = x + offsetX, ny = y + offsetY;
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+      const sourceIndex = ny * width + nx;
+      const source = built[sourceIndex]!;
+      if (source.winner === MEGALIGHTS_INVALID_LIGHT || source.m <= 0) continue;
+      const sourceSurface = surfaces[sourceIndex]!;
+      if (!spatialGateCpu(surface, sourceSurface)) continue;
+      const sourceTarget = megaTargetWeightCpu(lights, sourceSurface, source.winner);
+      if (sourceTarget <= 0) continue;
+      const sourceWeight = lightCount * source.weightSum / (source.m * sourceTarget);
+      const shade = megaShadeWinnerCpu(lights, surface, source.winner);
+      accR += shade[0] * sourceWeight;
+      accG += shade[1] * sourceWeight;
+      accB += shade[2] * sourceWeight;
+      sources++;
+    }
+  }
+  return sources > 0 ? [accR / sources, accG / sources, accB / sources] : null;
+}
+
+/** 趟二:5×5 空间值域平均 + 胜者着色(与 WGSL reuseAndShade 入口同式)。 */
 export function reuseAndShadePassCpu(input: MegaLightsFrameInput, built: readonly RisReservoir[]): MegaLightsFrameOutput {
-  const { lights, surfaces, frame, config, previousColor } = input;
+  const { lights, surfaces, config, previousColor } = input;
   const { width, height } = config;
   const lightCount = lights.length;
   const requested = config.candidateCount ?? MEGALIGHTS_RIS_CANDIDATES;
@@ -225,9 +276,11 @@ export function reuseAndShadePassCpu(input: MegaLightsFrameInput, built: readonl
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const pixelIndex = y * width + x;
-      const stream = openStream(pixelIndex, frame, 1);
       const surface = surfaces[pixelIndex]!;
+      // 趟二不再改写蓄水池:空间复用走值域平均,输出 reservoir 保持趟一 self 状态
+      // (下一帧时域历史只消费 winner/无效位,与 WGSL 宿主写回同语义)。
       const reservoir: RisReservoir = { ...built[pixelIndex]! };
+      reservoirs[pixelIndex] = reservoir;
       if (config.exhaustive === true) {
         // 穷举对拍模式:逐灯求和(与簇光逐灯路径同式同序;⑤ 退化一致性腿)。
         let total: LightVector3 = [0, 0, 0];
@@ -236,32 +289,23 @@ export function reuseAndShadePassCpu(input: MegaLightsFrameInput, built: readonl
           total = [total[0] + c[0], total[1] + c[1], total[2] + c[2]];
         }
         color[pixelIndex * 3] = total[0]; color[pixelIndex * 3 + 1] = total[1]; color[pixelIndex * 3 + 2] = total[2];
-        reservoirs[pixelIndex] = reservoir;
         continue;
       }
-      if (spatial) {
-        for (let offsetY = -radius; offsetY <= radius; offsetY++) {
-          for (let offsetX = -radius; offsetX <= radius; offsetX++) {
-            if (offsetX === 0 && offsetY === 0) continue;
-            const nx = x + offsetX, ny = y + offsetY;
-            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-            const neighbor = built[ny * width + nx]!;
-            if (neighbor.winner === MEGALIGHTS_INVALID_LIGHT || neighbor.m <= 0) continue;
-            if (!spatialGateCpu(surface, surfaces[ny * width + nx]!)) continue;
-            const weight = megaTargetWeightCpu(lights, surface, neighbor.winner);
-            // 邻居胜者按**单候选**合并(与 WGSL 同式同注释:克隆计权实测偏差放大,定案 2026-10-04)。
-            if (weight > 0) mergeReservoirCpu(reservoir, weight, neighbor.winner, 1, stream.next());
-          }
-        }
+      let r: number, g: number, b: number;
+      const averaged = spatial ? spatialUnbiasedAverageCpu(lights, surfaces, surface, built,
+        x, y, width, height, radius, lightCount) : null;
+      if (averaged !== null) {
+        [r, g, b] = averaged;
+      } else {
+        // self reservoir 着色(spatial 关闭,或空间平均无有效源回落)。
+        const shade = reservoir.winner === MEGALIGHTS_INVALID_LIGHT || reservoir.m <= 0 ? [0, 0, 0] as LightVector3
+          : megaShadeWinnerCpu(lights, surface, reservoir.winner);
+        // W_Y 重用 finish 公式(胜者目标权重在本像素重评价)。
+        const weightY = reservoir.winner === MEGALIGHTS_INVALID_LIGHT || reservoir.m <= 0 ? 0
+          : megaTargetWeightCpu(lights, surface, reservoir.winner);
+        const scaleY = weightY > 0 ? lightCount * reservoir.weightSum / (reservoir.m * weightY) : 0;
+        r = shade[0] * scaleY; g = shade[1] * scaleY; b = shade[2] * scaleY;
       }
-      reservoirs[pixelIndex] = reservoir;
-      const shade = reservoir.winner === MEGALIGHTS_INVALID_LIGHT || reservoir.m <= 0 ? [0, 0, 0] as LightVector3
-        : megaShadeWinnerCpu(lights, surface, reservoir.winner);
-      // W_Y 重用 finish 公式(胜者目标权重在本像素重评价)。
-      const weightY = reservoir.winner === MEGALIGHTS_INVALID_LIGHT || reservoir.m <= 0 ? 0
-        : megaTargetWeightCpu(lights, surface, reservoir.winner);
-      const scaleY = weightY > 0 ? lightCount * reservoir.weightSum / (reservoir.m * weightY) : 0;
-      var r = shade[0] * scaleY, g = shade[1] * scaleY, b = shade[2] * scaleY;
       if (config.temporal !== false && previousColor !== undefined) {
         // 颜色时域 EMA(与 WGSL 趟二 mix 同式;首帧 previousColor 缺省 = 全量替换)。
         const alpha = config.alphaBlend ?? 1 / 32;

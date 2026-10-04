@@ -4,8 +4,9 @@
 // 采样语义(megaLightsRisCpu.ts 同式,CPU 权威镜像):
 //   趟一 buildReservoir:像素级 K=32 候选均匀 i.i.d.(辐射目标权重)→ 加权蓄水池
 //        → 时域合并(T07 motion vector 投影 + 深度门 + M 钳 20×)→ 写蓄水池 A。
-//   趟二 reuseAndShade:5×5 空间合并(法线/深度门)→ 胜者着色 →
-//        color = shade(y) × N × w_sum/(M_total × t_y) —— 归一化目标 pdf 代入
+//   趟二 reuseAndShade:5×5 空间值域无偏平均(法线/深度门 + clamp 采样,见分支注释)→
+//        胜者着色 color = shade(y) × N × w_sum/(M_total × t_y)(spatial 关闭/无有效源
+//        回落路径;spatial 开启走值域平均 acc/sources)——归一化目标 pdf 代入
 //        Bitterli 2022 Alg.4 后 T 相消的无偏式;K≥N 遍历全灯时输出恒等于精确和
 //        (验收⑤退化一致性的数学基础)。胜者可见性槽 M1 恒 1.0(M2 接 BVH 光线)。
 //
@@ -261,7 +262,6 @@ fn deepMegaReuseAndShade(params: DeepMegaParams, pixelIndex: u32, surfaceA: vec4
   surfaceC: vec4f, reservoir: ptr<function, DeepMegaReservoir>) -> vec3f {
   let lightCount = params.lightCount;
   if (lightCount == 0u) { return vec3f(0.0); }
-  var random = deepMegaPixelSeed(pixelIndex, params.frameSeed, 1u);
   let positionView = surfaceA.xyz;
   let normalView = surfaceB.xyz;
   let view = deepMegaSafeNormalize(-positionView, vec3f(0.0, 0.0, 1.0));
@@ -276,31 +276,52 @@ fn deepMegaReuseAndShade(params: DeepMegaParams, pixelIndex: u32, surfaceA: vec4
     return total;
   }
   if (params.spatialEnabled != 0u) {
-    let pixelX = pixelIndex % params.viewport.x;
-    let pixelY = pixelIndex / params.viewport.x;
+    // M2 定案(2026-10-04):空间复用 = 值域无偏平均(megaLightsRisCpu.spatialUnbiasedAverageCpu
+    // 同式)。旧式(邻居胜者按本像素 t 单候选并入 + 全局 ÷m)把 importance-resampled 的
+    // 邻居胜者当均匀候选,期望权重 E_p̂[t] >> E_U[t]=T/N 且相邻像素胜者高度重复 → 系统性
+    // 过亮(biasMeanRatio 1.177,跨帧同号 EMA 洗不掉);标准 Alg.6 权重(W_j×t、Σw 不除 m)
+    // 同因 T̂ 失配仍 +19%,一并弃用。值域平均:每源 RIS 估计
+    //   W_src·shade(y_src → 本像素),W_src = N·wSum_src/(m_src·t(y_src → 源像素))
+    // 满足精确恒等式 E[W_src·shade] = Σ_i shade_i(WRS 恒等式,无需几何相似近似),
+    // 源平均零偏置、方差按源相关性收缩。越界槽跳过(非 clamp:clamp 重复最近源会
+    // 减少边界独立源数,实测单帧 RMSE +0.3~0.6pt),分母 = 实际计入源数。
+    // 相似门保留(gate 失败源无偏但高方差)。sources==0 时回落 self reservoir 着色
+    // (下方公共路径);蓄水池指针不改写——输出 reservoir 保持趟一 self 状态,
+    // 宿主写回 B 作下一帧历史(只消费 winner/无效位)。
+    var acc = vec3f(0.0);
+    var sources = 0u;
+    let pixelXi = i32(pixelIndex % params.viewport.x);
+    let pixelYi = i32(pixelIndex / params.viewport.x);
     for (var offsetY = -i32(DEEP_MEGA_RIS_SPATIAL_RADIUS); offsetY <= i32(DEEP_MEGA_RIS_SPATIAL_RADIUS); offsetY = offsetY + 1) {
       for (var offsetX = -i32(DEEP_MEGA_RIS_SPATIAL_RADIUS); offsetX <= i32(DEEP_MEGA_RIS_SPATIAL_RADIUS); offsetX = offsetX + 1) {
-        if (offsetX == 0 && offsetY == 0) { continue; }
-        let nx = i32(pixelX) + offsetX;
-        let ny = i32(pixelY) + offsetY;
+        let nx = pixelXi + offsetX;
+        let ny = pixelYi + offsetY;
         if (nx < 0 || ny < 0 || nx >= i32(params.viewport.x) || ny >= i32(params.viewport.y)) { continue; }
-        let neighborIndex = u32(ny) * params.viewport.x + u32(nx);
-        let neighbor = deepMegaReservoirUnpack(deepMegaReservoirsA[neighborIndex]);
-        if (neighbor.winner == DEEP_MEGA_INVALID || neighbor.m == 0u) { continue; }
-        let neighborSurfaceA = deepMegaSurfaces[neighborIndex * DEEP_MEGA_SURFACE_STRIDE];
-        let neighborSurfaceB = deepMegaSurfaces[neighborIndex * DEEP_MEGA_SURFACE_STRIDE + 1u];
-        let normalDot = dot(normalView, neighborSurfaceB.xyz);
+        let sourceIndex = u32(ny) * params.viewport.x + u32(nx);
+        let source = deepMegaReservoirUnpack(deepMegaReservoirsA[sourceIndex]);
+        if (source.winner == DEEP_MEGA_INVALID || source.m == 0u) { continue; }
+        let sourceSurfaceA = deepMegaSurfaces[sourceIndex * DEEP_MEGA_SURFACE_STRIDE];
+        let sourceSurfaceB = deepMegaSurfaces[sourceIndex * DEEP_MEGA_SURFACE_STRIDE + 1u];
+        let sourceSurfaceC = deepMegaSurfaces[sourceIndex * DEEP_MEGA_SURFACE_STRIDE + 2u];
+        let normalDot = dot(normalView, sourceSurfaceB.xyz);
         if (normalDot < DEEP_MEGA_SPATIAL_NORMAL_GATE
-          || !deepMegaDepthGate(surfaceA.w, neighborSurfaceA.w)) { continue; }
-        let record = deepMegaLoad(neighbor.winner);
-        let weight = deepMegaLuminance(deepMegaContribution(record, positionView, normalView, view,
-          surfaceC.xyz, surfaceA.w, surfaceB.w));
-        // 邻居胜者按**单候选**合并(实测:按 neighbor.m 克隆计权会把跨像素强相关的
-        // 同一胜者放大 24×32 份,合并集非 i.i.d. → 收敛 RMSE 从 0.24 恶化到 0.48,
-        // 2026-10-04 定案;无偏性优先,方差控制交给颜色 EMA/TAA 组合)。
-        if (weight > 0.0) { deepMegaReservoirMerge(reservoir, weight, neighbor.winner, 1u, deepMegaRandom(&random)); }
+          || !deepMegaDepthGate(surfaceA.w, sourceSurfaceA.w)) { continue; }
+        let record = deepMegaLoad(source.winner);
+        // 源像素目标权重(W 公式的分母;无偏恒等式要求在**源像素**评价)。
+        let sourceTarget = deepMegaLuminance(deepMegaContribution(record, sourceSurfaceA.xyz,
+          sourceSurfaceB.xyz, deepMegaSafeNormalize(-sourceSurfaceA.xyz, vec3f(0.0, 0.0, 1.0)),
+          sourceSurfaceC.xyz, sourceSurfaceA.w, sourceSurfaceB.w));
+        if (sourceTarget <= 0.0) { continue; }
+        let sourceWeight = f32(lightCount) * source.weightSum / (f32(source.m) * sourceTarget);
+        // 本像素着色(源胜者灯 × 本像素几何;deepMegaShadeWinner 的可见性槽恒 1.0)。
+        let sourceShade = deepMegaShadeWinner(record, positionView, normalView, view,
+          surfaceC.xyz, surfaceA.w, surfaceB.w);
+        acc = acc + sourceShade * vec3f(sourceWeight);
+        sources = sources + 1u;
       }
     }
+    if (sources > 0u) { return acc / f32(sources); }
+    // 无有效源:回落 self reservoir 着色(下方公共路径)。
   }
   if (reservoir.winner == DEEP_MEGA_INVALID || reservoir.m == 0u || reservoir.weightSum <= 0.0) { return vec3f(0.0); }
   let winner = deepMegaLoad(reservoir.winner);

@@ -68,9 +68,15 @@ describe("MegaLights RIS WGSL single-source gate (TS half)", () => {
     // 时域复用投影(T07 口径:previous = pixel + 0.5 + motion)。
     expect(MEGA_LIGHTS_RIS_WGSL).toContain("floor(f32(pixelIndex % params.viewport.x) + 0.5 + motionUv.x)");
     // 单候选合并合同(2026-10-04 定案:克隆计权偏差实测,无 MIS 时不满足 i.i.d. 前提):
-    // 时域与空间都按 count=1 合并历史/邻居胜者,方差收敛交颜色 EMA(宿主模板,M2 接 MIS)。
+    // 时域按 count=1 合并历史胜者,方差收敛交颜色 EMA(宿主模板,M2 接 MIS)。
     expect(MEGA_LIGHTS_RIS_WGSL).toContain("deepMegaReservoirMerge(&reservoir, weight, history.winner, 1u, deepMegaRandom(&random));");
-    expect(MEGA_LIGHTS_RIS_WGSL).toContain("deepMegaReservoirMerge(reservoir, weight, neighbor.winner, 1u, deepMegaRandom(&random));");
+    // 空间复用 = 值域无偏平均(M2 定案 2026-10-04:旧式「单候选并入 + ÷m」把 resampled
+    // 胜者当均匀候选,系统性过亮 biasMeanRatio 1.177;值域平均每源 W_src·shade 满足
+    // E[W_src·shade] = Σshade 精确恒等式,clamp 采样 + 相似门,源平均零偏置)。
+    expect(MEGA_LIGHTS_RIS_WGSL).toContain(
+      "let sourceWeight = f32(lightCount) * source.weightSum / (f32(source.m) * sourceTarget);");
+    expect(MEGA_LIGHTS_RIS_WGSL).toContain("if (sources > 0u) { return acc / f32(sources); }");
+    expect(MEGA_LIGHTS_RIS_WGSL).toContain("if (nx < 0 || ny < 0 || nx >= i32(params.viewport.x) || ny >= i32(params.viewport.y)) { continue; }");
     // 穷举模式 = 逐灯求和(与簇光逐灯路径同式;⑤ 对拍腿)。
     expect(MEGA_LIGHTS_RIS_WGSL).toContain("var total = vec3f(0.0);");
     // 颜色 EMA 参数词入 params(宿主模板做 mix,见 megaLightsRuntime 组合门)。
