@@ -173,7 +173,10 @@ export function sampleCameraKeyframes(
   if (!sample) return undefined;
   const [start, end, progress] = sample;
   const mode = start.transition ?? interpolation;
-  const amount = transitionProgress(progress, mode);
+  // 与对象帧同语义：显式贝塞尔优先消费帧上参数，其余走共享过渡曲线表。
+  const amount = start.transition === "cubic-bezier" && start.easing
+    ? cubicBezierProgress(progress, start.easing)
+    : transitionProgress(progress, mode);
   const sorted = [...frames].sort((a, b) => a.time - b.time);
   const startIndex = Math.max(sorted.findIndex((frame) => frame.id === start.id), 0);
   const p0 = sorted[Math.max(0, startIndex - 1)] ?? start;
@@ -194,13 +197,16 @@ export function sampleCameraKeyframes(
   };
 }
 
-export function sampleModelKeyframes(frames: ModelKeyframe[], time: number, interpolation: "linear" | "smooth" = "smooth"): ModelTransform | undefined {
+export function sampleModelKeyframes(frames: ModelKeyframe[], time: number, interpolation: "linear" | "smooth" | "ease-in-out" = "smooth"): ModelTransform & { emissiveIntensity?: number } | undefined {
   const sample = surroundingFrames(frames, time);
   if (!sample) return undefined;
   const [start, end, progress] = sample;
   const amount = start.transition === "cubic-bezier" && start.easing
     ? cubicBezierProgress(progress, start.easing)
     : transitionProgress(progress, start.transition ?? interpolation);
+  // 自发光强度：任一帧携带才驱动；缺省帧按材质默认 1 参与，避免半程突跳。
+  const startEmissive = start.emissiveIntensity ?? 1;
+  const endEmissive = end.emissiveIntensity ?? 1;
   return {
     position: interpolateVector(start.transform.position, end.transform.position, amount, false),
     rotation: {
@@ -208,7 +214,10 @@ export function sampleModelKeyframes(frames: ModelKeyframe[], time: number, inte
       y: interpolateAngle(start.transform.rotation.y, end.transform.rotation.y, amount),
       z: interpolateAngle(start.transform.rotation.z, end.transform.rotation.z, amount)
     },
-    scale: interpolateVector(start.transform.scale, end.transform.scale, amount, false)
+    scale: interpolateVector(start.transform.scale, end.transform.scale, amount, false),
+    ...(start.emissiveIntensity !== undefined || end.emissiveIntensity !== undefined
+      ? { emissiveIntensity: startEmissive + (endEmissive - startEmissive) * amount }
+      : {}),
   };
 }
 

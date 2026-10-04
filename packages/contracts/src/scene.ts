@@ -466,6 +466,8 @@ export interface ModelKeyframe {
   animation?: ModelAnimationKeyframeState;
   /** B2-a 可见性轨道：该关键帧起对象可见性；缺省保持上一帧状态。 */
   visibility?: boolean;
+  /** 自发光强度关键帧：该帧的材质 emissiveIntensity 值；缺省不驱动自发光。 */
+  emissiveIntensity?: number;
 }
 
 export interface ModelAnimationKeyframeState {
@@ -536,7 +538,8 @@ export interface SceneAnimationState {
   /** Quantize playhead and newly authored keyframes to exact frames. */
   snapToFrames?: boolean;
   cameraInterpolation?: "linear" | "smooth" | "spline";
-  modelInterpolation?: "linear" | "smooth";
+  /** 轨道默认插值；单帧 transition 未设置时生效（linear / smooth / ease-in-out）。 */
+  modelInterpolation?: "linear" | "smooth" | "ease-in-out";
   showCameraPath?: boolean;
   stateMachine?: SceneAnimationStateMachineState;
   camera: CameraKeyframe[];

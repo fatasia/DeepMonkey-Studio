@@ -6,8 +6,7 @@ import { sampleCameraKeyframes, sampleModelAnimationKeyframes, sampleModelKeyfra
 import { ViewerEngineEnvironment } from "./viewerEngineEnvironment";
 
 /** 时间线、骨骼和相机路径运行时。 */
-export abstract class ViewerEngineTimelineRuntime extends ViewerEngineEnvironment {
-  protected applySceneAnimationFrame(time: number): void {
+export abstract class ViewerEngineTimelineRuntime extends ViewerEngineEnvironment {  protected applySceneAnimationFrame(time: number): void {
     // 采样输入先经播放区间收敛：越界 seek 与吸附溢出都不会让关键帧采样越过入点/出点。
     const sampleTime = sampleSceneAnimation(this.sceneAnimation, time);
     const camera = sampleCameraKeyframes(
@@ -31,7 +30,11 @@ export abstract class ViewerEngineTimelineRuntime extends ViewerEngineEnvironmen
     for (const [modelId, frames] of byModel) {
       const transform = sampleModelKeyframes(frames, sampleTime, this.sceneAnimation.modelInterpolation ?? "smooth");
       const model = this.models.get(modelId);
-      if (transform && model) applyTransform(model.object, transform);
+      if (transform && model) {
+        applyTransform(model.object, transform);
+        // 自发光强度轨道：与变换同语义直接写材质，不进材质覆盖持久化（播放是临时驱动）。
+        if (transform.emissiveIntensity !== undefined) applyTimelineEmissive(model.object, transform.emissiveIntensity);
+      }
       const animation = sampleModelAnimationKeyframes(frames, sampleTime);
       if (animation) this.applyTimelineModelAnimation(modelId, animation.clipId, animation.time);
     }
@@ -145,4 +148,27 @@ export abstract class ViewerEngineTimelineRuntime extends ViewerEngineEnvironmen
     this.cameraPathHelper = group;
     this.scene.add(group);
   }
+}
+
+/** 模型对象 → 其 PBR 材质列表的缓存；播放逐帧求值时避免整棵 traverse。 */
+const timelineEmissiveMaterials = new WeakMap<THREE.Object3D, THREE.MeshStandardMaterial[]>();
+
+function collectEmissiveMaterials(object: THREE.Object3D): THREE.MeshStandardMaterial[] {
+  const cached = timelineEmissiveMaterials.get(object);
+  if (cached) return cached;
+  const materials = new Map<THREE.Material, THREE.MeshStandardMaterial>();
+  object.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    const list = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
+    for (const material of list) if ((material as THREE.MeshStandardMaterial).isMeshStandardMaterial && !materials.has(material)) materials.set(material, material as THREE.MeshStandardMaterial);
+  });
+  const result = [...materials.values()];
+  timelineEmissiveMaterials.set(object, result);
+  return result;
+}
+
+/** 把时间线求值的自发光强度写到模型全部 PBR 材质；钳制口径与 setModelMaterial 一致（0..10）。 */
+function applyTimelineEmissive(object: THREE.Object3D, intensity: number): void {
+  const value = THREE.MathUtils.clamp(intensity, 0, 10);
+  for (const material of collectEmissiveMaterials(object)) material.emissiveIntensity = value;
 }

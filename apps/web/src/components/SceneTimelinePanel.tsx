@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { Box, Camera, ChevronDown, CircleDot, Film, Footprints, History, Pause, Play, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent, ReactNode } from "react";
+import { Box, Camera, ChevronDown, CircleDot, Clapperboard, Film, Footprints, History, Pause, Play, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import type { ModelKeyframe, SceneAnimationState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { normalizeAnimationFrameRate, snapAnimationTime } from "../viewer/timeline";
@@ -82,6 +82,10 @@ function SceneAnimationTimeline(props: Props) {
   const [selectedTrackId, setSelectedTrackId] = useState<TimelineTrackId>();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [trackMenuOpen, setTrackMenuOpen] = useState(false);
+  // 时间线缩放：1 = 整条时间线铺满面板，放大后经水平滚动查看；ruler 滚轮以鼠标位置为锚点。
+  const [zoom, setZoom] = useState(1);
+  const trackListRef = useRef<HTMLDivElement>(null);
+  const zoomAnchorRef = useRef<{ timeRatio: number; viewportLeft: number } | undefined>(undefined);
   const trackMenuRef = useRef<HTMLDivElement>(null);
   const draggedFrameRef = useRef<string | undefined>(undefined);
   const duration = Math.max(props.animation.duration, 0.1);
@@ -154,6 +158,85 @@ function SceneAnimationTimeline(props: Props) {
   useEffect(() => {
     if (selectedFrameId && !frames.some((frame) => frame.id === selectedFrameId)) setSelectedFrameId(undefined);
   }, [frames, selectedFrameId]);
+
+  // 全局键盘流：K 打帧 / 空格播放 / 方向键 scrub / Home·End 跳转。
+  // 经 liveRef 消费最新闭包值，listener 只挂一次，播放中不随 60fps 时间刷新重挂。
+  const liveRef = useRef({ props, recordFrame, seekTimeline, currentTime, duration, frameRate });
+  liveRef.current = { props, recordFrame, seekTimeline, currentTime, duration, frameRate };
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const live = liveRef.current;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName))) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const step = live.props.animation.snapToFrames ? 1 / live.frameRate : 0.1;
+      if (event.key === "k" || event.key === "K") {
+        // K 上下文感知：选中未锁定对象打对象帧，否则打相机帧（无选中也能一步建相机轨道）。
+        event.preventDefault();
+        live.recordFrame(live.props.selectedObjectName && !live.props.selectedObjectLocked ? "model" : "camera");
+      } else if (event.key === " ") {
+        event.preventDefault();
+        live.props.onPlayPause();
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        live.seekTimeline(live.currentTime - (event.shiftKey ? 1 : step));
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        live.seekTimeline(live.currentTime + (event.shiftKey ? 1 : step));
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        live.seekTimeline(0);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        live.seekTimeline(live.duration);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 缩放锚点：新宽度渲染后把缩放前鼠标下的时间点留在原视口位置，滚轮缩放不漂移。
+  useEffect(() => {
+    const anchor = zoomAnchorRef.current;
+    const container = trackListRef.current;
+    if (!anchor || !container) return;
+    zoomAnchorRef.current = undefined;
+    const rail = container.querySelector<HTMLElement>(".timeline-ruler-rail");
+    if (!rail) return;
+    // rail 宽与时长线性对应：锚点时间在 rail 上的像素位置 − 视口内偏移 = 新 scrollLeft。
+    container.scrollLeft = Math.max(0, anchor.timeRatio * rail.offsetWidth - anchor.viewportLeft);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoom]);
+
+  function changeTimelineZoom(scale: number, anchorClientX?: number) {
+    const next = Math.min(8, Math.max(1, Number(scale.toFixed(3))));
+    setZoom((previous) => {
+      if (previous === next) return previous;
+      const container = trackListRef.current;
+      const rail = container?.querySelector<HTMLElement>(".timeline-ruler-rail");
+      if (container && rail && anchorClientX !== undefined) {
+        const railRect = rail.getBoundingClientRect();
+        zoomAnchorRef.current = {
+          timeRatio: Math.min(1, Math.max(0, (anchorClientX - railRect.left) / Math.max(railRect.width, 1))),
+          viewportLeft: anchorClientX - container.getBoundingClientRect().left,
+        };
+      }
+      return next;
+    });
+  }
+
+  function onTimelineWheel(event: ReactWheelEvent<HTMLDivElement>) {
+    if (!event.deltaY) return;
+    event.preventDefault();
+    changeTimelineZoom(zoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15), event.clientX);
+  }
+
+  function playPatrol() {
+    // 一键巡检：回到时间线起点后从相机路径播放，作为演示招牌动线。
+    props.onSeek(0);
+    if (!props.playing) props.onPlayPause();
+  }
 
   useEffect(() => {
     if (!trackMenuOpen) return;
@@ -307,6 +390,9 @@ function SceneAnimationTimeline(props: Props) {
         <button className="timeline-reverse" title={tr(props.locale, "倒放", "Reverse play")} disabled={!props.onReversePlay} onClick={() => props.onReversePlay?.()}>
           <Play size={13} style={{ transform: "scaleX(-1)" }} />
         </button>
+        <button className="timeline-reverse timeline-patrol" title={tr(props.locale, "一键巡检：从头播放相机路径", "One-click patrol: play camera path from start")} disabled={props.animation.camera.length < 2} onClick={playPatrol}>
+          <Clapperboard size={13} />
+        </button>
         <span className="timeline-time">{props.animation.snapToFrames ? `F${Math.round(currentTime * frameRate)}` : `${currentTime.toFixed(2)}s`}</span>
         <span className="timeline-transport-space" />
         <span className="timeline-auto-key" title={tr(props.locale, "移动镜头或拖动对象后，在播放头自动建立或更新关键帧", "Moving the camera or an object creates or updates a keyframe at the playhead")}><CircleDot size={12} />{tr(props.locale, "自动关键帧", "Auto Key")}</span>
@@ -318,8 +404,8 @@ function SceneAnimationTimeline(props: Props) {
           <strong>{tr(props.locale, "关键帧", "Keyframes")}</strong>
           <small className="timeline-selection-name">
             {props.selectedObjectName
-              ? tr(props.locale, `已选择：${props.selectedObjectName}`, `Selected: ${props.selectedObjectName}`)
-              : tr(props.locale, "选择一个场景对象后可记录对象轨道", "Select a scene object to record an object track")}
+              ? tr(props.locale, `已选择：${props.selectedObjectName} · K 打对象帧 · 空格播放`, `Selected: ${props.selectedObjectName} · K records it · Space plays`)
+              : tr(props.locale, "K 记录相机帧 · 选中对象后 K 记录对象帧 · 空格播放", "K records camera · select an object and K records it · Space plays")}
           </small>
         </div>
         <div ref={trackMenuRef} className="timeline-track-create">
@@ -335,13 +421,13 @@ function SceneAnimationTimeline(props: Props) {
       </div>
 
       <div className={`timeline-editor-body ${selectedFrame ? "has-inspector" : ""}`}>
-        <div className="timeline-track-list">
-          <TimelineRuler locale={props.locale} duration={duration} currentTime={currentTime} onSeek={seekTimeline} />
-          {frames.length === 0 && <div className="timeline-empty"><Plus size={14} /><span><strong>{tr(props.locale, "建立第一条轨道", "Create the first track")}</strong><small>{tr(props.locale, "新增轨道会把当前镜头或所选对象记录到播放头位置。", "Adding a track records the current shot or selected object at the playhead.")}</small></span></div>}
-          {props.animation.camera.length > 0 && <TimelineTrack icon={<Camera size={13} />} name={tr(props.locale, "相机", "Camera")} count={props.animation.camera.length} duration={duration} currentTime={currentTime} selected={selectedTrackId === "camera"} selectLabel={tr(props.locale, "选择相机轨道", "Select camera track")} addLabel={tr(props.locale, "在播放头记录相机帧", "Record camera frame at playhead")} deleteLabel={tr(props.locale, "删除相机轨道", "Delete camera track")} hint={tr(props.locale, "单击定位播放头；双击添加关键帧", "Click to seek; double-click to add a keyframe")} onSelect={() => { setSelectedFrameId(undefined); setSelectedTrackId("camera"); }} onSeek={seekTimeline} onDelete={() => deleteTrack("camera")} onAdd={time => recordFrame("camera", time)}>
+        <div className="timeline-track-list" ref={trackListRef} onWheel={onTimelineWheel}>
+          <TimelineRuler locale={props.locale} duration={duration} currentTime={currentTime} onSeek={seekTimeline} zoom={zoom} onZoomReset={() => changeTimelineZoom(1)} />
+          {frames.length === 0 && <div className="timeline-empty"><Plus size={14} /><span><strong>{tr(props.locale, "建立第一条轨道", "Create the first track")}</strong><small>{tr(props.locale, "新增轨道或按 K，把当前镜头/所选对象记录到播放头位置。", "Add a track or press K to record the current shot or selected object at the playhead.")}</small></span></div>}
+          {props.animation.camera.length > 0 && <TimelineTrack icon={<Camera size={13} />} name={tr(props.locale, "相机", "Camera")} count={props.animation.camera.length} duration={duration} currentTime={currentTime} zoom={zoom} selected={selectedTrackId === "camera"} selectLabel={tr(props.locale, "选择相机轨道", "Select camera track")} addLabel={tr(props.locale, "在播放头记录相机帧", "Record camera frame at playhead")} deleteLabel={tr(props.locale, "删除相机轨道", "Delete camera track")} hint={tr(props.locale, "单击定位播放头；双击添加关键帧；滚轮缩放", "Click to seek; double-click to add a keyframe; wheel to zoom")} onSelect={() => { setSelectedFrameId(undefined); setSelectedTrackId("camera"); }} onSeek={seekTimeline} onDelete={() => deleteTrack("camera")} onAdd={time => recordFrame("camera", time)}>
             {props.animation.camera.map((frame) => frameMarker({ ...frame, kind: "camera" }))}
           </TimelineTrack>}
-          {objectTracks.map((track) => <TimelineTrack key={track.modelId} icon={<Box size={13} />} name={track.name} count={track.frames.length} duration={duration} currentTime={currentTime} selected={selectedTrackId === `model:${track.modelId}`} selectLabel={tr(props.locale, `选择 ${track.name} 轨道`, `Select ${track.name} track`)} addLabel={tr(props.locale, `为 ${track.name} 记录关键帧`, `Record a keyframe for ${track.name}`)} deleteLabel={tr(props.locale, `删除 ${track.name} 轨道`, `Delete ${track.name} track`)} hint={tr(props.locale, "单击定位播放头；双击添加关键帧", "Click to seek; double-click to add a keyframe")} onSelect={() => { setSelectedFrameId(undefined); setSelectedTrackId(`model:${track.modelId}`); }} onSeek={seekTimeline} onDelete={() => deleteTrack(`model:${track.modelId}`)} onAdd={time => recordFrame("model", time, track.modelId)}>
+          {objectTracks.map((track) => <TimelineTrack key={track.modelId} icon={<Box size={13} />} name={track.name} count={track.frames.length} duration={duration} currentTime={currentTime} zoom={zoom} selected={selectedTrackId === `model:${track.modelId}`} selectLabel={tr(props.locale, `选择 ${track.name} 轨道`, `Select ${track.name} track`)} addLabel={tr(props.locale, `为 ${track.name} 记录关键帧`, `Record a keyframe for ${track.name}`)} deleteLabel={tr(props.locale, `删除 ${track.name} 轨道`, `Delete ${track.name} track`)} hint={tr(props.locale, "单击定位播放头；双击添加关键帧；滚轮缩放", "Click to seek; double-click to add a keyframe; wheel to zoom")} onSelect={() => { setSelectedFrameId(undefined); setSelectedTrackId(`model:${track.modelId}`); }} onSeek={seekTimeline} onDelete={() => deleteTrack(`model:${track.modelId}`)} onAdd={time => recordFrame("model", time, track.modelId)}>
             {track.frames.map((frame) => frameMarker({ ...frame, kind: "model" }))}
           </TimelineTrack>)}
         </div>
@@ -500,10 +586,14 @@ function DirectorTabs({ locale, workspace, onChange }: { locale: AppLocale; work
   </nav>;
 }
 
-function TimelineRuler({ locale, duration, currentTime, onSeek }: { locale: AppLocale; duration: number; currentTime: number; onSeek: (time: number) => void }) {
-  const ticks = [0, .25, .5, .75, 1];
+function TimelineRuler({ locale, duration, currentTime, onSeek, zoom = 1, onZoomReset }: { locale: AppLocale; duration: number; currentTime: number; onSeek: (time: number) => void; zoom?: number; onZoomReset?: () => void }) {
+  // 刻度数量随缩放加密：可视密度恒定，标签按 0.1s 精度渲染避免拥挤。
+  const tickCount = Math.min(25, Math.max(4, Math.round(zoom * 4)));
+  const ticks = Array.from({ length: tickCount + 1 }, (_, index) => index / tickCount);
   const playhead = `${Math.min(100, Math.max(0, (currentTime / duration) * 100))}%`;
-  return <div className="timeline-ruler" aria-label={tr(locale, "时间标尺", "Time ruler")}><span>{tr(locale, "轨道", "Tracks")}</span><div className="timeline-ruler-rail" title={tr(locale, "拖动播放头定位时间", "Drag to seek")} onPointerDown={event => beginTimelineScrub(event, duration, onSeek)}>{ticks.map((ratio) => <i key={ratio} style={{ left: `${ratio * 100}%` }}>{(duration * ratio).toFixed(ratio === 0 ? 0 : 1)}s</i>)}<b className="timeline-playhead" style={{ left: playhead }} /></div></div>;
+  // 放大时加宽第二列，让滚动容器出现真实横向滚动；rail 百分比坐标不变。
+  const rulerStyle = zoom !== 1 ? { gridTemplateColumns: `155px calc(${zoom} * (100% - 155px))` } : undefined;
+  return <div className="timeline-ruler" style={rulerStyle} aria-label={tr(locale, "时间标尺", "Time ruler")}><span title={onZoomReset ? tr(locale, `缩放 ${zoom.toFixed(1)}×；双击重置`, `Zoom ${zoom.toFixed(1)}×; double-click to reset`) : undefined} onDoubleClick={onZoomReset}>{zoom > 1.001 ? <button type="button" className="timeline-zoom-badge" onClick={onZoomReset} title={tr(locale, "重置缩放", "Reset zoom")}>{zoom.toFixed(1)}×</button> : tr(locale, "轨道", "Tracks")}</span><div className="timeline-ruler-rail" title={tr(locale, "拖动定位；滚轮缩放", "Drag to seek; wheel to zoom")} onPointerDown={event => beginTimelineScrub(event, duration, onSeek)}>{ticks.map((ratio) => <i key={ratio} style={{ left: `${ratio * 100}%` }}>{(duration * ratio).toFixed(ratio === 0 ? 0 : 1)}s</i>)}<b className="timeline-playhead" style={{ left: playhead }} /></div></div>;
 }
 
 function TimelineTrack(props: {
@@ -512,6 +602,7 @@ function TimelineTrack(props: {
   count: number;
   duration: number;
   currentTime: number;
+  zoom?: number;
   selected: boolean;
   selectLabel: string;
   addLabel: string;
@@ -524,8 +615,10 @@ function TimelineTrack(props: {
   children: ReactNode;
 }) {
   const playhead = `${Math.min(100, Math.max(0, (props.currentTime / props.duration) * 100))}%`;
+  // 放大时与 ruler 同公式加宽第二列；rail 内百分比坐标相对变宽后的 rail，scrub/拖拽换算自动成立。
+  const rowStyle = props.zoom && props.zoom !== 1 ? { gridTemplateColumns: `155px calc(${props.zoom} * (100% - 155px))` } : undefined;
   return (
-    <div className={`timeline-track-row ${props.selected ? "selected" : ""}`} tabIndex={0} role="group" aria-label={props.selectLabel} data-selected={props.selected || undefined} onFocus={event => { if (event.target === event.currentTarget) props.onSelect(); }} onPointerDown={event => { if (!(event.target as HTMLElement).closest("button")) props.onSelect(); }}>
+    <div className={`timeline-track-row ${props.selected ? "selected" : ""}`} style={rowStyle} tabIndex={0} role="group" aria-label={props.selectLabel} data-selected={props.selected || undefined} onFocus={event => { if (event.target === event.currentTarget) props.onSelect(); }} onPointerDown={event => { if (!(event.target as HTMLElement).closest("button")) props.onSelect(); }}>
       <div className="timeline-track-label">
         {props.icon}
         <span title={props.name}>{props.name}</span>

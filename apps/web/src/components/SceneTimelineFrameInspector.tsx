@@ -83,6 +83,11 @@ export function SceneTimelineFrameInspector(props: Props) {
         <VectorFields label={tr(locale, "位置", "Position")} value={frame.transform.position} onChange={(position) => props.onUpdate({ ...frame, transform: { ...frame.transform, position } })} />
         <VectorFields label={tr(locale, "旋转", "Rotation")} value={frame.transform.rotation} onChange={(rotation) => props.onUpdate({ ...frame, transform: { ...frame.transform, rotation } })} />
         <VectorFields label={tr(locale, "缩放", "Scale")} value={frame.transform.scale} onChange={(scale) => props.onUpdate({ ...frame, transform: { ...frame.transform, scale } })} />
+        <label className="timeline-frame-time"><span>{tr(locale, "自发光强度", "Emissive intensity")}</span><DeferredNumberInput min={0} max={10} step={0.1} value={roundParameter(frame.emissiveIntensity ?? 1)} onCommit={(value) => {
+          const { emissiveIntensity: _, ...base } = frame;
+          // 数值等于材质默认 1 时清除字段，场景文档不为“无动画”携带冗余。
+          props.onUpdate(Math.abs(value - 1) < 1e-4 ? base : { ...base, emissiveIntensity: roundParameter(value) });
+        }} /><i>{frame.emissiveIntensity === undefined ? tr(locale, "默认", "default") : ""}</i></label>
         <label className="timeline-frame-select"><span>{tr(locale, "可见性", "Visibility")}</span><select aria-label={tr(locale, "此帧起的对象可见性", "Object visibility from this frame")} value={frame.visibility === undefined ? "inherit" : frame.visibility ? "visible" : "hidden"} onChange={(event) => {
           const { visibility: _, ...base } = frame;
           props.onUpdate(event.target.value === "inherit" ? base : { ...base, visibility: event.target.value === "visible" });

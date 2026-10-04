@@ -51,6 +51,50 @@ describe("timeline sampling", () => {
     expect(result?.target.x).toBe(1);
   });
 
+  it("applies per-keyframe cubic-bezier easing to camera playback", () => {
+    // 相机帧 easing [0,0,1,1] ≡ 线性：进度 0.25 → x = 2.5；对照无 easing 的 smooth 曲线会 > 2.5。
+    const camera = (x: number) => ({ position: { x, y: 0, z: 5 }, target: { x: 0, y: 0, z: 0 }, mode: "orbit" as const });
+    const eased = [
+      { id: "a", time: 0, camera: camera(0), transition: "cubic-bezier" as const, easing: [0, 0, 1, 1] as const },
+      { id: "b", time: 10, camera: camera(10) },
+    ];
+    expect(sampleCameraKeyframes(eased, 2.5)?.position.x).toBeCloseTo(2.5, 3);
+    // ease-in 形状 [1,0,1,1]：进度 0.25 时 y < 0.25,位置落后于线性。
+    const easedIn = eased.map((frame, index) => index === 0 ? { ...frame, easing: [1, 0, 1, 1] as const } : frame);
+    const easedX = sampleCameraKeyframes(easedIn, 2.5)?.position.x ?? 0;
+    expect(easedX).toBeLessThan(2.5);
+    expect(easedX).toBeGreaterThan(0);
+  });
+
+  it("interpolates emissiveIntensity across keyframes and stays silent when unauthored", () => {
+    const transform = (x: number) => ({ position: { x, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } });
+    const frames = [
+      { id: "a", modelId: "m", time: 0, transform: transform(0), emissiveIntensity: 0.2 },
+      { id: "b", modelId: "m", time: 10, transform: transform(10), emissiveIntensity: 2.2 },
+    ];
+    expect(sampleModelKeyframes(frames, 5)?.emissiveIntensity).toBeCloseTo(1.2, 5);
+    expect(sampleModelKeyframes(frames, 0)?.emissiveIntensity).toBeCloseTo(0.2, 5);
+    expect(sampleModelKeyframes(frames, 10)?.emissiveIntensity).toBeCloseTo(2.2, 5);
+    // 缺省帧按材质默认 1 参与插值：0.2 → 1 的半程 = 0.6。
+    const { emissiveIntensity: _drop, ...restB } = frames[1]!;
+    const partialFrames = [frames[0]!, { ...restB }];
+    expect(sampleModelKeyframes(partialFrames, 5)?.emissiveIntensity).toBeCloseTo(0.6, 5);
+    // 整条轨道都没写自发光：不产出该字段，运行时不动材质。
+    const plain = [{ id: "a", modelId: "m", time: 0, transform: transform(0) }, { id: "b", modelId: "m", time: 10, transform: transform(10) }];
+    expect(sampleModelKeyframes(plain, 5)?.emissiveIntensity).toBeUndefined();
+  });
+
+  it("honours ease-in-out as the track-default object interpolation", () => {
+    const transform = (x: number) => ({ position: { x, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } });
+    const frames = [{ id: "a", modelId: "m", time: 0, transform: transform(0) }, { id: "b", modelId: "m", time: 10, transform: transform(10) }];
+    // ease-in-out 曲线在进度 0.25 处 y = 4t³ = 0.0625 → x = 0.625；线性会是 2.5。
+    expect(sampleModelKeyframes(frames, 2.5, "ease-in-out")?.position.x).toBeCloseTo(0.625, 3);
+    expect(sampleModelKeyframes(frames, 2.5, "linear")?.position.x).toBeCloseTo(2.5, 3);
+    // 单帧显式 transition 优先于轨道默认。
+    const stepped = frames.map((frame, index) => index === 0 ? { ...frame, transition: "step" as const } : frame);
+    expect(sampleModelKeyframes(stepped, 9.9, "ease-in-out")?.position.x).toBe(0);
+  });
+
   it("keeps model samples at the first and last keyframes outside the range", () => {
     const frames = [
       { id: "a", modelId: "model", time: 2, transform: { position: { x: 1, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } } },

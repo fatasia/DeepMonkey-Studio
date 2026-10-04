@@ -137,6 +137,52 @@ describe("scene material validation", () => {
   });
 });
 
+describe("scene animation keyframe validation", () => {
+  const camera = (x: number) => ({ position: { x, y: 0, z: 5 }, target: { x: 0, y: 0, z: 0 }, mode: "orbit" as const });
+
+  function animationScene(animation: unknown) {
+    return {
+      id: "scene-kf", name: "巡检",
+      camera: camera(0),
+      models: [{ modelId: "pump-1", name: "循环泵", visible: true, opacity: 1, transform }],
+      primitives: [],
+      measurements: [],
+      animation,
+    };
+  }
+
+  it("roundtrips UI-authored easings, bezier params, visibility and emissive intensity", () => {
+    // UI 面板允许的完整写出集合：ease-in-out 轨道默认 + cubic-bezier 帧过渡 + 自发光/可见性帧。
+    expect(() => validateScene(animationScene({
+      duration: 10, loop: true,
+      modelInterpolation: "ease-in-out",
+      cameraInterpolation: "spline",
+      camera: [
+        { id: "k1", time: 0, camera: camera(0), transition: "cubic-bezier", easing: [0.42, 0, 0.58, 1] },
+        { id: "k2", time: 10, camera: camera(8), transition: "ease-in-out" },
+      ],
+      models: [
+        { id: "m1", time: 0, modelId: "pump-1", transform, transition: "cubic-bezier", easing: [0.5, 0, 0.5, 1], visibility: true, emissiveIntensity: 0.2 },
+        { id: "m2", time: 10, modelId: "pump-1", transform, emissiveIntensity: 2.4, visibility: false },
+      ],
+    }), "scene")).not.toThrow();
+  });
+
+  it("keeps rejecting unknown interpolation and malformed bezier payloads", () => {
+    expect(() => validateScene(animationScene({ duration: 4, loop: true, camera: [], models: [], modelInterpolation: "bounce" }), "scene")).toThrow("modelInterpolation");
+    expect(() => validateScene(animationScene({
+      duration: 4, loop: true, camera: [], models: [
+        { id: "m1", time: 0, modelId: "pump-1", transform, transition: "cubic-bezier", easing: [0.4, 0, 0.6] },
+      ],
+    }), "scene")).toThrow();
+    expect(() => validateScene(animationScene({
+      duration: 4, loop: true, camera: [], models: [
+        { id: "m1", time: 0, modelId: "pump-1", transform, transition: "spring" },
+      ],
+    }), "scene")).toThrow("transition");
+  });
+});
+
 describe("scene robot planning evidence validation", () => {
   it("accepts explicit payload, TCP and combined center-of-mass evidence", () => {
     expect(() => validateScene(robotScene({
