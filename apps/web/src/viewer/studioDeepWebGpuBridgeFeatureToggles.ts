@@ -103,3 +103,16 @@ export function f3VirtualTexturesEnabled(): boolean {
   const value = params?.get("f3-virtual-textures")?.toLowerCase();
   return value === "1" || value === "true" || value === "on";
 }
+
+/**
+ * GI 光照烘焙开关（Brief-GI M2/M3）：`sdf-gi=1`。默认关闭（能力登记为
+ * supported/opt-in-default-off；关闭 = 引擎不构建 SDF GI 运行时，帧逐位零变化）。
+ * 开启后 Deep 后端按包场景 revision 变化自动烘焙（GPU 距离场 + 天光追踪 + 探针
+ * SH 更新 + 探针场物化），「光照烘焙」工作台面板随之可观测烘焙计数与产物规模。
+ */
+export function sdfGiEnabled(): boolean {
+  const params = typeof location !== "undefined" && location.search
+    ? new URLSearchParams(location.search) : undefined;
+  const value = params?.get("sdf-gi")?.toLowerCase();
+  return value === "1" || value === "true" || value === "on";
+}

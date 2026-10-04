@@ -22,6 +22,8 @@ import { ScenePhysicsPanel } from "../components/ScenePhysicsPanel";
 import { PhysicsDebugPanel } from "../components/PhysicsDebugPanel";
 import { DEFAULT_PHYSICS_DEBUG_LAYERS, type PhysicsDebugFilter, type PhysicsDebugLayers } from "../viewer/physicsDebugSnapshot";
 import { QualityTelemetryPanel } from "../components/QualityTelemetryPanel";
+import { DevHud } from "../components/DevHud";
+import { LightingBakeBenchPanel } from "../components/LightingBakeBenchPanel";
 import { PublishedViewerToolDock } from "../components/PublishedViewerToolDock";
 import { PublishedViewerObjectPanel } from "../components/PublishedViewerObjectPanel";
 import { SceneTimelinePanel, type SceneDirectorWorkspace } from "../components/SceneTimelinePanel";
@@ -35,6 +37,7 @@ import { sceneViewerDeliveryToolbarVisible } from "../delivery/sceneViewerDelive
 import type { SceneSimulationPanelId } from "../simulation/sceneSimulationRegistry";
 import type { SimulationDockReservation } from "../simulation/sceneSimulationLayout";
 import { useGlobalShortcuts } from "../shortcuts/useGlobalShortcuts";
+import { isTextEntryTarget } from "../shortcuts/keymap";
 import { useSceneSimulationOverlay } from "../hooks/useSceneSimulationOverlay";
 import { useScenePlantPlayback } from "../hooks/useScenePlantPlayback";
 import { useSceneEditPort } from "../hooks/useSceneEditPort";
@@ -168,6 +171,10 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   const [viewerObjectPanelOpen, setViewerObjectPanelOpen] = useState(false);
   const [engineeringOpen, setEngineeringOpen] = useState(false);
   const [qualityPanelOpen, setQualityPanelOpen] = useState(false);
+  // 刀 6:开发者 HUD(性能观测小条)开态;默认关,F9 或工具坞「仿真与开发」菜单开。
+  const [devHudOpen, setDevHudOpen] = useState(false);
+  // T0 刀 4:光照烘焙工作台开态(工作区持有,面板关闭重开不丢会话观察)。
+  const [bakeBenchOpen, setBakeBenchOpen] = useState(false);
   const [simulationPanelId, setSimulationPanelId] = useState<SceneSimulationPanelId>();
   const [simulationDock, setSimulationDock] = useState<SimulationDockReservation>({ placement: "float", collapsed: false, width: 0 });
   const [simulationStudy, setSimulationStudy] = useState<PlantLiteStudyRecord>();
@@ -327,6 +334,19 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
     "camera.focus": () => engine?.fitAll(),
   });
 
+  // 刀 6:开发者 HUD 用固定 F9,不进用户可配置键位表(keymap 面向编辑动作);
+  // 文本控件聚焦时跳过,与全局快捷键分发器同纪律。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "F9" || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+      if (isTextEntryTarget(event.target)) return;
+      event.preventDefault();
+      setDevHudOpen((value) => !value);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     <div className="workspace" data-simulation-dock={route.view === "studio" && simulationPanelId ? simulationDock.placement : "float"} role={workspaceIsPrimary ? "main" : undefined} aria-hidden={workspaceIsPrimary ? undefined : true}>
       <div className="studio-scene-surface" style={route.view === "studio" && simulationPanelId ? { left: simulationDock.placement === "left" ? simulationDock.width : 0, right: simulationDock.placement === "right" ? simulationDock.width : 0 } : undefined}>
@@ -408,6 +428,10 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           physicsDebugActive={physicsDebugVisible}
           qualityPanelOpen={qualityPanelOpen}
           onQualityPanelToggle={() => setQualityPanelOpen(value => !value)}
+          devHudOpen={devHudOpen}
+          onDevHudToggle={() => setDevHudOpen(value => !value)}
+          bakeBenchOpen={bakeBenchOpen}
+          onBakeBenchToggle={() => setBakeBenchOpen(value => !value)}
           xrOpen={xrPanelOpen}
           simulationPanel={simulationPanelId}
           infoEnabled={infoEnabled}
@@ -543,6 +567,21 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           locale={locale}
           engine={engine ?? undefined}
           onClose={() => setQualityPanelOpen(false)}
+        />
+      )}
+      {route.view === "studio" && devHudOpen && (
+        <DevHud
+          locale={locale}
+          engine={engine ?? undefined}
+          onClose={() => setDevHudOpen(false)}
+        />
+      )}
+      {route.view === "studio" && bakeBenchOpen && (
+        <LightingBakeBenchPanel
+          locale={locale}
+          engine={engine ?? undefined}
+          viewportRef={viewportRef}
+          onClose={() => setBakeBenchOpen(false)}
         />
       )}
       {route.view === "studio" && xrPanelOpen && (

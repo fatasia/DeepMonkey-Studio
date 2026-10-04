@@ -51,6 +51,13 @@ export interface StudioQualityTelemetryStatus {
   readonly latestExecutionCoverage?: PbrFrameExecutionCoverage;
   /** F1 可见绘制量最新读出(undefined = 后端未产出该读数)。 */
   readonly latestVisibleDraws?: NonNullable<FrameMetrics["visibleDraws"]>;
+  /**
+   * 光照烘焙工作台读数(features.sdfGi 开启且运行时已产出时出现):sdfGi 烘焙/探针/
+   * 物化计数器 + 探针更新预算。字段由引擎帧循环展开进 FrameMetrics(运行时字段,
+   * 类型登记归属 deep-engine/webgpu FrameMetrics,本侧以窄化接口直通,不加工)。
+   * undefined = sdfGi 运行时未构建(features 默认关)或该帧未携带。
+   */
+  readonly latestSdfGi?: import("../components/bakeBenchModel.js").SdfGiBakeMetrics;
   /** 采集器拒收等自检失败;非空表示采样已停止,面板必须展示而非静默。 */
   readonly failure?: string;
 }
@@ -97,6 +104,7 @@ export class StudioDeepQualityTelemetrySampler {
   private visibleMeasured = false;
   private latestVisibleDraws: NonNullable<FrameMetrics["visibleDraws"]> | undefined;
   private latestExecutionCoverage: PbrFrameExecutionCoverage | undefined;
+  private latestSdfGi: NonNullable<StudioQualityTelemetryStatus["latestSdfGi"]> | undefined;
 
   constructor(options: StudioQualityTelemetryOptions | undefined, activeProfile: AuthoredQualityProfile | null,
     readResidentBytes: () => number | undefined) {
@@ -120,6 +128,18 @@ export class StudioDeepQualityTelemetrySampler {
     // F1 执行 coverage 与可见绘制量直通:同为量读数,只透传不加工。
     if (metrics.frameExecutionCoverage) this.latestExecutionCoverage = metrics.frameExecutionCoverage;
     if (metrics.visibleDraws) { this.visibleMeasured = true; this.latestVisibleDraws = metrics.visibleDraws; }
+    // GI 烘焙工作台直通:sdfGi 指标是引擎帧循环的运行时展开字段(缺型属引擎侧登记),
+    // 窄化接口读取;本帧未携带时保留上一帧读数(sticky,与 latestPassTimings 同口径)。
+    const sdfGiFrame = metrics as FrameMetrics & Partial<StudioQualityTelemetryStatus["latestSdfGi"]>;
+    if (typeof sdfGiFrame.sdfGiBakes === "number") {
+      this.latestSdfGi = { sdfGiBakes: sdfGiFrame.sdfGiBakes, sdfGiBakesGpu: sdfGiFrame.sdfGiBakesGpu ?? 0,
+        sdfGiBakeCells: sdfGiFrame.sdfGiBakeCells ?? 0, sdfGiProbeCount: sdfGiFrame.sdfGiProbeCount ?? 0,
+        sdfGiProbesUpdated: sdfGiFrame.sdfGiProbesUpdated ?? 0,
+        sdfGiProbeWindowOffset: sdfGiFrame.sdfGiProbeWindowOffset ?? 0,
+        sdfGiSkyTraceDispatches: sdfGiFrame.sdfGiSkyTraceDispatches ?? 0,
+        sdfGiPublishDispatches: sdfGiFrame.sdfGiPublishDispatches ?? 0,
+        ddgiUpdateBudget: metrics.adaptiveQuality?.knobs.ddgiUpdateBudget };
+    }
     this.windowFrames++;
     this.windowLatestFrame = metrics.frame;
     const receipt = metrics.frameGraphReceipt;
@@ -154,6 +174,7 @@ export class StudioDeepQualityTelemetrySampler {
       ...(this.latestPassTimings !== undefined ? { latestPassTimings: this.latestPassTimings } : {}),
       ...(this.latestExecutionCoverage !== undefined ? { latestExecutionCoverage: this.latestExecutionCoverage } : {}),
       ...(this.latestVisibleDraws !== undefined ? { latestVisibleDraws: this.latestVisibleDraws } : {}),
+      ...(this.latestSdfGi !== undefined ? { latestSdfGi: this.latestSdfGi } : {}),
       ...(this.failure !== undefined ? { failure: this.failure } : {}),
     };  }
 

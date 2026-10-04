@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  Activity,
   Atom,
   Bot,
   Box,
@@ -10,6 +11,7 @@ import {
   Eye,
   EyeOff,
   Film,
+  Flame,
   Focus,
   Footprints,
   Gauge,
@@ -65,6 +67,12 @@ interface SceneToolDockProps {
   physicsDebugActive?: boolean;
   qualityPanelOpen: boolean;
   onQualityPanelToggle: () => void;
+  /** 刀 6:开发者 HUD(性能观测小条,F9 亦可开关);默认关。 */
+  devHudOpen?: boolean;
+  onDevHudToggle?: () => void;
+  /** T0 刀 4:光照烘焙工作台(Brief-GI)开态与开关;烘焙状态点由面板自身承载。 */
+  bakeBenchOpen?: boolean;
+  onBakeBenchToggle?: () => void;
   xrOpen: boolean;
   simulationPanel: SceneSimulationPanelId | undefined;
   infoEnabled: boolean;
@@ -340,6 +348,8 @@ export function SceneToolDock(props: SceneToolDockProps) {
           props.behaviorOpen ||
           props.physicsOpen ||
           props.qualityPanelOpen ||
+          props.devHudOpen === true ||
+          props.bakeBenchOpen ||
           props.xrOpen ||
           Boolean(props.simulationPanel)
         }
@@ -367,6 +377,18 @@ export function SceneToolDock(props: SceneToolDockProps) {
           icon={<Gauge size={15} />}
           active={props.qualityPanelOpen}
           onClick={() => run(props.onQualityPanelToggle)}
+        />
+        <MenuAction
+          label={tr(props.locale, "开发者 HUD", "Developer HUD")}
+          icon={<Activity size={15} />}
+          active={props.devHudOpen === true}
+          onClick={() => run(() => props.onDevHudToggle?.())}
+        />
+        <MenuAction
+          label={tr(props.locale, "光照烘焙", "Lighting bake")}
+          icon={<Flame size={15} />}
+          active={props.bakeBenchOpen === true}
+          onClick={() => run(() => props.onBakeBenchToggle?.())}
         />
         <MenuAction
           label={tr(props.locale, "AR / VR 体验", "AR / VR")}

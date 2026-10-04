@@ -30,6 +30,20 @@ describe("workspace UI regressions", () => {
     expect(resolveDashboardLibraryItem("zh-CN", "topology:topology-1", [{ id: "topology-1", name: "总装线拓扑" }])?.widget?.topologyId).toBe("topology-1");
   });
 
+  it("keeps the template library entry visible on the default basic source", () => {
+    const html = renderToStaticMarkup(<DashboardComponentLibrary
+      locale="zh-CN"
+      projectId="project-1"
+      sceneAvailable
+      searchInputRef={{ current: null }}
+      onOpenTemplates={vi.fn()}
+      onAddSceneViewport={vi.fn()}
+      onAddWidget={vi.fn()}
+    />);
+    expect(html).toContain("dashboard-library-template-button");
+    expect(html).toContain("模板");
+  });
+
   it("exposes a resizable timeline with a clear track creation entry", () => {
     const html = renderToStaticMarkup(<SceneTimelinePanel
       locale="zh-CN"

@@ -10,6 +10,7 @@ import { ModelAnimationControl } from "../components/ModelAnimationControl";
 import { ModelRigControl } from "../components/ModelRigControl";
 import { RobotSceneInspector } from "../components/RobotSceneInspector";
 import { ObjectAppearanceEditor } from "../components/ObjectAppearanceEditor";
+import { MaterialGraphEditor } from "../components/MaterialGraphEditor";
 import { SceneAnnotationInspector } from "../components/SceneAnnotationInspector";
 import { SceneDataBindingEditor } from "../components/SceneDataBindingEditor";
 import { SceneInspectorInfo } from "../components/SceneInspectorInfo";
@@ -309,6 +310,16 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                   onSaveMaterialPreset={materialPresetActions.saveUserMaterialPreset}
                   onDeleteMaterialPreset={materialPresetActions.deleteUserMaterialPreset}
                 />
+                {selected.kind === "model" && activeScene && (
+                  <MaterialGraphEditor
+                    locale={locale}
+                    disabled={selectionLocked}
+                    sceneId={activeScene.id}
+                    modelId={selected.id}
+                    material={selectionMaterial}
+                    onApplyMaterialPatch={updateSelectionMaterial}
+                  />
+                )}
                 {selected.kind === "model" && (
                   <div className="field explosion-field">
                     <span>{tr(locale, "模型爆炸", "Model explosion")}</span>
