@@ -1,15 +1,26 @@
 import type { DeviceSession } from "./deviceSession.js";
 import { SPATIAL_AA_PRESENT_WGSL } from "../postprocess/spatialAaWgsl.js";
+import { SmaaPasses } from "./smaaPasses.js";
+
+/** Spatial AA algorithm variant. Default stays "fxaa" (byte-identical legacy path);
+ * flipping the SMAA default is a main-thread decision after the AA-M2 acceptance gates. */
+export type SpatialAaVariant = "fxaa" | "smaa";
+export const DEFAULT_SPATIAL_AA_VARIANT: SpatialAaVariant = "fxaa";
+export interface SpatialAaPresentOptions { readonly variant?: SpatialAaVariant }
 
 interface Target { texture: GPUTexture; view: GPUTextureView; binding: GPUBindGroup }
-/** One display-encoded intermediate; allocation/binding is transactional. Overlay is drawn after encode. */
+/** One display-encoded intermediate; allocation/binding is transactional. Overlay is drawn after encode.
+ * Variants: "fxaa" = single-pass legacy (unchanged); "smaa" = three-pass SMAA 1x (AA-M2 L3). */
 export class SpatialAaPresent {
   private readonly pipeline: GPURenderPipeline;
   private readonly sampler: GPUSampler;
+  private readonly smaa: SmaaPasses | undefined;
   private target: Target | undefined;
   private disposed = false;
-  constructor(private readonly session: DeviceSession) {
+  constructor(private readonly session: DeviceSession, options: SpatialAaPresentOptions = {}) {
+    const variant = options.variant ?? DEFAULT_SPATIAL_AA_VARIANT;
     if (session.format !== "rgba8unorm" && session.format !== "bgra8unorm") throw new Error("Spatial AA requires a non-sRGB 8-bit display target.");
+    if (variant === "smaa") { this.smaa = new SmaaPasses(session, session.format); }
     const device = session.device, module = device.createShaderModule({ label: "Deep spatial AA", code: SPATIAL_AA_PRESENT_WGSL });
     this.pipeline = device.createRenderPipeline({ label: "Deep spatial AA", layout: "auto",
       vertex: { module, entryPoint: "vertexMain" }, fragment: { module, entryPoint: "fragmentMain", targets: [{ format: session.format }] },
@@ -20,6 +31,7 @@ export class SpatialAaPresent {
     this.assertReady();
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1
       || width > this.session.device.limits.maxTextureDimension2D || height > this.session.device.limits.maxTextureDimension2D) throw new Error("Invalid spatial AA target dimensions.");
+    if (this.smaa) return this.smaa.prepare(width, height);
     if (this.target?.texture.width === width && this.target.texture.height === height) return this.target.view;
     const texture = this.session.own(this.session.device.createTexture({ label: "Deep display-encoded AA input",
       size: [width, height], format: this.session.format,
@@ -36,6 +48,7 @@ export class SpatialAaPresent {
   }
   encode(encoder: GPUCommandEncoder, present: GPUTextureView, queries?: GPUQuerySet): void {
     this.assertReady();
+    if (this.smaa) { this.smaa.encode(encoder, present, queries); return; }
     if (!this.target) throw new Error("Spatial AA target is not prepared.");
     const pass = encoder.beginRenderPass({ label: "Deep spatial AA presentation",
       ...(queries ? { timestampWrites: { querySet: queries, endOfPassWriteIndex: 1 } } : {}),
@@ -46,8 +59,11 @@ export class SpatialAaPresent {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    const old = this.target; this.target = undefined;
-    if (old) this.session.release(old.texture);
+    try { this.smaa?.dispose(); }
+    finally {
+      const old = this.target; this.target = undefined;
+      if (old) this.session.release(old.texture);
+    }
   }
   private assertReady(): void {
     if (this.disposed) throw new Error("Spatial AA is disposed.");
