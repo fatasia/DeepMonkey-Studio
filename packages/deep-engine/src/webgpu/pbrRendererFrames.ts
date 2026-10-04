@@ -102,6 +102,8 @@ export interface PbrRendererFrameHost {
   readonly contactShadows: ContactShadowResources | undefined;
   /** Brief-GI M2 生产 SDF GI dispatch;opt-in(features.sdfGi),默认不存在。 */
   readonly sdfGi: SdfGiProductionRuntime | undefined;
+  /** M2 方向光 RT 阴影(opt-in features.rayTracedShadows):帧内 mask dispatch 钩子。 */
+  readonly rtShadows: import("./rtShadowFrame.js").RtShadowFrameController | undefined;
   readonly deviceEpoch: RendererDeviceEpoch;
   readonly depthResolve: PbrDepthResolvePass | undefined;
   readonly diagnostics: PbrRendererDiagnostics;
@@ -331,6 +333,16 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
         }],
       ]), { encoderLabelPrefix: "Deep PBR prepare" });
     const encoder = device.createCommandEncoder({ label: "Deep frame" });
+    // M2 方向光 RT 阴影(opt-in):mask dispatch 先于直接光绘制(同一 encoder)。
+    // 深度为上一已提交帧的主帧 depth(mask 恒一帧延迟,与 TAA 抖动序列同构);
+    // 钩子返回 undefined(pass 未就绪/降级/分辨率失配)时开关位已为 0,级联生效。
+    if (host.rtShadows) {
+      host.rtShadows.ensureSurface(size.width, size.height);
+      void host.rtShadows.encodeFrame({ encoder, width: size.width, height: size.height,
+        depthTexture: host.targets.depthTexture,
+        viewProjection: frameState.depthViewProjection,
+        lightDirection: sceneLighting.primary.rayDirectionWorld, extent: view.extent });
+    }
     // F4 虚拟纹理逐帧推进(opt-in):batch 级反馈代理 → 预算驻留 → tile-lookup 消费
     // 编码,全部挂主 encoder;驻留时钟独立自增(渲染失败重试帧不破坏单调合同)。
     const virtualTexturesMetrics = host.virtualTextures
