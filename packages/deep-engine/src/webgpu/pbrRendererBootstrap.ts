@@ -12,7 +12,11 @@ import { assertTextureArrayProductionReady } from "./textureArrayProductionGate.
 import { probePbrMainSampleCount, type PbrMsaaCapability } from "./pbrMsaaCapability.js";
 import { resolvePbrMsaaSampleCount } from "./renderTargets.js";
 
-/** Owns bootstrap error scopes and cancellation; the renderer owns successfully prepared resources. */
+/** Owns bootstrap error scopes and cancellation; the renderer owns successfully prepared resources.
+ * 刀 C 归因记录(2026-10-05):曾试验"渲染器构造只等构造最小集(plain/ccw main+阴影+输出),
+ * 其余 critical main 与几何上传重叠"。实测否决——两条 critical main 并行编译时长≈单条
+ * 墙(critical-main2 段 600-1400ms 即单条 PSO 编译),plain/ccw 恒在等待集内,且几何上传
+ * 基础设施(PacketBuffers/residency)绑定渲染器实例,无可收割的重叠窗口。维持串行结构。 */
 export async function openPbrRenderer<T>(session: DeviceSession,
   signal: AbortSignal, options: PbrRendererOptions, abortError: () => Error,
   create: (session: DeviceSession, pipelines: Pipelines, environment: StudioEnvironment,

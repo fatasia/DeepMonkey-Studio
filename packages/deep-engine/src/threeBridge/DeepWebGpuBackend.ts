@@ -312,6 +312,10 @@ export class DeepWebGpuBackend {
     // 候选创建期间视口未变化时，创建路径已验证过完全相同的视图；
     // 重复整帧验证只会重复同一份 GPU 工作，直接复用其结果。
     if (this.validatedView && sameRenderView(localView, this.validatedView.view) && this.validatedFrame) {
+      // 刀 C 首帧:复用生效标记(与 validate-start 互斥出现,供探针断言)。
+      if (typeof performance !== "undefined" && typeof performance.mark === "function") {
+        performance.mark("deep-webgpu:prepare-view-reused");
+      }
       this.shadowSelectionValue = this.validatedView.shadowSelection ?? this.shadowSelectionValue;
       return this.validatedFrame;
     }
@@ -645,23 +649,62 @@ function releaseBackgroundPipelineQueues(runtime: DeepWebGpuRenderRuntime): void
 
 /** 逐字段比较决定首帧内容的视图字段；未列出的字段变化会走完整验证，宁多勿漏。
  * lights/fog/postProcess 由同一构建器生成，键序确定，用 JSON 摘要比对身份无关的值。 */
+const sameTuple = (x: ArrayLike<number> | undefined, y: ArrayLike<number> | undefined): boolean => {
+  if (x === y) return true;
+  if (!x || !y || x.length !== y.length) return false;
+  for (let index = 0; index < x.length; index++) if (x[index] !== y[index]) return false;
+  return true;
+};
+const sameJson = (x: unknown, y: unknown): boolean => JSON.stringify(x) === JSON.stringify(y);
+// 刀 C 首帧:overlay 比较按顶点内容而非 revision/字段有无 —— create 路径
+// (threeRenderView)不携带 editorOverlay 字段,prepare 路径(renderViewDirect)
+// 恒带快照,revision 逐次递增;按有无/revision 判等使 prepareView 的视图
+// 复用永不生效,每次切换都白付一次完整首帧验证(实测 ~276ms)。空 overlay 与
+// 无 overlay 渲染语义等价(引擎侧按 vertices.length 门控 overlay pass)。
+const sameOverlay = (x: RenderView["editorOverlay"], y: RenderView["editorOverlay"]): boolean => {
+  if (x === y) return true;
+  const left = x?.vertices, right = y?.vertices;
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  for (let offset = 0; offset < left.length; offset++) {
+    if (left[offset] !== right[offset]) return false;
+  }
+  return true;
+};
+// 刀 C 首帧:authorGrid 按内容而非对象 identity —— grid.read 每次返回新外层
+// 对象/新 model 数组(纹理 source 有缓存),identity 判等恒 false,同样使
+// prepareView 复用永不生效。纹理 source 相同引用时快速通过;跨引用时按
+// id/revision/尺寸/sampler 元数据 + 逐字节比较(仅纹理内容更新后首次付)。
+const sameAuthorGrid = (x: RenderView["authorGrid"], y: RenderView["authorGrid"]): boolean => {
+  if (x === y) return true;
+  if (!x || !y) return false;
+  const tx = x.texture, ty = y.texture;
+  if (tx !== ty) {
+    if (!tx || !ty || tx.id !== ty.id || tx.revision !== ty.revision || tx.semantic !== ty.semantic
+      || tx.width !== ty.width || tx.height !== ty.height || tx.data.length !== ty.data.length) return false;
+    for (let offset = 0; offset < tx.data.length; offset++) {
+      if (tx.data[offset] !== ty.data[offset]) return false;
+    }
+    const sx = tx.sampler, sy = ty.sampler;
+    if ((sx === undefined) !== (sy === undefined)) return false;
+    if (sx && sy && (sx.minFilter !== sy.minFilter || sx.magFilter !== sy.magFilter
+      || sx.mipmapFilter !== sy.mipmapFilter || sx.maxAnisotropy !== sy.maxAnisotropy)) return false;
+  }
+  return sameTuple(x.model, y.model) && sameTuple(x.color, y.color) && sameJson(x.fog, y.fog);
+};
 function sameRenderView(a: RenderView, b: RenderView): boolean {
-  const sameTuple = (x: ArrayLike<number> | undefined, y: ArrayLike<number> | undefined): boolean => {
-    if (x === y) return true;
-    if (!x || !y || x.length !== y.length) return false;
-    for (let index = 0; index < x.length; index++) if (x[index] !== y[index]) return false;
-    return true;
-  };
-  const sameJson = (x: unknown, y: unknown): boolean => JSON.stringify(x) === JSON.stringify(y);
   return a.width === b.width && a.height === b.height && a.pixelRatio === b.pixelRatio
     && sameTuple(a.eye, b.eye) && sameTuple(a.target, b.target) && sameTuple(a.up, b.up)
     && a.extent === b.extent && sameTuple(a.background, b.background) && sameTuple(a.floor, b.floor)
     && a.exposure === b.exposure && a.roughness === b.roughness
     && a.verticalFovRadians === b.verticalFovRadians && a.near === b.near && a.far === b.far
     && sameJson(a.lights, b.lights) && sameJson(a.fog, b.fog) && sameJson(a.postProcess, b.postProcess)
-    && a.panoramaBackground === b.panoramaBackground && a.authorGrid === b.authorGrid
-    && (a.editorOverlay?.vertices.length ?? 0) === (b.editorOverlay?.vertices.length ?? 0)
-    && a.editorOverlay?.revision === b.editorOverlay?.revision;
+    // 刀 C 首帧:panoramaBackground 是 renderViewSource 每次新建的对象(环境会话
+    // view()),identity 判等恒 false,是 prepareView 复用永不生效的第三处根因
+    // (editorOverlay 有无、authorGrid identity 之后);按内容判等。
+    && sameJson(a.panoramaBackground, b.panoramaBackground)
+    && sameAuthorGrid(a.authorGrid, b.authorGrid)
+    && sameOverlay(a.editorOverlay, b.editorOverlay);
 }
 
 function markBackendPhase(name: string): void {

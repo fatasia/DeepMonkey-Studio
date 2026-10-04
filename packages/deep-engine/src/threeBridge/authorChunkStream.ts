@@ -14,6 +14,13 @@ import { HLOD_PROXY_MATERIAL_ID, type HlodClusterFramePlan, type HlodClusterProx
 export interface AuthorChunkStreamRuntime extends PbrResidencyFrameTarget { readonly session: DeviceSession
   /** Adaptive quality hook; absent or out-of-range values keep the fixed budget. */
   residencyBudgetScale?: () => number }
+
+/** 刀 C 首帧归因:chunk 上传段级 mark(CPU 编译 / catalog / 驻留上传 / 帧装配)。 */
+function markChunkPhase(name: string): void {
+  if (typeof performance !== "undefined" && typeof performance.mark === "function") {
+    performance.mark(`deep-webgpu:packet-${name}`);
+  }
+}
 export interface AuthorChunkStreamDiagnostics {
   readonly path: "full-packet" | "scene-chunks";
   readonly reason: string;
@@ -101,12 +108,14 @@ export class AuthorChunkStream {
     // The derived packet is GPU-only. Three remains authoritative for object identity,
     // picking, measurement and the full CPU geometry snapshot.
     const streamedPacket = this.streamPacket(packet, full);
+    markChunkPhase("pages-compiled");
     const old = this.active, prior = old?.catalog.batchUpdates;
     let candidate: CatalogOwner | undefined;
     let staged = false;
     let applied: ClusterApplication | undefined;
     try {
       if (!old || old.replaceRequired || full || !old.catalog.update(streamedPacket)) candidate = this.create(streamedPacket);
+      markChunkPhase("catalog-ready");
       const owner = candidate ?? old!;
       const demands = owner.catalog.demand(view);
       applied = cluster ? this.applyClusterPlan(owner, demands, cluster) : undefined;
@@ -116,8 +125,10 @@ export class AuthorChunkStream {
       // 期望集语义（省略即逐出）与世界单元一致，两种域禁止混用同一 residency。
       const frame = await owner.residency.update({ frame: ++this.frame,
         chunks: applied ? applied.demands : demands, signal });
+      markChunkPhase("residency-uploaded");
       await stageSceneChunkFrame(this.runtime, frame, signal,
         applied ? applied.updates : owner.catalog.batchUpdates);
+      markChunkPhase("chunk-frame-staged");
       staged = true;
       signal.throwIfAborted();
       if (applied) owner.visibleKeys = new Set(applied.visibleKeys);

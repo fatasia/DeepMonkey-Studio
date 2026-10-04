@@ -38,11 +38,11 @@ import { flowProbe, recordProbeSample, type DeepFlowProbe } from "./studioDeepWe
 import { cameraSnapshot, renderViewFingerprint, sameSnapshot, resolveAuthorWorldTransform, threePrototypeHooks,
   nextFrame, type BridgeModuleLoader, type RuntimeSession, type DeepRenderView } from "./studioDeepWebGpuBridgeSceneHelpers";
 import { markSwitchPhase, t11PipelineBootstrap, t07DynamicResolutionPolicy, b4HlodClusterEnabled, g1ClusterLodEnabled,
-  t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled, debugFullRenderEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
+  t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled, debugFullRenderEnabled, sdfGiEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
 import type { StudioDeepWebGpuBridgeOptions, StudioRendererSwitchResult } from "./studioDeepWebGpuBridgeOptions";
 
 export { t11PipelineBootstrap, t07DynamicResolutionPolicy, b4HlodClusterEnabled, g1ClusterLodEnabled,
-  t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
+  t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled, sdfGiEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
 export type { StudioDeepWebGpuBridgeOptions, StudioRendererSwitchResult } from "./studioDeepWebGpuBridgeOptions";
 
 /**
@@ -209,6 +209,9 @@ export class StudioDeepWebGpuBridge {
           const shadowTier = studioDeepShadowTier(this.qualityProfile);
           const shadowTierAllocation = studioDeepShadowAllocation(shadowTier);
           const authorRenderPacket = (await packetTask) ?? undefined;
+          // 刀 C 首帧归因:作者包编译与 environment 并行的真实完成点(此前只有
+          // environment-ready,包编译耗时长短无从归因)。
+          if (authorRenderPacket) markSwitchPhase("deep-webgpu:packet-compiled");
           const pipelineBootstrap = t11PipelineBootstrap(authorRenderPacket !== undefined);
           this.independentPacketPath = authorRenderPacket !== undefined;
           this.pendingDeformationPacket = authorRenderPacket?.deformation ? authorRenderPacket : undefined;
@@ -231,7 +234,14 @@ export class StudioDeepWebGpuBridge {
             else if (!outcome.ok) markSwitchPhase(`deep-webgpu:g1-cluster-lod-blocked-${outcome.failure.reason}`);
             else { clusterLodStaging = outcome.value.staging; markSwitchPhase("deep-webgpu:g1-cluster-lod-staged"); }
           }
-          const view = this.viewReader.renderView(module, canvas);
+          // 刀 C 首帧:独立包路径 create 与 prepare 用同一 view 构造器。此前
+          // create 走 threeRenderView(不携带 editorOverlay),prepare 走
+          // renderViewDirect(恒收集 Deep 原生辅助图形顶点),两条路径构造的
+          // view 语义不同 → prepareView 的视图复用判定永不通过,每次切换都
+          // 白付一次完整首帧验证(实测 ~270ms)。同源后,视口未变时 prepare
+          // 直接复用 create 已验证的帧。
+          const view = authorRenderPacket ? this.viewReader.renderViewDirect(canvas)
+            : this.viewReader.renderView(module, canvas);
           shadowMapSize = view.lights?.directional?.[0]?.shadow?.mapSize
             ?? studioDeepShadowMapSize(this.viewer.scene, this.viewer.camera.layers.mask, shadowTierAllocation.shadowMapSize);
           frameCaptureSession = createRequestedStudioFrameCaptureSession();
@@ -286,8 +296,11 @@ export class StudioDeepWebGpuBridge {
               shadows: { exactProfile: { cascadeCount: 1, shadowMapSize } },
               // features 只此一处：此前 F4 的条件 spread 与本字面量同名，后写覆盖前写，
               // temporalUpscale 从未真正进入渲染器；合并后 opt-in 才真正生效。
+              // sdf-gi=1（Brief-GI M2/M3，opt-in 默认关）：开启后引擎构建 SDF GI 运行时，
+              // 按包场景 revision 变化自动烘焙；关闭时不带该字段，帧逐位零变化。
               features: { ...(temporalUpscale ? { temporalUpscale: true } : {}),
                 ...(debugFullRender ? { debugForceFullRender: true } : {}),
+                ...(sdfGiEnabled() ? { sdfGi: true } : {}),
                 environment: true, groundPlane: false,
                 groundGrid: false, screenSpaceReflection: true, volumetricFog: true,
                 toneMapping: DEFAULT_DISPLAY_CONTRACT.toneMapping.operator },
