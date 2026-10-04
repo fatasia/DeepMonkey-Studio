@@ -1,8 +1,13 @@
-import { assertApplicationDocument, type ProjectRecord, type PublishedApplicationRecord, type SystemBrandingSettings } from "@bim-studio/contracts";
+import { assertApplicationDocument, type ProjectRecord, type PublishedApplicationRecord, type PublishedSceneRecord, type SystemBrandingSettings } from "@bim-studio/contracts";
 import { runtimeHost } from "../adapters/runtimeHost";
 
 export interface PublishedApplicationBundle {
   publication: PublishedApplicationRecord;
+  project: ProjectRecord;
+}
+
+export interface PublishedSceneBrowseRecord {
+  publication: PublishedSceneRecord;
   project: ProjectRecord;
 }
 
@@ -31,6 +36,12 @@ export function createPublishedApplicationApi(baseUrl: string, fetcher: typeof f
     },
     async branding(signal?: AbortSignal): Promise<SystemBrandingSettings> {
       return (await read("/api/public/branding", signal)).json();
+    },
+    async sceneBrowse(sceneId: string, signal?: AbortSignal): Promise<PublishedSceneBrowseRecord> {
+      const response = await read(`/api/public/scenes/${encodeURIComponent(sceneId)}/browse`, signal);
+      const body = await response.json().catch(() => undefined) as { message?: string } | undefined;
+      if (!body) throw new Error("发布场景加载失败，请稍后重试。");
+      return body as unknown as PublishedSceneBrowseRecord;
     },
   };
 }

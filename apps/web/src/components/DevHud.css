@@ -1,0 +1,214 @@
+/* 刀 6 开发者 HUD:对标 UE stat unit 的常驻小条。与 .quality-telemetry-panel 同族
+   (surface 令牌 + --layer-panel 层级),默认右上锚位避开质量遥测面板(top 70);
+   一切颜色取 base.css 令牌,禁止硬编码色值;半透明底靠 color-mix,不新造颜色。 */
+.dev-hud {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: var(--layer-panel);
+  width: 252px;
+  max-width: calc(100% - 24px);
+  color: var(--text);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  border: 1px solid color-mix(in srgb, var(--line-strong) 80%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+  backdrop-filter: blur(10px);
+  font-variant-numeric: tabular-nums;
+}
+
+.dev-hud.collapsed {
+  width: auto;
+  max-width: calc(100% - 24px);
+}
+
+.dev-hud header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 4px 0 10px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.dev-hud header:active {
+  cursor: grabbing;
+}
+
+.dev-hud header button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.dev-hud header button:hover {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text-strong);
+}
+
+.hud-title {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  color: var(--accent);
+}
+
+.hud-title strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.hud-title .hud-unit {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 9px;
+  letter-spacing: .04em;
+}
+
+.hud-badge {
+  flex: none;
+  margin-left: 4px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.hud-mini {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-end;
+  overflow: hidden;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.hud-mini small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-actions {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.hud-body {
+  padding: 2px 10px 8px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+.hud-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 17px;
+}
+
+.hud-row.warn .hud-value {
+  color: var(--warning);
+}
+
+.hud-row.off .hud-value {
+  color: var(--text-muted);
+}
+
+.hud-label {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.hud-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud-passes {
+  margin: 3px 0;
+  padding: 3px 0;
+  border-block: 1px dashed color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+.hud-pass-row {
+  display: grid;
+  grid-template-columns: minmax(56px, 1fr) 52px 52px;
+  gap: 6px;
+  align-items: center;
+  min-height: 15px;
+}
+
+.hud-pass-name {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud-pass-bar {
+  overflow: hidden;
+  height: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--line) 45%, transparent);
+}
+
+.hud-pass-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.hud-pass-ms {
+  color: var(--text-strong);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.hud-pass-foot {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.hud-note {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.hud-note.warn {
+  color: var(--warning);
+}
+
+/* 浅色主题:半透明底与阴影在亮色下收敛,颜色仍全部走令牌。 */
+:root[data-theme="light"] .dev-hud {
+  border-color: color-mix(in srgb, var(--line-strong) 90%, transparent);
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .16);
+}

@@ -8,16 +8,12 @@ import {
 } from "@bim-studio/contracts";
 import { applyDocumentBranding } from "../branding/documentBranding";
 import type { AppLocale } from "../i18n";
+import { publishedApplicationApi, type PublishedSceneBrowseRecord } from "../apiClients/publishedApplicationApi";
 import { rendererRequirementsForScene, resolvePublishedRenderer } from "../rendererCapabilities";
 import { ViewerEngine } from "../viewer/ViewerEngine";
 import { applySceneViewerSnapshot } from "./applySceneViewerSnapshot";
 import { PublishedModelCredits } from "./PublishedModelCredits";
 import "./published-application.css";
-
-interface PublishedSceneBrowseRecord {
-  publication: PublishedSceneRecord;
-  project: ProjectRecord;
-}
 
 /**
  * 匿名 Web 发布页：消费服务端公开只读端点（/api/public/scenes/:id/browse），
@@ -38,18 +34,14 @@ export function PublishedSceneViewerRoot({ sceneId }: { sceneId?: string }) {
     const controller = new AbortController();
     setRecord(undefined); setError(""); setReady(false); setLoadError("");
     if (!sceneId?.trim()) { setError("发布链接无效，请检查场景地址。"); return; }
-    void fetch("/api/public/branding", { signal: controller.signal }).then(async (response) => {
-      if (!response.ok) return;
-      const settings = await response.json() as SystemBrandingSettings;
+    void publishedApplicationApi.branding(controller.signal).then((settings) => {
       if (controller.signal.aborted) return;
       setBranding(settings);
       setLocale(settings.defaultLocale);
     }).catch(() => { /* 品牌是可选增强，公开场景在无品牌配置时也要能打开。 */ });
-    void fetch(`/api/public/scenes/${encodeURIComponent(sceneId)}/browse`, { signal: controller.signal }).then(async (response) => {
-      const body = await response.json().catch(() => undefined) as { message?: string } | undefined;
+    void publishedApplicationApi.sceneBrowse(sceneId, controller.signal).then((body) => {
       if (controller.signal.aborted) return;
-      if (!response.ok) throw new Error(body?.message ?? "发布场景加载失败，请稍后重试。");
-      setRecord(body as unknown as PublishedSceneBrowseRecord);
+      setRecord(body);
     }).catch((reason) => {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "发布场景加载失败，请稍后重试。");
     });
