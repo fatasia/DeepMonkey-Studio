@@ -3,8 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 import { DeferredNumberInput } from "./AppFormControls";
-import { PhysicsCompareSection, PhysicsDebugPanel, PhysicsDebugPanelView, PhysicsRosterSection } from "./PhysicsDebugPanel";
-import type { PhysicsDebugBodySnapshot, PhysicsDebugJointSnapshot } from "../viewer/physicsDebugSnapshot";
+import { PhysicsCompareSection, PhysicsDebugPanel, PhysicsDebugPanelView, PhysicsRosterSection, PhysicsDebugVizSection } from "./PhysicsDebugPanel";
+import { DEFAULT_PHYSICS_DEBUG_LAYERS, type PhysicsDebugBodySnapshot, type PhysicsDebugJointSnapshot } from "../viewer/physicsDebugSnapshot";
 import type { ParsedPoseSeries } from "../viewer/physicsPoseRecorder";
 import { comparePoseSeries } from "../viewer/physicsPoseCompare";
 
@@ -42,6 +42,11 @@ const viewProps = {
   onPhysicsChange: vi.fn(),
   debugVisible: false,
   onDebugVisibleChange: vi.fn(),
+  debugFilter: "all" as const,
+  onDebugFilterChange: vi.fn(),
+  debugLayers: DEFAULT_PHYSICS_DEBUG_LAYERS,
+  onDebugLayersChange: vi.fn(),
+  selectedName: undefined,
   snapshot: undefined,
   recording: undefined,
   isRecording: false,
@@ -77,14 +82,14 @@ describe("PhysicsDebugPanel 容器静态结构", () => {
     expect(html).not.toContain("步进控制");
   });
 
-  it("打开态渲染七组功能区且碰撞体线框开关随状态翻转", () => {
+  it("打开态渲染七组功能区且调试视图开关随状态翻转", () => {
     const html = renderToStaticMarkup(<PhysicsDebugPanel {...viewProps} />);
-    for (const label of ["步进控制", "录制", "回放", "跨端位姿比对", "碰撞体线框", "固定步"]) {
+    for (const label of ["步进控制", "录制", "回放", "跨端位姿比对", "调试可视化", "固定步"]) {
       expect(html).toContain(label);
     }
-    expect(html).toContain("显示碰撞体");
+    expect(html).toContain("开启调试视图");
     const on = renderToStaticMarkup(<PhysicsDebugPanel {...viewProps} debugVisible />);
-    expect(on).toContain("隐藏碰撞体");
+    expect(on).toContain("关闭调试视图");
   });
 
   it("物理未启用时播放/单步禁用并给出原因提示", () => {
@@ -395,3 +400,65 @@ describe("令牌合规（T17 硬编码清剿教训的同族防线）", () => {
     expect(css).toMatch(/@media \(max-width: 760px\)/);
   });
 });
+
+describe("PhysicsDebugVizSection 调试可视化区（T0 刀 3）", () => {
+  const baseViz = {
+    locale: "zh-CN" as const,
+    debugVisible: true,
+    onDebugVisibleChange: vi.fn(),
+    debugFilter: "all" as const,
+    onDebugFilterChange: vi.fn(),
+    debugLayers: DEFAULT_PHYSICS_DEBUG_LAYERS,
+    onDebugLayersChange: vi.fn(),
+    selectedName: undefined,
+    available: true,
+    counts: { colliderCount: 3, contactCount: 4, jointCount: 1 },
+  };
+
+  it("图例七项齐备且与场景材质同源色值（动态/运动学/静态/地面/接触/约束/触限）", () => {
+    const html = renderToStaticMarkup(<PhysicsDebugVizSection {...baseViz} />);
+    for (const label of ["动态", "运动学", "静态", "地面", "接触", "约束", "触限"]) {
+      expect(html).toContain(label);
+    }
+    for (const hex of ["#43a047", "#26c6da", "#8d8d8d", "#546e7a", "#ff9800", "#ffd54f", "#ef5350"]) {
+      expect(html).toContain(`background:${hex}`);
+    }
+  });
+
+  it("筛选五档齐备；选中档在无选中时禁用并给出引导", () => {
+    const html = renderToStaticMarkup(<PhysicsDebugVizSection {...baseViz} />);
+    expect(html).toContain("全部");
+    const disabled = renderToStaticMarkup(<PhysicsDebugVizSection {...baseViz} debugFilter="selected" />);
+    expect(disabled).toContain("disabled");
+    expect(disabled).toContain("先在场景中选中一个对象");
+    const focused = renderToStaticMarkup(<PhysicsDebugVizSection {...baseViz} debugFilter="selected" selectedName="货箱" />);
+    expect(focused).toContain("聚焦对象");
+    expect(focused).toContain("货箱");
+  });
+
+  it("开启态展示计数；碰撞体为 0 时显示场景引导而非空白", () => {
+    const html = renderToStaticMarkup(<PhysicsDebugVizSection {...baseViz} />);
+    expect(html).toContain("碰撞体");
+    expect(html).toContain("<output>3</output>");
+    expect(html).toContain("<output>4</output>");
+    const empty = renderToStaticMarkup(<PhysicsDebugVizSection {...baseViz} counts={{ colliderCount: 0, contactCount: 0, jointCount: 0 }} />);
+    expect(empty).toContain("场景无物理对象");
+    const unmounted = renderToStaticMarkup(<PhysicsDebugVizSection {...baseViz} available={false} />);
+    expect(unmounted).toContain("物理未挂载");
+  });
+
+  it("关闭态只显示总开关与一句说明，不渲染筛选/图例", () => {
+    const html = renderToStaticMarkup(<PhysicsDebugVizSection {...baseViz} debugVisible={false} />);
+    expect(html).toContain("开启调试视图");
+    expect(html).not.toContain("pdbg-legend");
+    expect(html).not.toContain("碰撞体筛选");
+  });
+
+  it("图层三开关随状态点亮", () => {
+    const html = renderToStaticMarkup(<PhysicsDebugVizSection {...baseViz} debugLayers={{ colliders: true, contacts: false, joints: false }} />);
+    // 三枚图层按钮中只有第一枚 active。
+    expect(html.match(/pdbg-row" role="group"/g)?.length).toBeGreaterThan(0);
+    expect(html).toContain("接触点");
+  });
+});
+

@@ -19,6 +19,18 @@ export interface PhysicsDebugQuat {
 
 export type PhysicsDebugBodyType = "fixed" | "dynamic" | "kinematic";
 
+/** T0 刀 3：调试可视化按体筛选模式（selected=只看当前选中对象的碰撞体）。 */
+export type PhysicsDebugFilter = "all" | "dynamic" | "kinematic" | "fixed" | "selected";
+
+/** T0 刀 3：调试可视化的图层开关（碰撞体线框/接触点/约束轴线三路独立）。 */
+export interface PhysicsDebugLayers {
+  readonly colliders: boolean;
+  readonly contacts: boolean;
+  readonly joints: boolean;
+}
+
+export const DEFAULT_PHYSICS_DEBUG_LAYERS: PhysicsDebugLayers = { colliders: true, contacts: true, joints: true };
+
 export interface PhysicsDebugBodySnapshot {
   readonly id: string;
   readonly name: string;
@@ -59,6 +71,15 @@ export interface PhysicsDebugSnapshot {
   readonly fixedStepIndex: number;
   readonly bodies: readonly PhysicsDebugBodySnapshot[];
   readonly joints: readonly PhysicsDebugJointSnapshot[];
+  /** T0 刀 3：调试可视化计数（面板空态引导与数量展示消费）。 */
+  readonly debug: {
+    /** 场景内当前碰撞体条目数（含默认地面）。 */
+    readonly colliderCount: number;
+    /** 最近一次调试同步采样到的接触点数（调试视图关闭时为 0）。 */
+    readonly contactCount: number;
+    /** 当前约束（关节）数。 */
+    readonly jointCount: number;
+  };
 }
 
 /** q2 相对 q1 绕轴（两体局部同向）的转角，结果归一到 (-π, π]。 */

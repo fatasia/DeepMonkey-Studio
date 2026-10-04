@@ -94,6 +94,8 @@ import { ViewerOffscreenController } from "./viewerOffscreenController";
 import { DISPLAY_THREE_SHADOW_MAP_TYPE, DISPLAY_THREE_TONE_MAPPING, threeOutputColorSpaceFor } from "./displayContractThree";
 import { PhysicsWorldHost } from "./physicsWorldHost";
 import { createPhysicsDebugOverlay } from "./rapierPhysicsDebugOverlay";
+import { createPhysicsJointDebugLayer } from "./rapierPhysicsDebugJoints";
+import { createPhysicsContactDebugLayer } from "./rapierPhysicsDebugContacts";
 
 /** ViewerEngine 的共享状态与跨模块契约，具体能力由职责层逐级实现。 */
 export abstract class ViewerEngineCore extends ViewerEngineContract {
@@ -183,6 +185,9 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   /** B3 缺口 5：碰撞体调试线框层；关闭时整组隐藏且帧同步直接早退（零开销）。 */
   protected readonly physicsDebugOverlay = createPhysicsDebugOverlay();
   protected physicsDebugVisible = false;
+  /** T0 刀 3：约束轴线/限位与接触点高亮图层（与碰撞体线框同挂 scene，随调试开关显隐）。 */
+  protected readonly physicsJointDebugLayer = createPhysicsJointDebugLayer();
+  protected readonly physicsContactDebugLayer = createPhysicsContactDebugLayer();
   protected fragments: FRAGS.FragmentsModels | undefined;
   protected importer: FRAGS.IfcImporter | undefined;
   protected fragmentApi: typeof import("@thatopen/fragments") | undefined;
@@ -438,6 +443,11 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
     // B3 缺口 5：调试线框根节点随场景创建一次，显隐由 setPhysicsDebugVisible 控制。
     this.physicsDebugOverlay.object.visible = false;
     this.scene.add(this.physicsDebugOverlay.object);
+    // T0 刀 3：约束/接触图层同模式挂载（组内默认隐藏，开关即开即走）。
+    this.physicsJointDebugLayer.object.visible = false;
+    this.scene.add(this.physicsJointDebugLayer.object);
+    this.physicsContactDebugLayer.object.visible = false;
+    this.scene.add(this.physicsContactDebugLayer.object);
     this.scene.add(this.xrRig);
     this.xrRig.add(this.camera);
 

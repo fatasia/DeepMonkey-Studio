@@ -61,6 +61,8 @@ interface SceneToolDockProps {
   cameraOpen?: boolean;
   behaviorOpen: boolean;
   physicsOpen: boolean;
+  /** T0 刀 3：物理调试视图开启时坞内「物理系统」入口显示调试指示点（UX：调试态顶栏可见）。 */
+  physicsDebugActive?: boolean;
   qualityPanelOpen: boolean;
   onQualityPanelToggle: () => void;
   xrOpen: boolean;
@@ -332,6 +334,7 @@ export function SceneToolDock(props: SceneToolDockProps) {
         id="develop"
         label={tr(props.locale, "仿真与开发", "Simulate & develop")}
         icon={<Braces size={16} />}
+        debugDot={props.physicsDebugActive === true}
         open={openMenu === "develop"}
         active={
           props.behaviorOpen ||
@@ -356,6 +359,7 @@ export function SceneToolDock(props: SceneToolDockProps) {
           label={tr(props.locale, "物理系统", "Physics")}
           icon={<Atom size={15} />}
           active={props.physicsOpen}
+          {...(props.physicsDebugActive ? { dot: "debug" as const } : {})}
           onClick={() => run(props.onPhysicsToggle)}
         />
         <MenuAction
@@ -433,6 +437,7 @@ function TaskMenu({
   icon,
   open,
   active = false,
+  debugDot = false,
   onToggle,
   children,
 }: {
@@ -441,6 +446,8 @@ function TaskMenu({
   icon: ReactNode;
   open: boolean;
   active?: boolean;
+  /** T0 刀 3：组按钮上的调试指示点——菜单收起时也保持可见（UX：调试态顶栏可见）。 */
+  debugDot?: boolean;
   onToggle: () => void;
   children: ReactNode;
 }) {
@@ -450,7 +457,7 @@ function TaskMenu({
         type="button"
         className={`scene-tool-task-trigger ${active ? "active" : ""}`}
         aria-label={label}
-        title={label}
+        title={debugDot ? `${label}（物理调试视图开启中）` : label}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={`scene-tool-menu-${id}`}
@@ -458,6 +465,7 @@ function TaskMenu({
       >
         {icon}
         <span>{label}</span>
+        {debugDot && <i className="scene-tool-debug-dot" aria-hidden="true" />}
         <ChevronDown size={13} />
       </button>
       {open && (
@@ -484,6 +492,7 @@ function MenuAction({
   active = false,
   disabled = false,
   disabledReason,
+  dot,
   onClick,
 }: {
   label: string;
@@ -491,6 +500,8 @@ function MenuAction({
   active?: boolean;
   disabled?: boolean;
   disabledReason?: string;
+  /** 非激活态的次级状态点：debug=橙色（物理调试视图开启中）。 */
+  dot?: "accent" | "debug";
   onClick: () => void;
 }) {
   return (
@@ -504,7 +515,7 @@ function MenuAction({
     >
       <span>{icon}</span>
       <strong>{label}</strong>
-      {active && <i />}
+      {dot === "debug" ? <i className="scene-tool-debug-dot" /> : active && <i />}
     </button>
   );
 }

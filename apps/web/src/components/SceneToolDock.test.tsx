@@ -74,4 +74,57 @@ describe("SceneToolDock", () => {
     expect(html).not.toContain("行为脚本");
   });
 
+  it("物理调试视图开启时组按钮有调试指示点（UX：调试态坞内常显可见）", () => {
+    const onAction = vi.fn();
+    const base = {
+      locale: "zh-CN" as const,
+      navigationMode: "orbit" as const,
+      transformMode: "translate" as const,
+      hasSelection: false,
+      hasModelSelection: false,
+      selectionScope: "model" as const,
+      measureEnabled: false,
+      annotationEnabled: false,
+      clippingEnabled: false,
+      explosionActive: false,
+      avatarVisible: false,
+      environmentOpen: false,
+      animationOpen: false,
+      behaviorOpen: false,
+      physicsOpen: false,
+      qualityPanelOpen: false,
+      onQualityPanelToggle: onAction,
+      xrOpen: false,
+      simulationPanel: undefined,
+      infoEnabled: false,
+      engineeringOpen: false,
+      onFitAll: onAction,
+      onSelect: onAction,
+      onTransformChange: onAction,
+      onSelectionScopeToggle: onAction,
+      onMeasurementToggle: onAction,
+      onPrimitivePlace: onAction,
+      onAnnotationToggle: onAction,
+      onClippingToggle: onAction,
+      onExplosionToggle: onAction,
+      onNavigationChange: onAction,
+      onAvatarToggle: onAction,
+      onInfoToggle: onAction,
+      onEngineeringToggle: onAction,
+      onEnvironmentToggle: onAction,
+      onAnimationToggle: onAction,
+      onBehaviorToggle: onAction,
+      onCameraToggle: onAction,
+      onPhysicsToggle: onAction,
+      onXrToggle: onAction,
+      onSimulationPanelChange: onAction,
+    };
+    // 关闭态:无指示点。
+    expect(renderToStaticMarkup(<SceneToolDock {...base} />)).not.toContain("scene-tool-debug-dot");
+    // 开启态:组按钮常显指示点(菜单收起也可见),提示语带调试态说明。
+    const on = renderToStaticMarkup(<SceneToolDock {...base} physicsDebugActive />);
+    expect(on).toContain("scene-tool-debug-dot");
+    expect(on).toContain("物理调试视图开启中");
+  });
+
 });

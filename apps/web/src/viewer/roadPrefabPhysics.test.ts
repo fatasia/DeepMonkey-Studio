@@ -71,6 +71,12 @@ function roadEntries(world: RapierWorldType, rapier: RapierModule, owners: Map<n
   return collectPhysicsCuboidDebugEntries(world, rapier, owners).filter(entry => entry.modelId === "road");
 }
 
+/** T0 刀 3 形状判别联合后的盒半尺寸读取器（道路碰撞体恒为 cuboid）。 */
+function halfOf(entry: ReturnType<typeof collectPhysicsCuboidDebugEntries>[number]) {
+  if (entry.shape.kind !== "cuboid") throw new Error(`道路碰撞体应为 cuboid，实测 ${entry.shape.kind}`);
+  return entry.shape.halfExtents;
+}
+
 describe("道路分段碰撞体接入查看器物理链", () => {
   it("路径式道路每段生成一个固定 cuboid，尺寸、偏移与旋向跟几何同源", async () => {
     const { physics, physicsBodies, physicsColliderOwners } = physicsHarness(roadState());
@@ -88,11 +94,11 @@ describe("道路分段碰撞体接入查看器物理链", () => {
     // 代理相对根对象有 -0.5 落地偏移（BoxGeometry min.y），碰撞体偏移随之平移；缺省厚度 0.16 时顶面对齐路面顶。
     const straight = entries.find(entry => Math.abs(entry.centerOffset.x - 6) < 1e-6)!;
     expect(straight).toBeDefined();
-    expect(straight.halfExtents).toMatchObject({ x: 6, y: 0.08, z: (7 + 2 * 0.75) / 2 });
+    expect(halfOf(straight)).toMatchObject({ x: 6, y: 0.08, z: (7 + 2 * 0.75) / 2 });
     expect(straight.centerOffset.y).toBeCloseTo(-0.5);
     expect(straight.centerOffset.z).toBeCloseTo(0);
     const branch = entries.find(entry => Math.abs(entry.centerOffset.z - 4.5) < 1e-6)!;
-    expect(branch.halfExtents).toMatchObject({ x: 4.5, y: 0.08, z: 4.25 });
+    expect(halfOf(branch)).toMatchObject({ x: 4.5, y: 0.08, z: 4.25 });
     expect(branch.centerOffset).toMatchObject({ x: 12, y: -0.5 });
     // 支路 yaw = atan2(9, 0) = π/2，几何以 -yaw 摆放，碰撞体旋向一致（body 无旋转 → 世界系即局部系）。
     const branchHandle = owned.find(([handle]) => handle !== runtime!.colliderHandle)![0]!;
@@ -108,7 +114,7 @@ describe("道路分段碰撞体接入查看器物理链", () => {
     await physics.ensurePhysicsWorld();
     const entries = roadEntries(physics.physicsWorld, physics.rapier, physicsColliderOwners);
     expect(entries).toHaveLength(2);
-    expect(entries.every(entry => Math.abs(entry.halfExtents.y - 0.2) < 1e-6)).toBe(true);
+    expect(entries.every(entry => Math.abs(halfOf(entry).y - 0.2) < 1e-6)).toBe(true);
     // 碰撞体中心 y = 路径点 y + 0.08 - 0.4/2 = -0.12；加代理落地偏移 -0.5 → -0.62。
     expect(entries.every(entry => Math.abs(entry.centerOffset.y + 0.62) < 1e-6)).toBe(true);
   });
@@ -157,7 +163,7 @@ describe("非道路对象维持整包围盒回退", () => {
     const entries = collectPhysicsCuboidDebugEntries(physics.physicsWorld, physics.rapier, physicsColliderOwners)
       .filter(entry => entry.modelId === "box");
     expect(entries).toHaveLength(1);
-    expect(entries[0]!.halfExtents).toMatchObject({ x: 1, y: 1.5, z: 2 });
+    expect(halfOf(entries[0]!)).toMatchObject({ x: 1, y: 1.5, z: 2 });
     // 道路缺铺设路径时分段表为空，物理链据此走整包围盒回退，不会产生零碰撞体刚体。
     const { placementPath: _removed, ...withoutPath } = roadState();
     expect(roadPrefabSegmentColliders(withoutPath)).toEqual([]);

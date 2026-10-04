@@ -86,6 +86,9 @@ export abstract class ViewerEngineLifecycle extends ViewerEngineNavigationTools 
     this.navigationCollisionDebugGroup.removeFromParent();
     // B3 缺口 5：共享棱线几何与各类型材质在这里统一释放，避免反复创建 Viewer 泄漏。
     this.physicsDebugOverlay.dispose();
+    // T0 刀 3：约束/接触图层缓冲与材质同步释放。
+    this.physicsJointDebugLayer.dispose();
+    this.physicsContactDebugLayer.dispose();
     if (this.cameraPathHelper) this.disposeObject(this.cameraPathHelper);
     this.removeSelectionHelper();
     this.clearAnnotations(false);

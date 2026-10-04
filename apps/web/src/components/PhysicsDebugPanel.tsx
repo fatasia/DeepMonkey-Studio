@@ -6,7 +6,10 @@ import { translate as tr, type AppLocale } from "../i18n";
 import { DeferredNumberInput } from "./AppFormControls";
 import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
 import type { ViewerEngine } from "../viewer/ViewerEngine";
-import type { PhysicsDebugBodySnapshot, PhysicsDebugJointSnapshot, PhysicsDebugSnapshot } from "../viewer/physicsDebugSnapshot";
+import type { PhysicsDebugBodySnapshot, PhysicsDebugFilter, PhysicsDebugJointSnapshot, PhysicsDebugLayers, PhysicsDebugSnapshot } from "../viewer/physicsDebugSnapshot";
+import { PHYSICS_DEBUG_COLOR_HEX } from "../viewer/rapierPhysicsDebugOverlay";
+import { PHYSICS_DEBUG_CONTACT_COLOR } from "../viewer/rapierPhysicsDebugContacts";
+import { PHYSICS_DEBUG_JOINT_COLORS } from "../viewer/rapierPhysicsDebugJoints";
 import type { PhysicsPoseFrame } from "../viewer/physicsPoseRecorder";
 import { parsePhysicsPoseJson, type ParsedPoseSeries } from "../viewer/physicsPoseRecorder";
 import { comparePoseSeries, type PoseCompareResult } from "../viewer/physicsPoseCompare";
@@ -24,6 +27,13 @@ interface PhysicsDebugPanelProps {
   onPhysicsChange: (next: ScenePhysicsState) => void;
   debugVisible: boolean;
   onDebugVisibleChange: (visible: boolean) => void;
+  /** T0 刀 3：调试可视化筛选与图层状态（工作区持有，引擎经控制器同步）。 */
+  debugFilter: PhysicsDebugFilter;
+  onDebugFilterChange: (filter: PhysicsDebugFilter) => void;
+  debugLayers: PhysicsDebugLayers;
+  onDebugLayersChange: (layers: PhysicsDebugLayers) => void;
+  /** 当前选中对象名（筛选=选中时显示目标；无选中时筛选按钮禁用）。 */
+  selectedName: string | undefined;
 }
 
 /** 面板容器：轮询引擎快照并持有 UI 状态；展示层在 PhysicsDebugPanelView（无 hooks）。 */
@@ -137,6 +147,11 @@ export function PhysicsDebugPanel(props: PhysicsDebugPanelProps) {
       onPhysicsChange={props.onPhysicsChange}
       debugVisible={props.debugVisible}
       onDebugVisibleChange={props.onDebugVisibleChange}
+      debugFilter={props.debugFilter}
+      onDebugFilterChange={props.onDebugFilterChange}
+      debugLayers={props.debugLayers}
+      onDebugLayersChange={props.onDebugLayersChange}
+      selectedName={props.selectedName}
       snapshot={snapshot}
       recording={recording}
       isRecording={isRecording}
@@ -199,6 +214,11 @@ export interface PhysicsDebugPanelViewProps {
   onPhysicsChange: (next: ScenePhysicsState) => void;
   debugVisible: boolean;
   onDebugVisibleChange: (visible: boolean) => void;
+  debugFilter: PhysicsDebugFilter;
+  onDebugFilterChange: (filter: PhysicsDebugFilter) => void;
+  debugLayers: PhysicsDebugLayers;
+  onDebugLayersChange: (layers: PhysicsDebugLayers) => void;
+  selectedName: string | undefined;
   snapshot: PhysicsDebugSnapshot | undefined;
   recording: { frameCount: number; capacity: number; frames: readonly PhysicsPoseFrame[] } | undefined;
   isRecording: boolean;
@@ -450,15 +470,18 @@ export function PhysicsDebugPanelView(props: PhysicsDebugPanelViewProps) {
         onUseRecordingForSlotA={props.onUseRecordingForSlotA}
       />
 
-      <section className="pdbg-section">
-        <strong>{tr(locale, "碰撞体线框", "Collider wireframes")}</strong>
-        <button
-          className={`pdbg-wide ${props.debugVisible ? "active" : ""}`}
-          onClick={() => props.onDebugVisibleChange(!props.debugVisible)}
-        >
-          {props.debugVisible ? tr(locale, "隐藏碰撞体", "Hide colliders") : tr(locale, "显示碰撞体", "Show colliders")}
-        </button>
-      </section>
+      <PhysicsDebugVizSection
+        locale={locale}
+        debugVisible={props.debugVisible}
+        onDebugVisibleChange={props.onDebugVisibleChange}
+        debugFilter={props.debugFilter}
+        onDebugFilterChange={props.onDebugFilterChange}
+        debugLayers={props.debugLayers}
+        onDebugLayersChange={props.onDebugLayersChange}
+        selectedName={props.selectedName}
+        available={props.snapshot?.available ?? false}
+        counts={props.snapshot?.debug}
+      />
     </div>
   );
 }
@@ -466,6 +489,129 @@ export function PhysicsDebugPanelView(props: PhysicsDebugPanelViewProps) {
 /** 数值钳制：非法或越界回退到 fallback/边界，避免 NaN 进入引擎。 */
 function clampNumber(value: number, min: number, max: number, fallback: number): number {
   return Math.min(Math.max(Number.isFinite(value) ? value : fallback, min), max);
+}
+
+/** 数字语义色 → CSS hex（与 three 材质同源常量换算，禁止第二处手写 hex）。 */
+function hexOf(color: number): string {
+  return `#${color.toString(16).padStart(6, "0")}`;
+}
+
+/** T0 刀 3 调试可视化区：开关+筛选+图例+图层+计数与空态引导（无 hooks 展示层）。 */
+export function PhysicsDebugVizSection(props: {
+  locale: AppLocale;
+  debugVisible: boolean;
+  onDebugVisibleChange: (visible: boolean) => void;
+  debugFilter: PhysicsDebugFilter;
+  onDebugFilterChange: (filter: PhysicsDebugFilter) => void;
+  debugLayers: PhysicsDebugLayers;
+  onDebugLayersChange: (layers: PhysicsDebugLayers) => void;
+  selectedName: string | undefined;
+  available: boolean;
+  counts: PhysicsDebugSnapshot["debug"] | undefined;
+}) {
+  const { locale } = props;
+  const counts = props.counts;
+  const filterOptions: Array<{ value: PhysicsDebugFilter; zh: string; en: string }> = [
+    { value: "all", zh: "全部", en: "All" },
+    { value: "dynamic", zh: "动态", en: "Dyn" },
+    { value: "kinematic", zh: "运动学", en: "Kin" },
+    { value: "fixed", zh: "静态", en: "Fix" },
+    { value: "selected", zh: "选中", en: "Sel" },
+  ];
+  const legend: Array<{ color: string; zh: string; en: string }> = [
+    { color: PHYSICS_DEBUG_COLOR_HEX.dynamic, zh: "动态", en: "dynamic" },
+    { color: PHYSICS_DEBUG_COLOR_HEX.kinematic, zh: "运动学", en: "kinematic" },
+    { color: PHYSICS_DEBUG_COLOR_HEX.fixed, zh: "静态", en: "fixed" },
+    { color: PHYSICS_DEBUG_COLOR_HEX.ground, zh: "地面", en: "ground" },
+    { color: hexOf(PHYSICS_DEBUG_CONTACT_COLOR), zh: "接触", en: "contact" },
+    { color: hexOf(PHYSICS_DEBUG_JOINT_COLORS.axis), zh: "约束", en: "joint" },
+    { color: hexOf(PHYSICS_DEBUG_JOINT_COLORS.atLimit), zh: "触限", en: "at limit" },
+  ];
+  const layerOptions: Array<{ key: keyof PhysicsDebugLayers; zh: string; en: string }> = [
+    { key: "colliders", zh: "碰撞体", en: "Colliders" },
+    { key: "contacts", zh: "接触点", en: "Contacts" },
+    { key: "joints", zh: "约束", en: "Joints" },
+  ];
+  const selectedUnavailable = props.debugFilter === "selected" && !props.selectedName;
+  return (
+    <section className="pdbg-section">
+      <strong>{tr(locale, "调试可视化", "Debug view")}</strong>
+      <button
+        className={`pdbg-wide ${props.debugVisible ? "active" : ""}`}
+        onClick={() => props.onDebugVisibleChange(!props.debugVisible)}
+      >
+        {props.debugVisible ? tr(locale, "关闭调试视图", "Hide debug view") : tr(locale, "开启调试视图", "Show debug view")}
+      </button>
+      {!props.debugVisible && (
+        <div className="pdbg-meta">
+          {tr(locale, "场景内叠加碰撞体线框、接触点与约束轴线", "Overlays collider wireframes, contact points and joint axes in the viewport")}
+        </div>
+      )}
+      {props.debugVisible && (
+        <>
+          <div className="pdbg-row" role="group" aria-label={tr(locale, "碰撞体筛选", "Collider filter")}>
+            {filterOptions.map((option) => (
+              <button
+                key={option.value}
+                className={props.debugFilter === option.value ? "active" : ""}
+                disabled={option.value === "selected" && !props.selectedName}
+                title={option.value === "selected" && !props.selectedName
+                  ? tr(locale, "先在场景中选中一个对象", "Select an object in the scene first")
+                  : undefined}
+                onClick={() => props.onDebugFilterChange(option.value)}
+              >
+                {tr(locale, option.zh, option.en)}
+              </button>
+            ))}
+          </div>
+          {props.debugFilter === "selected" && props.selectedName && (
+            <div className="pdbg-meta">
+              {tr(locale, "聚焦对象", "Focused object")} <output>{props.selectedName}</output>
+            </div>
+          )}
+          {selectedUnavailable && (
+            <div className="pdbg-empty">{tr(locale, "未选中对象：先选中再看它的碰撞体", "No selection: pick an object to focus its colliders")}</div>
+          )}
+          <div className="pdbg-legend" aria-label={tr(locale, "颜色图例", "Color legend")}>
+            {legend.map((item) => (
+              <span key={item.en} className="pdbg-legend-item">
+                <span className="pdbg-dot" style={{ background: item.color }} />
+                {tr(locale, item.zh, item.en)}
+              </span>
+            ))}
+          </div>
+          <div className="pdbg-row" role="group" aria-label={tr(locale, "调试图层", "Debug layers")}>
+            {layerOptions.map((layer) => (
+              <button
+                key={layer.key}
+                className={props.debugLayers[layer.key] ? "active" : ""}
+                onClick={() => props.onDebugLayersChange({ ...props.debugLayers, [layer.key]: !props.debugLayers[layer.key] })}
+              >
+                {tr(locale, layer.zh, layer.en)}
+              </button>
+            ))}
+          </div>
+          {props.available && counts && (
+            <div className="pdbg-meta">
+              {tr(locale, "碰撞体", "Colliders")} <output>{counts.colliderCount}</output>
+              {" · "}{tr(locale, "接触点", "Contacts")} <output>{counts.contactCount}</output>
+              {" · "}{tr(locale, "约束", "Joints")} <output>{counts.jointCount}</output>
+            </div>
+          )}
+          {props.available && counts && counts.colliderCount === 0 && (
+            <div className="pdbg-empty">
+              {tr(locale, "场景无物理对象：在物理面板为对象设置刚体类型后显示线框", "No physics objects: set a body type on an object to see its wireframe")}
+            </div>
+          )}
+          {!props.available && (
+            <div className="pdbg-empty">
+              {tr(locale, "物理未挂载：先在物理面板启用物理系统", "Physics not mounted: enable physics in the physics panel first")}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
 }
 
 /** 容差换算（mm/mrad → m/rad）并比对；两侧刚体无交集等错误由调用方空结果兜底。 */

@@ -184,6 +184,17 @@
   background: rgba(224, 183, 85, 0.08);
 }
 
+/* T0 刀 3：物理调试视图开启中的次级指示点（接触橙语义，与调试线框色系一致）。 */
+.scene-tool-menu-action > i.scene-tool-debug-dot,
+.scene-tool-task-trigger > i.scene-tool-debug-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff9800;
+  box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.15);
+}
+
 .scene-tool-menu-rule {
   height: 1px;
   margin: 7px 5px;

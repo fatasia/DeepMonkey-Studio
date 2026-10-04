@@ -20,6 +20,7 @@ import { SceneEnvironmentPanel } from "../components/SceneEnvironmentPanel";
 import { SceneEngineeringAnalysisPanel } from "../components/SceneEngineeringAnalysisPanel";
 import { ScenePhysicsPanel } from "../components/ScenePhysicsPanel";
 import { PhysicsDebugPanel } from "../components/PhysicsDebugPanel";
+import { DEFAULT_PHYSICS_DEBUG_LAYERS, type PhysicsDebugFilter, type PhysicsDebugLayers } from "../viewer/physicsDebugSnapshot";
 import { QualityTelemetryPanel } from "../components/QualityTelemetryPanel";
 import { PublishedViewerToolDock } from "../components/PublishedViewerToolDock";
 import { PublishedViewerObjectPanel } from "../components/PublishedViewerObjectPanel";
@@ -178,6 +179,16 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   useEffect(() => {
     engine?.setPhysicsDebugVisible(physicsDebugVisible);
   }, [engine, physicsDebugVisible]);
+  // T0 刀 3：调试图层筛选/分层状态，与开关同模式经 effect 应用到（可能重建的）引擎。
+  // 筛选=选中时携带当前选中 id，选中变化即自动跟随（effect 依赖项）。
+  const [physicsDebugFilter, setPhysicsDebugFilter] = useState<PhysicsDebugFilter>("all");
+  const [physicsDebugLayers, setPhysicsDebugLayers] = useState<PhysicsDebugLayers>(DEFAULT_PHYSICS_DEBUG_LAYERS);
+  useEffect(() => {
+    engine?.setPhysicsDebugFilter(physicsDebugFilter, selected?.id);
+  }, [engine, physicsDebugFilter, selected?.id]);
+  useEffect(() => {
+    engine?.setPhysicsDebugLayers(physicsDebugLayers);
+  }, [engine, physicsDebugLayers]);
   // T28 物理调试面板：开启状态由工作区持有，物理面板关闭重开不丢状态。
   const [physicsDebugPanelOpen, setPhysicsDebugPanelOpen] = useState(false);
   // F3 探针网格烘焙：UI 状态与执行回调。结果由 runner 存入发布会话态，
@@ -394,6 +405,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           animationOpen={animationOpen}
           behaviorOpen={sceneBehaviorOpen}
           physicsOpen={physicsOpen}
+          physicsDebugActive={physicsDebugVisible}
           qualityPanelOpen={qualityPanelOpen}
           onQualityPanelToggle={() => setQualityPanelOpen(value => !value)}
           xrOpen={xrPanelOpen}
@@ -519,6 +531,11 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           onPhysicsChange={changePhysics}
           debugVisible={physicsDebugVisible}
           onDebugVisibleChange={setPhysicsDebugVisible}
+          debugFilter={physicsDebugFilter}
+          onDebugFilterChange={setPhysicsDebugFilter}
+          debugLayers={physicsDebugLayers}
+          onDebugLayersChange={setPhysicsDebugLayers}
+          selectedName={selected?.name}
         />
       )}
       {route.view === "studio" && qualityPanelOpen && (

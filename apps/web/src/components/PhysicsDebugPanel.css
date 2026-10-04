@@ -182,7 +182,7 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.pdbg-badge.pdbg-dynamic { color: color-mix(in srgb, var(--accent) 82%, var(--text-strong)); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.pdbg-badge.pdbg-dynamic { color: var(--success); border-color: color-mix(in srgb, var(--success) 45%, transparent); }
 .pdbg-badge.pdbg-kinematic { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
 .pdbg-badge.pdbg-fixed { color: var(--text-muted); }
 .pdbg-badge.pdbg-sleep { color: var(--text-faint); }
@@ -262,6 +262,29 @@
 .pdbg-exceed { fill: var(--danger); }
 
 .pdbg-exceedlist li { gap: 8px; }
+
+/* T0 刀 3 调试可视化区：图例色点。颜色值本身与 three 材质同源（TS 常量经
+   inline style 下发），这里只管排版；语义色是数据可视化约定，非品牌强调色。 */
+.pdbg-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 6px 2px 2px;
+}
+.pdbg-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.pdbg-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text-faint) 40%, transparent);
+}
 
 @media (max-width: 760px) {
   .pdbg-panel, .pdbg-launcher { left: 16px; top: 130px; }
