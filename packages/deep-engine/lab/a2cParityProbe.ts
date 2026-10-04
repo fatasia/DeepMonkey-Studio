@@ -5,23 +5,72 @@ import { ThreeProjectionBridge } from "../src/threeBridge/ThreeProjectionBridge.
 import { projectThreeWorldLights } from "../src/threeBridge/threeWorldLights.js";
 import { PbrRenderer } from "../src/webgpu/pbrRenderer.js";
 import { FrameCaptureSession } from "../src/r12/frameCapture.js";
+import { isPbrFrameReadbackSnapshot } from "../src/webgpu/pbrFrameCaptureReadback.js";
+import type { PbrFrameReadbackSnapshot } from "../src/webgpu/pbrFrameCaptureReadback.js";
 import { installThreeMaterialMath } from "../../../apps/web/src/viewer/threeMaterialMath.js";
 import { installThreeDisplayToneMapping } from "../../../apps/web/src/viewer/threeDisplayToneMapping.js";
 import { threeDirectMaterialProfile } from "../src/threeBridge/threeDirectMaterialProfile.js";
-import { bounded, readSharedDeepFrame } from "./c8SharedSceneReadback.js";
+import { bounded } from "./c8SharedSceneReadback.js";
 import type { RenderView } from "../src/webgpu/pbrRendererTypes.js";
 
 /**
- * AA-M2 alpha-to-coverage 双端真机 parity 探针(three r185 ↔ Deep):
- * 同一 MeshStandardMaterial(alpha 贴图 + alphaTest=0 + alphaToCoverage=true)分别经
- * three WebGLRenderer(MSAA 默认帧缓冲 + GL_SAMPLE_ALPHA_TO_COVERAGE)与生产
- * DeepWebGpuBackend(ThreeProjectionBridge alphaToCoverage 能力 + MSAA4 主 pass
- * a2c 管线变体)渲染,采集两端 sRGB 显示帧 PNG 与 RMSE 证据。
- * 采集语义:两端硬件 a2c dither 矩阵未规范,本探针交付证据(截图+差异度量),
- * 不设硬门;阈值由主线程在 SMAA 路合并终表时随 parityGateThresholds 体系裁定。
+ * AA-M2 alpha-to-coverage 双端真机 parity 探针(three r185 ↔ Deep),P1 取证版:
+ * 同一 MeshStandardMaterial(alpha 贴图 + alphaToCoverage=true)分别经 three WebGLRenderer
+ * (MSAA 默认帧缓冲 + GL_SAMPLE_ALPHA_TO_COVERAGE)与生产 DeepWebGpuBackend
+ * (ThreeProjectionBridge alphaToCoverage 能力 + MSAA4 主 pass a2c 管线变体)渲染。
+ *
+ * P1(纯 a2c/OPAQUE 无 alphaTest 在 Deep MSAA4 显示全画实心板)取证设计——三个独立读数
+ * 把疑点空间切成互斥象限,每个读数都来自生产链路真实帧:
+ * 1. 管线 descriptor(由 a2c-parity.mjs 的 GPUDevice.prototype 钩子抓取,DeviceSession 的
+ *    requestDevice 包装不可能剥掉原型补丁):alphaToCoverageEnabled 是否 true、multisample
+ *    是否 4、target0 格式 —— 驱动层"收到并接受"的证据。
+ * 2. opaque-hdr 读回(主 pass target0 的 MSAA resolve 结果,进入 present 链之前):
+ *    alpha 桶分布是 coverage() 512 位到达 WGSL 的直接证据(512 位未置 ⇒ OPAQUE 恒 1.0);
+ *    RGB 边缘密度是硬件采样掩码实际生效的证据(a2c 生效 ⇒ 图案处明暗抖动,实心 ⇒ 平坦)。
+ *    两者正交:alpha 变化 + RGB 实心 = WGSL 直通生效而驱动未按 alpha 生成掩码。
+ * 3. present(swapchain)读回的 alpha 桶分布与 opaque-hdr 对比 —— present 链是否把
+ *    alpha 压成 1(判据污染假设的独立验证,不影响 RGB 实心板症状的归因)。
+ * 采集语义不变:硬件 a2c dither 矩阵未规范,本探针交付证据与统计,不设硬门。
  */
 
 const WIDTH = 512, HEIGHT = 384;
+
+interface AlphaBuckets { readonly transparent: number; readonly partial: number; readonly opaque: number }
+
+export interface A2cVariantEvidence {
+  readonly alphaTest: number;
+  /** true=主 pass 走 MRT(writeGeometryBuffers),false=单 HDR 目标。 */
+  readonly mrt: boolean;
+  readonly three: string;
+  readonly deep: string;
+  readonly rmse: number;
+  readonly deepMsaa: { readonly requested: number; readonly active: number } | null;
+  /** present(swapchain)alpha 桶分布 —— present 链之后。 */
+  readonly presentAlpha: AlphaBuckets;
+  /** opaque-hdr(主 pass target0 resolve)alpha 桶分布 —— present 链之前。 */
+  readonly targetAlpha: AlphaBuckets;
+  /** opaque-hdr RGB 图案统计:实心板 ≈ 少色无边,抖动图案 ≈ 多色多边。 */
+  readonly targetRgb: { readonly uniqueColors: number; readonly edgePixels: number };
+  readonly verdict: {
+    /** coverage() 512 位到达 WGSL 并写进 target0 alpha。 */
+    readonly wgslAlphaPassthrough: boolean;
+    /** 硬件按 alpha 生成采样掩码(target0 RGB 呈现覆盖抖动)。 */
+    readonly hardwareCoverageDither: boolean;
+    /** present 链保真了 target 的 alpha 分布(否则 present 判据被污染)。 */
+    readonly presentAlphaPreserved: boolean;
+  };
+}
+
+export interface A2cParityReport {
+  readonly width: number;
+  readonly height: number;
+  /** P1 主对象:纯 a2c(OPAQUE,无 alphaTest),生产同构 MRT 主 pass。 */
+  readonly opaque: A2cVariantEvidence;
+  /** 对照:MASK(alphaTest=0.4,discard 先于 a2c,上一刀已验证图案正确)。 */
+  readonly masked: A2cVariantEvidence;
+  /** 判别实验:纯 a2c 但单 HDR 目标(非 MRT)——区分"D3D12 不执行 a2c"与"a2c×MRT 组合触发"。 */
+  readonly singleTarget: A2cVariantEvidence;
+}
 
 /**
  * 程序化 alpha 贴图(投影桥只接受 DataTexture 的 RGBA8 存储):竖栅栏 + 45° 斜条 +
@@ -61,11 +110,50 @@ function projection(): ThreeProjectionBridge {
   }, capabilities: { alphaToCoverage: true } });
 }
 
-export async function runA2cParity() {
+function halfToFloat(bits: number): number {
+  const sign = (bits & 0x8000) !== 0 ? -1 : 1, exponent = (bits & 0x7c00) >> 10, fraction = bits & 0x03ff;
+  if (exponent === 0) return sign * fraction * 2 ** -24;
+  if (exponent === 0x1f) return fraction ? NaN : sign * Infinity;
+  return sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
+}
+
+function alphaBuckets(channel: (index: number) => number, pixelCount: number): AlphaBuckets {
+  let transparent = 0, partial = 0, opaque = 0;
+  for (let pixel = 0; pixel < pixelCount; pixel++) {
+    const value = channel(pixel) * 255;
+    if (value < 16) transparent++; else if (value > 239) opaque++; else partial++;
+  }
+  return { transparent, partial, opaque };
+}
+
+/** opaque-hdr(rgba16float)RGB 图案统计:量化唯一色数 + 水平边缘像素数。 */
+function targetRgbStats(pixels: Uint8Array, bytesPerRow: number, width: number, height: number) {
+  const colors = new Set<number>();
+  let edgePixels = 0;
+  for (let y = 0; y < height; y++) {
+    const row = y * bytesPerRow;
+    let previousR = NaN, previousG = NaN, previousB = NaN;
+    for (let x = 0; x < width; x++) {
+      const offset = row + x * 8;
+      // 线性 HDR 显示域粗量化(0..1 截断到 32 阶);目标是区分"平坦"与"抖动图案",
+      // 不是色彩度量。
+      const to8 = (bits: number): number => Math.min(255, Math.max(0, Math.round(halfToFloat(bits) * 255)));
+      const r = to8(pixels[offset]! | (pixels[offset + 1]! << 8));
+      const g = to8(pixels[offset + 2]! | (pixels[offset + 3]! << 8));
+      const b = to8(pixels[offset + 4]! | (pixels[offset + 5]! << 8));
+      colors.add(((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3));
+      if (x > 0 && (Math.abs(r - previousR) > 12 || Math.abs(g - previousG) > 12 || Math.abs(b - previousB) > 12)) edgePixels++;
+      previousR = r; previousG = g; previousB = b;
+    }
+  }
+  return { uniqueColors: colors.size, edgePixels };
+}
+
+async function runVariant(alphaTest: number, mrt: boolean): Promise<A2cVariantEvidence> {
   const scene = new THREE.Scene(), root = new THREE.Group(); scene.add(root);
   const geometry = new THREE.PlaneGeometry(4, 3);
   const material = new THREE.MeshStandardMaterial({ map: alphaPatternTexture(), transparent: false,
-    alphaTest: 0.4, alphaToCoverage: true, side: THREE.FrontSide, depthWrite: true,
+    alphaTest, alphaToCoverage: true, side: THREE.FrontSide, depthWrite: true,
     color: new THREE.Color(0.85, 0.85, 0.9), metalness: 0, roughness: 0.85 });
   const mesh = new THREE.Mesh(geometry, material); root.add(mesh);
   const light = new THREE.DirectionalLight(new THREE.Color(1, 0.97, 0.92), 2.6);
@@ -85,7 +173,6 @@ export async function runA2cParity() {
   const errors: string[] = [], lifetime = new AbortController();
   let backend: DeepWebGpuBackend | undefined, renderer: THREE.WebGLRenderer | undefined;
   try {
-    installThreeMaterialMath(); installThreeDisplayToneMapping();
     const chunks = threeDirectMaterialProfile(THREE.ShaderChunk, "three-r185");
     THREE.ShaderChunk.lights_physical_pars_fragment = chunks.lights_physical_pars_fragment;
     THREE.ShaderChunk.lights_physical_fragment = chunks.lights_physical_fragment;
@@ -96,12 +183,16 @@ export async function runA2cParity() {
     backend = await bounded(DeepWebGpuBackend.create({ canvas, gpu: navigator.gpu, projection: projection(), root, view,
       signal: lifetime.signal,
       renderer: { msaaSampleCount: 4,
-        // deformation:true 仅用于把主 pass 切进 MRT+MSAA4 路径(静态网格无变形数据,
-        // 视觉等价);直出 display 路径渲染进 1x swapchain,物理上不支持 a2c
-        // (packetDraw 回退普通管线),不是本探针对象。
-        deformation: true,
+        // mrt:true(生产 Studio 的 SSR/体积雾同构路径)把主 pass 切进 MRT+MSAA4;
+        // mrt:false(AO/SSR/体积雾/时域AA/接触阴影全关 + 无变形)得到单 HDR 目标主 pass,
+        // 用于判别 a2c 失效是否与 MRT 附件组合绑定。直出 display 路径渲染进 1x swapchain,
+        // 物理上不支持 a2c(packetDraw 回退普通管线),不是本探针对象。
+        deformation: mrt,
         shadows: { exactProfile: { cascadeCount: 1, shadowMapSize: 128 } },
-        frameCapture: { session: new FrameCaptureSession(), readbacks: { requests: [{ resourceId: "present-color" }] } },
+        frameCapture: { session: new FrameCaptureSession(),
+          // present-color:swapchain 表面(present 链之后);opaque-hdr:主 pass target0 的
+          // MSAA resolve(present 链之前)。两者的 alpha 差分就是判据污染假设的直接证据。
+          readbacks: { requests: [{ resourceId: "present-color" }, { resourceId: "opaque-hdr" }] } },
         features: { toneMapping: "three-aces-r185", environment: false, groundPlane: false, groundGrid: false, fog: false,
           ambientOcclusion: false, temporalAa: false, spatialAa: false, occlusionCulling: false, bloom: false,
           vignette: false, contactShadows: false } } }));
@@ -114,31 +205,65 @@ export async function runA2cParity() {
     const threeDataUrl = renderer.domElement.toDataURL("image/png");
     const threePixels = new Uint8Array(WIDTH * HEIGHT * 4);
     renderer.getContext().readPixels(0, 0, WIDTH, HEIGHT, renderer.getContext().RGBA, renderer.getContext().UNSIGNED_BYTE, threePixels);
-    // Deep 侧:MSAA4 主 pass a2c 管线变体渲染,读实际 swapchain 表面。
+    // Deep 侧:MSAA4 主 pass a2c 管线变体渲染,读 swapchain(present)与 opaque-hdr(主 pass)。
     const metrics = backend.render(view);
     if (!metrics) throw Error("Deep produced no frame.");
-    const deep = await readSharedDeepFrame(runtime, WIDTH, HEIGHT);
-    const deepDataUrl = await rgbaToPngDataUrl(new Uint8Array(deep.display), WIDTH, HEIGHT);
+    const frames = await readVariantFrames(runtime);
     if (errors.length) throw Error(errors.join("\n"));
     // RMSE(sRGB 显示域,翻转 three 的行序后对齐)。
     let squared = 0;
     for (let y = 0; y < HEIGHT; y++) for (let x = 0; x < WIDTH; x++) {
       const from = ((HEIGHT - 1 - y) * WIDTH + x) * 4, to = (y * WIDTH + x) * 4;
-      for (let c = 0; c < 3; c++) { const delta = threePixels[from + c]! - deep.display[to + c]!; squared += delta * delta; }
+      for (let c = 0; c < 3; c++) { const delta = threePixels[from + c]! - frames.present[to + c]!; squared += delta * delta; }
     }
     const rmse = Math.sqrt(squared / (WIDTH * HEIGHT * 3));
-    // alpha 通道统计:a2c 位(512)生效时 coverage() 直通贴图 α(0/中值/255 三段分布);
-    // 未生效时 OPAQUE/MASK 语义输出恒 1.0(全 opaque)。这是 512 位到达 WGSL 的直接证据。
-    let transparent = 0, partial = 0, opaque = 0;
-    for (let index = 3; index < deep.display.length; index += 4) {
-      const value = deep.display[index]!;
-      if (value < 16) transparent++; else if (value > 239) opaque++; else partial++;
-    }
-    return { width: WIDTH, height: HEIGHT, three: threeDataUrl, deep: deepDataUrl,
-      rmse, deepMsaa: metrics.msaa ?? null, deepAlpha: { transparent, partial, opaque } };
+    const presentAlpha = alphaBuckets(pixel => frames.present[pixel * 4 + 3]! / 255, WIDTH * HEIGHT);
+    const targetAlpha = alphaBuckets(pixel => frames.hdrAlpha[pixel]!, WIDTH * HEIGHT);
+    const targetRgb = targetRgbStats(frames.hdrBytes, frames.hdrBytesPerRow, WIDTH, HEIGHT);
+    // 判据读法:主 pass 面片内部 alpha 出现非 1 ⇒ 512 位到达 WGSL;RGB 边缘密度超过
+    // 轮廓量级 ⇒ 硬件按 alpha 生成了采样掩码(抖动覆盖);present 与主 pass 的 alpha
+    // 分布同号 ⇒ present 判据未被污染。
+    const dithered = targetRgb.edgePixels > 8 * WIDTH;
+    const alphaNonOpaque = targetAlpha.partial + targetAlpha.transparent > 0;
+    return { alphaTest, mrt, three: threeDataUrl, deep: frames.presentDataUrl, rmse,
+      deepMsaa: metrics.msaa ?? null, presentAlpha, targetAlpha, targetRgb,
+      verdict: { wgslAlphaPassthrough: alphaNonOpaque, hardwareCoverageDither: dithered,
+        presentAlphaPreserved: (presentAlpha.partial + presentAlpha.transparent > 0) === alphaNonOpaque } };
   } finally {
     lifetime.abort(); backend?.dispose(); renderer?.dispose(); renderer?.forceContextLoss(); geometry.dispose(); material.dispose();
   }
+}
+
+/** 同帧读回 swapchain(present)与 opaque-hdr(主 pass target0 resolve),并解码统计输入。 */
+async function readVariantFrames(runtime: PbrRenderer) {
+  const pending = runtime.frameReadbackResults;
+  if (!pending) throw Error("Formal production HDR frame capture was not scheduled");
+  const session = runtime.session, device = session.device;
+  const bytesPerRow = Math.ceil(WIDTH * 4 / 256) * 256;
+  const buffer = device.createBuffer({ size: bytesPerRow * HEIGHT, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  try {
+    const encoder = device.createCommandEncoder(); encoder.copyTextureToBuffer({ texture: session.context.getCurrentTexture() },
+      { buffer, bytesPerRow }, { width: WIDTH, height: HEIGHT }); device.queue.submit([encoder.finish()]);
+    const [snapshots] = await Promise.all([bounded(pending), bounded(buffer.mapAsync(GPUMapMode.READ))]);
+    const hdr = snapshots.find((value): value is PbrFrameReadbackSnapshot =>
+      isPbrFrameReadbackSnapshot(value) && value.resourceId === "opaque-hdr"
+      && value.width === WIDTH && value.height === HEIGHT && value.format === "rgba16float");
+    if (!hdr) throw Error("opaque-hdr main-pass readback missing or wrong extent/format");
+    if (session.format !== "bgra8unorm" && session.format !== "rgba8unorm") throw Error(`Unsupported actual surface format ${session.format}`);
+    const bytes = new Uint8Array(buffer.getMappedRange()), present = new Uint8Array(WIDTH * HEIGHT * 4);
+    for (let y = 0; y < HEIGHT; y++) for (let x = 0; x < WIDTH; x++) {
+      const from = y * bytesPerRow + x * 4, to = (y * WIDTH + x) * 4;
+      present[to] = bytes[from + (session.format === "bgra8unorm" ? 2 : 0)]!; present[to + 1] = bytes[from + 1]!;
+      present[to + 2] = bytes[from + (session.format === "bgra8unorm" ? 0 : 2)]!; present[to + 3] = bytes[from + 3]!;
+    }
+    const view = new DataView(hdr.bytes.buffer, hdr.bytes.byteOffset, hdr.bytes.byteLength);
+    const hdrAlpha = new Float32Array(WIDTH * HEIGHT);
+    for (let pixel = 0; pixel < WIDTH * HEIGHT; pixel++) {
+      hdrAlpha[pixel] = halfToFloat(view.getUint16(pixel * 8 + 6, true));
+    }
+    const presentDataUrl = await rgbaToPngDataUrl(present, WIDTH, HEIGHT);
+    return { present, presentDataUrl, hdrBytes: hdr.bytes, hdrBytesPerRow: hdr.bytesPerRow, hdrAlpha };
+  } finally { buffer.destroy(); }
 }
 
 async function rgbaToPngDataUrl(pixels: Uint8Array, width: number, height: number): Promise<string> {
@@ -148,6 +273,23 @@ async function rgbaToPngDataUrl(pixels: Uint8Array, width: number, height: numbe
   image.data.set(pixels);
   context.putImageData(image, 0, 0);
   return canvas.toDataURL("image/png");
+}
+
+async function runA2cParityOnce(): Promise<A2cParityReport> {
+  installThreeMaterialMath(); installThreeDisplayToneMapping();
+  // P1 主对象在前:纯 a2c(OPAQUE,无 alphaTest,discard 关闭,覆盖抖动是唯一图案来源);
+  // MASK(alphaTest=0.4)为上一刀已验证的对照组;singleTarget 为 a2c×MRT 判别实验。
+  const opaque = await runVariant(0, true);
+  const masked = await runVariant(0.4, true);
+  const singleTarget = await runVariant(0, false);
+  return { width: WIDTH, height: HEIGHT, opaque, masked, singleTarget };
+}
+
+let inFlight: Promise<A2cParityReport> | undefined;
+
+/** 幂等入口:模块导入自启与运行器显式调用共享同一次执行,不并发争抢设备。 */
+export function runA2cParity(): Promise<A2cParityReport> {
+  return inFlight ??= runA2cParityOnce();
 }
 
 if (typeof window !== "undefined") {

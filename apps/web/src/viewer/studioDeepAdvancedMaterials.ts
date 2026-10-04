@@ -1,10 +1,13 @@
 import type * as THREE from "three";
 
 /**
- * Deep advancedMaterials 变体按需开关:仅当场景里存在 three r185 MeshPhysicalMaterial 的
- * clearcoat / sheen / iridescence / transmission 激活 lobe 时才编译该着色变体与材质 uniform 扩展,
- * 其余场景保持 stock 管线(WGSL、材质 uniform 与帧耗时均不变)。判定与 three refreshUniformsPhysical 一致:
- * 对应标量 > 0 才视为装载该 lobe。
+ * Deep 渲染器按需变体的宿主侧探测(同一族两档):
+ * - advancedMaterials:场景里存在 three r185 MeshPhysicalMaterial 的 clearcoat / sheen /
+ *   iridescence / transmission 激活 lobe 时才编译该着色变体与材质 uniform 扩展,其余场景保持
+ *   stock 管线(WGSL、材质 uniform 与帧耗时均不变)。判定与 three refreshUniformsPhysical 一致:
+ *   对应标量 > 0 才视为装载该 lobe。
+ * - alphaToCoverage(AA-M2):场景/作者包里存在 `material.alphaToCoverage === true` 请求时才
+ *   声明投影能力门并显式钉 MSAA4 主 pass;缺省不透传任何字段,现行为逐位不变。
  */
 export function sceneUsesDeepAdvancedMaterials(root: THREE.Object3D): boolean {
   let used = false;
@@ -33,4 +36,34 @@ export function packetUsesDeepAdvancedMaterials(packet: { readonly materials: Re
 export function isDeepAdvancedMaterialsRejection(reason: unknown): boolean {
   const message = reason instanceof Error ? reason.message : String(reason);
   return message.includes("MeshPhysicalMaterial non-neutral extensions") || message.includes("advanced-materials/not-enabled");
+}
+
+/** 场景里是否存在 three r185 alpha-to-coverage 请求(仅声明,不校验合法性;BLEND 组合由投影桥 fail-closed 拒绝)。 */
+export function sceneUsesAlphaToCoverage(root: THREE.Object3D): boolean {
+  let used = false;
+  root.traverse(child => {
+    if (used) return;
+    const material = (child as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+    if (!material) return;
+    for (const entry of Array.isArray(material) ? material : [material]) {
+      if ((entry as THREE.MeshStandardMaterial).alphaToCoverage === true) { used = true; return; }
+    }
+  });
+  return used;
+}
+
+/** 独立作者包(SceneSnapshot 编译产物)是否携带 alpha-to-coverage 请求。 */
+export function packetUsesAlphaToCoverage(packet: { readonly materials: ReadonlyArray<{ readonly alphaToCoverage?: unknown }> }): boolean {
+  return packet.materials.some(material => material.alphaToCoverage === true);
+}
+
+/**
+ * 投影桥因"alpha-to-coverage 能力门未声明"拒绝时的精确特征(用于受控重建,与
+ * advancedMaterials 同族)。必须带句号全匹配:能力门拒绝是
+ * "…does not support material alphaToCoverage.",而语义拒绝
+ * "…material alphaToCoverage with transparent."(transparent 组合无定义)不得触发重建。
+ */
+export function isAlphaToCoverageRejection(reason: unknown): boolean {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  return message.includes("Three projection does not support material alphaToCoverage.");
 }

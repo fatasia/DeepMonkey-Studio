@@ -138,9 +138,11 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     const first = makeBackend();
     const second = makeBackend();
     const create = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    // AA-M2 能力门测试用:记录每次 ThreeProjectionBridge 构造参数(投影路径才构造)。
+    const projectionOptions: Array<{ capabilities?: Record<string, unknown> }> = [];
     const module = {
       DeepWebGpuBackend: { create },
-      ThreeProjectionBridge: class {},
+      ThreeProjectionBridge: class { constructor(options: { capabilities?: Record<string, unknown> }) { projectionOptions.push(options); } },
       threeRenderView: (value: unknown) => value,
     } as unknown as BridgeModule;
     const authorCanvas = canvas();
@@ -176,7 +178,7 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
       ...(authorRenderPacket ? { authorRenderPacket: () => authorRenderPacket() } : {}),
     });
     bridges.push(bridge);
-    return { bridge, first, second, create, module, authorCanvas, container, presentation, failure, subscribe, unsubscribe, scene, camera, viewer };
+    return { bridge, first, second, create, module, authorCanvas, container, presentation, failure, subscribe, unsubscribe, scene, camera, viewer, projectionOptions };
   }
 
   async function activate(bridge: StudioDeepWebGpuBridge) {
@@ -265,6 +267,61 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     (bridge as unknown as { failRuntime(reason: unknown): void }).failRuntime(new Error("Deep WebGPU device was lost."));
     await microtasks();
     expect(create).toHaveBeenCalledOnce(); expect(failure).toHaveBeenCalledOnce(); expect(bridge.activeBackend).toBe("webgl");
+  });
+
+  it("keeps a2c fields out of the creation contract for a stock scene", async () => {
+    const f = setup();
+    await activate(f.bridge);
+    expect(f.create.mock.calls[0]![0].renderer.msaaSampleCount).toBeUndefined();
+    expect(f.projectionOptions[0]?.capabilities?.alphaToCoverage).toBeUndefined();
+  });
+
+  it("declares the a2c capability gate and pins MSAA4 when the scene requests alpha-to-coverage", async () => {
+    const f = setup();
+    const flagged = new THREE.Mesh(new THREE.BoxGeometry(),
+      new THREE.MeshStandardMaterial({ alphaToCoverage: true }));
+    f.scene.add(flagged);
+    await activate(f.bridge);
+    expect(f.projectionOptions[0]?.capabilities?.alphaToCoverage).toBe(true);
+    expect(f.create.mock.calls[0]![0].renderer.msaaSampleCount).toBe(4);
+    flagged.geometry.dispose(); (flagged.material as THREE.Material).dispose();
+  });
+
+  it("declares the a2c capability gate from a precompiled author packet", async () => {
+    const packet = { geometries: [], materials: [{ id: "a2c", alphaToCoverage: true }], instances: [] } as unknown as RenderPacket;
+    const f = setup(undefined, async () => packet);
+    await activate(f.bridge);
+    // 独立包路径不构造投影桥,能力经渲染器 MSAA4 主 pass 与包材质位生效。
+    expect(f.create.mock.calls[0]![0].renderer.msaaSampleCount).toBe(4);
+    expect(f.projectionOptions).toHaveLength(0);
+  });
+
+  it("rebuilds once with the a2c capability gate instead of failing the scene when a late material is rejected", async () => {
+    const f = setup();
+    await activate(f.bridge);
+    expect(f.create.mock.calls[0]![0].renderer.msaaSampleCount).toBeUndefined();
+    const rejection = new Error("$.materials[0]: Three projection does not support material alphaToCoverage.");
+    (f.bridge as unknown as { failRuntime(reason: unknown): void }).failRuntime(rejection);
+    expect(f.bridge.activeBackend).toBe("webgl"); expect(f.authorCanvas.style.opacity).toBe("1");
+    expect(f.first.dispose).toHaveBeenCalledOnce(); expect(f.failure).not.toHaveBeenCalled();
+    await microtasks(); await frame(false); await frame(false); await microtasks();
+    expect(f.create).toHaveBeenCalledTimes(2);
+    expect(f.create.mock.calls[1]![0].renderer.msaaSampleCount).toBe(4);
+    expect(f.projectionOptions[1]?.capabilities?.alphaToCoverage).toBe(true);
+    expect(f.bridge.activeBackend).toBe("webgpu"); expect(f.second.dispose).not.toHaveBeenCalled(); expect(f.failure).not.toHaveBeenCalled();
+    // 变体已声明后同一拒绝不再重建,走原失败路径(无重建环)。
+    (f.bridge as unknown as { failRuntime(reason: unknown): void }).failRuntime(rejection);
+    await microtasks();
+    expect(f.create).toHaveBeenCalledTimes(2); expect(f.failure).toHaveBeenCalledOnce(); expect(f.bridge.activeBackend).toBe("webgl");
+  });
+
+  it("fails without rebuild for the semantically-undefined a2c+transparent rejection", async () => {
+    const f = setup();
+    await activate(f.bridge);
+    (f.bridge as unknown as { failRuntime(reason: unknown): void }).failRuntime(
+      new Error("Three projection does not support material alphaToCoverage with transparent."));
+    await microtasks();
+    expect(f.create).toHaveBeenCalledOnce(); expect(f.failure).toHaveBeenCalledOnce(); expect(f.bridge.activeBackend).toBe("webgl");
   });
   it("allocates author frame capture only for an explicitly opened diagnostics session", async () => {
     const regular = setup();

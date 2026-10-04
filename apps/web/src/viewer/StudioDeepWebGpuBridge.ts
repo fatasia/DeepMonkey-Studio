@@ -29,7 +29,8 @@ import { DeepGizmoInteraction } from "./deepGizmoInteraction";
 import { createDeepCanvas, prepareAuthorInputCanvas, captureAuthorStyle, restoreAuthorStyle,
   type AuthorCanvasStyle } from "./studioDeepPresentationCanvas";
 import { collectDeepOverlayPrimitives } from "./deepOverlayPrimitiveSource";
-import { isDeepAdvancedMaterialsRejection, packetUsesDeepAdvancedMaterials, sceneUsesDeepAdvancedMaterials } from "./studioDeepAdvancedMaterials";
+import { isAlphaToCoverageRejection, isDeepAdvancedMaterialsRejection, packetUsesAlphaToCoverage, sceneUsesAlphaToCoverage,
+  packetUsesDeepAdvancedMaterials, sceneUsesDeepAdvancedMaterials } from "./studioDeepAdvancedMaterials";
 import type { FrameCaptureSession, RenderPacket } from "@bim-studio/deep-engine";
 import { createRequestedStudioFrameCaptureSession, createStudioFrameReadbackListener } from "./studioFrameCaptureDiagnostics";
 import { publishDeepPresentation, publishWebGlPresentation, releaseDeepPresentation,
@@ -115,6 +116,10 @@ export class StudioDeepWebGpuBridge {
   private advancedMaterialsActive = false;
   /** 编辑中新激活高级 lobe 后受控重建的粘性请求:此后每次创建都带变体,直到 bridge 释放。 */
   private advancedMaterialsRequested = false;
+  /** 当前 backend 是否以 alphaToCoverage 能力门创建(创建时判定,见 switchTo)。 */
+  private alphaToCoverageActive = false;
+  /** 编辑中新出现 a2c 材质后受控重建的粘性请求:此后每次创建都带能力门,直到 bridge 释放。 */
+  private alphaToCoverageRequested = false;
   private recoveryCandidateFailure: { readonly generation: number; readonly attempts: number } | undefined;
 
   constructor(
@@ -251,8 +256,17 @@ export class StudioDeepWebGpuBridge {
           // 仅当场景含激活的 clearcoat/sheen/iridescence/transmission lobe 时才启用 advancedMaterials 着色变体(按需编译,零开销默认)。
           const advancedMaterials = this.advancedMaterialsRequested || (authorRenderPacket
             ? packetUsesDeepAdvancedMaterials(authorRenderPacket) : sceneUsesDeepAdvancedMaterials(this.viewer.scene));
+          // AA-M2 alpha-to-coverage 能力门(缺省 false=现行为逐位不变):仅当场景(投影路径)
+          // 或作者包(独立包路径)存在 material.alphaToCoverage 请求时才透传。声明能力的同时
+          // 显式钉 MSAA4 主 pass——a2c 管线变体只在多采样档构建,1x 渲染器绘制 a2c 批次在
+          // packetDraw 显式报错(fail-closed,不静默降级);引擎缺省本就是 4,显式传递把
+          // "a2c ⇒ MSAA4" 的依赖钉死在创建契约上,不受缺省值未来变动影响。晚到材质的
+          // 投影拒绝走受控重建(与 advancedMaterials 同族,见 failRuntime)。
+          const alphaToCoverage = this.alphaToCoverageRequested || (authorRenderPacket
+            ? packetUsesAlphaToCoverage(authorRenderPacket) : sceneUsesAlphaToCoverage(this.viewer.scene));
           this.projectionBridge = authorRenderPacket ? undefined : new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(),
-            capabilities: { authorDeformation: true, authorLod: true, ...(advancedMaterials ? { advancedMaterials: true } : {}) },
+            capabilities: { authorDeformation: true, authorLod: true, ...(advancedMaterials ? { advancedMaterials: true } : {}),
+              ...(alphaToCoverage ? { alphaToCoverage: true } : {}) },
             authorTransformResolver: source => resolveAuthorWorldTransform(this.viewer, source),
           });
           // T07 动态分辨率与 T25 逐 pass 计时均为 opt-in；缺省字段不进快照。
@@ -271,6 +285,7 @@ export class StudioDeepWebGpuBridge {
             ...(clusterLodStaging ? { clusterLodStaging } : {}),
             renderer: { environment: environment.source, deformation: true, meshlets: true,
               ...(advancedMaterials ? { advancedMaterials: true } : {}),
+              ...(alphaToCoverage ? { msaaSampleCount: 4 } : {}),
               // F8 自动曝光零配置默认开（Z3.5 授权）：缺省参数由引擎 DEFAULT_PBR_AUTO_EXPOSURE 提供，
               // 无可靠亮度时 fail-closed 回退固定启发式并经 FrameMetrics.autoExposure 披露。
               autoExposure: {},
@@ -311,6 +326,7 @@ export class StudioDeepWebGpuBridge {
           });
           markSwitchPhase("deep-webgpu:scene-uploaded");
           this.advancedMaterialsActive = advancedMaterials;
+          this.alphaToCoverageActive = alphaToCoverage;
           if (replacementBudget !== undefined && !signal.aborted) candidateObserver = observeRecoveryCandidate(backend, signal);
           return backend;
         },
@@ -646,6 +662,22 @@ export class StudioDeepWebGpuBridge {
    */
   private restartWithAdvancedMaterials(): void {
     this.advancedMaterialsRequested = true;
+    this.restartDeepWithStickyVariant("Advanced material renderer rebuild failed.");
+  }
+
+  /**
+   * AA-M2 a2c 的同族受控重建:编辑中新出现 `material.alphaToCoverage` 请求而能力门未声明时,
+   * 投影桥 fail-closed 拒绝;先回作者画布,再带 `capabilities.alphaToCoverage` + MSAA4 重建一次。
+   * 重建后仍被拒(含 transparent 组合的无定义语义拒绝)则按原路径失败上报,无重建环
+   * (alphaToCoverageActive 在创建时落定,重复拒绝不再进入本分支)。
+   */
+  private restartWithAlphaToCoverage(): void {
+    this.alphaToCoverageRequested = true;
+    this.restartDeepWithStickyVariant("Alpha-to-coverage renderer rebuild failed.");
+  }
+
+  /** restartWithAdvancedMaterials / restartWithAlphaToCoverage 的事务骨架(先回作者画布,再换粘性变体重建)。 */
+  private restartDeepWithStickyVariant(failureMessage: string): void {
     const userSwitchPending = this.pending !== undefined;
     this.cancelPendingSwitch();
     try { this.publishWebGl(); }
@@ -653,7 +685,7 @@ export class StudioDeepWebGpuBridge {
     if (userSwitchPending) return;
     void this.switchTo("webgpu").then(result => {
       if (result.status === "failed" && this.activeBackendValue === "webgl") {
-        this.options.onRuntimeFailure?.(new Error(result.error ?? "Advanced material renderer rebuild failed."));
+        this.options.onRuntimeFailure?.(new Error(result.error ?? failureMessage));
       }
     }, error => this.options.onRuntimeFailure?.(error instanceof Error ? error : new Error(String(error))));
   }
@@ -661,6 +693,7 @@ export class StudioDeepWebGpuBridge {
   private failRuntime(reason: unknown): void {
     if (this.closed || this.failureReported || this.activeBackendValue !== "webgpu") return;
     if (!this.advancedMaterialsActive && isDeepAdvancedMaterialsRejection(reason)) { this.restartWithAdvancedMaterials(); return; }
+    if (!this.alphaToCoverageActive && isAlphaToCoverageRejection(reason)) { this.restartWithAlphaToCoverage(); return; }
     this.failureReported = true;
     let error = reason instanceof Error ? reason : new Error(String(reason));
     try { this.publishWebGl(); }

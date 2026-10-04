@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { isDeepAdvancedMaterialsRejection, packetUsesDeepAdvancedMaterials, sceneUsesDeepAdvancedMaterials } from "./studioDeepAdvancedMaterials";
+import { isAlphaToCoverageRejection, isDeepAdvancedMaterialsRejection, packetUsesAlphaToCoverage,
+  packetUsesDeepAdvancedMaterials, sceneUsesAlphaToCoverage, sceneUsesDeepAdvancedMaterials } from "./studioDeepAdvancedMaterials";
 
 const meshOf = (material: THREE.Material | THREE.Material[]): THREE.Mesh => new THREE.Mesh(new THREE.BoxGeometry(), material);
 
@@ -37,5 +38,38 @@ describe("author packet / rejection detection", () => {
     expect(isDeepAdvancedMaterialsRejection(new Error("PBR capability advanced-materials/not-enabled."))).toBe(true);
     expect(isDeepAdvancedMaterialsRejection(new Error("Deep WebGPU device was lost."))).toBe(false);
     expect(isDeepAdvancedMaterialsRejection("material.clearcoatMap")).toBe(false);
+  });
+});
+
+describe("sceneUsesAlphaToCoverage", () => {
+  it("is false for default standard materials (alphaToCoverage 缺省 false,不透传任何字段)", () => {
+    const root = new THREE.Group();
+    root.add(meshOf(new THREE.MeshStandardMaterial()), meshOf(new THREE.MeshStandardMaterial({ alphaTest: 0.4 })));
+    expect(sceneUsesAlphaToCoverage(root)).toBe(false);
+  });
+
+  it("detects the request on nested and multi-material meshes", () => {
+    const nested = new THREE.Group().add(meshOf(new THREE.MeshStandardMaterial({ alphaToCoverage: true })));
+    expect(sceneUsesAlphaToCoverage(nested)).toBe(true);
+    expect(sceneUsesAlphaToCoverage(meshOf([
+      new THREE.MeshStandardMaterial(), new THREE.MeshStandardMaterial({ alphaToCoverage: true }),
+    ]))).toBe(true);
+  });
+});
+
+describe("packetUsesAlphaToCoverage", () => {
+  it("flags only packets whose materials request alpha-to-coverage", () => {
+    expect(packetUsesAlphaToCoverage({ materials: [{}] })).toBe(false);
+    expect(packetUsesAlphaToCoverage({ materials: [{ alphaToCoverage: false }] })).toBe(false);
+    expect(packetUsesAlphaToCoverage({ materials: [{}, { alphaToCoverage: true }] })).toBe(true);
+  });
+});
+
+describe("isAlphaToCoverageRejection", () => {
+  it("matches exactly the capability-gate rejection, not the BLEND semantic rejection", () => {
+    expect(isAlphaToCoverageRejection(new Error("$.m: Three projection does not support material alphaToCoverage."))).toBe(true);
+    // transparent 组合是无定义语义,必须原路径失败,不得触发受控重建。
+    expect(isAlphaToCoverageRejection(new Error("Three projection does not support material alphaToCoverage with transparent."))).toBe(false);
+    expect(isAlphaToCoverageRejection(new Error("Deep WebGPU device was lost."))).toBe(false);
   });
 });
