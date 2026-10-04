@@ -1,0 +1,29 @@
+[package]
+name = "geometry_dag"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+description = "Offline meshlet-DAG compiler (Nanite M2): mesh -> clusters -> hierarchical DAG -> .dgc stream format"
+license-file = "../../../LICENSE"
+publish = false
+
+[dependencies]
+# 版本与父 crate(packages/deep-engine-native)Cargo.lock 既有锁定保持一致,不引入新大版本。
+thiserror = "=2.0.20"
+flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
+
+[dev-dependencies]
+serde_json = "=1.0.151"
+base64 = "=0.22.1"
+
+[lib]
+name = "geometry_dag"
+path = "src/lib.rs"
+
+[[bin]]
+name = "geometry_dag"
+path = "src/bin/geometry_dag.rs"
+
+[features]
+# 调试特性:打印 cluster_simplify 第四遍的剔除决策(与 TS 重放对拍用)。
+dbg_dropped = []
