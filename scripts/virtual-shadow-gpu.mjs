@@ -166,6 +166,17 @@ const LEGS_FLOW = `(async () => {
     const rotateLatency = await probe.dynamicLatencyLeg("rotate");
     output.legs.virtualImage = await probe.finishLeg(virtualTiming, virtualImage,
       { translateLatencyFrames: translateLatency, rotateLatencyFrames: rotateLatency });
+    // M2 门①远景机位:同场景同光照,级联覆盖扩大后基线进入图受限阶梯(见 VIEW_FAR 注)。
+    await probe.setActiveView(probe.VIEW_FAR);
+    await probe.beginLeg("cascaded", true);
+    await probe.settleLeg();
+    const cascadeFarImage = await probe.captureStill();
+    output.legs.cascadedFarImage = await probe.finishLeg(cascadedTiming, cascadeFarImage);
+    await probe.beginLeg("virtual", true);
+    await probe.settleLeg();
+    const virtualFarImage = await probe.captureStill();
+    output.legs.virtualFarImage = await probe.finishLeg(virtualTiming, virtualFarImage);
+    await probe.setActiveView(probe.VIEW);
     return output;
   })()`;
 
@@ -277,9 +288,14 @@ try {
     if (typeof crop === "string" && crop.startsWith("data:image/png")) {
       await writeFile(path.join(out, `crop-${name}.png`), Buffer.from(crop.split(",")[1], "base64"));
     }
+    const farPng = leg?.image?.canvasPng;
+    void farPng;
   }
-  const cascadeEdge = result.legs.cascadedImage?.image?.edge?.cornerRatio;
-  const virtualEdge = result.legs.virtualImage?.image?.edge?.cornerRatio;
+  const cascadeEdge = result.legs.cascadedFarImage?.image?.edge?.cornerRatio;
+  const virtualEdge = result.legs.virtualFarImage?.image?.edge?.cornerRatio;
+  result.gateNearPose = {
+    cascadeEdge: result.legs.cascadedImage?.image?.edge?.cornerRatio,
+    virtualEdge: result.legs.virtualImage?.image?.edge?.cornerRatio };
   const deltaP50 = (result.legs.virtualTiming?.timing?.p50Ms ?? Number.NaN)
     - (result.legs.cascadedTiming?.timing?.p50Ms ?? Number.NaN);
   const deltaP95 = (result.legs.virtualTiming?.timing?.p95Ms ?? Number.NaN)
@@ -290,7 +306,7 @@ try {
   const cascadeErr = result.cascadeMeanAbs ?? Number.NaN;
   const virtualErr = result.virtualMeanAbs ?? Number.NaN;
   result.gate = {
-    "① shadow edge corner ratio (virtual/cascaded ≤ 0.40)": {
+    "① shadow edge corner ratio far pose (virtual/cascaded ≤ 0.40)": {
       cascadeEdge, virtualEdge, ratio: edgeRatio, passed: edgeRatio !== null && edgeRatio <= 0.40 },
     "② shadow cost Δp50 ≤ 2.5ms": { deltaP50Ms: deltaP50, deltaP95Ms: deltaP95,
       cascadedP50Ms: result.legs.cascadedTiming?.timing?.p50Ms,
