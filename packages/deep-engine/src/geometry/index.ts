@@ -17,6 +17,7 @@ export {
   parseDgcSections,
 } from "./dgcLoader.js";
 export type { DgcBytes, DgcDag, DgcDagLevel, DgcFileHeader, DgcSectionHeader } from "./dgcLoader.js";
+export { dgcDagToMeshletDag, meshletDagFromDgc } from "./dgcDagBridge.js";
 export { buildMeshlets, packLocalTriangle, unpackLocalTriangle } from "./meshletBuilder.js";
 export { hashMeshletBuild } from "./meshletHash.js";
 export { expandMeshletIndices, isMirroredMeshletTransform } from "./meshletIndices.js";

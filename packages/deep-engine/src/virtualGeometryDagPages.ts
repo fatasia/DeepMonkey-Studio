@@ -1,4 +1,6 @@
+import { meshletDagFromDgc } from "./geometry/dgcDagBridge.js";
 import type { MeshletDag } from "./geometry/meshletDag.js";
+import type { DgcBytes } from "./geometry/dgcLoader.js";
 import { MESHLET_BOUNDS_STRIDE, MESHLET_DESCRIPTOR_STRIDE } from "./geometry/types.js";
 
 /**
@@ -49,6 +51,16 @@ export interface VirtualGeometryDagPageTable {
 
 export function virtualGeometryDagPageId(sourceGeometry: string, level: number, cluster: number): string {
   return `${sourceGeometry}|l${level.toString(36)}|c${cluster.toString(36)}`;
+}
+
+/**
+ * `.dgc` 字节 → 调度页表:先过 decodeDgc 全校验链(损坏 fail-closed 抛 DgcFormatError,
+ * 不被吞),再桥接成完整 MeshletDag,复用既有 compile 路径(F2 簇隐藏/孤儿根语义同路)。
+ * 页输出与「buildMeshletDag 实时构建 → 同 compile」逐值一致(dgcDagBridge.test 对拍钉住)。
+ */
+export function compileVirtualGeometryDagPagesFromDgc(bytes: DgcBytes, sourceGeometry: string,
+  revision = 0): VirtualGeometryDagPageTable {
+  return compileVirtualGeometryDagPages(meshletDagFromDgc(bytes), sourceGeometry, revision);
 }
 
 /** MeshletDag → 调度页表。簇缺失(空层/空簇)fail-loud,静默空表会伪装成"无几何"。 */
