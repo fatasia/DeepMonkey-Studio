@@ -1,0 +1,213 @@
+/* 材质图编辑器(编辑器刀 7)。全部取自全站令牌(base.css),深浅主题经 --* 变量自适应;
+   禁止 hardcode 面板色。密度对齐 inspector-collapsible / 材质区既有节奏。 */
+
+.material-graph-editor {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  margin: 8px 0;
+  background: var(--surface-1);
+  overflow: hidden;
+}
+
+.material-graph-editor > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-strong);
+  font-size: 11px;
+  list-style: none;
+}
+
+.material-graph-editor > summary::-webkit-details-marker { display: none; }
+
+.material-graph-editor > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid var(--text-faint);
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  transition: transform 120ms ease;
+}
+
+.material-graph-editor[open] > summary::before { transform: rotate(90deg); }
+.material-graph-editor > summary small { color: var(--text-faint); margin-left: auto; }
+
+.material-graph-body {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid var(--line-subtle);
+}
+
+/* 画布:网格底纹 + 节点/连线 */
+
+.material-graph-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 96px;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-xs);
+  background:
+    linear-gradient(var(--line-subtle) 1px, transparent 1px) 0 0 / 16px 16px,
+    linear-gradient(90deg, var(--line-subtle) 1px, transparent 1px) 0 0 / 16px 16px,
+    var(--bg-1);
+  touch-action: none;
+}
+
+.material-graph-edge {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+}
+
+.material-graph-node { cursor: grab; }
+.material-graph-node:active { cursor: grabbing; }
+.material-graph-node.disabled { cursor: default; opacity: 0.55; }
+.material-graph-node rect { transition: stroke 100ms ease; }
+.material-graph-node.selected rect { filter: drop-shadow(0 0 0.5px var(--accent)); }
+
+.material-graph-node-title {
+  fill: var(--text-strong);
+  font-size: 10px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.material-graph-node-subtitle {
+  fill: var(--text-muted);
+  font-size: 8px;
+  pointer-events: none;
+}
+
+.material-graph-node[data-node-kind="output"] .material-graph-node-title { fill: var(--accent); }
+.material-graph-port { fill: var(--surface-1); stroke: var(--line-strong); stroke-width: 1; }
+
+/* 工具行:接管按钮 + 状态 */
+
+.material-graph-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.material-graph-toolbar button {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text-strong);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+.material-graph-toolbar button:hover:not(:disabled) { background: var(--surface-3); }
+.material-graph-toolbar button.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text-strong);
+}
+.material-graph-toolbar button:disabled { opacity: 0.5; cursor: default; }
+
+.material-graph-status {
+  font-size: 10px;
+  color: var(--text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.material-graph-status.error { color: var(--danger); }
+
+/* 属性表单 */
+
+.material-graph-props {
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.material-graph-hint { color: var(--text-faint); font-size: 10px; line-height: 1.5; margin: 0; }
+
+.material-graph-add-row { display: flex; gap: 4px; flex-wrap: wrap; }
+
+.material-graph-add-row button {
+  flex: 1 1 auto;
+  padding: 4px 6px;
+  font-size: 10px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+.material-graph-add-row button:hover:not(:disabled) { color: var(--text-strong); border-color: var(--accent); }
+.material-graph-add-row button:disabled { opacity: 0.45; cursor: default; }
+
+.material-graph-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+}
+
+.material-graph-row > span:first-child { flex: 0 0 58px; color: var(--text-muted); }
+.material-graph-row input[type="range"] { flex: 1 1 auto; min-width: 0; }
+.material-graph-row input[type="color"] { width: 30px; height: 20px; padding: 0; border: 1px solid var(--line); border-radius: var(--radius-xs); background: none; }
+.material-graph-row output { flex: 0 0 auto; min-width: 34px; text-align: right; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.material-graph-row select { min-width: 0; flex: 1 1 auto; }
+.material-graph-row small { color: var(--text-faint); }
+
+.material-graph-name { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; }
+.material-graph-name span { color: var(--text-muted); }
+.material-graph-name input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 6px;
+  font-size: 11px;
+  color: var(--text-strong);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+}
+
+.material-graph-toggle { display: inline-flex; align-items: center; gap: 4px; color: var(--text); cursor: pointer; }
+
+.material-graph-danger {
+  padding: 3px 8px;
+  font-size: 10px;
+  color: var(--danger);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+.material-graph-danger:hover:not(:disabled) { border-color: var(--danger); }
+.material-graph-danger:disabled { opacity: 0.45; cursor: default; }
+
+.material-graph-channel { display: grid; gap: 2px; }
+
+.material-graph-channel-body {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 3px 18px;
+  border-left: 2px solid var(--line-subtle);
+  margin-left: 6px;
+  color: var(--text-faint);
+}
+
+.material-graph-channel-body[data-active] { border-left-color: var(--accent); color: var(--text); }
+.material-graph-channel-body input[type="range"] { flex: 1 1 auto; min-width: 0; }
+.material-graph-channel-body output { min-width: 34px; text-align: right; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.material-graph-channel-body select { max-width: 96px; }
+.material-graph-channel-body input[type="color"] { width: 30px; height: 20px; padding: 0; border: 1px solid var(--line); border-radius: var(--radius-xs); background: none; }
