@@ -86,8 +86,56 @@ export function validateScene(value: unknown, path: string): void {
   optional(object, "dataBindings", (bindings, bindingsPath) => expectArray(bindings, bindingsPath, validateSceneDataBinding), path);
   optional(object, "assetBindings", (bindings, bindingsPath) => expectArray(bindings, bindingsPath, validateSceneAssetBinding), path);
   optional(object, "selectionSets", (sets, setsPath) => expectArray(sets, setsPath, validateSceneSelectionSet), path);
+  optional(object, "userPrefabs", (prefabs, prefabsPath) => expectArray(prefabs, prefabsPath, validateUserPrefabDefinition), path);
+  optional(object, "userPrefabInstances", (instances, instancesPath) => expectArray(instances, instancesPath, validateUserPrefabInstanceRecord), path);
+  optional(object, "userMaterialPresets", (presets, presetsPath) => expectArray(presets, presetsPath, validateUserMaterialPresetDefinition), path);
   optional(object, "rootLayerOrder", validateRootLayerOrder, path);
   for (const key of ["selectedModelId", "selectedLayerId", "selectedAnnotationId"] as const) optional(object, key, expectString, path);
+}
+
+/** 用户自定义材质预设:只含标量外观域,参数域与 validateMaterial 一致。 */
+function validateUserMaterialPresetDefinition(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  for (const key of ["id", "name", "createdAt", "updatedAt"] as const) required(object, key, expectString, path);
+  if (typeof object.name === "string" && !object.name.trim()) invalid(`${path}.name`, "不能为空");
+  required(object, "values", validateUserMaterialPresetValues, path);
+}
+
+function validateUserMaterialPresetValues(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  for (const key of ["slotOverrides", "customShader", "shaderEffect", "screen", "uvAnimation", "baseColorMapUrl",
+    "baseColorMapName", "normalMapUrl", "normalMapName", "emissiveMapUrl", "emissiveMapName",
+    "ambientOcclusionMapUrl", "ambientOcclusionMapName", "roughnessMapUrl", "roughnessMapName",
+    "metalnessMapUrl", "metalnessMapName", "textureRepeat", "textureRepeatX", "textureRepeatY",
+    "textureOffsetX", "textureOffsetY", "textureRotation", "hue", "saturation", "brightness",
+    "contrast", "sourceColor", "sourceEmissive", "wireframe", "normalScale"] as const) {
+    if (hasOwn(object, key)) invalid(`${path}.${key}`, "自定义材质预设只含标量外观域");
+  }
+  for (const key of ["color", "emissive", "sheenColor", "attenuationColor"] as const) {
+    optional(object, key, (color, colorPath) => {
+      expectString(color, colorPath);
+      if (typeof color === "string" && !/^#[0-9a-f]{6}$/i.test(color)) invalid(colorPath, "必须是 #RRGGBB");
+    }, path);
+  }
+  for (const key of ["roughness", "metalness", "emissiveIntensity"] as const) optional(object, key, expectNumber, path);
+  optional(object, "ior", (ior, iorPath) => {
+    expectNumber(ior, iorPath);
+    if (typeof ior !== "number" || ior < 1 || !Number.isFinite(Math.fround(ior))) invalid(iorPath, "必须是有限 float32 ≥ 1");
+  }, path);
+  for (const [key, minimum, maximum] of [
+    ["transmission", 0, 1], ["thickness", 0, 1e6], ["clearcoat", 0, 1], ["clearcoatRoughness", 0, 1],
+    ["sheen", 0, 1], ["sheenRoughness", 0, 1], ["iridescence", 0, 1],
+  ] as const) optional(object, key, (scalar, scalarPath) => {
+    expectNumber(scalar, scalarPath);
+    if (typeof scalar !== "number" || !Number.isFinite(scalar) || scalar < minimum || scalar > maximum) {
+      invalid(scalarPath, `必须是 ${minimum}–${maximum} 之间的有限数值`);
+    }
+  }, path);
+  optional(object, "attenuationDistance", (distance, distancePath) => {
+    expectNumber(distance, distancePath);
+    if (typeof distance !== "number" || !Number.isFinite(distance) || distance <= 0) invalid(distancePath, "必须是大于 0 的有限数值");
+  }, path);
+  optional(object, "doubleSided", expectBoolean, path);
 }
 
 function validateRootLayerOrder(value: unknown, path: string): void {
@@ -119,6 +167,84 @@ function validateSceneSelectionSet(value: unknown, path: string): void {
   required(object, "name", expectString, path);
   required(object, "objectIds", validateStringArray, path);
   optionalLiteral(object, "kind", ["selection", "group"], path);
+}
+
+const USER_PREFAB_VECTOR_KEYS = ["x", "y", "z"] as const;
+
+function validateUserPrefabVector(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  for (const key of USER_PREFAB_VECTOR_KEYS) required(object, key, expectNumber, path);
+  for (const key of USER_PREFAB_VECTOR_KEYS) {
+    const coordinate = object[key];
+    if (typeof coordinate === "number" && !Number.isFinite(coordinate)) invalid(`${path}.${key}`, "必须是有限数字");
+  }
+}
+
+function validateUserPrefabObjectState(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  required(object, "visible", expectBoolean, path);
+  required(object, "opacity", expectNumber, path);
+  if (typeof object.opacity === "number" && (object.opacity < 0 || object.opacity > 1)) invalid(`${path}.opacity`, "必须在 0–1 范围内");
+  required(object, "transform", (transform, transformPath) => {
+    const transformObject = expectObject(transform, transformPath);
+    for (const key of ["position", "rotation", "scale"] as const) required(transformObject, key, validateUserPrefabVector, transformPath);
+  }, path);
+  optional(object, "modelId", expectString, path);
+  optional(object, "assetModelId", expectString, path);
+  optional(object, "name", expectString, path);
+  optional(object, "locked", expectBoolean, path);
+  optional(object, "color", expectString, path);
+  optional(object, "colorOverride", expectString, path);
+  optional(object, "material", validateJsonObject, path);
+  optional(object, "effects", validateJsonObject, path);
+  optional(object, "physics", validateJsonObject, path);
+  optionalLiteral(object, "kind", ["box", "sphere", "cylinder", "cone", "torus", "plane", "capsule"], path);
+}
+
+function validateUserPrefabDefinition(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  required(object, "id", expectString, path);
+  required(object, "name", expectString, path);
+  required(object, "category", expectString, path);
+  required(object, "version", expectNumber, path);
+  if (typeof object.version === "number" && (!Number.isInteger(object.version) || object.version < 1)) invalid(`${path}.version`, "必须是正整数");
+  optional(object, "thumbnail", expectString, path);
+  required(object, "createdAt", expectString, path);
+  required(object, "updatedAt", expectString, path);
+  required(object, "objects", (objects, objectsPath) => {
+    const seen = new Set<string>();
+    expectArray(objects, objectsPath, (entry, entryPath) => {
+      const entryObject = expectObject(entry, entryPath);
+      required(entryObject, "sourceId", expectString, entryPath);
+      if (typeof entryObject.sourceId === "string") {
+        if (!entryObject.sourceId.trim()) invalid(`${entryPath}.sourceId`, "不能为空");
+        if (seen.has(entryObject.sourceId)) invalid(entryPath, "sourceId 重复");
+        seen.add(entryObject.sourceId);
+      }
+      required(entryObject, "name", expectString, entryPath);
+      requiredLiteral(entryObject, "kind", ["model", "primitive"], entryPath);
+      required(entryObject, "state", validateUserPrefabObjectState, entryPath);
+      required(entryObject, "offset", validateUserPrefabVector, entryPath);
+    });
+  }, path);
+  if (!Array.isArray(object.objects) || object.objects.length === 0) invalid(`${path}.objects`, "预制体至少包含一个对象");
+}
+
+function validateUserPrefabInstanceRecord(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  required(object, "instanceId", expectString, path);
+  required(object, "prefabId", expectString, path);
+  required(object, "prefabVersion", expectNumber, path);
+  if (typeof object.prefabVersion === "number" && (!Number.isInteger(object.prefabVersion) || object.prefabVersion < 1)) invalid(`${path}.prefabVersion`, "必须是正整数");
+  required(object, "anchor", validateUserPrefabVector, path);
+  required(object, "memberObjectIds", validateJsonObject, path);
+  if (object.memberObjectIds && typeof object.memberObjectIds === "object") {
+    for (const [key, entry] of Object.entries(object.memberObjectIds as Record<string, unknown>)) {
+      if (!key.trim()) invalid(`${path}.memberObjectIds`, "sourceId 键不能为空");
+      if (typeof entry !== "string" || !entry.trim()) invalid(`${path}.memberObjectIds.${key}`, "场景对象 ID 不能为空");
+    }
+  }
+  optional(object, "overrides", validateJsonObject, path);
 }
 
 function validateSceneDataBinding(value: unknown, path: string): void {

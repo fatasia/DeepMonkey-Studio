@@ -4,6 +4,10 @@ import type { BimSpaceRecord, LoadedSceneModel, ViewerEngine } from "../viewer/V
 import type { SceneRow } from "./WindowedSceneRows";
 import type { SceneOrganizationObject } from "./SceneOrganizationPanel";
 import type { SceneGroupingActions } from "./SceneLayerInteractions";
+import type { UserPrefabTreeMarks } from "../prefabs/userPrefabModel";
+
+/** 预制体行级动作（T0 刀 2）；objectId 为场景对象 ID。 */
+export type PrefabRowAction = "apply-update" | "refresh-overrides" | "reset-member" | "update-prototype";
 
 export interface FlatSceneObjectListProps extends SceneGroupingActions {
   rootLayerOrder?: readonly SceneRootLayerRef[] | undefined;
@@ -24,6 +28,9 @@ export interface FlatSceneObjectListProps extends SceneGroupingActions {
   spaces: BimSpaceRecord[];
   groups: SceneSelectionSetState[];
   organizationObjects: SceneOrganizationObject[];
+  /** 预制体实例/覆盖/待更新树标记；缺省无预制体实例（零开销）。 */
+  prefabMarks?: UserPrefabTreeMarks | undefined;
+  onPrefabRowAction?: ((objectId: string, action: PrefabRowAction) => void) | undefined;
   onRevision: () => void;
   onObjectSelect?: (id: string, options: { additive: boolean; range: boolean }) => void;
   onObjectRename?: ((id: string, layerId?: string) => void) | undefined;

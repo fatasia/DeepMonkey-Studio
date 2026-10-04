@@ -1,4 +1,4 @@
-import { Eye, EyeOff, Focus, Group, Lock, MoreHorizontal, ScanLine, Unlock, X } from "lucide-react";
+import { Eye, EyeOff, Focus, Group, Lock, MoreHorizontal, Package, ScanLine, Unlock, X } from "lucide-react";
 import { translate as tr, type AppLocale } from "../i18n";
 import { useDismissableDetails } from "../hooks/useDismissableDetails";
 
@@ -15,6 +15,7 @@ export function SceneSelectionBar({
   locale,
   selectedObjects,
   onGroup,
+  onSaveAsPrefab,
   onShow,
   onLock,
   onUnlock,
@@ -28,6 +29,8 @@ export function SceneSelectionBar({
   locale: AppLocale;
   selectedObjects: readonly SceneSelectionBarObject[];
   onGroup: () => void;
+  /** 多选存为预制体（T0 刀 2）；提供即显示按钮。 */
+  onSaveAsPrefab?: () => void;
   onShow: (visible: boolean) => void;
   onLock: () => void;
   onUnlock?: () => void;
@@ -56,6 +59,15 @@ export function SceneSelectionBar({
       >
         <Group size={12} />
       </button>
+      {onSaveAsPrefab && <button
+        type="button"
+        aria-label={tr(locale, "存为预制体", "Save as prefab")}
+        title={tr(locale, "存为预制体（多选对象入库，可反复实例化）", "Save as prefab (store selection as a reusable template)")}
+        disabled={ids.length < 1}
+        onClick={onSaveAsPrefab}
+      >
+        <Package size={12} />
+      </button>}
       {onIsolate && <button
         type="button"
         aria-label={tr(locale, "隔离所选对象", "Isolate selection")}

@@ -7,6 +7,8 @@ import type {
   SceneEnvironmentState, SceneInteractionScriptState, ScenePhysicsState,
   SceneEngineeringAnalysisState,
   ScenePostProcessingState, SceneSelectionSetState, SceneSnapshot, SceneRootLayerRef,
+  UserMaterialPresetDefinition,
+  UserPrefabDefinition, UserPrefabInstanceRecord,
   ScriptModule, SystemBrandingSettings, SystemUserRecord, TopologyScadaRuntimeState, WeatherMode
 } from "@bim-studio/contracts";
 import {
@@ -231,6 +233,9 @@ export function useAppState() {
   const [inspectorTab, setInspectorTab] = useState<"overview" | "data" | "behavior">("overview");
   const [sceneOrganizationSelection, setSceneOrganizationSelection] = useState<Set<string>>(new Set());
   const [selectionSets, setSelectionSets] = useState<SceneSelectionSetState[]>([]);
+  const [userPrefabs, setUserPrefabs] = useState<UserPrefabDefinition[]>([]);
+  const [userPrefabInstances, setUserPrefabInstances] = useState<UserPrefabInstanceRecord[]>([]);
+  const [userMaterialPresets, setUserMaterialPresets] = useState<UserMaterialPresetDefinition[]>([]);
   const [rootLayerOrder, setRootLayerOrder] = useState<SceneRootLayerRef[] | undefined>();
   const [lastDeletedSelectionSet, setLastDeletedSelectionSet] = useState<SceneSelectionSetState>();
   const [projectDialogMode, setProjectDialogMode] = useState<"create" | "rename">();
@@ -320,6 +325,8 @@ export function useAppState() {
     sceneBehaviorPaused, setSceneBehaviorPaused, sceneBehaviorEntries, setSceneBehaviorEntries,
     sceneBehaviorLogs, setSceneBehaviorLogs, inspectorTab, setInspectorTab,
     sceneOrganizationSelection, setSceneOrganizationSelection, selectionSets, setSelectionSets, rootLayerOrder, setRootLayerOrder,
+    userPrefabs, setUserPrefabs, userPrefabInstances, setUserPrefabInstances,
+    userMaterialPresets, setUserMaterialPresets,
     lastDeletedSelectionSet, setLastDeletedSelectionSet, projectDialogMode, setProjectDialogMode,
     newProjectName, setNewProjectName, newProjectDescription, setNewProjectDescription,
     primitiveColors, interactionTargetOptions, showError, rendererDiagnostics,

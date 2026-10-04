@@ -671,6 +671,12 @@ export interface SceneSnapshot {
   assetBindings?: SceneAssetBindingState[];
   interactions?: SceneInteractionScriptState[];
   selectionSets?: SceneSelectionSetState[];
+  /** 用户组合预制体定义（T0 刀 2）；随场景持久化，跨场景经导出/导入复用。 */
+  userPrefabs?: import("./userPrefab.js").UserPrefabDefinition[];
+  /** 场景内预制体实例登记；成员对象仍是普通场景对象。 */
+  userPrefabInstances?: import("./userPrefab.js").UserPrefabInstanceRecord[];
+  /** 用户自定义材质预设（编辑器刀 5）；随场景持久化，只含标量外观域。 */
+  userMaterialPresets?: import("./sceneMaterial.js").UserMaterialPresetDefinition[];
   /** 缺省沿用旧目录顺序；组内顺序由 selectionSets.objectIds 保存。 */
   rootLayerOrder?: SceneRootLayerRef[];
   selectedModelId?: string;

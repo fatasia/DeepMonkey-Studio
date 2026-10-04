@@ -267,3 +267,54 @@ describe("material slot persistence validation", () => {
     }
   });
 });
+
+describe("user prefab snapshot validation", () => {
+  const prefabScene = (userPrefabs: unknown, userPrefabInstances?: unknown) => ({
+    id: "scene-prefab", name: "泵组场景",
+    camera: { position: { x: 1, y: 2, z: 3 }, target: { x: 0, y: 0, z: 0 }, mode: "orbit" },
+    models: [], primitives: [], measurements: [],
+    ...(userPrefabs !== undefined ? { userPrefabs } : {}),
+    ...(userPrefabInstances !== undefined ? { userPrefabInstances } : {}),
+  });
+  const pumpPrefab = {
+    id: "userprefab:pump-1", name: "卧式泵组", category: "泵/风机", version: 2,
+    createdAt: "2026-10-04T00:00:00.000Z", updatedAt: "2026-10-04T01:00:00.000Z",
+    objects: [
+      { sourceId: "a", name: "泵体", kind: "primitive", offset: { x: 0, y: 0, z: 0 },
+        state: { visible: true, opacity: 1, kind: "box", color: "#2f80ed", transform } },
+      { sourceId: "b", name: "电机", kind: "primitive", offset: { x: 1.5, y: 0, z: 0 },
+        state: { visible: true, opacity: 1, kind: "cylinder", color: "#278f83", transform } },
+    ],
+  };
+
+  it("accepts definitions and instance records", () => {
+    expect(() => validateScene(prefabScene([pumpPrefab], [
+      { instanceId: "inst-1", prefabId: "userprefab:pump-1", prefabVersion: 2,
+        anchor: { x: 0, y: 0, z: 0 },
+        memberObjectIds: { a: "scene-a-1", b: "scene-b-1" },
+        overrides: { "scene-a-1": { "transform.position.x": 3 } } },
+    ]), "scene")).not.toThrow();
+  });
+
+  it("rejects duplicate sourceIds and empty object lists", () => {
+    expect(() => validateScene(prefabScene([{ ...pumpPrefab, objects: [] }]), "scene")).toThrow("至少包含一个对象");
+    expect(() => validateScene(prefabScene([{
+      ...pumpPrefab,
+      objects: [pumpPrefab.objects[0], { ...pumpPrefab.objects[1], sourceId: "a" }],
+    }]), "scene")).toThrow("sourceId 重复");
+  });
+
+  it("rejects non-finite offsets and invalid versions", () => {
+    expect(() => validateScene(prefabScene([{
+      ...pumpPrefab,
+      objects: [{ ...pumpPrefab.objects[0], offset: { x: Number.NaN, y: 0, z: 0 } }],
+    }]), "scene")).toThrow("有限数字");
+    expect(() => validateScene(prefabScene([{ ...pumpPrefab, version: 0 }]), "scene")).toThrow("正整数");
+  });
+
+  it("rejects instance records with blank member mappings", () => {
+    expect(() => validateScene(prefabScene([pumpPrefab], [
+      { instanceId: "inst-1", prefabId: "userprefab:pump-1", prefabVersion: 1, anchor: { x: 0, y: 0, z: 0 }, memberObjectIds: { a: " " } },
+    ]), "scene")).toThrow("不能为空");
+  });
+});

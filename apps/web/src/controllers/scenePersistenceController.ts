@@ -99,6 +99,9 @@ export function createScenePersistenceController(context: ScenePersistenceContro
     setSelectedLightId,
     setSelectedSpace,
     setSelectionSets,
+    setUserPrefabs,
+    setUserMaterialPresets,
+    setUserPrefabInstances,
     setRootLayerOrder,
     setViewerLoadState,
     setWeather,
@@ -251,6 +254,11 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       setSelectedSpace(undefined);
       setSceneOrganizationSelection(new Set());
       setSelectionSets(structuredClone(scene.selectionSets ?? []));
+      // 用户预制体定义与实例登记随场景恢复；空数组归一，旧场景零字段无缝兼容。
+      // 恢复链路对库级 setter 容错:测试夹具/精简装配可不提供,缺省跳过。
+      setUserPrefabs?.(structuredClone(scene.userPrefabs ?? []));
+      setUserPrefabInstances?.(structuredClone(scene.userPrefabInstances ?? []));
+      setUserMaterialPresets?.(structuredClone(scene.userMaterialPresets ?? []));
       setRootLayerOrder?.(scene.rootLayerOrder ? structuredClone(scene.rootLayerOrder) : undefined);
       setLastDeletedSelectionSet(undefined);
       const loadSceneModel = async (item: SceneSnapshot["models"][number]) => {

@@ -26,6 +26,9 @@ import type {
   ScenePostProcessingState,
   SceneSelectionSetState,
   SceneSnapshot,
+  UserMaterialPresetDefinition,
+  UserPrefabDefinition,
+  UserPrefabInstanceRecord,
   WeatherMode
 } from "@bim-studio/contracts";
 import type { StudioCommand } from "@bim-studio/studio-core";
@@ -65,6 +68,14 @@ export interface ScenePersistenceControllerContext {
   sceneAssetBindings: SceneAssetBindingState[];
   sceneInteractions: SceneInteractionScriptState[];
   selectionSets: SceneSelectionSetState[];
+  /** 用户组合预制体定义与场景内实例登记（T0 刀 2）。 */
+  userPrefabs: UserPrefabDefinition[];
+  userPrefabInstances: UserPrefabInstanceRecord[];
+  setUserPrefabs: Setter<UserPrefabDefinition[]>;
+  setUserPrefabInstances: Setter<UserPrefabInstanceRecord[]>;
+  /** 用户自定义材质预设（编辑器刀 5）；随场景快照持久化。 */
+  userMaterialPresets: UserMaterialPresetDefinition[];
+  setUserMaterialPresets: Setter<UserMaterialPresetDefinition[]>;
   rootLayerOrder?: SceneRootLayerRef[] | undefined;
   setRootLayerOrder?: Setter<SceneRootLayerRef[] | undefined>;
   configuredDefaultEnvironment: SceneEnvironmentState;

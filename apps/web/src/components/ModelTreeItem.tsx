@@ -6,6 +6,7 @@ import { translate as tr, type AppLocale } from "../i18n";
 import { statusText } from "../appPresentation";
 import { LayerTree } from "./LayerTree";
 import { SceneRowMenu } from "./SceneRowMenu";
+import { UserPrefabRowBadge } from "./UserPrefabDialogs";
 import { focusSceneObjectRow, selectSceneObjectRow } from "./sceneObjectRowEvents";
 import type { LayerTreeNode, LoadedSceneModel, ViewerEngine } from "../viewer/ViewerEngine";
 
@@ -34,6 +35,8 @@ export interface ModelTreeItemProps {
   onRemoveObjectInteractions: (modelId: string, layerId: string) => void;
   onSetMessage: (message: string) => void;
   onDeleteModel: () => void;
+  /** 预制体实例标记（T0 刀 2）；缺省非成员。 */
+  prefabMark?: { overridden: boolean; pending: boolean } | undefined;
 }
 
 export function ModelTreeItem({
@@ -60,6 +63,7 @@ export function ModelTreeItem({
   onRemoveObjectInteractions,
   onSetMessage,
   onDeleteModel,
+  prefabMark,
 }: ModelTreeItemProps) {
   return (
     <div className="model-tree-item" data-model-id={model.id}>
@@ -87,7 +91,7 @@ export function ModelTreeItem({
         >
           <span className={`format-badge format-${model.format}`}>{model.format.toUpperCase()}</span>
           <span className="asset-copy">
-            <strong title={model.name}>{model.name}</strong>
+            <strong title={model.name}>{model.name}{prefabMark ? <UserPrefabRowBadge locale={locale} overridden={prefabMark.overridden} pending={prefabMark.pending} /> : null}</strong>
             <small>{statusText(model, Boolean(loaded), locale)}</small>
           </span>
         </button>

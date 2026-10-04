@@ -19,6 +19,9 @@ type SceneSnapshotSource = Pick<
   | "sceneAssetBindings"
   | "sceneInteractions"
   | "selectionSets"
+  | "userPrefabs"
+  | "userPrefabInstances"
+  | "userMaterialPresets"
   | "rootLayerOrder"
   | "selected"
   | "selectedLayerId"
@@ -47,6 +50,9 @@ export function makeSceneSnapshot(source: SceneSnapshotSource): SceneSnapshot | 
     sceneAssetBindings,
     sceneInteractions,
     selectionSets,
+    userPrefabs,
+    userPrefabInstances,
+    userMaterialPresets,
     rootLayerOrder,
     selected,
     selectedLayerId,
@@ -97,6 +103,10 @@ export function makeSceneSnapshot(source: SceneSnapshotSource): SceneSnapshot | 
     assetBindings: sceneAssetBindings,
     interactions: sceneInteractions,
     selectionSets,
+    // 测试夹具与旧调用方可能不提供库级数组;缺省按空库处理,不作为装配必填。
+    ...((userPrefabs ?? []).length ? { userPrefabs: structuredClone(userPrefabs!) } : {}),
+    ...((userPrefabInstances ?? []).length ? { userPrefabInstances: structuredClone(userPrefabInstances!) } : {}),
+    ...((userMaterialPresets ?? []).length ? { userMaterialPresets: structuredClone(userMaterialPresets!) } : {}),
     ...(rootLayerOrder ? { rootLayerOrder: structuredClone(rootLayerOrder) } : {}),
     // 仿真输入不属于引擎对象；显式复制，避免保存遗漏或后续编辑污染历史快照。
     ...(activeScene?.simulationEntities ? { simulationEntities: structuredClone(activeScene.simulationEntities) } : {}),

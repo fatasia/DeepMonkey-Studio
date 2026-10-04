@@ -1,5 +1,6 @@
 import type { AppViewBindings } from "./appViewBindings";
 import { AppStudioShellView } from "./AppStudioShellView";
+import { createUserPrefabActions } from "../controllers/userPrefabActions";
 
 function createAppStudioController({ bindings }: { bindings: AppViewBindings }) {
   const { state, derived, sceneEditor, scenePersistence, applicationRuntime, actions, sceneHistory } = bindings;
@@ -229,6 +230,10 @@ function createAppStudioController({ bindings }: { bindings: AppViewBindings }) 
     setSceneOrganizationSelection,
     selectionSets,
     setSelectionSets,
+    userPrefabs,
+    setUserPrefabs,
+    userPrefabInstances,
+    setUserPrefabInstances,
     rootLayerOrder,
     lastDeletedSelectionSet,
     setLastDeletedSelectionSet,
@@ -358,6 +363,8 @@ function createAppStudioController({ bindings }: { bindings: AppViewBindings }) 
     reverseSceneAnimation,
     deleteKeyframe,
     recordSceneEdit,
+    userMaterialPresets,
+    materialPresetActions,
   } = sceneEditor;
   const {
     makeSnapshot,
@@ -413,7 +420,16 @@ function createAppStudioController({ bindings }: { bindings: AppViewBindings }) 
     deleteCurrentProject,
     refreshProject,
   } = actions;
+  // T0 刀 2：用户组合预制体动作；库级变更（存为预制体）不入撤销事务，场景写操作经 sceneHistory.flush 事务。
+  const userPrefab = createUserPrefabActions({
+    engine, project, locale, sceneOrganizationSelection,
+    userPrefabs, userPrefabInstances, setUserPrefabs, setUserPrefabInstances,
+    primitiveColors, setRevision, setSceneOrganizationSelection, setMessage, showError,
+    sceneHistory: sceneHistory.flush,
+    recordSceneEdit,
+  });
   return {
+    userPrefab,
     recordSceneEdit,
     currentUser,
     refreshProject,
@@ -531,6 +547,8 @@ function createAppStudioController({ bindings }: { bindings: AppViewBindings }) 
     selectSceneOrganizationObject,
     restoreDeletedSceneSelectionSet,
     restoreSceneObjectIsolation,
+    revision,
+    showError,
     revitRuntime,
     route,
     rvtConversionMode,
@@ -576,6 +594,10 @@ function createAppStudioController({ bindings }: { bindings: AppViewBindings }) 
     selectionScope,
     selectionSets,
     rootLayerOrder,
+    userPrefabs,
+    userPrefabInstances,
+    userMaterialPresets,
+    materialPresetActions,
     selectionVisible,
     setAiAssistantOpen,
     setAnimationOpen,

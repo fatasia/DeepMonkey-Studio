@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Boxes, LoaderCircle, Plus, Search, Upload } from "lucide-react";
+import { Boxes, LoaderCircle, Package, Plus, Search, Trash2, Upload } from "lucide-react";
 import type { SceneOutlinerPanelProps } from "./SceneOutlinerPanel";
 import { translate as tr } from "../i18n";
 import { INDUSTRIAL_PREFAB_CATALOG } from "../prefabs/industrialPrefabCatalog";
@@ -7,7 +7,7 @@ import { IndustrialPrefabThumbnail } from "./IndustrialPrefabThumbnail";
 import { useSceneResourceDrag } from "./useSceneResourceDrag";
 import { useAssetLibraryCatalog } from "./useAssetLibraryCatalog";
 
-export function SceneResourceBrowser(props: Pick<SceneOutlinerPanelProps, "locale" | "projectAssets" | "projectModels" | "projectId" | "onLibraryImported" | "onImportModel" | "onInsertProjectModel" | "onInsertPrefab">) {
+export function SceneResourceBrowser(props: Pick<SceneOutlinerPanelProps, "locale" | "projectAssets" | "projectModels" | "projectId" | "onLibraryImported" | "onImportModel" | "onInsertProjectModel" | "onInsertPrefab" | "userPrefabs" | "onInsertUserPrefab" | "onDeleteUserPrefab">) {
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<"platform" | "prefab" | "project">(() => props.projectId ? "platform" : (props.projectModels?.length || props.projectAssets?.length) ? "project" : "prefab");
   const [showAll, setShowAll] = useState(false);
@@ -30,6 +30,7 @@ export function SceneResourceBrowser(props: Pick<SceneOutlinerPanelProps, "local
     const imported = await catalog.importItem(itemId);
     if (imported?.kind === "model") props.onInsertProjectModel(imported.model);
   }
+  const userPrefabs = props.userPrefabs ?? [];
   const drag = useSceneResourceDrag(props.projectId, async payload => {
     if (catalog.importingId) return;
     if (payload.source === "library") { await insertLibraryItem(payload.id); return; }
@@ -60,6 +61,20 @@ export function SceneResourceBrowser(props: Pick<SceneOutlinerPanelProps, "local
     <div className="scene-resource-drop-target" onDragOver={drag.over} onDrop={event => void drag.drop(event)}>
       <Plus size={13} />{tr(props.locale, "将模型拖到这里载入当前场景", "Drag a model here to load it into the current scene")}
     </div>
+    {scope === "prefab" && userPrefabs.length > 0 && <section className="user-prefab-section" aria-label={tr(props.locale, "我的预制体", "My prefabs")}>
+      <div className="user-prefab-section-header"><span><Package size={12} /> {tr(props.locale, "我的预制体", "MY PREFABS")}</span><small>{userPrefabs.length}</small></div>
+      {userPrefabs.map((prefab) => <article className="user-prefab-row" key={prefab.id} data-user-prefab-id={prefab.id}>
+        {prefab.thumbnail ? <img src={prefab.thumbnail} alt="" /> : <span className="user-prefab-row-icon"><Package size={14} /></span>}
+        <span className="user-prefab-row-copy">
+          <strong title={prefab.name}>{prefab.name}</strong>
+          <small>{prefab.category} · v{prefab.version} · {prefab.objects.length} {tr(props.locale, "个对象", "objects")}</small>
+        </span>
+        <span className="user-prefab-row-actions">
+          <button type="button" title={tr(props.locale, `插入“${prefab.name}”实例（相机目标点）`, `Insert a “${prefab.name}” instance (camera target)`)} aria-label={tr(props.locale, `插入 ${prefab.name}`, `Insert ${prefab.name}`)} onClick={() => props.onInsertUserPrefab?.(prefab.id)}><Plus size={13} /></button>
+          <button type="button" className="danger" title={tr(props.locale, "删除预制体", "Delete prefab")} aria-label={tr(props.locale, `删除 ${prefab.name}`, `Delete ${prefab.name}`)} onClick={() => props.onDeleteUserPrefab?.(prefab.id)}><Trash2 size={13} /></button>
+        </span>
+      </article>)}
+    </section>}
     {scope === "platform" ? catalog.loading ? <div className="scene-resource-loading"><LoaderCircle className="spin" size={18} /></div> : platformItems.length > 0 ? <>
       <div className="scene-resource-grid">{platformItems.map((item) => <article className="scene-resource-card" key={item.id} draggable={Boolean(props.projectId && !catalog.importingId && item.publicationStatus === "published")} onDragStart={event => drag.begin(event, "library", item.id)} onDragEnd={drag.cancel}>
         <img src={item.thumbnailUrl} alt="" />

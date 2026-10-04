@@ -37,6 +37,7 @@ export { validateScene } from "./sceneValidation.js";
 export * from "./sceneWeatherFog.js";
 export * from "./sceneModelAsset.js";
 export * from "./industrialPrefab.js";
+export * from "./userPrefab.js";
 export * from "./publicationRendererPolicy.js";
 export * from "./modelFormatCapability.js";
 export * from "./modelFormatCatalog.js";

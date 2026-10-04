@@ -28,6 +28,9 @@ import type { AppStudioController } from "./AppStudioShell";
 import { AppStudioInspector } from "./AppStudioInspector";
 import { AppStudioViewport } from "./AppStudioViewport";
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { ApplyUserPrefabUpdateDialog, SaveUserPrefabDialog } from "../components/UserPrefabDialogs";
+import { buildUserPrefabTreeMarks } from "../prefabs/userPrefabModel";
+import { useMemo } from "react";
 import "../styles/workspacePanelAnchors.css";
 
 export function AppStudioShellView({ controller }: { controller: AppStudioController }) {
@@ -155,6 +158,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
     selectSceneOrganizationObject,
     restoreSceneObjectIsolation,
     revitRuntime,
+    revision,
     route,
     rvtConversionMode,
     rvtRevitVersion,
@@ -234,6 +238,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
     setSelectionScope,
     setViewerToolsOpen,
     setXrPanelOpen,
+    showError,
     spaces,
     startXR,
     toggleAnnotationPlacement,
@@ -271,6 +276,39 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
     xrPanelOpen,
   } = controller;
   const uploadedImportEscapeRef = useDialogEscape(() => setUploadedImportModels(null), busy);
+  // T0 刀 2：用户组合预制体（存为预制体 / 实例化 / 应用更新 diff / 覆盖）。
+  const { userPrefab, userPrefabs, userPrefabInstances } = controller;
+  const [savePrefabOpen, setSavePrefabOpen] = useState(false);
+  const [applyPrefabInstanceId, setApplyPrefabInstanceId] = useState<string>();
+  const prefabTreeMarks = useMemo(() => buildUserPrefabTreeMarks(userPrefabInstances, userPrefabs), [userPrefabInstances, userPrefabs]);
+  const applyPrefabDiff = useMemo(
+    () => (applyPrefabInstanceId ? userPrefab.diffUserPrefabInstance(applyPrefabInstanceId) : undefined),
+    // revision 变化（实例应用/成员编辑）后重算，保证预览与场景事实一致。
+    [applyPrefabInstanceId, revision, userPrefab], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const instanceIdByMemberId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const record of userPrefabInstances) for (const objectId of Object.values(record.memberObjectIds)) map.set(objectId, record.instanceId);
+    return map;
+  }, [userPrefabInstances]);
+  const insertUserPrefab = (prefabId: string) => {
+    userPrefab.instantiateUserPrefab(prefabId).catch(showError);
+  };
+  const runPrefabRowAction = (objectId: string, action: "apply-update" | "refresh-overrides" | "reset-member" | "update-prototype") => {
+    const instanceId = instanceIdByMemberId.get(objectId);
+    if (!instanceId) return;
+    const record = userPrefabInstances.find((item) => item.instanceId === instanceId);
+    if (!record) return;
+    if (action === "apply-update") {
+      if (!userPrefab.diffUserPrefabInstance(instanceId)) {
+        setMessage(tr(locale, "该实例已是最新版本，无需应用更新", "This instance is already up to date"));
+        return;
+      }
+      setApplyPrefabInstanceId(instanceId);
+    } else if (action === "update-prototype") userPrefab.updateUserPrefabFromInstance(record.prefabId, instanceId);
+    else if (action === "refresh-overrides") userPrefab.refreshUserPrefabOverrides(instanceId);
+    else userPrefab.resetUserPrefabMember(instanceId, objectId);
+  };
   const openImportModelPicker = () => {
     setSceneImportOpen(false);
     setSceneWorkflow(null);
@@ -479,6 +517,9 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
           onRevitVersionChange={setRvtRevitVersion}
           onInsertProjectModel={insertProjectModel}
           onInsertPrefab={insertIndustrialPrefab}
+          userPrefabs={userPrefabs}
+          onInsertUserPrefab={insertUserPrefab}
+          onDeleteUserPrefab={(id) => userPrefab.deleteUserPrefab(id)}
           onCreateDeviceLayout={createDeviceLayout}
           onConfirmSmartBindings={(mappings) => {
             const merged = mergeConfirmedSceneAssetBindings(sceneAssetBindings, mappings, bindingComponents);
@@ -506,6 +547,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
               locale={locale}
               selectedObjects={selectedSceneObjects}
               onGroup={() => createSceneGroup("")}
+              onSaveAsPrefab={() => setSavePrefabOpen(true)}
               onShow={(visible) => setSceneObjectsVisible([...sceneOrganizationSelection], visible)}
               onLock={() => setSceneObjectsLocked([...sceneOrganizationSelection], true)}
               onUnlock={() => setSceneObjectsLocked([...sceneOrganizationSelection], false)}
@@ -553,6 +595,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
                   onRemoveObjectInteractions={removeObjectInteractions}
                   onSetMessage={setMessage}
                   onDeleteModel={() => loaded ? instances.remove(model.id) : void deleteModel(asset)}
+                  prefabMark={loaded && prefabTreeMarks.members.has(loaded.id) ? { overridden: prefabTreeMarks.overridden.has(loaded.id), pending: prefabTreeMarks.pending.has(loaded.id) } : undefined}
                 />
               )}))}
               empty={
@@ -605,6 +648,8 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
                 setMessage(changed ? `${visible ? "显示" : "隐藏"}空间“${space.name}”` : `空间“${space.name}”缺少有效边界`);
                 setRevision((value) => value + 1);
               }}
+              prefabMarks={prefabTreeMarks}
+              onPrefabRowAction={runPrefabRowAction}
               onSelectGroup={applySceneSelectionSet}
               onRenameGroup={renameSceneGroup}
               onCreateGroup={ids => createSceneGroup("", ids)}
@@ -631,6 +676,28 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
         key={instances.selectedId} locale={locale} instance={loadedModels.find(item => item.id === instances.selectedId)!}
         assets={project?.models ?? []} busy={instances.working} locked={engine?.isModelLocked(instances.selectedId) ?? false} error={instances.error}
         onDuplicate={() => void instances.duplicate(instances.selectedId!)} onReplace={asset => void instances.replace(instances.selectedId!, asset)} onClose={instances.close}
+      />}
+      {savePrefabOpen && <SaveUserPrefabDialog
+        locale={locale}
+        defaultName={tr(locale, `预制体 ${userPrefabs.length + 1}`, `Prefab ${userPrefabs.length + 1}`)}
+        busy={busy}
+        onSave={(name, category) => {
+          userPrefab.saveSelectionAsPrefab(name, category);
+          setSavePrefabOpen(false);
+        }}
+        onClose={() => setSavePrefabOpen(false)}
+      />}
+      {applyPrefabInstanceId && applyPrefabDiff && <ApplyUserPrefabUpdateDialog
+        locale={locale}
+        prefabName={userPrefabs.find((item) => item.id === applyPrefabDiff.prefabId)?.name ?? tr(locale, "预制体", "Prefab")}
+        diff={applyPrefabDiff}
+        busy={busy}
+        onApply={() => {
+          const instanceId = applyPrefabInstanceId;
+          setApplyPrefabInstanceId(undefined);
+          userPrefab.applyUserPrefabUpdate(instanceId).catch(showError);
+        }}
+        onClose={() => setApplyPrefabInstanceId(undefined)}
       />}
       {sceneWorkflow === "model-diff" && (
         <ModelDiffReviewPanel

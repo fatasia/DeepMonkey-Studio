@@ -1,4 +1,4 @@
-import { Box, Check, Eye, EyeOff, Focus, Lock, ScanLine, Trash2, Unlock } from "lucide-react";
+import { Box, Check, Eye, EyeOff, Focus, Lock, RefreshCw, RotateCcw, ScanLine, Trash2, Undo2, Unlock } from "lucide-react";
 import { translate as tr } from "../i18n";
 import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
 import { layerLockCommand, layerVisibilityCommand } from "../commands/engineEditCommand";
@@ -6,14 +6,21 @@ import type { LoadedSceneModel } from "../viewer/ViewerEngine";
 import { SceneRowMenu } from "./SceneRowMenu";
 import { focusSceneObjectRow, selectSceneObjectRow } from "./sceneObjectRowEvents";
 import type { FlatSceneObjectListProps } from "./sceneObjectListTypes";
+import { UserPrefabRowBadge } from "./UserPrefabDialogs";
 
-type PrimitiveProps = Pick<FlatSceneObjectListProps, "locale" | "engine" | "selectedObjectIds" | "selectedObjectId" | "onObjectSelect" | "onRevision" | "onPrimitiveRemove">;
+type PrimitiveProps = Pick<FlatSceneObjectListProps, "locale" | "engine" | "selectedObjectIds" | "selectedObjectId" | "onObjectSelect" | "onRevision" | "onPrimitiveRemove" | "prefabMarks" | "onPrefabRowAction">;
 
 export function PrimitiveRow(
   props: PrimitiveProps & { primitive: LoadedSceneModel },
 ) {
   const { primitive, engine, locale } = props;
   const locked = engine?.isModelLocked(primitive.id) ?? false;
+  const isMember = props.prefabMarks?.members.has(primitive.id) ?? false;
+  const overridden = props.prefabMarks?.overridden.has(primitive.id) ?? false;
+  const pending = props.prefabMarks?.pending.has(primitive.id) ?? false;
+  const runPrefab = (action: Parameters<NonNullable<PrimitiveProps["onPrefabRowAction"]>>[1]) => {
+    if (isMember) props.onPrefabRowAction?.(primitive.id, action);
+  };
   const selectedInBatch = props.selectedObjectIds?.has(primitive.id) ?? props.selectedObjectId === primitive.id;
   return (
     <div
@@ -30,7 +37,7 @@ export function PrimitiveRow(
           <Box size={15} />
         </span>
         <span className="asset-copy">
-          <strong>{primitive.name}</strong>
+          <strong>{primitive.name}{isMember ? <UserPrefabRowBadge locale={locale} overridden={overridden} pending={pending} /> : null}</strong>
           <small>
             {tr(locale, "基础元素 · 可编辑", "Primitive · Editable")}
           </small>
@@ -68,6 +75,20 @@ export function PrimitiveRow(
         {locked ? <Lock size={14} /> : <Unlock size={14} />}
       </button>
       <SceneRowMenu locale={locale}>
+      {isMember && <>
+        <button aria-label={tr(locale, "应用原型更新", "Apply prototype update")} title={tr(locale, "把原型最新版本应用到该实例", "Apply the latest prototype version to this instance")} onClick={() => runPrefab("apply-update")}>
+          <Undo2 size={15} /><span>{pending ? tr(locale, "应用原型更新…", "Apply prototype update…") : tr(locale, "应用原型更新", "Apply prototype update")}</span>
+        </button>
+        <button aria-label={tr(locale, "从此实例更新原型", "Update prototype from this instance")} title={tr(locale, "以该实例当前成员重采集原型，版本 +1", "Re-capture the prototype from this instance; version +1")} onClick={() => runPrefab("update-prototype")}>
+          <RefreshCw size={15} /><span>{tr(locale, "更新原型（此实例）", "Update prototype (this instance)")}</span>
+        </button>
+        <button aria-label={tr(locale, "检测实例覆盖", "Detect instance overrides")} title={tr(locale, "与原型比对，偏离属性标记为实例覆盖", "Compare with the prototype and mark deviations as overrides")} onClick={() => runPrefab("refresh-overrides")}>
+          <ScanLine size={15} /><span>{tr(locale, "检测覆盖", "Detect overrides")}</span>
+        </button>
+        <button aria-label={tr(locale, "重置为原型", "Reset to prototype")} title={tr(locale, "清除该成员覆盖并写回原型值", "Clear this member's overrides and restore prototype values")} onClick={() => runPrefab("reset-member")}>
+          <RotateCcw size={15} /><span>{tr(locale, "重置为原型", "Reset to prototype")}</span>
+        </button>
+      </>}
       <button
         aria-label={tr(locale, "隔离当前基础元素", "Isolate current primitive")}
         title={tr(locale, "仅显示当前基础元素", "Show only this primitive")}

@@ -15,6 +15,7 @@ import type {
   IndustrialPrefabDefinition,
   ProjectAssetRecord,
   ModelRecord,
+  UserPrefabDefinition,
 } from "@bim-studio/contracts";
 import { useDialogEscape } from "../hooks/useGlobalDialogEscape";
 import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
@@ -56,6 +57,10 @@ export interface SceneOutlinerPanelProps {
   onRevitVersionChange: (version: string) => void;
   onInsertProjectModel: (model: ModelRecord) => void;
   onInsertPrefab: (definition: IndustrialPrefabDefinition) => void;
+  /** 用户组合预制体（T0 刀 2）：库列表 + 插入/删除动作。 */
+  userPrefabs?: UserPrefabDefinition[] | undefined;
+  onInsertUserPrefab?: ((prefabId: string) => void) | undefined;
+  onDeleteUserPrefab?: ((prefabId: string) => void) | undefined;
   onCreateDeviceLayout: (devices: DeviceBoxDraft[], createLabels: boolean) => Promise<void> | void;
   onConfirmSmartBindings: (mappings: ConfirmedSmartAssetMapping[]) => void;
   onQueryChange: (query: string) => void;
