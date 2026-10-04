@@ -23,6 +23,7 @@ import { PhysicsDebugPanel } from "../components/PhysicsDebugPanel";
 import { DEFAULT_PHYSICS_DEBUG_LAYERS, type PhysicsDebugFilter, type PhysicsDebugLayers } from "../viewer/physicsDebugSnapshot";
 import { QualityTelemetryPanel } from "../components/QualityTelemetryPanel";
 import { DevHud } from "../components/DevHud";
+import { ExperimentalFeaturesPanel } from "../components/ExperimentalFeaturesPanel";
 import { LightingBakeBenchPanel } from "../components/LightingBakeBenchPanel";
 import { PublishedViewerToolDock } from "../components/PublishedViewerToolDock";
 import { PublishedViewerObjectPanel } from "../components/PublishedViewerObjectPanel";
@@ -173,6 +174,8 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   const [qualityPanelOpen, setQualityPanelOpen] = useState(false);
   // 刀 6:开发者 HUD(性能观测小条)开态;默认关,F9 或工具坞「仿真与开发」菜单开。
   const [devHudOpen, setDevHudOpen] = useState(false);
+  // 配置易用性:实验性功能面板(URL opt-in 开关集中呈递)开态;默认关,工具坞「仿真与开发」菜单开。
+  const [experimentalPanelOpen, setExperimentalPanelOpen] = useState(false);
   // T0 刀 4:光照烘焙工作台开态(工作区持有,面板关闭重开不丢会话观察)。
   const [bakeBenchOpen, setBakeBenchOpen] = useState(false);
   const [simulationPanelId, setSimulationPanelId] = useState<SceneSimulationPanelId>();
@@ -430,6 +433,8 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           onQualityPanelToggle={() => setQualityPanelOpen(value => !value)}
           devHudOpen={devHudOpen}
           onDevHudToggle={() => setDevHudOpen(value => !value)}
+          experimentalPanelOpen={experimentalPanelOpen}
+          onExperimentalPanelToggle={() => setExperimentalPanelOpen(value => !value)}
           bakeBenchOpen={bakeBenchOpen}
           onBakeBenchToggle={() => setBakeBenchOpen(value => !value)}
           xrOpen={xrPanelOpen}
@@ -574,6 +579,12 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           locale={locale}
           engine={engine ?? undefined}
           onClose={() => setDevHudOpen(false)}
+        />
+      )}
+      {route.view === "studio" && experimentalPanelOpen && (
+        <ExperimentalFeaturesPanel
+          locale={locale}
+          onClose={() => setExperimentalPanelOpen(false)}
         />
       )}
       {route.view === "studio" && bakeBenchOpen && (

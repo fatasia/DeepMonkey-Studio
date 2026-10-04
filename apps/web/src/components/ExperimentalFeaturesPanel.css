@@ -1,0 +1,281 @@
+/* 实验性功能面板:与 .quality-telemetry-panel 同族的面板带样式(surface 令牌 +
+   --layer-panel 层级),锚位在其下方避免重叠;一切颜色取 base.css 令牌,禁止硬编码色值。 */
+.experimental-features-panel {
+  position: absolute;
+  top: 70px;
+  right: 16px;
+  z-index: var(--layer-panel); /* 面板带基线,与质量遥测/物理面板同带 */
+  width: 360px;
+  max-width: calc(100% - 24px);
+  max-height: calc(100% - 86px);
+  overflow: auto;
+  color: var(--text);
+  font-size: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  background: var(--panel);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, .42);
+  backdrop-filter: blur(14px);
+  scrollbar-gutter: stable;
+}
+
+.experimental-features-panel header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 42px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.experimental-features-panel header[data-drag-handle="true"] {
+  cursor: grab;
+  touch-action: none;
+}
+
+.experimental-features-panel header[data-drag-handle="true"]:active {
+  cursor: grabbing;
+}
+
+.ef-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-strong);
+}
+
+.ef-title strong {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.ef-badge {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ef-badge.pending {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+}
+
+.ef-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ef-actions button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--text-muted);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+.ef-actions button:hover {
+  color: var(--text-strong);
+  background: var(--surface-3);
+}
+
+.ef-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ef-body {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px 10px;
+}
+
+.ef-intro {
+  margin: 0 2px 4px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.ef-group h3 {
+  margin: 6px 2px 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+}
+
+.ef-group ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ef-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.ef-row-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.ef-row-main input[type="checkbox"] {
+  flex: none;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.ef-row-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ef-row-text strong {
+  color: var(--text-strong);
+  font-size: 12px;
+}
+
+.ef-row-text small {
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+/* 依赖未满足:警告语义色 + 文字说明(色+文双编码,色弱可读),不阻断勾选 */
+.ef-row.warn {
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+}
+
+.ef-row-warning {
+  color: var(--warning) !important;
+}
+
+.ef-param {
+  flex: none;
+  max-width: 150px;
+  margin-left: auto;
+  padding: 1px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text-faint);
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  cursor: help;
+}
+
+.ef-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.ef-footer button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  color: var(--text-strong);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ef-footer button:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.ef-footer button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ef-footer button.primary {
+  color: var(--on-accent);
+  border-color: transparent;
+  background: var(--accent);
+}
+
+.ef-footer button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.ef-copy-status.failed {
+  display: block;
+  margin: 4px 2px 0;
+  color: var(--danger);
+  line-height: 1.45;
+}
+
+.ef-footnote {
+  margin: 6px 2px 0;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+/* 折叠态:仅标题条,弱化阴影 */
+.experimental-features-panel.collapsed {
+  width: auto;
+  min-width: 240px;
+  max-height: none;
+  overflow: visible;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+}
+
+.experimental-features-panel.collapsed header {
+  border-bottom: 0;
+}
+
+@media (max-width: 640px) {
+  .experimental-features-panel {
+    /* 折叠工具坞(~140px 高)之下锚定,避免面板头部被遮挡 */
+    top: 152px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .experimental-features-panel,
+  .experimental-features-panel * {
+    transition: none !important;
+  }
+}

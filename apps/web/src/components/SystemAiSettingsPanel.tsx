@@ -31,6 +31,8 @@ export function AiSettingsPanel({
   const [failoverApiKey, setFailoverApiKey] = useState("");
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [catalogNotice, setCatalogNotice] = useState<string>();
+  // 配置易用性:测试连接结果内联呈递(此前 alert 阻塞且失败只进页顶横幅,反馈不明显)。
+  const [testStatus, setTestStatus] = useState<{ ok: boolean; message: string }>();
   const [telemetry, setTelemetry] = useState<AiTelemetrySummary>();
   const [busy, setBusy] = useState(false);
 
@@ -82,11 +84,14 @@ export function AiSettingsPanel({
   }
   async function test() {
     setBusy(true);
+    setTestStatus(undefined);
     try {
       const result = await api.testAiSettings(draft());
-      alert(t(`连接成功：${result.model}`, `Connected: ${result.model}`));
+      setTestStatus({ ok: true, message: t(`连接成功：${result.model}`, `Connected: ${result.model}`) });
     } catch (reason) {
-      onError(reason instanceof Error ? reason.message : String(reason));
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setTestStatus({ ok: false, message: t(`连接失败：${message}`, `Connection failed: ${message}`) });
+      onError(message);
     } finally {
       setBusy(false);
     }
@@ -222,6 +227,11 @@ export function AiSettingsPanel({
         </p>
       </div>
       {catalogNotice && <p className="system-ai-catalog-notice" role="status">{catalogNotice}</p>}
+      {testStatus && (
+        <p className={testStatus.ok ? "system-ai-catalog-notice" : "system-ai-catalog-notice failure"} role="status" data-testid="ai-test-status">
+          {testStatus.message}
+        </p>
+      )}
       {telemetry && telemetry.records.length > 0 && (
         <div className="system-ai-telemetry" data-testid="ai-telemetry">
           <header>{t("最近请求（最新在后）", "Recent requests (newest last)")}</header>
