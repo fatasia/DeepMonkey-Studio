@@ -27,6 +27,7 @@ import { PbrShadowState } from "./pbrShadowState.js";
 import { ContactShadowResources, describeContactShadowPass, describeContactApplyPass } from "../shadows/contactShadowResources.js";
 import type { SdfGiProductionRuntime } from "../gi/sdfGiProductionRuntime.js";
 import { hasClusteredLights, resolvePbrSceneLighting } from "../lighting/pbrSceneLighting.js";
+import { MegaLightsFrameController, megaLightsFramePlanned } from "../lighting/megaLightsFrameController.js";
 import { resolveDeepGiProducerDirectionCount } from "../lighting/probeRadianceDirectionGate.js";
 import type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
 import { abortableGpu } from "./gpuAbort.js";
@@ -104,6 +105,12 @@ export interface PbrRendererFrameHost {
   readonly sdfGi: SdfGiProductionRuntime | undefined;
   /** M2 方向光 RT 阴影(opt-in features.rayTracedShadows):帧内 mask dispatch 钩子。 */
   readonly rtShadows: import("./rtShadowFrame.js").RtShadowFrameController | undefined;
+  /**
+   * B2 MegaLights M2 万灯 RIS 生产 dispatch(opt-in features.megaLights):帧编排内
+   * 懒构造(PbrRenderer 构造器零改动),默认 undefined = 既有帧逐位零变化;路径
+   * 决策 ≤64 本地灯走既有簇光快路径,零 dispatch。
+   */
+  megaLights: MegaLightsFrameController | undefined;
   readonly deviceEpoch: RendererDeviceEpoch;
   readonly depthResolve: PbrDepthResolvePass | undefined;
   readonly diagnostics: PbrRendererDiagnostics;
@@ -299,10 +306,15 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       // 直接 depthStoreOp:"discard";有消费方时 store + 主 pass 后深度 resolve pass。
       const particleBinding = host.particleRuntime?.current?.binding;
       const splatCount = host.splats?.current?.splatCount ?? 0;
+      // B2 MegaLights M2 帧早段路径决策(与 encodeFrame 内部决策同一纯函数单源):
+      // 仅 RIS 路径帧把 MSAA 深度纳入消费集(store+resolve);≤64 灯帧保持既有
+      // discard 行为,逐位零变化。
+      const megaLightsPlanned = megaLightsFramePlanned(host.features.megaLights && !directClear,
+        sceneLighting.clustered);
       const depthConsumedAfterPass = !directClear && (host.features.occlusionCulling || drawProfile.hasTransparent || outlined
         || (host.particlePass !== undefined && particleBinding !== undefined) || splatCount > 0
         || view.authorGrid !== undefined || host.visibility !== undefined
-        || view.panoramaBackground?.toneMapped === false);
+        || view.panoramaBackground?.toneMapped === false || megaLightsPlanned);
       // The same cached plan powers explicit captures, the lightweight live
       // Frame Graph receipt, and the execution coverage readout. The plan is
       // key-cached (string compare per frame); only a feature/size change pays
@@ -507,6 +519,21 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       host.depthResolve.encodeLinearDepth(encoder, host.targets.linearDepthMsaa!, host.targets.linearDepth,
         size.width, size.height);
       passTiming?.endMarker(encoder, "linear-depth-resolve");
+    }
+    // B2 Brief-MegaLights M2 生产 dispatch(opt-in features.megaLights,默认关 = 控制
+    // 器不存在、帧逐位零变化):首帧懒构造于本编排(PbrRenderer 构造器零改动;构造
+    // 失败 fail-closed 抛错,同 sdfGi 构造期语义)。路径决策单源 resolveDirectLightingPath:
+    // ≤64 本地灯返回零命令(既有簇光快路径),超预算/强制才落 表面重建 + RIS 两趟 +
+    // 加性合成进 HDR(depth 已就绪,后处理统一消费合成后结果)。IES 引用无表供给或
+    // 灯数超 MAX_MEGA_LIGHTS(65535)即抛(fail-closed,不静默错光)。
+    if (megaLightsPlanned) {
+      host.megaLights ??= new MegaLightsFrameController(host.session);
+      host.megaLights.encodeFrame({ encoder, width: size.width, height: size.height,
+        colorView: host.targets.hdr,
+        depthTexture: host.targets.depthTexture,
+        depthViewProjection: frameState.depthViewProjection,
+        worldToView: frameState.worldToView,
+        lights: transformWorldLightsToView(sceneLighting.clustered, frameState.worldToView) });
     }
     // Particle simulation commits asynchronously; consume the latest committed binding here.
     // A one-frame simulation-to-render latency avoids queue stalls and keeps particle count
@@ -719,7 +746,8 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       ...(virtualShadowMetrics ? { virtualShadow: virtualShadowMetrics } : {}),
       ...(virtualTexturesMetrics ? { virtualTextures: virtualTexturesMetrics } : {}),
       ...(host.contactShadows ? host.contactShadows.metrics : {}),
-      ...(host.sdfGi ? host.sdfGi.metrics : {}) };
+      ...(host.sdfGi ? host.sdfGi.metrics : {}),
+      ...(host.megaLights ? { megaLights: host.megaLights.metrics } : {}) };
     sampleAdaptiveQuality(host, metrics);
     if (!host.adaptiveQuality) return metrics;
     const hotspots = host.adaptiveQuality.hotspotSummary();

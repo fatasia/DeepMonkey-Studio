@@ -243,6 +243,12 @@ export interface FrameMetrics {
    * 逐帧快照;fallbackActive 时采样方走整纹理路径,原因在 fallbackReason。
    */
   readonly virtualTextures?: import("./virtualTextureFrameBridge.js").VirtualTextureFrameMetrics;
+  /**
+   * B2 MegaLights M2 遥测(features.megaLights 开启且控制器已构建时出现):
+   * dispatchedFrames 累计、lastLightCount/lastReason 为最近一次路径决策依据
+   * (≤64 灯帧 reason=within-cluster-budget 且零 dispatch)。
+   */
+  readonly megaLights?: import("../lighting/megaLightsFrameController.js").MegaLightsFrameMetrics;
   readonly postProcessPasses: number; readonly weightedOit: boolean;
   readonly hiZMipLevels: number; readonly occlusionCulling: boolean;
   readonly frustumCulledBatches: number; readonly hiZOccludedBatches: number; readonly lodSelectionBatches: number; readonly lodIndirectDraws: number;

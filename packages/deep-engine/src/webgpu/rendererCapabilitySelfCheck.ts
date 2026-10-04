@@ -333,12 +333,17 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
     },
   },
   {
-    // B2 Brief-MegaLights M1:万灯 RIS 直接光。观测值从灯光池/RIS 核实际常量派生
-    // (64B/灯 stride、K=32 候选、簇光预算 64、面积光上限 64——任一漂移即红)。
-    // M1 = 域级引擎通路 + 真机探针,主 pass 接线属 M2,故 harness-only(与 contracts
-    // 登记表 web 列逐词一致)。
-    capabilityId: "megalights", support: "supported", reason: "harness-only",
+    // B2 Brief-MegaLights M2(2026-10-04):生产 dispatch 接线达成 —— features.megaLights
+    // (opt-in,默认关 = 控制器不构建,帧逐位零变化);帧编排懒构造帧控制器,路径决策
+    // 单源 resolveDirectLightingPath(≤64 本地灯走既有簇光快路径零变化;超预算或强制
+    // 才落 表面重建 + RIS 两趟 + 加性合成进 HDR)。仍如实 degraded 项(登记 evidence
+    // 详列):表面法线为 depth 差分、材质为中性起步档(GBuffer 消费属 pbrShader 域
+    // 后续切片);生产通路不供给 IES 表(带 iesSpotIndex 灯 fail-closed 拒绝,预算内
+    // 场景不受影响)。观测值从灯光池/RIS 核/特性默认派生(stride、K、簇光预算、池
+    // 容量、面积光上限、开关默认——任一漂移即红)。
+    capabilityId: "megalights", support: "supported", reason: "opt-in-default-off",
     observed: {
+      megaLights: FEATURE_DEFAULTS.megaLights,
       megaLightStrideBytes: MEGA_LIGHT_STRIDE_BYTES,
       risCandidates: MEGALIGHTS_RIS_CANDIDATES,
       clusterPathLightBudget: MEGALIGHTS_CLUSTER_PATH_LIGHT_BUDGET,

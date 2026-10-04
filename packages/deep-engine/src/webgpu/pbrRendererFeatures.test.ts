@@ -15,7 +15,7 @@ describe("PBR renderer feature selection", () => {
       occlusionCulling: false, contactShadows: false, toneMapping: "three-aces-r185" })).toEqual({ environment: false, fog: false, groundPlane: true, groundGrid: false,
       ambientOcclusion: false, screenSpaceReflection: false, temporalAa: false, spatialAa: false, bloom: false, vignette: false,
       volumetricFog: false, visibilityBuffer: false, softRasterizeFallback: false, textureArrays: false, layeredMaterials: false,
-      occlusionCulling: false, contactShadows: false, temporalUpscale: false, toneMapping: "three-aces-r185", debugForceFullRender: false, rayTracedShadows: false, sdfGi: false });
+      occlusionCulling: false, contactShadows: false, temporalUpscale: false, toneMapping: "three-aces-r185", debugForceFullRender: false, rayTracedShadows: false, sdfGi: false, megaLights: false });
     expect(DEFAULT_PBR_RENDERER_FEATURES.environment).toBe(true);
   });
   it("keeps the soft-rasterize fallback opt-in and dependent on the visibility buffer", () => {
@@ -45,6 +45,12 @@ describe("PBR renderer feature selection", () => {
     expect(resolvePbrRendererFeatures().sdfGi).toBe(false);
     expect(resolvePbrRendererFeatures({ sdfGi: true }).sdfGi).toBe(true);
     expect(() => resolvePbrRendererFeatures({ sdfGi: 1 as never })).toThrow("must be boolean");
+  });
+  it("keeps MegaLights RIS opt-in off by default and strictly boolean", () => {
+    expect(DEFAULT_PBR_RENDERER_FEATURES.megaLights).toBe(false);
+    expect(resolvePbrRendererFeatures().megaLights).toBe(false);
+    expect(resolvePbrRendererFeatures({ megaLights: true }).megaLights).toBe(true);
+    expect(() => resolvePbrRendererFeatures({ megaLights: 1 as never })).toThrow("must be boolean");
   });
   it("keeps the debug full-render comparison switch off by default and strictly boolean", () => {
     expect(resolvePbrRendererFeatures().debugForceFullRender).toBe(false);

@@ -50,6 +50,12 @@ export interface PbrRendererFeatureOptions {
    * 探针 SH 更新的帧循环 dispatch。关闭时运行时不构建,既有帧逐位零变化。
    */
   readonly sdfGi?: boolean;
+  /**
+   * B2 MegaLights M2 万灯直接光 RIS(opt-in,默认关):本地灯超簇光预算(64)或
+   * 显式强制时,帧内表面重建 + RIS 两趟 + 加性合成进 HDR;预算内仍走既有簇光
+   * 快路径(逐位既有路径)。关闭时控制器不构建,帧逐位零变化。
+   */
+  readonly megaLights?: boolean;
 }
 
 export interface PbrRendererFeatures {
@@ -75,6 +81,7 @@ export interface PbrRendererFeatures {
   readonly debugForceFullRender: boolean;
   readonly rayTracedShadows: boolean;
   readonly sdfGi: boolean;
+  readonly megaLights: boolean;
 }
 
 export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze({
@@ -87,6 +94,7 @@ export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze(
   debugForceFullRender: false,
   rayTracedShadows: false,
   sdfGi: false,
+  megaLights: false,
 });
 
 export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = {}): PbrRendererFeatures {
@@ -118,5 +126,6 @@ export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = 
     bloom: boolean("bloom"), vignette: boolean("vignette"), toneMapping,
     debugForceFullRender: boolean("debugForceFullRender"),
     rayTracedShadows: boolean("rayTracedShadows"),
-    sdfGi: boolean("sdfGi") });
+    sdfGi: boolean("sdfGi"),
+    megaLights: boolean("megaLights") });
 }

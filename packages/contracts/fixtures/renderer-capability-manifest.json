@@ -34,12 +34,14 @@
     },
     {
       "id": "sdf-gi",
-      "title": "静态 SDF 遮蔽 + 探针混合 GI M1(Brief-GI)",
-      "webFeatureKeys": [],
+      "title": "静态 SDF 遮蔽 + 探针混合 GI M2 生产 dispatch(Brief-GI)",
+      "webFeatureKeys": [
+        "sdfGi"
+      ],
       "web": {
         "support": "degraded",
-        "reason": "harness-only",
-        "evidence": "packages/deep-engine/src/gi/sdfSceneBake.ts:bakeSdfSceneGrid(场景级 SDF 烘焙:静态实例世界系 min 合成闭体并集,资产哈希增量缓存,动态实例排除,内存档复用 MAX_SDF_PROFILE_GRID_CELLS/estimateSdfCollisionMemory) + gi/sdfSkyVisibility.ts(wgsl/sdfSkyVisibilityTrace.wgsl 单源 compute:每 lane=探针方向×SDF 8..16 步圆锥软阴影口径,域外 fail-open=1 光照语义;CPU 镜像同序 fround) + gi/probeSkyVisibilitySh.ts(L1 SH 投影/时域滤波,白炉均匀场 dipole 精确零) + gi/probeShUpdate.ts(探针 SH 更新接受①天光遮蔽②SSGDI 输入,α=0.1,埋入透传,F5 words[12..23] 捕获块不动) + gi/sdfGiDayNight.ts 昼夜 harness(逐帧 p99≤3/255)+ displayContract.gi 档(resolveDisplayGiMode,缺字段=off);生产 pbrRenderer dispatch 接线属后续切片,M1 仅引擎侧通路"
+        "reason": "opt-in-default-off",
+        "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:sdfGi(默认 false,opt-in;关闭 = 运行时不构建,既有帧逐位零变化) + gi/sdfSceneBake.ts:bakeSdfSceneGrid(场景级 SDF 烘焙:静态实例世界系 min 合成闭体并集,资产哈希增量缓存,动态/BLEND 实例排除,内存档复用) + gi/sdfSkyVisibility.ts(wgsl/sdfSkyVisibilityTrace.wgsl 单源 compute 真派发:每 lane=探针方向×SDF 8..16 步圆锥软阴影,域外 fail-open=1) + wgsl/sdfGiProbeUpdate.wgsl 单源核(每 lane=预算窗口内一个探针:天光加权+bounce 能量哨兵+时域滤波 α,96B IrradianceProbeRecord ABI,F5 words[12..23] 绝不写) + gi/sdfGiProductionRuntime.ts(pbrRendererFrames 主 encoder 前 opaque 计算槽:场景 dirty 帧重烘焙+追踪,探针 SH 更新按 ddgiUpdateBudget 同族滑动窗口分摊,FrameMetrics.sdfGi* 遥测) + gi/sdfGiSceneAdapter.ts(包快照 batches+geometries→烘焙实例,packed 36 float 行变换转置) + gi/sdfGiDayNight.ts 昼夜 harness(逐帧 p99≤3/255);M2 仍 degraded:探针记录尚未被主 pass 着色消费(探针 clipmap 绑定不变,像素零变化),记录消费与逐 pass 计时登记(PBR_TIMED_PASS_IDS 原子 diff)属后续切片;SSGDI 动态直接层 GPU 核不消费(CPU 域保留)"
       },
       "native": {
         "support": "unavailable",
@@ -96,6 +98,40 @@
         "support": "unavailable",
         "reason": "absent",
         "evidence": "packages/deep-engine-native/src/lib.rs(native 按原生分辨率直出,无上采样通路)"
+      }
+    },
+    {
+      "id": "debug-full-render",
+      "title": "全量渲染对照开关(排查工具)",
+      "webFeatureKeys": [
+        "debugForceFullRender"
+      ],
+      "web": {
+        "support": "supported",
+        "reason": "opt-in-default-off",
+        "evidence": "packages/deep-engine/src/webgpu/pbrPostProcessChain.ts:encodeFinal/encodeUpscale(debugForceFullRender 时 TAA/TSR 每帧 reset 历史,pass 结构不变;Studio 桥 debug-full-render URL 开关,studioDeepWebGpuBridgeFeatureToggles.debugFullRenderEnabled)"
+      },
+      "native": {
+        "support": "unavailable",
+        "reason": "absent",
+        "evidence": "packages/deep-engine-native/src/lib.rs(排查开关仅 web 链路)"
+      }
+    },
+    {
+      "id": "ray-traced-shadows",
+      "title": "方向光 RT 阴影(帧内联 BVH)",
+      "webFeatureKeys": [
+        "rayTracedShadows"
+      ],
+      "web": {
+        "support": "supported",
+        "reason": "opt-in-default-off",
+        "evidence": "packages/deep-engine/src/rayTracing/shadowRayFrameKernel.ts(两级 TLAS→BLAS 遮挡射线核,GBuffer depth 重建着色点,r32float mask 供直接光采样;场景缓冲持久+增量 TLAS;无 readback;需调用方供给 TlasPackedScene;帧资源管理另见同目录 shadowRayFramePass.ts)"
+      },
+      "native": {
+        "support": "unavailable",
+        "reason": "absent",
+        "evidence": "packages/deep-engine-native/src/lib.rs(native 无 compute BVH 模块)"
       }
     },
     {
@@ -600,11 +636,13 @@
     {
       "id": "megalights",
       "title": "万灯直接光 RIS 随机采样(MegaLights;面积光上限 8→64 同批)",
-      "webFeatureKeys": [],
+      "webFeatureKeys": [
+        "megaLights"
+      ],
       "web": {
         "support": "supported",
-        "reason": "harness-only",
-        "evidence": "packages/deep-engine/src/lighting/megaLights.ts:MEGA_LIGHT_STRIDE_BYTES(64B/灯 union 灯池;DEEP_AREA_LIGHT_MAX 8→64 同批扩容)+wgsl/megaLightsRis.wgsl(K=32→M=1 RIS 核,checksum 门)+megaLightsRuntime.ts(compute 运行时;真机证据 packages/deep-engine/lab/megaLightsGpuProbe.ts);主 pass 接线属 M2,届时升 opt-in-default-off"
+        "reason": "opt-in-default-off",
+        "evidence": "packages/deep-engine/src/lighting/megaLights.ts:MEGA_LIGHT_STRIDE_BYTES(64B/灯 union 灯池;DEEP_AREA_LIGHT_MAX 8→64 同批扩容)+megaLightsRuntime.ts(M1 RIS compute 运行时;M2 加 surfacesBuffer 供给面)+megaLightsFrameController.ts(M2 帧控制器:路径决策+depth 重建表面+RIS dispatch+加性合成;懒构造于 pbrRendererFrames)+megaLightsFrameWgsl.ts(重建/合成宿主私有核)+wgsl/megaLightsRis.wgsl(K=32→M=1 RIS 核,checksum 门);真机证据 packages/deep-engine/lab/megaLightsGpuProbe.ts + scripts/megaLightsGpuTest.mjs"
       },
       "native": {
         "support": "unavailable",

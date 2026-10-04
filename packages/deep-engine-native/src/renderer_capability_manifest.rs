@@ -179,6 +179,18 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         evidence: "无 virtual texture 模块",
     },
     NativeCapabilitySelfCheck {
+        capability_id: "debug-full-render",
+        support: RendererCapabilitySupport::Unavailable,
+        reason: RendererCapabilityReasonCode::Absent,
+        evidence: "无 TAA/TSR 历史链(排查开关仅 web 后处理链路,native 直出无时域 pass)",
+    },
+    NativeCapabilitySelfCheck {
+        capability_id: "ray-traced-shadows",
+        support: RendererCapabilitySupport::Unavailable,
+        reason: RendererCapabilityReasonCode::Absent,
+        evidence: "无 compute BVH/帧内联遮挡射线模块(方向光阴影走 cascaded_shadow;web RT 阴影见 deep-engine rayTracing/shadowRayFrame*)",
+    },
+    NativeCapabilitySelfCheck {
         capability_id: "cluster-lod",
         support: RendererCapabilitySupport::Unavailable,
         reason: RendererCapabilityReasonCode::Absent,

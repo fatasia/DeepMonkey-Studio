@@ -214,7 +214,7 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     webFeatureKeys: ["rayTracedShadows"],
     web: {
       support: "supported", reason: "opt-in-default-off",
-      evidence: "packages/deep-engine/src/rayTracing/shadowRayFrameKernel.ts+shadowRayFramePass.ts(GBuffer depth 重建着色点,两级 TLAS→BLAS 遮挡射线,r32float mask 纹理供直接光采样;场景缓冲持久+增量 TLAS;无 readback;需调用方供给 TlasPackedScene)",
+      evidence: "packages/deep-engine/src/rayTracing/shadowRayFrameKernel.ts(两级 TLAS→BLAS 遮挡射线核,GBuffer depth 重建着色点,r32float mask 供直接光采样;场景缓冲持久+增量 TLAS;无 readback;需调用方供给 TlasPackedScene;帧资源管理另见同目录 shadowRayFramePass.ts)",
     },
     native: { support: "unavailable", reason: "absent", evidence: "packages/deep-engine-native/src/lib.rs(native 无 compute BVH 模块)" },
   },
@@ -607,15 +607,22 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     sharedQualityVocabulary: true,
   },
   {
-    // B2 Brief-MegaLights M1(2026-10-04):万灯直接光 RIS 采样。M1 交付域级引擎通路
-    // (灯光池+RIS 核+compute 运行时+真机探针),主 pass 接线属 M2——web 如实登记
-    // harness-only(非运行时渲染通路;通路选择函数已定 ≤64 簇光/超限 RIS 策略)。
+    // B2 Brief-MegaLights M2(2026-10-04):生产 dispatch 接线达成(原 M1 harness-only
+    // 升 opt-in-default-off)。features.megaLights 默认关 = 帧控制器不构建,帧逐位
+    // 零变化;开启后路径决策单源 resolveDirectLightingPath —— ≤64 本地灯仍走既有
+    // 簇光快路径(逐位既有路径),超预算或显式强制才落 帧内表面重建 + RIS 两趟
+    // (M1 单源核)+ 加性合成进 HDR(loadOp load,one+one,alpha 逐位不变)。
+    // fail-closed:灯数超 MAX_MEGA_LIGHTS(65535)拒绝;生产通路未供给 IES 表时带
+    // iesSpotIndex 灯拒绝(不静默错光)。如实 degraded 项:表面法线 depth 差分、
+    // 材质中性起步档(GBuffer 消费属 pbrShader 域后续切片);直出 display 快路径
+    // 不接(合成语义依赖 HDR 链)。真机帧时门:5000 灯 1080p RIS compute
+    // p95≤20ms(lab/megaLightsGpuProbe.ts,headless Chrome WebGPU)。
     id: "megalights",
     title: "万灯直接光 RIS 随机采样(MegaLights;面积光上限 8→64 同批)",
-    webFeatureKeys: [],
+    webFeatureKeys: ["megaLights"],
     web: {
-      support: "supported", reason: "harness-only",
-      evidence: "packages/deep-engine/src/lighting/megaLights.ts:MEGA_LIGHT_STRIDE_BYTES(64B/灯 union 灯池;DEEP_AREA_LIGHT_MAX 8→64 同批扩容)+wgsl/megaLightsRis.wgsl(K=32→M=1 RIS 核,checksum 门)+megaLightsRuntime.ts(compute 运行时;真机证据 packages/deep-engine/lab/megaLightsGpuProbe.ts);主 pass 接线属 M2,届时升 opt-in-default-off",
+      support: "supported", reason: "opt-in-default-off",
+      evidence: "packages/deep-engine/src/lighting/megaLights.ts:MEGA_LIGHT_STRIDE_BYTES(64B/灯 union 灯池;DEEP_AREA_LIGHT_MAX 8→64 同批扩容)+megaLightsRuntime.ts(M1 RIS compute 运行时;M2 加 surfacesBuffer 供给面)+megaLightsFrameController.ts(M2 帧控制器:路径决策+depth 重建表面+RIS dispatch+加性合成;懒构造于 pbrRendererFrames)+megaLightsFrameWgsl.ts(重建/合成宿主私有核)+wgsl/megaLightsRis.wgsl(K=32→M=1 RIS 核,checksum 门);真机证据 packages/deep-engine/lab/megaLightsGpuProbe.ts + scripts/megaLightsGpuTest.mjs",
     },
     native: {
       support: "unavailable", reason: "absent",

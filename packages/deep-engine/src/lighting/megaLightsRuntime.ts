@@ -229,6 +229,12 @@ export class MegaLightsRuntime {
     return this.resources.color;
   }
 
+  /** 表面 storage 缓冲(生产 M2 表面重建核直写目标;prepare 前无分配即抛)。 */
+  get surfacesBuffer(): GPUBuffer {
+    if (!this.resources) throw new Error("MegaLights runtime has no allocation until prepare.");
+    return this.resources.surfaces;
+  }
+
   /** 蓄水池 B(下一帧历史;诊断读回用)。 */
   get reservoirsBuffer(): GPUBuffer {
     if (!this.resources) throw new Error("MegaLights runtime has no allocation until prepare.");
