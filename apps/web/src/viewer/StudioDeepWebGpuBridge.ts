@@ -38,7 +38,7 @@ import { flowProbe, recordProbeSample, type DeepFlowProbe } from "./studioDeepWe
 import { cameraSnapshot, renderViewFingerprint, sameSnapshot, resolveAuthorWorldTransform, threePrototypeHooks,
   nextFrame, type BridgeModuleLoader, type RuntimeSession, type DeepRenderView } from "./studioDeepWebGpuBridgeSceneHelpers";
 import { markSwitchPhase, t11PipelineBootstrap, t07DynamicResolutionPolicy, b4HlodClusterEnabled, g1ClusterLodEnabled,
-  t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
+  t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled, debugFullRenderEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
 import type { StudioDeepWebGpuBridgeOptions, StudioRendererSwitchResult } from "./studioDeepWebGpuBridgeOptions";
 
 export { t11PipelineBootstrap, t07DynamicResolutionPolicy, b4HlodClusterEnabled, g1ClusterLodEnabled,
@@ -251,6 +251,7 @@ export class StudioDeepWebGpuBridge {
           // F4 超分需动态分辨率同开(scale<1 才激活);F3 虚拟纹理独立开关。
           const temporalUpscale = resolutionScalePolicy !== undefined && f4TemporalUpscaleEnabled();
           const virtualTextures = f3VirtualTexturesEnabled();
+          const debugFullRender = debugFullRenderEnabled();
           const backend = await module.DeepWebGpuBackend.create({
             canvas, gpu: navigator.gpu,
             ...(this.projectionBridge ? { projection: this.projectionBridge, root: this.projectionRoot() } : {}),
@@ -266,7 +267,6 @@ export class StudioDeepWebGpuBridge {
               ...(clusterLodEnabled ? { clusterLod: true } : {}),
               ...(resolutionScalePolicy ? { resolutionScalePolicy } : {}),
               ...(gpuPassTiming ? { gpuPassTiming: true } : {}),
-              ...(temporalUpscale ? { features: { temporalUpscale: true } } : {}),
               ...(virtualTextures ? { virtualTextures: { enabled: true } } : {}),
               ...(this.options.recovery && replacementBudget !== 0 ? { recovery: {
                 ...this.options.recovery, ...(replacementBudget === undefined ? {} : { maxAttempts: replacementBudget }),
@@ -284,7 +284,11 @@ export class StudioDeepWebGpuBridge {
               // 场景升多级联属引擎侧能力（主线事项，见 docs/reports）。当前档位词汇
               //（studioDeepShadowTier）驱动无作者阴影时的兜底分配尺寸。
               shadows: { exactProfile: { cascadeCount: 1, shadowMapSize } },
-              features: { environment: true, groundPlane: false,
+              // features 只此一处：此前 F4 的条件 spread 与本字面量同名，后写覆盖前写，
+              // temporalUpscale 从未真正进入渲染器；合并后 opt-in 才真正生效。
+              features: { ...(temporalUpscale ? { temporalUpscale: true } : {}),
+                ...(debugFullRender ? { debugForceFullRender: true } : {}),
+                environment: true, groundPlane: false,
                 groundGrid: false, screenSpaceReflection: true, volumetricFog: true,
                 toneMapping: DEFAULT_DISPLAY_CONTRACT.toneMapping.operator },
               ...(frameCaptureSession ? { frameCapture: { session: frameCaptureSession,

@@ -17,4 +17,19 @@ describe("PBR post-process construction", () => {
     });
     expect(() => chain.dispose()).not.toThrow();
   });
+  it("constructs with the debug full-render comparison switch enabled without touching the GPU", () => {
+    const session = new Proxy({}, {
+      get: (_target, property) => {
+        throw new Error(`Disabled post-process accessed session.${String(property)}.`);
+      },
+    }) as DeviceSession;
+    const chain = new PbrPostProcessChain(session, {
+      ambientOcclusion: false,
+      temporalAa: false,
+      occlusionCulling: false,
+      bloom: false,
+      debugForceFullRender: true,
+    });
+    expect(() => chain.dispose()).not.toThrow();
+  });
 });

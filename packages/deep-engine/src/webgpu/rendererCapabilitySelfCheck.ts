@@ -141,6 +141,11 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
     observed: { temporalUpscale: FEATURE_DEFAULTS.temporalUpscale },
   },
   {
+    // 排查对照开关(非渲染能力):TAA/TSR 历史每帧强制失效,pass 拓扑不变。
+    capabilityId: "debug-full-render", support: "supported", reason: "opt-in-default-off",
+    observed: { debugForceFullRender: FEATURE_DEFAULTS.debugForceFullRender },
+  },
+  {
     capabilityId: "virtual-textures", support: "supported", reason: "opt-in-default-off",
     observed: {},
   },

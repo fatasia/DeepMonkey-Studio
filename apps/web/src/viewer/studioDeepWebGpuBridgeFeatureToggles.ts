@@ -84,6 +84,18 @@ export function f4TemporalUpscaleEnabled(): boolean {
   return value === "1" || value === "true" || value === "on";
 }
 
+/**
+ * 全量渲染对照开关：`debug-full-render=1`（排查工具，默认关闭）。
+ * 开启后时域 pass（TAA/TSR）结构照常运行但历史每帧强制失效，输出退化为纯当前帧——
+ * 用于二分"伪影来自时域复用还是上游 pass"（对标 gpui-fast GPUI_VIEW_RETENTION=0）。
+ */
+export function debugFullRenderEnabled(): boolean {
+  const params = typeof location !== "undefined" && location.search
+    ? new URLSearchParams(location.search) : undefined;
+  const value = params?.get("debug-full-render")?.toLowerCase();
+  return value === "1" || value === "true" || value === "on";
+}
+
 /** F3 虚拟纹理开关：`f3-virtual-textures=1`（opt-in，默认整纹理驻留路径零变化）。 */
 export function f3VirtualTexturesEnabled(): boolean {
   const params = typeof location !== "undefined" && location.search

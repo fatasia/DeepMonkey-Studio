@@ -199,6 +199,16 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     native: { support: "unavailable", reason: "absent", evidence: "packages/deep-engine-native/src/lib.rs(native 按原生分辨率直出,无上采样通路)" },
   },
   {
+    id: "debug-full-render",
+    title: "全量渲染对照开关(排查工具)",
+    webFeatureKeys: ["debugForceFullRender"],
+    web: {
+      support: "supported", reason: "opt-in-default-off",
+      evidence: "packages/deep-engine/src/webgpu/pbrPostProcessChain.ts:encodeFinal/encodeUpscale(debugForceFullRender 时 TAA/TSR 每帧 reset 历史,pass 结构不变;Studio 桥 debug-full-render URL 开关,studioDeepWebGpuBridgeFeatureToggles.debugFullRenderEnabled)",
+    },
+    native: { support: "unavailable", reason: "absent", evidence: "packages/deep-engine-native/src/lib.rs(排查开关仅 web 链路)" },
+  },
+  {
     id: "virtual-textures",
     title: "虚拟纹理驻留/采样(F3)",
     webFeatureKeys: [],

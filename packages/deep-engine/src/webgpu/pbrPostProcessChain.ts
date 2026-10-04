@@ -253,6 +253,7 @@ export class PbrPostProcessChain {
     }
     let temporal: { readonly texture: GPUTexture } = { texture: marched };
     if (this.features.temporalAa) {
+      if (this.features.debugForceFullRender) this.temporalAa!.reset();
       input.passTiming?.beginMarker(encoder, "temporal-aa");
       temporal = this.temporalAa!.encode(encoder, {
         color: marched, depth: targets.linearDepthTexture, motion: targets.motionTexture, revision,
@@ -312,6 +313,7 @@ export class PbrPostProcessChain {
     if (this.disposed) throw new Error("Post-process chain is disposed.");
     if (!this.temporalUpscale) return undefined;
     if (color.width >= input.displayWidth && color.height >= input.displayHeight) return undefined;
+    if (this.features.debugForceFullRender) this.temporalUpscale.reset();
     const source: TemporalUpscalePassSource = {
       color, depth: input.targets.linearDepthTexture, motion: input.targets.motionTexture,
       revision: input.revision, cameraCut: input.cameraCut,

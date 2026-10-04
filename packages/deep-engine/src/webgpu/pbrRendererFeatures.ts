@@ -33,6 +33,12 @@ export interface PbrRendererFeatureOptions {
   readonly bloom?: boolean;
   readonly vignette?: boolean;
   readonly toneMapping?: PbrToneMapping;
+  /**
+   * 排查对照开关:时域 pass(TAA/TSR)结构照常运行,但历史每帧强制失效,
+   * 输出退化为纯当前帧结果——用于二分"伪影来自时域复用还是上游 pass"。
+   * 不改变 pass 拓扑与带宽,关闭后逐字节回到常规路径。
+   */
+  readonly debugForceFullRender?: boolean;
 }
 
 export interface PbrRendererFeatures {
@@ -55,6 +61,7 @@ export interface PbrRendererFeatures {
   readonly bloom: boolean;
   readonly vignette: boolean;
   readonly toneMapping: PbrToneMapping;
+  readonly debugForceFullRender: boolean;
 }
 
 export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze({
@@ -64,6 +71,7 @@ export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze(
   textureArrays: false,
   layeredMaterials: false,
   occlusionCulling: true, bloom: true, vignette: true, contactShadows: true, temporalUpscale: false, toneMapping: "three-aces-r185",
+  debugForceFullRender: false,
 });
 
 export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = {}): PbrRendererFeatures {
@@ -92,5 +100,6 @@ export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = 
     occlusionCulling: boolean("occlusionCulling"),
     contactShadows: boolean("contactShadows"),
     temporalUpscale: boolean("temporalUpscale"),
-    bloom: boolean("bloom"), vignette: boolean("vignette"), toneMapping });
+    bloom: boolean("bloom"), vignette: boolean("vignette"), toneMapping,
+    debugForceFullRender: boolean("debugForceFullRender") });
 }

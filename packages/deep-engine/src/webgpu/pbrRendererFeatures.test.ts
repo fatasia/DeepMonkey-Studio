@@ -15,7 +15,7 @@ describe("PBR renderer feature selection", () => {
       occlusionCulling: false, contactShadows: false, toneMapping: "three-aces-r185" })).toEqual({ environment: false, fog: false, groundPlane: true, groundGrid: false,
       ambientOcclusion: false, screenSpaceReflection: false, temporalAa: false, spatialAa: false, bloom: false, vignette: false,
       volumetricFog: false, visibilityBuffer: false, softRasterizeFallback: false, textureArrays: false, layeredMaterials: false,
-      occlusionCulling: false, contactShadows: false, temporalUpscale: false, toneMapping: "three-aces-r185" });
+      occlusionCulling: false, contactShadows: false, temporalUpscale: false, toneMapping: "three-aces-r185", debugForceFullRender: false });
     expect(DEFAULT_PBR_RENDERER_FEATURES.environment).toBe(true);
   });
   it("keeps the soft-rasterize fallback opt-in and dependent on the visibility buffer", () => {
@@ -34,6 +34,11 @@ describe("PBR renderer feature selection", () => {
     expect(resolvePbrRendererFeatures().temporalUpscale).toBe(false);
     expect(resolvePbrRendererFeatures({ temporalUpscale: true }).temporalUpscale).toBe(true);
     expect(() => resolvePbrRendererFeatures({ temporalUpscale: 1 as never })).toThrow("must be boolean");
+  });
+  it("keeps the debug full-render comparison switch off by default and strictly boolean", () => {
+    expect(resolvePbrRendererFeatures().debugForceFullRender).toBe(false);
+    expect(resolvePbrRendererFeatures({ debugForceFullRender: true }).debugForceFullRender).toBe(true);
+    expect(() => resolvePbrRendererFeatures({ debugForceFullRender: 1 as never })).toThrow("must be boolean");
   });
   it("keeps production volumetric fog opt-in", () => {
     expect(resolvePbrRendererFeatures().volumetricFog).toBe(false);
