@@ -91,6 +91,20 @@ export interface SceneMaterialScreenState {
   emissiveIntensity: number;
 }
 
+/**
+ * 用户自定义材质预设(编辑器刀 5):作者把调好的对象材质参数存为可复用预设,
+ * 与内置工业预设同面板套用。只序列化标量外观域(不含贴图/屏幕/UV 动画/
+ * shaderEffect/slotOverrides),跨场景复用不携带项目资源依赖。
+ */
+export interface UserMaterialPresetDefinition {
+  /** 形如 `matpreset:<uuid>`;场景内唯一。 */
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  values: SceneMaterialState;
+}
+
 export interface SceneMaterialUvAnimationState {
   enabled: boolean;
   /** 关闭循环时从进入场景开始播放一次。 */

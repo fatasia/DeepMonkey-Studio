@@ -123,3 +123,84 @@ describe("选中显隐收编(批 2:SetVisibility selection 模式)", () => {
     expect(setRevision).not.toHaveBeenCalled();
   });
 });
+
+describe("材质预设命令(编辑器刀 5)", () => {
+  const stainless = { color: "#c8c8c8", metalness: 1, roughness: 0.22 };
+
+  function presetContext(extra: Record<string, unknown> = {}) {
+    const engine = { setSelectionMaterial: vi.fn(), setModelMaterial: vi.fn(), listModels: () => [] };
+    const recordSceneEdit = vi.fn();
+    const setUserMaterialPresets = vi.fn();
+    const context = {
+      engine,
+      selected: { id: "part-a" },
+      selectedLayerId: undefined,
+      sceneOrganizationSelection: new Set<string>(),
+      setRevision: vi.fn(),
+      setMessage: vi.fn(),
+      showError: vi.fn(),
+      recordSceneEdit,
+      userMaterialPresets: [] as unknown[],
+      setUserMaterialPresets,
+      ...extra,
+    } as unknown as SceneEditorControllerContext;
+    return { engine, recordSceneEdit, setUserMaterialPresets, showError: context.showError as ReturnType<typeof vi.fn>, commands: createSceneAppearanceCommands(context, vi.fn()) };
+  }
+
+  it("套用预设展开为全量外观 patch 并走既有材质命令 + 撤销记录", () => {
+    const { engine, recordSceneEdit, commands } = presetContext();
+    commands.materialPresetActions.applyMaterialPreset(stainless, "不锈钢");
+    expect(engine.setSelectionMaterial).toHaveBeenCalledExactlyOnceWith({
+      color: "#c8c8c8", metalness: 1, roughness: 0.22,
+      emissive: "#000000", emissiveIntensity: 0,
+      transmission: 0, thickness: 0,
+      clearcoat: 0, clearcoatRoughness: 0,
+      sheen: 0, sheenRoughness: 1, iridescence: 0,
+    });
+    expect(recordSceneEdit).toHaveBeenCalledOnce();
+    expect(String(recordSceneEdit.mock.calls[0]![0])).toContain("套用材质预设");
+  });
+
+  it("套用玻璃预设保留透射域且不发 undefined 键", () => {
+    const { engine, commands } = presetContext();
+    commands.materialPresetActions.applyMaterialPreset(
+      { color: "#e6eef0", metalness: 0, roughness: 0.6, transmission: 0.85, thickness: 0.5, ior: 1.52 }, "磨砂玻璃");
+    const patch = engine.setSelectionMaterial.mock.calls[0]![0] as Record<string, unknown>;
+    expect(patch.transmission).toBe(0.85);
+    expect(patch.thickness).toBe(0.5);
+    expect(patch.ior).toBe(1.52);
+    for (const [key, value] of Object.entries(patch)) expect(value, key).not.toBeUndefined();
+  });
+
+  it("存为预设:合法参数入库,越界参数拒绝且不入库", () => {
+    const good = presetContext();
+    const saved = good.commands.materialPresetActions.saveUserMaterialPreset("我的涂层", stainless);
+    expect(saved).toMatchObject({ name: "我的涂层", values: stainless });
+    expect(String(saved!.id)).toMatch(/^matpreset:/);
+    expect(good.setUserMaterialPresets).toHaveBeenCalledOnce();
+
+    const bad = presetContext();
+    expect(bad.commands.materialPresetActions.saveUserMaterialPreset("坏预设", { ...stainless, metalness: 2 })).toBeUndefined();
+    expect(bad.setUserMaterialPresets).not.toHaveBeenCalled();
+    expect(bad.showError).toHaveBeenCalledOnce();
+  });
+
+  it("存为预设:空名称不入库", () => {
+    const h = presetContext();
+    expect(h.commands.materialPresetActions.saveUserMaterialPreset("   ", stainless)).toBeUndefined();
+    expect(h.setUserMaterialPresets).not.toHaveBeenCalled();
+  });
+
+  it("删除预设按 id 移除;未知 id 为空操作", () => {
+    const existing = { id: "matpreset:x", name: "x", createdAt: "t", updatedAt: "t", values: stainless };
+    const h = presetContext({ userMaterialPresets: [existing] });
+    h.commands.materialPresetActions.deleteUserMaterialPreset("matpreset:x");
+    expect(h.setUserMaterialPresets).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
+    const updater = h.setUserMaterialPresets.mock.calls[0]![0] as (current: unknown[]) => unknown[];
+    expect(updater([existing, { id: "matpreset:y" }])).toEqual([{ id: "matpreset:y" }]);
+
+    const quiet = presetContext({ userMaterialPresets: [existing] });
+    quiet.commands.materialPresetActions.deleteUserMaterialPreset("matpreset:missing");
+    expect(quiet.setUserMaterialPresets).not.toHaveBeenCalled();
+  });
+});

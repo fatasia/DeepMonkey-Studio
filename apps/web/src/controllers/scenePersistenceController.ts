@@ -201,7 +201,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
   const fileTransfer = createSceneFileTransferActions(context, makeSnapshot, applyScene);
   const publication = createScenePublicationActions(context, () => saveScene());
 
-  async function applyScene(scene: SceneSnapshot, updateRoute = true, sceneProject = project, readOnly = false, fastRuntime = false, safeAuthoringEntry = false, requireComplete = false, incrementalPlay = false, restoreAnimationPlayheadSec?: number, restoreLiveCamera = false) {
+  async function applyScene(scene: SceneSnapshot, updateRoute = true, sceneProject = project, readOnly = false, fastRuntime = false, safeAuthoringEntry = false, requireComplete = false, incrementalPlay = false, restoreAnimationPlayheadSec?: number, restoreLiveCamera = false, keepUserMaterialPresets = false) {
     if (!engine || !sceneProject) {
       if (requireComplete) throw new Error("场景引擎或项目资源已卸载，请重新打开场景后重试退出播放");
       return;
@@ -258,7 +258,9 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       // 恢复链路对库级 setter 容错:测试夹具/精简装配可不提供,缺省跳过。
       setUserPrefabs?.(structuredClone(scene.userPrefabs ?? []));
       setUserPrefabInstances?.(structuredClone(scene.userPrefabInstances ?? []));
-      setUserMaterialPresets?.(structuredClone(scene.userMaterialPresets ?? []));
+      // 自定义材质预设是库级状态:撤销/重做(keepUserMaterialPresets)保留内存现值,
+      // 不随历史快照回卷——历史条目拍摄于预设保存之前,回卷会静默丢失用户预设。
+      if (!keepUserMaterialPresets) setUserMaterialPresets?.(structuredClone(scene.userMaterialPresets ?? []));
       setRootLayerOrder?.(scene.rootLayerOrder ? structuredClone(scene.rootLayerOrder) : undefined);
       setLastDeletedSelectionSet(undefined);
       const loadSceneModel = async (item: SceneSnapshot["models"][number]) => {

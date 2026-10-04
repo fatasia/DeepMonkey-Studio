@@ -1,0 +1,149 @@
+/* 工业材质预设库(编辑器刀 5)。全部取自全站令牌(base.css),深浅主题经 --* 变量自适应;
+   禁止 hardcode 面板色。密度对齐 platform-components.css 材质区既有节奏。 */
+.material-preset-library {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  margin: 5px 0 7px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.material-preset-library > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-strong);
+  font-size: 11px;
+  list-style: none;
+}
+.material-preset-library > summary::-webkit-details-marker { display: none; }
+.material-preset-library > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid var(--text-faint);
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  transition: transform 120ms ease;
+}
+.material-preset-library[open] > summary::before { transform: rotate(90deg); }
+.material-preset-library > summary small { color: var(--text-faint); margin-left: auto; }
+
+.material-preset-group { padding: 2px 8px 4px; }
+.material-preset-group-label {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin: 2px 0 3px;
+}
+.material-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+.material-preset-card-wrap { position: relative; }
+.material-preset-card-wrap > button:first-child {
+  width: 100%;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  padding: 5px 4px 4px;
+  min-height: 52px;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--surface-3);
+  font-size: 8px;
+  line-height: 1.25;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+.material-preset-card-wrap > button:first-child:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.material-preset-card-wrap > button:first-child:active:not(:disabled) { transform: scale(0.97); }
+.material-preset-card-wrap > button:first-child:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+.material-preset-card-wrap > button:first-child:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.material-preset-swatch {
+  position: relative;
+  width: 100%;
+  height: 22px;
+  border-radius: 3px;
+  display: block;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.material-preset-swatch-glass {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background:
+    repeating-conic-gradient(rgb(255 255 255 / 14%) 0% 25%, transparent 0% 50%) 0 0 / 8px 8px;
+  mix-blend-mode: overlay;
+}
+.material-preset-swatch-emissive {
+  position: absolute;
+  inset: 30% 22%;
+  display: block;
+  border-radius: 2px;
+  box-shadow: 0 0 6px 1px currentColor;
+}
+
+.material-preset-delete {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--surface-1);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.material-preset-delete:hover:not(:disabled) { color: var(--danger); background: var(--surface-2); }
+
+.material-preset-save {
+  display: flex;
+  gap: 4px;
+  padding: 4px 8px 8px;
+}
+.material-preset-save input {
+  flex: 1;
+  min-width: 0;
+  min-height: 24px;
+  padding: 0 6px;
+  font-size: 10px;
+  color: var(--text-strong);
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+}
+.material-preset-save input:focus-visible { outline: 1px solid var(--accent); outline-offset: 0; }
+.material-preset-save button {
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 9px;
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+.material-preset-save button:hover:not(:disabled) { border-color: var(--accent); color: var(--text-strong); }
+.material-preset-save button:disabled { opacity: 0.45; cursor: not-allowed; }

@@ -1,10 +1,12 @@
 import { MaterialScopeEditor } from "./MaterialScopeEditor";
+import { MaterialPresetLibrary } from "./MaterialPresetLibrary";
 import type { SelectionMaterialSlot } from "../viewer/materialSlots";
 import { DeferredNumberInput } from "./AppFormControls";
 import type {
   SceneMaterialState,
   SceneModelEffectsState,
   ProjectAssetRecord,
+  UserMaterialPresetDefinition,
 } from "@bim-studio/contracts";
 import { useEffect, useState } from "react";
 import { translate as tr, type AppLocale } from "../i18n";
@@ -16,6 +18,7 @@ import { MaterialTextureSettings } from "./MaterialTextureSettings";
 import { ProjectMaterialResourcePicker } from "./ProjectAppearanceResources";
 import { CustomShaderEditor } from "./CustomShaderEditor";
 import { MaterialAdvancedLobes } from "./MaterialAdvancedLobes";
+import { capturePresetValues, type PresetMaterialValues } from "../materials/industrialMaterialPresets";
 
 export type MaterialTextureKind =
   | "baseColor"
@@ -39,35 +42,13 @@ interface ObjectAppearanceEditorProps {
   onChooseTexture: (kind: MaterialTextureKind, slotId?: string) => void;
   projectAssets?: ProjectAssetRecord[];
   materialSlots?: readonly SelectionMaterialSlot[];
+  /** 材质预设库(编辑器刀 5):自定义预设随场景持久化;动作缺省时隐藏对应入口。 */
+  customMaterialPresets?: readonly UserMaterialPresetDefinition[] | undefined;
+  onApplyMaterialPreset?: ((values: PresetMaterialValues, label: string) => void) | undefined;
+  onSaveMaterialPreset?: ((name: string, values: PresetMaterialValues) => void) | undefined;
+  onDeleteMaterialPreset?: ((id: string) => void) | undefined;
 
 }
-
-const MATERIAL_PRESETS: ReadonlyArray<{
-  zh: string;
-  en: string;
-  value: SceneMaterialState;
-}> = [
-  {
-    zh: "混凝土",
-    en: "Concrete",
-    value: { color: "#a8a39a", roughness: 0.9, metalness: 0 },
-  },
-  {
-    zh: "拉丝金属",
-    en: "Brushed metal",
-    value: { color: "#9ba3aa", roughness: 0.28, metalness: 0.92 },
-  },
-  {
-    zh: "亮面陶瓷",
-    en: "Gloss ceramic",
-    value: { color: "#d6e4e6", roughness: 0.08, metalness: 0 },
-  },
-  {
-    zh: "工程塑料",
-    en: "Engineering plastic",
-    value: { color: "#d4a84f", roughness: 0.42, metalness: 0 },
-  },
-];
 
 const TEXTURE_CONTROLS: ReadonlyArray<{
   kind: MaterialTextureKind;
@@ -106,6 +87,10 @@ function ObjectAppearanceFields({
   particleEmitterId,
   onChooseTexture,
   projectAssets = [],
+  customMaterialPresets,
+  onApplyMaterialPreset,
+  onSaveMaterialPreset,
+  onDeleteMaterialPreset,
 }: ObjectAppearanceEditorProps) {
   const hasTexture = TEXTURE_CONTROLS.some(({ urlKey }) => Boolean(material[urlKey]));
   const [textureSettingsOpen, setTextureSettingsOpen] = useState(hasTexture);
@@ -121,17 +106,15 @@ function ObjectAppearanceFields({
           <small>PBR</small>
         </div>
 
-        <div className="material-preset-grid">
-          {MATERIAL_PRESETS.map((preset) => (
-            <button
-              key={preset.zh}
-              disabled={disabled}
-              onClick={() => onMaterialChange(preset.value)}
-            >
-              {tr(locale, preset.zh, preset.en)}
-            </button>
-          ))}
-        </div>
+        <MaterialPresetLibrary
+          locale={locale}
+          disabled={disabled}
+          capture={() => capturePresetValues(material)}
+          customPresets={customMaterialPresets}
+          onApply={(values, label) => onApplyMaterialPreset?.(values, label)}
+          onSave={onSaveMaterialPreset}
+          onDelete={onDeleteMaterialPreset}
+        />
 
         <ProjectMaterialResourcePicker locale={locale} assets={projectAssets} disabled={disabled} value={material} onApply={onMaterialChange} />
 

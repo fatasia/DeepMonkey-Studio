@@ -24,6 +24,7 @@ import type {
   ScenePhysicsState,
   ScenePostProcessingState,
   SceneSelectionSetState,
+  UserMaterialPresetDefinition,
   WeatherMode,
 } from "@bim-studio/contracts";
 import type { AppLocale } from "../i18n";
@@ -111,4 +112,7 @@ export interface SceneEditorControllerContext {
   setSceneAnimation: Setter<SceneAnimationState>;
   recordSceneEdit: (label: string) => void;
   runSceneEdit?: (change: () => void) => void;
+  /** 用户自定义材质预设（编辑器刀 5）。 */
+  userMaterialPresets: UserMaterialPresetDefinition[];
+  setUserMaterialPresets: Setter<UserMaterialPresetDefinition[]>;
 }

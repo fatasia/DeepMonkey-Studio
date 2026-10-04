@@ -114,6 +114,8 @@ export function createSceneEditorController(context: SceneEditorControllerContex
     setSceneOrganizationSelection,
     setXrPanelOpen,
     recordSceneEdit,
+    userMaterialPresets,
+    setUserMaterialPresets,
   } = context;
   const organizationCommands = createSceneOrganizationCommands(context);
   const animationCommands = createSceneAnimationCommands(context);
@@ -644,6 +646,7 @@ export function createSceneEditorController(context: SceneEditorControllerContex
 
   return {
     recordSceneEdit,
+    userMaterialPresets,
     loadModel,
     uploadModels,
     deleteModel,

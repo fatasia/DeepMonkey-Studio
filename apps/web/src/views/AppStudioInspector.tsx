@@ -91,6 +91,8 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
     updateSelectedTransform,
     updateSelectionColor,
     updateSelectionMaterial,
+    userMaterialPresets,
+    materialPresetActions,
     updateSelectionOpacity,
     updateSelectionVisibility,
   } = controller;
@@ -302,6 +304,10 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                   onMaterialChange={updateSelectionMaterial}
                   onEffectsChange={updateSelectedEffects}
                   onChooseTexture={chooseMaterialTexture}
+                  customMaterialPresets={userMaterialPresets}
+                  onApplyMaterialPreset={materialPresetActions.applyMaterialPreset}
+                  onSaveMaterialPreset={materialPresetActions.saveUserMaterialPreset}
+                  onDeleteMaterialPreset={materialPresetActions.deleteUserMaterialPreset}
                 />
                 {selected.kind === "model" && (
                   <div className="field explosion-field">

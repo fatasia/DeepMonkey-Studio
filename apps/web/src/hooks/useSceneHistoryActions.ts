@@ -50,7 +50,7 @@ export function useSceneHistoryActions({ state, history, playModeActive = false,
     sceneHistoryApplyingRef.current = true;
     try {
       // Ordinary apply swallows load failures; history must settle only a complete restore.
-      await applyScene(snapshot, false, project, false, false, false, true);
+      await applyScene(snapshot, false, project, false, false, false, true, false, undefined, false, true);
       flushSync(() => undefined);
       if (!ownsRestore()) throw new Error("场景已切换，已拒绝迟到的撤销/重做恢复，请在当前场景重试。");
       const restored = sceneSnapshotFactoryRef.current?.();

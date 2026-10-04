@@ -19,6 +19,8 @@ import { globalLightingCommand, modelEffectsCommand, modelMaterialCommand, physi
   sceneEnvironmentCommand, selectionMaterialCommand, selectionVisibilityCommand } from "../commands/engineEditCommand";
 import { translate as tr } from "../i18n";
 import { applyGroupedOrSelected } from "./sceneAppearanceDispatch";
+import { expandMaterialPreset, validateMaterialPresetValues, type PresetMaterialValues } from "../materials/industrialMaterialPresets";
+import type { UserMaterialPresetDefinition } from "@bim-studio/contracts";
 import type { SceneEditorControllerContext } from "./sceneEditorControllerContext";
 import { mergeModelEffectsPatch, type ModelEffectsPatch } from "../viewer/modelEffectState";
 
@@ -73,6 +75,8 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     setSelectedLightId,
     showError,
     recordSceneEdit,
+    userMaterialPresets,
+    setUserMaterialPresets,
   } = context;
 
   function changeWeather(mode: WeatherMode) {
@@ -273,6 +277,46 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     materialTextureRef.current?.click();
   }
 
+  /** 套用材质预设:展开为全量外观 patch,走既有 selection/model 材质命令并记入撤销历史。 */
+  function applyMaterialPreset(values: PresetMaterialValues, label: string) {
+    if (!engine) return;
+    updateSelectionMaterial(expandMaterialPreset(values));
+    recordSceneEdit(tr(locale, `套用材质预设:${label}`, `Apply material preset: ${label}`));
+    setMessage(tr(locale, `已套用材质预设“${label}”`, `Material preset “${label}” applied`));
+  }
+
+  /** 存为自定义预设:库级变更,不入撤销事务(与用户预制体同规);随场景快照持久化。 */
+  function saveUserMaterialPreset(name: string, values: PresetMaterialValues): UserMaterialPresetDefinition | undefined {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setMessage(tr(locale, "预设名称不能为空", "Preset name cannot be empty"));
+      return undefined;
+    }
+    const problems = validateMaterialPresetValues(values);
+    if (problems.length) {
+      showError(new Error(problems.join("；")));
+      return undefined;
+    }
+    const now = new Date().toISOString();
+    const preset: UserMaterialPresetDefinition = {
+      id: `matpreset:${crypto.randomUUID()}`,
+      name: trimmed,
+      createdAt: now,
+      updatedAt: now,
+      values: structuredClone(values) as SceneMaterialState,
+    };
+    setUserMaterialPresets((current) => [...current, preset]);
+    setMessage(tr(locale, `已保存材质预设“${trimmed}”`, `Material preset “${trimmed}” saved`));
+    return preset;
+  }
+
+  function deleteUserMaterialPreset(id: string) {
+    const target = userMaterialPresets.find((preset) => preset.id === id);
+    if (!target) return;
+    setUserMaterialPresets((current) => current.filter((preset) => preset.id !== id));
+    setMessage(tr(locale, `已删除材质预设“${target.name}”`, `Material preset “${target.name}” deleted`));
+  }
+
   function groupedObjectIds(includeSelected = false): string[] {
     if (!selected) return [];
     if (selectedLayerId && selectedLayerId !== "root") return includeSelected ? [selected.id] : [];
@@ -299,5 +343,10 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     updateSelectionVisibility,
     uploadMaterialTexture,
     chooseMaterialTexture,
+    materialPresetActions: {
+      applyMaterialPreset,
+      saveUserMaterialPreset,
+      deleteUserMaterialPreset,
+    },
   };
 }
