@@ -37,6 +37,11 @@ export class PbrMainBindings {
   constructor(private readonly session: DeviceSession, private readonly pipelines: Pipelines,
     private readonly frameBuffer: GPUBuffer, private shadows: PbrShadowBindingSource,
     environment: StudioEnvironment) {
+    // B1 缺陷修复(M2 真机定位):environmentRef 必须在构造期落地 —— setVirtualFrameBinding
+    // 以 `if (this.environmentRef)` 门控组 0 重建,静态环境下该字段此前恒 undefined,
+    // 虚拟档页表/atlas 永远不进绑定,主 pass 采样的是 16B 零页表 + 4×4 零 atlas 占位
+    //(表现:全域 visibility≈0 全影;B1 验收⑤的"细杆全亮"实为全影误读)。
+    this.environmentRef = environment;
     this.diffuseBuffer = uploadBuffer(session, "Deep authored diffuse irradiance", this.diffuseData, GPUBufferUsage.UNIFORM);
     let fogBuffer: GPUBuffer | undefined;
     const reflectionBuffers: GPUBuffer[] = [];

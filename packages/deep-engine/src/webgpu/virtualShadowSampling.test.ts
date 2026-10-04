@@ -79,8 +79,13 @@ describe("virtual shadow WGSL composition", () => {
 
   it("keeps the zero-hole fallback chain and page-local clamped PCSS taps in the library", () => {
     expect(VIRTUAL_SHADOW_WGSL).toContain("struct DeepVsmHit");
-    // 环内粗 mip 回退链:miss → mip+1,直到顶 mip;三环全缺 = 1.0。
-    expect(VIRTUAL_SHADOW_WGSL).toContain("if (mip >= deepVsmTopMip()) { break; }");
+    // 环内就近驻留 mip 搜索(M2 真机教训:粗向单链直达被钉住的顶 mip,细杆阴影全亮)
+    // —— 期望 mip 就近双向走查,同距先粗后细;三环全缺 = 1.0。
+    expect(VIRTUAL_SHADOW_WGSL).toContain("for (var distance = 0u; distance <= top; distance = distance + 1u)");
+    expect(VIRTUAL_SHADOW_WGSL).toContain("let fine = i32(desired) - i32(distance);");
+    // 命中细页时滤波宽度按请求足迹自宽(max(页 texel, 足迹)),细页不欠采样。
+    expect(VIRTUAL_SHADOW_WGSL).toContain("max(ringTexel * exp2(f32(coarse)), footprintWorld)");
+    expect(VIRTUAL_SHADOW_WGSL).toContain("max(ringTexel * exp2(f32(fine)), footprintWorld)");
     expect(VIRTUAL_SHADOW_WGSL).toContain("if (resolved || ring >= rings) { break; }");
     expect(VIRTUAL_SHADOW_WGSL).toContain("return result;");
     // PCSS:遮挡搜索 + 半影随遮挡距离,页内 clamp 防跨页渗色。
@@ -91,6 +96,45 @@ describe("virtual shadow WGSL composition", () => {
     expect(VIRTUAL_SHADOW_WGSL).not.toContain("fwidth(");
     const chain = VIRTUAL_SHADOW_WGSL.slice(VIRTUAL_SHADOW_WGSL.indexOf("var resolved = false;"));
     expect(chain).not.toContain("fwidth(");
+  });
+
+  // CPU 镜像(与 deepVsmResolveRing 走查逐行同构):就近驻留 mip 搜索,同距先粗后细,
+  // 命中 texelWorld = max(页 mip texel, 请求足迹)。WGSL 为字符串,功能性合同由本镜像锁定。
+  function resolveMipMirror(resident: ReadonlySet<number>, desired: number, top: number,
+    footprintScale: number): { mip: number; visited: number[]; texelScale: number } | { mip: -1; visited: number[]; texelScale: 0 } {
+    const visited: number[] = [];
+    for (let distance = 0; distance <= top; distance++) {
+      const coarse = desired + distance;
+      if (coarse <= top) {
+        visited.push(coarse);
+        if (resident.has(coarse)) {
+          return { mip: coarse, visited, texelScale: Math.max(2 ** coarse, footprintScale) };
+        }
+      }
+      if (distance === 0) continue;
+      const fine = desired - distance;
+      if (fine >= 0) {
+        visited.push(fine);
+        if (resident.has(fine)) {
+          return { mip: fine, visited, texelScale: Math.max(2 ** fine, footprintScale) };
+        }
+      }
+    }
+    return { mip: -1, visited, texelScale: 0 };
+  }
+
+  it("resolves the nearest resident mip both directions with coarse-first ties (CPU mirror)", () => {
+    // 接收像素期望 mip 3,遮挡体页物化在 mip 2(更细):必须命中 mip2 而非被钉住的顶页。
+    const missTop = resolveMipMirror(new Set([2, 7]), 3, 7, 2 ** 2.9);
+    expect(missTop).toEqual({ mip: 2, visited: [3, 4, 2], texelScale: 2 ** 2.9 });
+    // 期望页自身驻留:零走查直接命中,滤波宽度 = 页 texel(足迹更细时按足迹)。
+    expect(resolveMipMirror(new Set([3]), 3, 7, 2 ** 2.2)).toEqual({ mip: 3, visited: [3], texelScale: 2 ** 3 });
+    // 全细页缺失:粗向走查到钉住顶页(零洞合同保持)。
+    expect(resolveMipMirror(new Set([7]), 0, 7, 1)).toEqual({ mip: 7, visited: [0, 1, 2, 3, 4, 5, 6, 7], texelScale: 128 });
+    // 期望粗于驻留:同距先粗后细,粗页(4)优先于细页(2)。
+    expect(resolveMipMirror(new Set([2, 4]), 3, 7, 2 ** 3.1).mip).toBe(4);
+    // 全缺 = miss(三环全缺才返回 1.0,由 deepVirtualShadow 环链兜底)。
+    expect(resolveMipMirror(new Set(), 5, 7, 2 ** 5).mip).toBe(-1);
   });
 
   it("writes linear light depth from builtin z in page materialization fragments", () => {

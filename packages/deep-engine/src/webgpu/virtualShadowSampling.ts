@@ -83,8 +83,10 @@ export function packVirtualShadowPageTable(ringCount: number,
 
 /**
  * 虚拟阴影采样库(WGSL,依赖 DeepCascadeShadowData.params2 与 binding 3..5)。
- * - 环回退:近环足迹内页缺失 → 同环粗 mip → 上一环;三环全缺 → 1.0(覆盖域外,
- *   与 CSM beyond-last-split 同语义;环内足迹由顶 mip 钉住保证有叶,零洞);
+ * - 环回退:期望 mip 就近驻留搜索(同距先粗后细;粗向保零洞,细向保细杆阴影),
+ *   顶 mip 钉住驻留 ⇒ 覆盖域内像素恒命中(零洞);命中细页时滤波宽度按请求足迹
+ *   自宽(不欠采样),命中粗页按页 texel;三环全缺 = 1.0(覆盖域外,与 CSM
+ *   beyond-last-split 同语义);
  * - PCSS:遮挡搜索 + 半影估计,软化随 (receiver−blocker) 遮挡距离;texelWorld1.x=0 退 3×3 PCF;
  * - fwidth 只在一致控制流预计算(环梯度数组),回退链内不再取导数。
  */
@@ -133,51 +135,56 @@ fn deepVsmFetch(slot: i32, pageTexel: vec2f) -> f32 {
   return textureLoad(deepVsmAtlas, coords.xy, coords.z, 0).r;
 }
 
-/** 环内解析:期望 mip(fwidth 梯度)→ 粗 mip 链回退;全缺返回 miss。 */
+/** 单 mip 页查找(命中即装填;texelWorld 由调用方按"页 texel vs 请求足迹"裁决)。 */
+fn deepVsmResolveMip(ring: u32, mip: u32, uv: vec2f, receiverNdcZ: f32, texelWorld: f32) -> DeepVsmHit {
+  var hit = deepVsmMiss();
+  // meta 是 WGSL 保留字,局部重命名为 metaRow(语义不变)。
+  let metaRow = deepVsmMetaRow(ring, mip);
+  let tileUv = uv * vec2f(metaRow.xy);
+  let tile = floor(tileUv);
+  let layer = deepVsmLayers[metaRow.z + u32(tile.y) * u32(metaRow.x) + u32(tile.x)];
+  if (layer >= 0) {
+    hit.found = true; hit.slot = layer;
+    hit.pageTexel = (tileUv - tile) * deepVsmPageEdge();
+    hit.texelWorld = texelWorld;
+    hit.receiverDepth = receiverNdcZ;
+    hit.depthSpan = deepCascade.splitDepths0[ring];
+  }
+  return hit;
+}
+
+/** 环内解析:期望 mip(fwidth 梯度,与 CPU 物化同一 round 合同)→ 就近驻留 mip。
+ *  M2 真机教训(原"粗向单链"):细页按遮挡体屏幕误差物化(CPU desiredMip 主体是
+ *  遮挡体自身),而着色端期望 mip 按接收像素足迹计算 —— 接收点比遮挡体远时期望
+ *  更粗,粗向链直达被钉住的顶 mip(10.9cm/texel,细杆不可见)且永不回试细页。
+ *  就近代价序(同距先粗后细)取最近驻留页:细页只提升密度,tap 半径按请求足迹
+ *  自宽,无欠采样风险。 */
 fn deepVsmResolveRing(ring: u32, receiver: vec3f, px: vec2f) -> DeepVsmHit {
   let clip = deepCascade.matrices[ring] * vec4f(receiver, 1.0);
   if (clip.w <= 0.0) { return deepVsmMiss(); }
   let ndc = clip.xyz / clip.w;
   let uv = ndc.xy * vec2f(0.5, -0.5) + vec2f(0.5);
   if (any(uv < vec2f(0.0)) || any(uv > vec2f(1.0)) || ndc.z < 0.0 || ndc.z > 1.0) { return deepVsmMiss(); }
-  // 期望 mip 与 CPU 物化端同一 round 合同(Math.round(log2(期望texel/环texel))):
-  // ceil 会使着色端比物化端粗一档,细页命中失败退到粗环,边缘锯齿恶化(真机①门教训)。
+  // 期望 mip 与 CPU 物化端同一 round 合同(Math.round(log2(期望texel/环texel)))。
   let pixelsPerVirtualTexel = max(max(px.x, px.y), 0.000001) * deepCascade.texelWorld0.w;
   let mipLog = log2(pixelsPerVirtualTexel);
   let desired = clamp(u32(select(0.0, floor(mipLog + 0.5), mipLog >= 0.0)), 0u, deepVsmTopMip());
   let ringTexel = deepCascade.texelWorld0[ring];
+  // 请求足迹(未取整):命中更细页时滤波宽度仍按它展开(9 tap 摊在足迹上,
+  // 等价采样粗 mip 但内容来自细页 —— 细杆阴影不丢,边缘无细页欠采样锯齿)。
+  let footprintWorld = ringTexel * exp2(mipLog);
+  let top = deepVsmTopMip();
   var hit = deepVsmMiss();
-  var mip = desired;
-  loop {
-    // meta 是 WGSL 保留字,局部重命名为 metaRow(语义不变)。
-    let metaRow = deepVsmMetaRow(ring, mip);
-    let tileUv = uv * vec2f(metaRow.xy);
-    let tile = floor(tileUv);
-    let layer = deepVsmLayers[metaRow.z + u32(tile.y) * u32(metaRow.x) + u32(tile.x)];
-    if (layer >= 0) {
-      hit.found = true; hit.slot = layer;
-      hit.pageTexel = (tileUv - tile) * deepVsmPageEdge();
-      hit.texelWorld = ringTexel * exp2(f32(mip));
-      hit.receiverDepth = ndc.z;
-      hit.depthSpan = deepCascade.splitDepths0[ring];
-      break;
+  for (var distance = 0u; distance <= top; distance = distance + 1u) {
+    if (hit.found) { break; }
+    let coarse = desired + distance;
+    if (coarse <= top) {
+      hit = deepVsmResolveMip(ring, coarse, uv, ndc.z, max(ringTexel * exp2(f32(coarse)), footprintWorld));
     }
-    if (mip >= deepVsmTopMip()) { break; }
-    mip = mip + 1u;
-  }
-  // 粗向走查全缺时回试一档更细页(梯度与 CPU 物化 ±1 的残差;细页只提升密度,
-  // tap 半径按命中页 texelWorld 自缩放,无欠采样风险)。
-  if (!hit.found && desired > 0u) {
-    let metaRow = deepVsmMetaRow(ring, desired - 1u);
-    let tileUv = uv * vec2f(metaRow.xy);
-    let tile = floor(tileUv);
-    let layer = deepVsmLayers[metaRow.z + u32(tile.y) * u32(metaRow.x) + u32(tile.x)];
-    if (layer >= 0) {
-      hit.found = true; hit.slot = layer;
-      hit.pageTexel = (tileUv - tile) * deepVsmPageEdge();
-      hit.texelWorld = ringTexel * exp2(f32(desired - 1u));
-      hit.receiverDepth = ndc.z;
-      hit.depthSpan = deepCascade.splitDepths0[ring];
+    if (hit.found || distance == 0u) { continue; }
+    let fine = i32(desired) - i32(distance);
+    if (fine >= 0) {
+      hit = deepVsmResolveMip(ring, u32(fine), uv, ndc.z, max(ringTexel * exp2(f32(fine)), footprintWorld));
     }
   }
   return hit;
