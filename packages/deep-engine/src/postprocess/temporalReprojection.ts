@@ -19,7 +19,9 @@ export interface ReprojectionPolicy {
   readonly fallbackAcceptedRatio: number;
   /** Mean |clampedHistory - current| (RGB) above this decays the feedback. */
   readonly maxHistoryError: number;
-  /** Feedback multiplier applied while decayed; 0.35^3 keeps 3-frame ghost under 5%. */
+  /** Feedback multiplier applied while decayed; two decayed frames land frame 3 at
+   * feedback * decayFactor^2 * flipContrast, so 0.1 keeps a full-contrast flip under 1%
+   * (AA-M2 gate) at frame 3 even after full feedback resumes below maxHistoryError. */
   readonly decayFactor: number;
 }
 
@@ -27,12 +29,14 @@ export interface ReprojectionPolicy {
 export const BASELINE_REPROJECTION_POLICY: ReprojectionPolicy = Object.freeze({
   fallbackAcceptedRatio: 0, maxHistoryError: Infinity, decayFactor: 1 });
 /**
- * Strong-contrast ghost policy: the decay threshold equals the 5%-of-contrast
- * acceptance line, so once the decaying residual (feedback * decayFactor per frame)
- * crosses it, full feedback resumes below the acceptance bound instead of rebounding.
+ * Strong-contrast ghost policy (AA-M2): the decay threshold stays on the 5%-of-contrast
+ * acceptance line so the trigger surface is unchanged, while the decayed feedback
+ * (feedback * 0.1) rejects matching-depth content changes hard enough that a
+ * full-contrast flip is under 1% of source contrast by frame 3 (two decayed frames,
+ * then full feedback resumes below maxHistoryError with the residual already at ~0.7%).
  */
 export const GHOST_GUARD_REPROJECTION_POLICY: ReprojectionPolicy = Object.freeze({
-  fallbackAcceptedRatio: 0.25, maxHistoryError: 0.05, decayFactor: 0.35 });
+  fallbackAcceptedRatio: 0.25, maxHistoryError: 0.05, decayFactor: 0.1 });
 
 export interface ReprojectionDecision {
   readonly mode: ReprojectionMode;

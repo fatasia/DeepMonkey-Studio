@@ -51,7 +51,7 @@ describe("temporal reprojection reference (T07)", () => {
     expect(accumulateTemporalFrame(input, options, BASELINE_REPROJECTION_POLICY)[0]).toBeCloseTo(0.9, 6);
     const guarded = accumulateTemporalFrameDetailed(input, options, GHOST_GUARD_REPROJECTION_POLICY);
     expect(guarded.decisions.every(decision => decision.mode === "temporal-decayed")).toBe(true);
-    expect(guarded.output[0]).toBeCloseTo(0.9 * 0.35, 6);
+    expect(guarded.output[0]).toBeCloseTo(options.feedback * GHOST_GUARD_REPROJECTION_POLICY.decayFactor, 6);
     expect(guarded.decisions[0]!.effectiveFeedback).toBeCloseTo(options.feedback * GHOST_GUARD_REPROJECTION_POLICY.decayFactor, 12);
   });
 
@@ -97,11 +97,15 @@ describe("temporal reprojection reference (T07)", () => {
     const guarded = run(GHOST_GUARD_REPROJECTION_POLICY);
     const baseline = run(BASELINE_REPROJECTION_POLICY);
     expect(guarded.passesWithin3Frames).toBe(true);
-    // Interior pixels decay by feedback*decayFactor each frame; border pixels whose 3x3
-    // window leaves the image clamp tighter, so frame 0 sits just below the pure product.
-    expect(guarded.energies[0]).toBeGreaterThan(0.2);
+    // Interior pixels decay by feedback*decayFactor for the first two frames (the residual
+    // stays above maxHistoryError), then frame 3 resumes full feedback with the residual
+    // already below the AA-M2 1% gate; border pixels whose 3x3 window leaves the image
+    // clamp tighter, so frame 0 sits just below the pure product.
+    expect(guarded.energies[0]).toBeGreaterThan(0.05);
     expect(guarded.energies[0]).toBeLessThan(options.feedback * GHOST_GUARD_REPROJECTION_POLICY.decayFactor + 1e-6);
-    expect(guarded.firstPassingFrame).toBe(2);
+    expect(guarded.firstPassingFrame).toBe(1);
+    // AA-M2 hard gate: frame-3 residual under 1% of source contrast (was 2.93% at decayFactor 0.35).
+    expect(guarded.energies[2]).toBeLessThan(0.01);
     // The baseline must be measurably worse: the decision layer, not the base TAA, delivers the target.
     expect(baseline.energies[2]).toBeGreaterThan(0.05);
     expect(baseline.energies[2]).toBeGreaterThan(guarded.energies[2]);
@@ -125,6 +129,44 @@ describe("temporal reprojection reference (T07)", () => {
     const barReport = measureGhostSequence(resolvedBar, idealBar, 1);
     expect(barReport.passesWithin3Frames).toBe(true);
     expect(barReport.firstPassingFrame).toBeLessThanOrEqual(2);
+  });
+
+  it("keeps a move-then-stop scene under 1% within 3 frames (second motion type)", () => {
+    const width = 32, height = 8, pixels = width * height;
+    // A 2px-wide bar slides 4px/frame for 4 frames with correct motion vectors and then
+    // stops at uniform depth, so depth rejection is blind and the motion trail can only
+    // be cleared by the clamp plus the decay trigger — the stop-ghost counterpart of the
+    // flip scene above, guarding the AA-M2 gate against flip-scene-only tuning.
+    const moveStopFrame = (barStart: number, shift: number) => {
+      const inBar = (column: number) => column >= barStart && column < barStart + 2;
+      return {
+        color: Array.from({ length: pixels * 4 }, (_, i) =>
+          i % 4 === 3 ? 1 : inBar((i / 4 | 0) % width) ? 1 : 0),
+        depth: Array<number>(pixels).fill(12),
+        motion: Array.from({ length: pixels * 2 }, (_, i) =>
+          i % 2 === 0 && inBar((i / 2 | 0) % width) ? shift / width : 0) };
+    };
+    const run = (policy: ReprojectionPolicy) => {
+      const starts = [4, 8, 12, 16, 16, 16, 16];
+      const resolved: Float32Array[] = [], ideal: Array<readonly number[]> = [];
+      let previousColor: ArrayLike<number> | undefined, previousDepth: ArrayLike<number> | undefined;
+      for (let frame = 0; frame < 7; frame++) {
+        const current = moveStopFrame(starts[frame]!, frame < 4 ? 4 : 0);
+        resolved.push(accumulateTemporalFrame({ width, height, ...current,
+          ...(previousColor ? { previousColor, previousDepth } : {}), currentJitter: jitter, previousJitter: jitter,
+          historyValid: frame > 0 }, options, policy));
+        ideal.push(current.color);
+        previousColor = Array.from(resolved[frame]!); previousDepth = current.depth;
+      }
+      return measureGhostSequence(resolved.slice(4), ideal.slice(4), 1);
+    };
+    const guarded = run(GHOST_GUARD_REPROJECTION_POLICY);
+    const baseline = run(BASELINE_REPROJECTION_POLICY);
+    // AA-M2 gate on the second scene type; the decision layer must beat the baseline here
+    // (the stale motion trail is exactly the matching-depth content change the decay targets).
+    expect(guarded.energies[2]).toBeLessThan(0.01);
+    expect(guarded.energies[2]).toBeLessThan(baseline.energies[2]);
+    expect(guarded.passesWithin3Frames).toBe(true);
   });
 
   it("rejects invalid reprojection inputs", () => {

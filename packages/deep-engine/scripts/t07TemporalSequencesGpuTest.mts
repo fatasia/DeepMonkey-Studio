@@ -30,15 +30,17 @@ const MASK_ROWS: readonly [number, number] = [0.3, 0.45], MASK_COVERAGE = 128;
 const MV_TOLERANCE_UV = 1.5e-3, TAA_PARITY_TOLERANCE = 0.02, FRAME_PARITY_TOLERANCE = 5e-3;
 
 
-/** 生产 TAA WGSL + ghost-guard 决策注入(与 temporalReprojection.GHOST_GUARD 同式);生产体漂移则 fail-fast。 */
+/** 生产 TAA WGSL + ghost-guard 决策注入(与 temporalReprojection.GHOST_GUARD 同式;常量由
+ *  策略对象模板化生成,生产体或策略漂移均 fail-fast)。 */
 function deriveGuardWgsl(): string {
   const anchor = "resolved = mix(color.rgb, clampedHistory, temporalParams.tuning.x * (1.0 - reactive));";
   if (!TEMPORAL_AA_WGSL.includes(anchor)) throw new Error("Production TAA WGSL drifted; ghost-guard injection anchor missing.");
+  const { fallbackAcceptedRatio, maxHistoryError, decayFactor } = GHOST_GUARD_REPROJECTION_POLICY;
   const body = `{
         // T07 decision layer (mirrors postprocess/temporalReprojection.ts GHOST_GUARD_REPROJECTION_POLICY):
-        // acceptedRatio < 0.25 -> 3x3 neighborhood box fallback; mean clamped-history error > 0.05 -> decay feedback x0.35.
+        // acceptedRatio < ${fallbackAcceptedRatio} -> 3x3 neighborhood box fallback; mean clamped-history error > ${maxHistoryError} -> decay feedback x${decayFactor}.
         let acceptedRatio = historicalColor.a;
-        if (acceptedRatio < 0.25) {
+        if (acceptedRatio < ${fallbackAcceptedRatio}) {
           var boxMean = vec3f(0.0);
           for (var oy = -1; oy <= 1; oy++) { for (var ox = -1; ox <= 1; ox++) {
             let neighbor = clamp(coordinate + vec2<i32>(ox, oy), vec2<i32>(0), vec2<i32>(size) - 1);
@@ -48,7 +50,7 @@ function deriveGuardWgsl(): string {
         } else {
           let historyError = dot(abs(clampedHistory - color.rgb), vec3f(1.0)) / 3.0;
           var feedback = temporalParams.tuning.x * (1.0 - reactive);
-          if (historyError > 0.05) { feedback = feedback * 0.35; }
+          if (historyError > ${maxHistoryError}) { feedback = feedback * ${decayFactor}; }
           resolved = mix(color.rgb, clampedHistory, feedback);
         }
       }`;
