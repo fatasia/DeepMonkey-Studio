@@ -6,6 +6,7 @@ import { SceneEnvironmentPanel } from "../../components/SceneEnvironmentPanel";
 import { ScenePhysicsPanel } from "../../components/ScenePhysicsPanel";
 import { PhysicsDebugPanel } from "../../components/PhysicsDebugPanel";
 import { QualityTelemetryPanel } from "../../components/QualityTelemetryPanel";
+import { ProfilerSwimlanePanel } from "../../components/ProfilerSwimlanePanel";
 import { DevHud } from "../../components/DevHud";
 import { ExperimentalFeaturesPanel } from "../../components/ExperimentalFeaturesPanel";
 import { LightingBakeBenchPanel } from "../../components/LightingBakeBenchPanel";
@@ -23,7 +24,7 @@ import type { AppStudioPhysicsDebugState } from "./useAppStudioPhysicsDebugState
  */
 export function AppStudioViewportStudioPanels({ controller, toggles, physicsDebug, probeBake, bakeProbeGrid, xrAuthorBackend }: {
   controller: AppStudioController;
-  toggles: Pick<AppStudioViewportToggles, "engineeringOpen" | "setEngineeringOpen" | "qualityPanelOpen" | "setQualityPanelOpen" | "devHudOpen" | "setDevHudOpen" | "experimentalPanelOpen" | "setExperimentalPanelOpen" | "bakeBenchOpen" | "setBakeBenchOpen">;
+  toggles: Pick<AppStudioViewportToggles, "engineeringOpen" | "setEngineeringOpen" | "qualityPanelOpen" | "setQualityPanelOpen" | "profilerPanelOpen" | "setProfilerPanelOpen" | "devHudOpen" | "setDevHudOpen" | "experimentalPanelOpen" | "setExperimentalPanelOpen" | "bakeBenchOpen" | "setBakeBenchOpen">;
   physicsDebug: Pick<AppStudioPhysicsDebugState, "physicsDebugVisible" | "setPhysicsDebugVisible" | "physicsDebugFilter" | "setPhysicsDebugFilter" | "physicsDebugLayers" | "setPhysicsDebugLayers" | "physicsDebugPanelOpen" | "setPhysicsDebugPanelOpen">;
   probeBake: ProbeGridBakeUiState;
   bakeProbeGrid: (grid: ProbeGridBakeGrid) => void;
@@ -160,6 +161,13 @@ export function AppStudioViewportStudioPanels({ controller, toggles, physicsDebu
           locale={locale}
           engine={engine ?? undefined}
           onClose={() => toggles.setQualityPanelOpen(false)}
+        />
+      )}
+      {route.view === "studio" && toggles.profilerPanelOpen && (
+        <ProfilerSwimlanePanel
+          locale={locale}
+          engine={engine ?? undefined}
+          onClose={() => toggles.setProfilerPanelOpen(false)}
         />
       )}
       {route.view === "studio" && toggles.devHudOpen && (

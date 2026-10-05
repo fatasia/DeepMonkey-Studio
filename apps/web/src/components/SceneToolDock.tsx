@@ -70,6 +70,9 @@ interface SceneToolDockProps {
   physicsDebugActive?: boolean;
   qualityPanelOpen: boolean;
   onQualityPanelToggle: () => void;
+  /** 六引擎对标 P2:作者级 Profiler 泳道面板;默认关,本菜单开。 */
+  profilerPanelOpen?: boolean;
+  onProfilerPanelToggle?: () => void;
   /** 刀 6:开发者 HUD(性能观测小条,F9 亦可开关);开关挂「查看与分析」菜单,默认关。 */
   devHudOpen?: boolean;
   onDevHudToggle?: () => void;
@@ -364,6 +367,7 @@ export function SceneToolDock(props: SceneToolDockProps) {
           props.behaviorOpen ||
           props.physicsOpen ||
           props.qualityPanelOpen ||
+          props.profilerPanelOpen === true ||
           props.experimentalPanelOpen === true ||
           props.bakeBenchOpen ||
           props.xrOpen ||
@@ -393,6 +397,12 @@ export function SceneToolDock(props: SceneToolDockProps) {
           icon={<Gauge size={15} />}
           active={props.qualityPanelOpen}
           onClick={() => run(props.onQualityPanelToggle)}
+        />
+        <MenuAction
+          label={tr(props.locale, "性能剖析", "Profiler")}
+          icon={<Activity size={15} />}
+          active={props.profilerPanelOpen === true}
+          onClick={() => run(() => props.onProfilerPanelToggle?.())}
         />
         <MenuAction
           label={tr(props.locale, "实验性功能", "Experimental features")}

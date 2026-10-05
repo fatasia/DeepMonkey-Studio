@@ -15,6 +15,9 @@ export interface AppStudioViewportToggles {
   readonly setEngineeringOpen: Dispatch<SetStateAction<boolean>>;
   readonly qualityPanelOpen: boolean;
   readonly setQualityPanelOpen: Dispatch<SetStateAction<boolean>>;
+  // 六引擎对标 P2:作者级 Profiler 泳道面板开态;默认关,工具坞「仿真与开发」菜单开。
+  readonly profilerPanelOpen: boolean;
+  readonly setProfilerPanelOpen: Dispatch<SetStateAction<boolean>>;
   readonly devHudOpen: boolean;
   readonly setDevHudOpen: Dispatch<SetStateAction<boolean>>;
   readonly experimentalPanelOpen: boolean;
@@ -27,6 +30,8 @@ export function useAppStudioViewportToggles(): AppStudioViewportToggles {
   const [viewerObjectPanelOpen, setViewerObjectPanelOpen] = useState(false);
   const [engineeringOpen, setEngineeringOpen] = useState(false);
   const [qualityPanelOpen, setQualityPanelOpen] = useState(false);
+  // 六引擎对标 P2:作者级 Profiler 泳道面板开态;默认关,工具坞「仿真与开发」菜单开。
+  const [profilerPanelOpen, setProfilerPanelOpen] = useState(false);
   // 刀 6:开发者 HUD(性能观测小条)开态;默认关,F9 或工具坞「查看与分析」菜单开。
   const [devHudOpen, setDevHudOpen] = useState(false);
   // 配置易用性:实验性功能面板(URL opt-in 开关集中呈递)开态;默认关,工具坞「仿真与开发」菜单开。
@@ -49,6 +54,7 @@ export function useAppStudioViewportToggles(): AppStudioViewportToggles {
     viewerObjectPanelOpen, setViewerObjectPanelOpen,
     engineeringOpen, setEngineeringOpen,
     qualityPanelOpen, setQualityPanelOpen,
+    profilerPanelOpen, setProfilerPanelOpen,
     devHudOpen, setDevHudOpen,
     experimentalPanelOpen, setExperimentalPanelOpen,
     bakeBenchOpen, setBakeBenchOpen,

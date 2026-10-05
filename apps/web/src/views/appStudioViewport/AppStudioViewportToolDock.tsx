@@ -16,7 +16,7 @@ import type { AppStudioSimulationDockState } from "./useAppStudioSimulationDock"
  */
 export function AppStudioViewportToolDock({ controller, toggles, physicsDebug, simulation, viewerExplosionActive, onToggleViewerExplosion, xrUnavailableReason }: {
   controller: AppStudioController;
-  toggles: Pick<AppStudioViewportToggles, "viewerObjectPanelOpen" | "setViewerObjectPanelOpen" | "engineeringOpen" | "setEngineeringOpen" | "qualityPanelOpen" | "setQualityPanelOpen" | "devHudOpen" | "setDevHudOpen" | "experimentalPanelOpen" | "setExperimentalPanelOpen" | "bakeBenchOpen" | "setBakeBenchOpen">;
+  toggles: Pick<AppStudioViewportToggles, "viewerObjectPanelOpen" | "setViewerObjectPanelOpen" | "engineeringOpen" | "setEngineeringOpen" | "qualityPanelOpen" | "setQualityPanelOpen" | "profilerPanelOpen" | "setProfilerPanelOpen" | "devHudOpen" | "setDevHudOpen" | "experimentalPanelOpen" | "setExperimentalPanelOpen" | "bakeBenchOpen" | "setBakeBenchOpen">;
   physicsDebug: Pick<AppStudioPhysicsDebugState, "physicsDebugVisible">;
   simulation: Pick<AppStudioSimulationDockState, "simulationPanelId" | "toggleSimulationPanel" | "directorWorkspace" | "openDirector" | "setSimulationTrack">;
   viewerExplosionActive: boolean;
@@ -134,6 +134,8 @@ export function AppStudioViewportToolDock({ controller, toggles, physicsDebug, s
           physicsDebugActive={physicsDebug.physicsDebugVisible}
           qualityPanelOpen={toggles.qualityPanelOpen}
           onQualityPanelToggle={() => toggles.setQualityPanelOpen(value => !value)}
+          profilerPanelOpen={toggles.profilerPanelOpen}
+          onProfilerPanelToggle={() => toggles.setProfilerPanelOpen(value => !value)}
           devHudOpen={toggles.devHudOpen}
           onDevHudToggle={() => toggles.setDevHudOpen(value => !value)}
           experimentalPanelOpen={toggles.experimentalPanelOpen}
