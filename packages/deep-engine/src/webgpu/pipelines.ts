@@ -379,10 +379,16 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   const shadowMaterialLayout = device.createPipelineLayout({ label: "Deep shadow material layout",
     bindGroupLayouts: [shadowFrameLayout, material] });
   const shadowPipelines = new Map<string, GPURenderPipeline>(), pendingShadow: Array<Promise<GPURenderPipeline>> = [], pendingShadowKeys: string[] = [];
+  // 分级重上(2026-10-06,双前置已清):subset 路径 critical 只保 shadow solid×3 raster
+  // (首帧投影必需),mask 两档与 authored 变体 release 后同流补齐——就绪前 mask batch 经
+  // packetDraw 的 solid 回退按实心投影(与页物化同 documented 简化)。此前真机卡死根因
+  // (validate 与构造期 pending 创建的 popErrorScope 并发窗口)已由超时守卫(e0d9788b)+
+  // pageShadow 错峰(6987f0d8)消除。直调路径(无 firstFrameKeys)保持全量旧语义。
+  const shadowDeferred = firstFrameKeys !== undefined;
+  const deferredShadowFactories: Array<{ readonly key: string; readonly create: () => Promise<GPURenderPipeline> }> = [];
   for (const authored of directDisplayOneCascade ? [false, true] : [false]) for (const mode of ["solid", "maskPlain", "maskMaterial"] as const) for (const raster of ["ccw", "cw", "double"] as const) {
     const key = (authored ? "author/" : "") + shadowPipelineKey(mode, raster), doubleSided = raster === "double";
-    pendingShadowKeys.push(key);
-    pendingShadow.push(track(shadowPipelines, key, createCriticalPipeline({
+    const descriptor: GPURenderPipelineDescriptor = {
       label: `Deep shadow ${key}`, layout: mode === "maskMaterial" ? shadowMaterialLayout : shadowPlainLayout,
       vertex: { module, entryPoint: deformation ? mode === "solid" ? "shadowDeformed" : "shadowMaskDeformed"
         : mode === "solid" ? "shadowMain" : "shadowMaskMain",
@@ -390,7 +396,13 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
       ...(mode === "solid" ? {} : { fragment: { module, entryPoint: mode === "maskPlain" ? "shadowMaskPlain" : "shadowMaskTextured", targets: [] } }),
       primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : authored ? "front" : "back", frontFace: raster === "cw" ? "cw" : "ccw" },
       depthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less", depthBias: authored ? 0 : 1, depthBiasSlopeScale: authored ? 0 : 1 },
-    })));
+    };
+    if (!shadowDeferred || (mode === "solid" && !authored)) {
+      pendingShadowKeys.push(key);
+      pendingShadow.push(track(shadowPipelines, key, createCriticalPipeline(descriptor)));
+    } else {
+      deferredShadowFactories.push({ key, create: () => device.createRenderPipelineAsync(descriptor) });
+    }
   }
   // B1 Brief-VSM 虚拟阴影页物化管线:与级联阴影同顶点/同键位,片元额外把线性光深
   // (builtin z,WebGPU 0..1)写进 r32float 页 atlas;depth32float 附件仍承担近者胜。
@@ -471,8 +483,11 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     // (仅 4 条,无排序需求),release 后并发创建即可。
     const pendingPages = deferredPageShadowFactories.map(({ key, create }) =>
       track(pageShadowPipelines, key, create()));
+    // 分级重上:mask/authored shadow 15 变体同流补齐(就绪前 mask batch 走 solid 回退)。
+    const pendingShadowVariants = deferredShadowFactories.map(({ key, create }) =>
+      track(shadowPipelines, key, create()));
     const value = (await Promise.all(pending)).length;
-    await Promise.all(pendingPages);
+    await Promise.all([...pendingPages, ...pendingShadowVariants]);
     markPipeline("main-ready");
     // C26 跨会话预热计划回写:本次实测编译样本入 localStorage(fail-open;
     // 缓存命中/失败样本经 pipelineWarmupEntriesFromLedger 排除,浏览器外静默跳过)。
@@ -483,7 +498,7 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     } catch { /* fail-open */ }
     return value;
   });
-  if (deferredMains.length === 0 && deferredPageShadowFactories.length === 0) releaseDeferredQueues?.();
+  if (deferredMains.length === 0 && deferredPageShadowFactories.length === 0 && deferredShadowFactories.length === 0) releaseDeferredQueues?.();
   // B1 Brief-VSM:页物化管线失败同样让 ready 拒绝(不静默;虚拟档 opt-in 构造即需可用)。
   const ready = Promise.all([deferredMainReady, displayReady, directionalReady, shadowReady, pageShadowReady, outputPipelineReady])
     .then(() => { markPipeline("ready"); });

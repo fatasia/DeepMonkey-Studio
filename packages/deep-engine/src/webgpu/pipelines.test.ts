@@ -249,7 +249,9 @@ describe("first-frame critical pipeline subset", () => {
     expect(build.pipelines.mainPipelines.size).toBe(2);
     expect(build.pipelines.main).toBeDefined();
     expect(f.descriptors.filter(descriptor => descriptor.label?.startsWith("Deep forward"))).toHaveLength(2);
-    expect(build.pipelines.shadowPipelines.size).toBe(9);
+    // 分级重上(双前置已清):subset 路径 release 前 shadow 仅 solid×3(critical);
+    // mask 两档+authored 变体(此场景 authored 关 = 6 条)release 后同流补齐。
+    expect(build.pipelines.shadowPipelines.size).toBe(3);
     // 分级重上前置②:subset 路径(外部 release 承诺)release 前页管线零创建,
     // validate 提前不再与 pending 创建形成 popErrorScope 并发窗口。
     expect(build.pipelines.pageShadowPipelines.size).toBe(0);
@@ -259,8 +261,12 @@ describe("first-frame critical pipeline subset", () => {
     // AA-M2:MSAA4 档 depth ×a2c → 27 条 main。
     expect(build.pipelines.mainPipelines.size).toBe(27);
     expect(build.pipelines.mainPipelines.get("material/blend/ccw")).toBeDefined();
-    // release 后非虚拟档页管线(clear+solid×3)补齐。
+    // release 后非虚拟档页管线(clear+solid×3)补齐;shadow 集回到 9,
+    // mask batch 就绪前经 solid 回退(就绪后按 key 恢复逐像素掩码)。
     expect(build.pipelines.pageShadowPipelines.size).toBe(4);
+    expect(build.pipelines.shadowPipelines.size).toBe(9);
+    expect(build.pipelines.shadowPipelines.get("maskPlain/ccw")).toBeDefined();
+    expect(build.pipelines.shadowPipelines.get("maskMaterial/double")).toBeDefined();
   });
 
   it("keeps the full critical path when no subset is requested", async () => {
