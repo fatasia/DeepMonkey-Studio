@@ -76,10 +76,12 @@ fn fogged_hdr(position: vec4f) -> vec4f {
 
 @fragment fn fragment_srgb_target(input: OutputVertex) -> @location(0) vec4f {
   let hdr = fogged_hdr(input.position);
-  return vec4f(aces(author_grading_apply(hdr.rgb)), hdr.a);
+  let vignette_uv = input.position.xy / vec2f(textureDimensions(hdr_color));
+  return vec4f(aces(author_grading_apply(hdr.rgb, vignette_uv)), hdr.a);
 }
 
 @fragment fn fragment_unorm_target(input: OutputVertex) -> @location(0) vec4f {
   let hdr = fogged_hdr(input.position);
-  return vec4f(linear_to_srgb(aces(author_grading_apply(hdr.rgb))), hdr.a);
+  let vignette_uv = input.position.xy / vec2f(textureDimensions(hdr_color));
+  return vec4f(linear_to_srgb(aces(author_grading_apply(hdr.rgb, vignette_uv))), hdr.a);
 }

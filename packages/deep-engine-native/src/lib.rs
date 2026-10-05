@@ -72,6 +72,9 @@ pub mod pbr_reference;
 pub mod pbr_texture;
 pub mod platform_text;
 pub mod player_view;
+/// native 后处理域(与 web postprocess 域对应):spatial_aa = FXAA
+/// (Three r185 逐式移植 + CPU 镜像,登记 supported/harness-only)。
+pub mod postprocess;
 pub mod probe_gi_abi;
 /// F3 探针网格头合同与三线性采样 CPU 参考（与 WGSL 逐式对拍）。
 pub mod probe_gi_grid;

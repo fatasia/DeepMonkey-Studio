@@ -169,6 +169,42 @@ fn grading_profile_decodes_six_channels_with_optional_channels_defaulting_to_zer
     assert!(decoded.grading.unwrap().is_neutral());
 }
 
+/// 渐晕启用批(2026-10-06):v9 colorGrading 可选 vignetteDarkness 解码进
+/// AuthorGrading——声明即 switches.y=1/darkness 进 pack;缺省/旧包恒 None;
+/// 越界 fail-closed。
+#[test]
+fn grading_profile_decodes_optional_vignette_darkness() {
+    // 声明 vignetteDarkness=1.5 → pack switches=[1,1,1,1.5,...](TS pack 同位)。
+    let mut with_vignette = grading_source();
+    with_vignette["colorGrading"] = serde_json::json!({"hue":30,"saturation":0.5,
+            "brightness":-0.25,"contrast":0.1,"temperature":0.8,"tint":-0.4,
+            "vignetteDarkness":1.5});
+    let decoded = decode(&with_vignette, "scene.environment", 1).unwrap();
+    assert_eq!(
+        decoded.grading.unwrap().pack(),
+        [
+            1.0, 1.0, 1.0, 1.5, 30.0, 0.5, -0.25, 0.1, 0.8, -0.4, 0.0, 0.0
+        ]
+    );
+    // 仅渐晕(六通道全零):非中性,pack 带暗角槽位。
+    let mut vignette_only = grading_source();
+    vignette_only["colorGrading"] = serde_json::json!({"hue":0,"saturation":0,
+            "brightness":0,"contrast":0,"vignetteDarkness":0.0});
+    let decoded = decode(&vignette_only, "scene.environment", 1).unwrap();
+    let grading = decoded.grading.unwrap();
+    assert!(!grading.is_neutral());
+    assert_eq!(grading.pack()[0..4], [1.0, 1.0, 1.0, 0.0]);
+    // 未声明 = 不启用(既有包逐字节不变,由上方六通道测试锚定)。
+    // 越界/类型非法 fail-closed(TS scalar 同域 [0,3])。
+    for invalid in [serde_json::json!(3.0001), serde_json::json!(-0.1),
+                    serde_json::json!("1.5"), serde_json::json!(1e300)] {
+        let mut bad = grading_source();
+        bad["colorGrading"] = serde_json::json!({"hue":0,"saturation":0,
+                "brightness":0,"contrast":0,"vignetteDarkness":invalid});
+        assert!(decode(&bad, "scene.environment", 1).is_err(), "vignette {invalid} must be rejected");
+    }
+}
+
 /// 旧包兼容与 fail-closed：旧档带 colorGrading 拒绝、v9 缺字段/越界/
 /// 未知字段/变换名错误拒绝。
 #[test]

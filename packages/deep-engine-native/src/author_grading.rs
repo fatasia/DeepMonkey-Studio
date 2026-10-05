@@ -34,7 +34,14 @@ pub struct AuthorGrading {
     temperature: f32,
     /// 色调（绿-品红），[-1, 1]。
     tint: f32,
+    /// 渐晕暗角（Three r185 Vignette 同式）：Some(darkness) 启用，darkness ∈ [0, 3]；
+    /// None 恒未启用（槽位保留口径的 2026-10-06 启用批，与 Web
+    /// `PbrAuthorColorEffects.vignette` 同合同）。
+    vignette_darkness: Option<f32>,
 }
+
+/// TS `scalar(vignette.darkness, 0, 3)` 的合法区间。
+pub const VIGNETTE_DARKNESS_RANGE: (f32, f32) = (0.0, 3.0);
 
 impl AuthorGrading {
     /// 六通道全零的精确中性档；等价于不声明 colorGrading 的旧运行包。
@@ -45,6 +52,7 @@ impl AuthorGrading {
         contrast: 0.0,
         temperature: 0.0,
         tint: 0.0,
+        vignette_darkness: None,
     };
 
     /// fail-fast 构造：有限性 + 范围与 TS `scalar()` 的 min/max 一致。
@@ -56,6 +64,27 @@ impl AuthorGrading {
         temperature: f32,
         tint: f32,
     ) -> Result<Self, String> {
+        Self::new_with_vignette(
+            hue,
+            saturation,
+            brightness,
+            contrast,
+            temperature,
+            tint,
+            None,
+        )
+    }
+
+    /// 带渐晕的构造：vignette_darkness = Some(d) 启用暗角（d ∈ [0,3]，fail-fast）。
+    pub fn new_with_vignette(
+        hue: f32,
+        saturation: f32,
+        brightness: f32,
+        contrast: f32,
+        temperature: f32,
+        tint: f32,
+        vignette_darkness: Option<f32>,
+    ) -> Result<Self, String> {
         let grading = Self {
             hue,
             saturation,
@@ -63,6 +92,7 @@ impl AuthorGrading {
             contrast,
             temperature,
             tint,
+            vignette_darkness,
         };
         const HUE_RANGE: (f32, f32) = (-180.0, 180.0);
         const CHANNEL_RANGE: (f32, f32) = (-1.0, 1.0);
@@ -80,10 +110,18 @@ impl AuthorGrading {
                 ));
             }
         }
+        if let Some(darkness) = grading.vignette_darkness {
+            let (min, max) = VIGNETTE_DARKNESS_RANGE;
+            if !darkness.is_finite() || !(min..=max).contains(&darkness) {
+                return Err(format!(
+                    "author vignette darkness must be finite and within {min}..={max}"
+                ));
+            }
+        }
         Ok(grading)
     }
 
-    /// 六通道全零即精确中性（负零同样视为零）。
+    /// 六通道全零且未启用渐晕 = 精确中性（负零同样视为零）。
     pub fn is_neutral(self) -> bool {
         self == Self::NEUTRAL
     }
@@ -91,13 +129,14 @@ impl AuthorGrading {
     /// 输出 uniform 打包：与 Web `packPbrAuthorColorEffects` 逐位一致。
     ///
     /// `switches = [effects, vignette, grading, vignette-darkness]`；
-    /// vignette 属后续切片，本切片恒未启用（槽位保留，避免未来迁移布局）。
+    /// 2026-10-06 启用批：vignette 槽位接活——`vignette_darkness` 为 Some 时
+    /// switches.y=1 且 switches.w=darkness；None 时保持 0（旧包逐字节不变）。
     pub fn pack(self) -> [f32; 12] {
         [
             1.0,
-            0.0,
+            if self.vignette_darkness.is_some() { 1.0 } else { 0.0 },
             1.0,
-            0.0,
+            self.vignette_darkness.unwrap_or(0.0),
             self.hue,
             self.saturation,
             self.brightness,
@@ -109,12 +148,32 @@ impl AuthorGrading {
         ]
     }
 
+    /// CPU 参考实现（无渐晕档）：等价于 `apply_at(source, [0.5, 0.5])` 且
+    /// 渐晕关闭——保留旧签名，既有 golden 语义不变。
+    pub fn apply(self, source: [f32; 3]) -> [f32; 3] {
+        self.apply_at(source, [0.5, 0.5])
+    }
+
     /// CPU 参考实现：与 WGSL `author_grading_apply` 同构，镜像 TS 仲裁基准。
     ///
     /// TS 中间运算在 f64 域，本实现按 Native f32 uniform/WGSL 语义在 f32 域
-    /// 计算；golden 测试按 f32 精度容差对拍 TS 输出常量。
-    pub fn apply(self, source: [f32; 3]) -> [f32; 3] {
+    /// 计算；golden 测试按 f32 精度容差对拍 TS 输出常量。渐晕在分级**之前**
+    /// 应用（TS `applyPbrAuthorColorEffects` 的 p[1] 分支先于 p[2] 分支）：
+    /// `c*(1-radial) + (1-darkness)*radial`，radial 为 UV 到画面中心的平方距离。
+    pub fn apply_at(self, source: [f32; 3], uv: [f32; 2]) -> [f32; 3] {
         let mut color = source;
+        // 0) vignette：Three r185 Vignette 同式（暗角落到 (1-darkness) 地板）。
+        if let Some(darkness) = self.vignette_darkness {
+            let dx = uv[0] - 0.5;
+            let dy = uv[1] - 0.5;
+            let radial = dx * dx + dy * dy;
+            let vignette_floor = 1.0 - darkness;
+            color = [
+                color[0] * (1.0 - radial) + vignette_floor * radial,
+                color[1] * (1.0 - radial) + vignette_floor * radial,
+                color[2] * (1.0 - radial) + vignette_floor * radial,
+            ];
+        }
         // 1) hue：Three r185 HueSaturation 的旋转矩阵，行循环移位。
         if self.hue != 0.0 {
             let angle = self.hue / 180.0 * AUTHOR_PI;
@@ -211,6 +270,98 @@ mod tests {
         // hue 之外可选通道缺省 0：wire 层 unwrap_or(0.0) 后 pack 与显式 0 一致。
         let defaults = AuthorGrading::new(15.0, 0.25, 0.05, 0.05, 0.0, 0.0).unwrap();
         assert_eq!(defaults.pack()[10..], [0.0, 0.0]);
+    }
+
+    /// 渐晕启用批(2026-10-06)golden:pack 槽位与 TS `packPbrAuthorColorEffects`
+    /// (真实 TS 运行输出)逐位对拍——vignette{1.5}+colorGrading 声明 =
+    /// [1,1,1,1.5,...];None 档保持 [1,0,1,0,...](旧包逐字节不变)。
+    #[test]
+    fn vignette_pack_matches_web_layout() {
+        let grading = AuthorGrading::new(30.0, 0.5, -0.25, 0.1, 0.8, -0.4).unwrap();
+        assert_eq!(grading.pack()[0..4], [1.0, 0.0, 1.0, 0.0]);
+        let with_vignette =
+            AuthorGrading::new_with_vignette(30.0, 0.5, -0.25, 0.1, 0.8, -0.4, Some(1.5))
+                .unwrap();
+        assert_eq!(with_vignette.pack(), [
+            1.0, 1.0, 1.0, 1.5, 30.0, 0.5, -0.25, 0.1, 0.8, -0.4, 0.0, 0.0
+        ]);
+        // 仅渐晕(六通道全零):非中性,pack switches=[1,1,1,darkness,...]。
+        let vignette_only = AuthorGrading::new_with_vignette(
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Some(0.0),
+        )
+        .unwrap();
+        assert!(!vignette_only.is_neutral());
+        assert_eq!(vignette_only.pack()[0..4], [1.0, 1.0, 1.0, 0.0]);
+    }
+
+    /// 渐晕校验拒绝族:darkness ∈ [0,3](TS scalar 同域),NaN/越界 fail-fast。
+    #[test]
+    fn rejects_invalid_vignette_darkness() {
+        assert!(AuthorGrading::new_with_vignette(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Some(0.0)).is_ok());
+        assert!(AuthorGrading::new_with_vignette(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Some(3.0)).is_ok());
+        for invalid in [
+            Some(3.0001),
+            Some(-0.0001),
+            Some(f32::NAN),
+            Some(f32::INFINITY),
+        ] {
+            assert!(AuthorGrading::new_with_vignette(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, invalid).is_err());
+        }
+    }
+
+    /// 渐晕数学 golden:常量来自真实 TS `applyPbrAuthorColorEffects` 输出
+    /// (f64 域),按 f32 精度容差对拍。覆盖:仅渐晕/渐晕+分级叠加/角落
+    /// 全暗/中心恒等。
+    #[test]
+    fn vignette_math_matches_web_reference_within_f32_tolerance() {
+        let grading = AuthorGrading::new(30.0, 0.5, -0.25, 0.1, 0.8, -0.4).unwrap();
+        let cases: &[([f32; 3], [f32; 2], AuthorGrading, [f64; 3])] = &[
+            // 仅渐晕 d=1.5, uv=(0.9,0.1) → TS [0.384, 0.18, -0.024]
+            (
+                [0.8, 0.5, 0.2],
+                [0.9, 0.1],
+                AuthorGrading::new_with_vignette(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Some(1.5)).unwrap(),
+                [0.3839999999999999, 0.17999999999999994, -0.02400000000000005],
+            ),
+            // 渐晕 d=0.8 + 分级叠加(渐晕先于分级,TS 分支次序)。
+            (
+                [0.8, 0.5, 0.2],
+                [0.9, 0.1],
+                AuthorGrading::new_with_vignette(30.0, 0.5, -0.25, 0.1, 0.8, -0.4, Some(0.8))
+                    .unwrap(),
+                [0.38160437927435964, 0.36893117040925877, -0.3186053248549768],
+            ),
+            // 角落 uv=(0,0) d=3:radial=0.5 → c*0.5 + (1-3)*0.5。
+            (
+                [0.8, 0.5, 0.2],
+                [0.0, 0.0],
+                AuthorGrading::new_with_vignette(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Some(3.0)).unwrap(),
+                [-0.6, -0.75, -0.9],
+            ),
+            // 中心恒等:radial=0 → 原值(渐晕不影响中心)。
+            (
+                [0.8, 0.5, 0.2],
+                [0.5, 0.5],
+                AuthorGrading::new_with_vignette(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Some(1.5)).unwrap(),
+                [0.8, 0.5, 0.2],
+            ),
+        ];
+        for (source, uv, effect, expected) in cases {
+            let output = effect.apply_at(*source, *uv);
+            for (channel, golden) in output.iter().zip(expected.iter()) {
+                let tolerance = 2e-4 * (1.0 + golden.abs());
+                assert!(
+                    (f64::from(*channel) - golden).abs() <= tolerance,
+                    "vignette {effect:?} on {source:?}@{uv:?}: {output:?} vs web {expected:?}"
+                );
+            }
+        }
+        // 无渐晕档:apply ≡ apply_at(旧 golden 语义不变)。
+        let plain = AuthorGrading::new(30.0, 0.5, -0.25, 0.1, 0.8, -0.4).unwrap();
+        assert_eq!(
+            plain.apply([0.8, 0.5, 0.2]),
+            plain.apply_at([0.8, 0.5, 0.2], [0.9, 0.1])
+        );
     }
 
     /// 校验拒绝族：NaN、越界（含 1e300 反序列化为 inf 的路径）与边界内侧放行。

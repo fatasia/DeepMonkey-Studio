@@ -255,11 +255,14 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         reason: RendererCapabilityReasonCode::Full,
         evidence: "runtime_package::solid_environment output-transform native-aces-v1/native-aces-light-v2;author_grading 在 ACES 前 HDR 域",
     },
+    // 渐晕启用批(2026-10-06):vignette 槽位接活——wire colorGrading 可选
+    // vignetteDarkness ∈ [0,3],pack switches=[1,1,1,darkness],WGSL vignette
+    // 分支先于分级,CPU 镜像 apply_at;随运行包声明 opt-in,旧包逐字节不变。
     NativeCapabilitySelfCheck {
         capability_id: "author-grading-vignette",
-        support: RendererCapabilitySupport::Degraded,
-        reason: RendererCapabilityReasonCode::ReducedTier,
-        evidence: "author_grading::switches vignette 槽位保留、本切片恒未启用;六通道分级已镜像",
+        support: RendererCapabilitySupport::Supported,
+        reason: RendererCapabilityReasonCode::OptInDefaultOff,
+        evidence: "author_grading::new_with_vignette/apply_at(vignette_darkness ∈ [0,3] fail-fast)+ solid_environment AuthorColorGrading.vignette_darkness 解码 + native_output_color.wgsl vignette 分支(四变体调用点);TS pack/apply f32 容差对拍",
     },
     NativeCapabilitySelfCheck {
         capability_id: "ground-preview",
@@ -397,24 +400,6 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         support: RendererCapabilitySupport::Unavailable,
         reason: RendererCapabilityReasonCode::Absent,
         evidence: "无 meshlet DAG 页调度/驻留/indirect 分组运行时(Brief-Nanite 离线工具链 geometry_dag 属独立切片;web M3 CPU 侧调度通路见 deep-engine virtualGeometryDagPages/Scheduling/Residency/Indirect)",
-    },
-    NativeCapabilitySelfCheck {
-        capability_id: "deep2d-visual-trio",
-        support: RendererCapabilitySupport::Supported,
-        reason: RendererCapabilityReasonCode::Full,
-        evidence: "deep2d/command_types.rs(cornerRadius/shadow + linear/radial paint,legacy 实心 wire 兼容)+ paint_data.rs(WGSL 逐式镜像)+ native_deep2d_v1.wgsl v2 + deep2d_paint_gpu_tests 真 GPU 对拍(内部零分歧)",
-    },
-    NativeCapabilitySelfCheck {
-        capability_id: "deep2d-component-layout",
-        support: RendererCapabilitySupport::Supported,
-        reason: RendererCapabilityReasonCode::Full,
-        evidence: "deep2d/layout/solve.rs(taffy flex solve → quad/视觉命令产出,零新增命令变体)+ app::deep2d_context::layout_content 引擎缝 + deep2d_layout_gpu_tests 卡片+文本+图标最小样例真 GPU 逐像素对拍",
-    },
-    NativeCapabilitySelfCheck {
-        capability_id: "deep2d-dynamic-path-fill",
-        support: RendererCapabilitySupport::Supported,
-        reason: RendererCapabilityReasonCode::Full,
-        evidence: "deep2d/painter_dynamic.rs(滑窗 8 帧内 ≥3 变更自动分路;资格 gate;预算回落计数)+ painter_cache_prepare 路由 + native_deep2d_dynamic_cover_v1.wgsl + deep2d_dynamic_gpu.rs(clear→cover→fill 三连,Stencil8;nonzero 前向增/背向减,evenodd 双向 Invert 翻 LSB)+ paint_reference dynamic 分支同语义 oracle + deep2d_dynamic_gpu_tests N 帧/fill-rule donut/渐变/scissor/混帧/composite 真 GPU 对拍(内部零分歧,逐像素 worst=0);如实:动态命令 stroke 维持 CPU 展开、边缘为 1× 硬边(与既有静态路一致)",
     },
 ];
 

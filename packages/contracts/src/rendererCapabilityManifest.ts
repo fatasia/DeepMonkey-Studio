@@ -187,9 +187,8 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine/src/webgpu/pbrAutoExposure.ts:estimateEnvironmentLuminance(环境亮度估计→EV 包络曝光,默认启用)",
     },
     native: {
-      // 视觉三件套批(2026-10-06):CPU 移植仲裁实现入库(亮度估计器 + EV 包络 +
-      // 指数平滑/率硬顶状态机,TS 真实输出 f64 golden 对拍);生产渲染路径的
-      // 曝光消费接线(web 为 view.exposure)属后继切片——如实登记 harness-only。
+      // 视觉三件套批(2026-10-06):CPU 仲裁实现入库(TS f64 golden 对拍);
+      // 曝光消费接线属后继切片——如实 harness-only。
       support: "supported", reason: "harness-only",
       evidence: "packages/deep-engine-native/src/postprocess/auto_exposure.rs:estimate_luminance_from_equirect/from_prefiltered_mip(等距柱纬度加权/IBL 最粗 mip 立体角加权)+ target_exposure_from_luminance(±EV 包络)+ PbrAutoExposureRuntime(EV 平滑+率硬顶,fail-closed)",
     },
@@ -223,9 +222,8 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine/src/rayTracing/shadowRayFrameKernel.ts(两级 TLAS→BLAS 遮挡射线核,GBuffer depth 重建着色点,r32float mask 供直接光采样;场景缓冲持久+增量 TLAS;无 readback;需调用方供给 TlasPackedScene;帧资源管理另见同目录 shadowRayFramePass.ts)",
     },
     native: {
-      // F2 登记修正(2026-10-06,TS↔Rust 一致盘点差距 1):native 实际有硬件
-      // RT 方向阴影管线族(commit 227958ca,早于本清单基线),原 unavailable/absent
-      // 系探针窄于实际面——按真实状态重登记为 reduced-tier,不虚报 full。
+      // F2 登记修正(2026-10-06):native 实际有硬件 RT 方向阴影管线族
+      // (commit 227958ca 早于基线),按真实状态重登记,不虚报 full。
       support: "degraded", reason: "reduced-tier",
       evidence: "packages/deep-engine-native/src/pipeline/rt.rs:RtMeshPipelines(F2 RT fragment 方向阴影 Ray Query 管线族:仅静态 opaque/MASK 批次,BLEND 族不在 TLAS 驻留;失败 error-scope fail-closed 回退栅格;renderer/rt_residency.rs 驻留+pixel_pipelines 生产消费;renderer/rt_pixel_gpu_tests.rs、rt_raster_parity_gpu_tests.rs 真机 GPU 门;与 web compute BVH 全帧档为不同实现档)",
     },
@@ -374,8 +372,10 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:vignette(默认开;pbrAuthorColorEffects 六通道 hue/saturation/brightness/contrast/temperature/tint)",
     },
     native: {
-      support: "degraded", reason: "reduced-tier",
-      evidence: "packages/deep-engine-native/src/author_grading.rs:switches(vignette 槽位保留、本切片恒未启用;六通道分级已与 Web 逐位镜像)",
+      // 渐晕启用批(2026-10-06):vignette 槽位接活——wire 可选 vignetteDarkness
+      // 双端同合同,WGSL 分支先于分级(TS 同序),随运行包声明 opt-in。
+      support: "supported", reason: "opt-in-default-off",
+      evidence: "packages/deep-engine-native/src/author_grading.rs:new_with_vignette/apply_at(vignette_darkness ∈ [0,3] fail-fast;CPU 参考与 TS applyPbrAuthorColorEffects f32 容差对拍)+ runtime_package/solid_environment.rs AuthorColorGrading.vignette_darkness 解码 + assets/shaders/native_output_color.wgsl(vignette 分支,四变体调用点传 screen uv)",
     },
   },
   {
@@ -498,10 +498,8 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine/src/webgpu/spatialAaPresent.ts:spatialAaPresent(显示域边缘 AA,独立于时域历史,默认开)",
     },
     native: {
-      // 视觉三件套批(2026-10-06):FXAA(Three r185 FXAAShader 适配)逐式移植
-      // 入库——WGSL 核与 CPU 镜像同构,真机 GPU readback 对拍 RTX 4060/Vulkan
-      // ≤2/255;生产出片链接线(OutputPass 中间 LDR 纹理 + resize rebind 合同)
-      // 属后继切片——如实登记 harness-only。
+      // 视觉三件套批(2026-10-06):FXAA 逐式移植,真机 GPU 对拍 ≤2/255;
+      // OutputPass 出片链接线属后继切片——如实 harness-only。
       support: "supported", reason: "harness-only",
       evidence: "packages/deep-engine-native/src/postprocess/spatial_aa.rs:resolve_spatial_aa_cpu(TS resolveSpatialAaCpu 逐位 golden)+ spatial_aa_shader/create_spatial_aa_pipeline(显示域 unorm 目标,全屏三角)+ tests/spatial_aa_gpu.rs(真机对拍门)",
     },
@@ -515,9 +513,8 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine/src/rayTracing/probeRadianceKernel.ts:PROBE_RADIANCE_MAX_DIRECTIONS(硬件 ray query 采集核;适配器 tier 探测见 apps rendererCapabilities)",
     },
     native: {
-      // F2 登记修正(2026-10-06):wgpu 30 实际暴露 EXPERIMENTAL_RAY_QUERY,
-      // native gpu_context 按适配器门控启用并存在像素消费管线族——原
-      // "api-missing" 前提不成立。硬件依赖+默认回退栅格,登记 opt-in-default-off。
+      // F2 登记修正(2026-10-06):wgpu 30 实际暴露 EXPERIMENTAL_RAY_QUERY
+      // 且 native 有像素消费管线族,原 api-missing 前提不成立。
       support: "supported", reason: "opt-in-default-off",
       evidence: "packages/deep-engine-native/src/gpu_context.rs:EXPERIMENTAL_RAY_QUERY(适配器含该特性才请求;不足保留软件 BVH/栅格路径)+ src/pipeline/rt.rs(enable wgpu_ray_query 像素消费管线族,失败 error-scope fail-closed)+ src/hardware_ray_query.rs(ray_query_device_ready 双面合同)+ host_capabilities/rt_probe.rs(实验特性探测矩阵)",
     },
@@ -538,10 +535,8 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
   {
     id: "material-layered-304b",
     title: "分层材质 304B 层块(TS packLayeredSurfaceBlock ↔ native pbr_layered.rs 逐字节镜像)",
-    // 证据纪律修正(2026-10-06):原证据路径 "materialParameters.ts+packLayeredSurfaceBlock"
-    // 非 .ts 仓库路径(对拍网红);真实实现(shader/materialLayeredSurface.ts)才是
-    // packLayeredSurfaceBlock/LAYERED_SURFACE_* 常量所在。webFeatureKeys 让位:
-    // layeredMaterials 用户开关语义归 material-clearcoat 行,本行是布局 ABI 能力。
+    // 证据纪律修正(2026-10-06):原证据非 .ts 路径(对拍网红),改指真实实现;
+    // layeredMaterials 开关键让位给 material-clearcoat 行,本行是布局 ABI 能力。
     webFeatureKeys: [],
     web: {
       support: "supported", reason: "opt-in-default-off",
@@ -684,67 +679,7 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine-native/src/lib.rs(无 MegaLights 模块;native clustered_lighting.rs 为逐灯簇光路径,非 RIS 采样)",
     },
   },
-  {
-    // deep2D 线刀 1(2026-10-05,ef7d46b7):GPUI 视觉三命令。wire 层 Paint
-    // 模型扩展(solid 数组保持 legacy 字节兼容)+ 片段级解析 SDF;CPU 镜像
-    // paint_data.rs 与 WGSL 逐式一致,真 GPU readback 对拍内部零分歧。
-    // web 端如实 absent:TS 显示列表合同(deep2dDisplayList.ts)的 path fill
-    // 仅实心 Deep2dColor,无 gradient/cornerRadius/shadow 字段,TS 端也无
-    // deep2d 渲染通路——三命令是 native 渲染域能力。
-    id: "deep2d-visual-trio",
-    title: "deep2D 视觉三命令:渐变/圆角矩形/箱阴影(GPUI 对齐,解析 SDF)",
-    webFeatureKeys: [],
-    web: {
-      support: "unavailable", reason: "absent",
-      evidence: "packages/deep-engine/src/deep2dDisplayList.ts(Deep2dCommand path 变体 fill 仅 Deep2dColor 实心;wire 无 gradient/cornerRadius/shadow 字段;web 无 deep2d 渲染通路)",
-    },
-    native: {
-      support: "supported", reason: "full",
-      evidence: "packages/deep-engine-native/src/deep2d/command_types.rs(PathCommand.cornerRadius/shadow + Deep2dPaint linear/radial,legacy 实心 wire 逐字节兼容)+ deep2d/paint_data.rs(WGSL 逐式 CPU 镜像:sd_rounded_box/gradient_stops_color/quad_fragment)+ assets/shaders/native_deep2d_v1.wgsl v2(片段级求值)+ src/deep2d_paint_gpu_tests.rs(真 GPU readback 对拍:内部零分歧、通道差 ≤8)",
-    },
-  },
-  {
-    // deep2D 线刀 2(2026-10-05,c330c3f7):组件布局引擎。taffy(MIT/Apache
-    // 双许可,固定版本+SHA-256)flex solve,零新增 Deep2dCommand 变体——
-    // 布局叶结点直接产出 quad/视觉命令喂既有管线。web 端 absent:布局求解
-    // 属 native deep2d 引擎缝(app::deep2d_context::layout_content)。
-    id: "deep2d-component-layout",
-    title: "deep2D 组件布局引擎(taffy flex solve → quad/视觉命令产出)",
-    webFeatureKeys: [],
-    web: {
-      support: "unavailable", reason: "absent",
-      evidence: "packages/deep-engine/src/index.ts(无布局 solve 导出;TS 侧无 flex 引擎;组件布局属 native deep2d 域)",
-    },
-    native: {
-      support: "supported", reason: "full",
-      // 证据为单文件路径(对拍器要求 .ts/.rs 单文件;目录型证据不合规)。
-      evidence: "packages/deep-engine-native/src/deep2d/layout/solve.rs(taffy flex row/column/wrap/justify/align → 每个 leaf 产出 quad 几何喂 runtime_quad,零新增命令变体;tree/style/commands 同目录)+ app::deep2d_context::layout_content 引擎缝接线 + src/deep2d_layout_gpu_tests.rs(圆角卡片+渐变头+图标/文本占位 flex 排布真 GPU 逐像素对拍:内部零分歧)",
-    },
-  },
-  {
-    // deep2D 线刀 3(2026-10-05):stencil-then-cover 动态路径实时填充。
-    // 分路是纯运行时决策(滑窗变更计数阈值,无用户开关,wire schema 零变化):
-    // 静态路径继续 CPU 细分+缓存;动态路径 CPU 只剩展平+fence 发射,填充
-    // 三连(clear→cover→fill)在 GPU stencil 上完成。能力定义限定 fill:
-    // 动态命令的 stroke 维持 CPU 描边展开(如实);边缘 AA 为硬边(1× 采样,
-    // 与既有静态路径管线一致,非本刀扩大面)。CPU oracle
-    // (paint_reference dynamic 分支)与 GPU 同语义(半开区间中心采样)。
-    // 模板技法:nonzero 前向 IncWrap/背向 DecWrap(朝向约定颠倒只造成全局
-    // 符号翻转,≠0 判定不变);evenodd 双向 Invert 翻转 LSB、fill 测
-    // LSB==1——双向 Increment 在多重覆盖区(洞正下方 3 次覆盖)奇偶失效,
-    // 真机实测 4 像素内部分歧后修正。
-    id: "deep2d-dynamic-path-fill",
-    title: "deep2D 动态路径 stencil-then-cover 实时填充(滑窗自动分路;fill 域)",
-    webFeatureKeys: [],
-    web: {
-      support: "unavailable", reason: "absent",
-      evidence: "packages/deep-engine/src/deep2dDisplayList.ts(wire schema 无动态性标注;静态/动态分路是 native 运行时决策,wire 零变化;web 无 deep2d 渲染通路)",
-    },
-    native: {
-      support: "supported", reason: "full",
-      evidence: "packages/deep-engine-native/src/deep2d/painter_dynamic.rs(滑窗 8 帧内 ≥3 次内容变更自动分路;stencil 资格 gate:有 fill/非解析 quad/无多边形剪刀;预算超限回落静态并计数)+ deep2d/painter_cache_prepare.rs(路由记账与缓存共存)+ assets/shaders/native_deep2d_dynamic_cover_v1.wgsl + src/deep2d_dynamic_gpu.rs(clear→cover→fill 三连管线,Stencil8;nonzero 前向增/背向减,evenodd 双向 Invert LSB)+ deep2d/paint_reference.rs(oracle 同语义:fence 边带 winding/parity 中心采样)+ src/deep2d_dynamic_gpu_tests.rs(N 帧序列/fill-rule donut/渐变/scissor 裁剪/静态+动态混帧/composite 层真 GPU 对拍:内部零分歧,逐像素 worst=0)",
-    },
-  },
+
 ] as const);
 
 /** 能力 id 单源冻结数组(结构先例:pbrTimedPassIds.PBR_TIMED_PASS_IDS)。 */

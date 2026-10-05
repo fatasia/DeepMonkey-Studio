@@ -84,6 +84,8 @@ export interface RuntimeSolidEnvironment {
  * Web postProcessingRuntime 与 Native `AuthorGrading::new` 三方同范围——
  * hue ∈ [-180,180]（度），其余五通道 ∈ [-1,1]；temperature/tint 与四基础通道
  * 同形可选，缺省按 0（中性）消费。全零 = 精确中性（编译器不升级档位）。
+ * vignetteDarkness(2026-10-06 渐晕启用批):可选暗角 ∈ [0,3],与 Web
+ * PbrAuthorColorEffects.vignette.darkness 同域同式;缺省/未声明 = 不启用。
  */
 export interface RuntimeAuthorColorGrading {
   readonly hue: number;
@@ -92,6 +94,7 @@ export interface RuntimeAuthorColorGrading {
   readonly contrast: number;
   readonly temperature?: number;
   readonly tint?: number;
+  readonly vignetteDarkness?: number;
 }
 /** 版本化作者雾 v1：密度≥0，颜色为线性 RGB；不含高度衰减（Web 天气雾无此维度）。 */
 export interface RuntimeAuthorFog {

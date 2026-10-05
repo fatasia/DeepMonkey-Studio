@@ -1,4 +1,7 @@
-// Native author six-channel grading. DeepOutputSettings grading has a separate contract.
+// Native author six-channel grading + vignette. DeepOutputSettings grading has a separate contract.
+// 2026-10-06 启用批:switches.y(vignette)/switches.w(vignette-darkness)接活,
+// 与 TS pbrAuthorColorEffects(packPbrAuthorColorEffects/applyPbrAuthorColorEffects)
+// 同合同;CPU 镜像 author_grading.rs::apply_at,golden 双侧对拍。
 struct AuthorGrading {
   switches: vec4f,
   grading: vec4f,
@@ -6,8 +9,16 @@ struct AuthorGrading {
 };
 @group(0) @binding(6) var<uniform> author_grading: AuthorGrading;
 
-fn author_grading_apply(source: vec3f) -> vec3f {
+fn author_grading_apply(source: vec3f, uv: vec2f) -> vec3f {
   var color = source;
+  // vignette:Three r185 Vignette 同式,先于分级(TS p[1] 分支在 p[2] 之前):
+  // c*(1-radial) + (1-darkness)*radial;darkness ∈ [0,3] 于 wire 校验,
+  // 中心(radial=0)精确恒等,与 CPU 镜像 apply_at 同式。
+  if (author_grading.switches.y > 0.5) {
+    let radial = (uv.x - 0.5) * (uv.x - 0.5) + (uv.y - 0.5) * (uv.y - 0.5);
+    let vignette_floor = 1.0 - author_grading.switches.w;
+    color = color * (1.0 - radial) + vec3f(vignette_floor) * radial;
+  }
   if (author_grading.switches.z > 0.5) {
     let grading = author_grading.grading;
     if (grading.x != 0.0) {

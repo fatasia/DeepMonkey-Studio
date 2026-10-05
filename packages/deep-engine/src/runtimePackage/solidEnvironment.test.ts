@@ -126,3 +126,20 @@ it("v9 requires the six-channel author grading and admits both no-ibl and builti
   expect(() => check({ ...source(), schemaVersion: 8, kind: "solid-background-builtin-ibl",
     outputTransform: "native-aces-studio-v8", colorGrading: grading })).toThrow();
 });
+
+// 渐晕启用批(2026-10-06):v9 colorGrading 可选 vignetteDarkness 与 Native
+// AuthorColorGrading 同合同——域 [0,3]、缺省合法、越界/非有限/未知形态拒绝。
+it("v9 colorGrading admits optional vignetteDarkness within [0, 3] and rejects invalid forms", () => {
+  const grading = { hue: 0, saturation: 0, brightness: 0, contrast: 0 };
+  const value = { ...source(), schemaVersion: 9, outputTransform: "native-aces-grading-v9", colorGrading: grading };
+  const check = (v: unknown) => validateRuntimeEnvironment(v, value.id, 1, "$");
+  // 边界内侧与缺省均合法。
+  expect(() => check({ ...value, colorGrading: { ...grading, vignetteDarkness: 0 } })).not.toThrow();
+  expect(() => check({ ...value, colorGrading: { ...grading, vignetteDarkness: 3 } })).not.toThrow();
+  expect(() => check(value)).not.toThrow();
+  // 越界/非有限/类型错拒绝。
+  for (const darkness of [-0.0001, 3.0001, NaN, Infinity, "1.5"]) {
+    expect(() => check({ ...value, colorGrading: { ...grading, vignetteDarkness: darkness } }),
+      JSON.stringify(darkness)).toThrow();
+  }
+});

@@ -27,11 +27,11 @@ fn bloom_contract_is_hdr_first_and_has_an_exact_disabled_mode() {
     assert!(bloom.contains("bloom.threshold * bloom.soft_knee"));
     assert!(output.contains("hdr.rgb + glow"));
     assert!(output.contains("textureSampleLevel(bloom_color, bloom_sampler"));
-    // F4 色彩分级后 tonemap 调用点为 aces(author_grading_apply(hdr.rgb))：
+    // F4 色彩分级后 tonemap 调用点为 aces(author_grading_apply(hdr.rgb, vignette_uv))：
     // bloom glow 必须在 ACES 之前合成（合同不变，断言随输出链同步）。
     assert!(
         output.find("hdr.rgb + glow").unwrap()
-            < output.find("aces(author_grading_apply(hdr.rgb))").unwrap()
+            < output.find("aces(author_grading_apply(hdr.rgb, vignette_uv))").unwrap()
     );
     assert!(pass.contains("if !settings.is_active()"));
     assert!(pass.contains("return Ok(None)"));
@@ -104,7 +104,7 @@ fn fog_is_a_separate_opt_in_hdr_variant_before_aces() {
         // F4 色彩分级后 tonemap 调用点同步（雾变体同合同：雾在 ACES 之前）。
         assert!(
             shader.find("let hdr = fogged_hdr").unwrap()
-                < shader.find("aces(author_grading_apply(hdr.rgb))").unwrap()
+                < shader.find("aces(author_grading_apply(hdr.rgb, vignette_uv))").unwrap()
         );
     }
     assert!(bloom_fog.contains("mix(hdr.rgb + glow, frame.tuning.rgb, amount)"));

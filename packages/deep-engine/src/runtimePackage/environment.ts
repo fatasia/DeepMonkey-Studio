@@ -43,13 +43,16 @@ export function validateRuntimeEnvironment(value: unknown, id: string, revision:
       requireValue(object.kind === "solid-background-no-ibl" || object.kind === "solid-background-builtin-ibl",
         path, "Unsupported solid environment profile.");
       const channels = record(object.colorGrading, `${path}.colorGrading`);
-      fields(channels, ["hue", "saturation", "brightness", "contrast"], ["temperature", "tint"], `${path}.colorGrading`);
+      // vignetteDarkness(2026-10-06 渐晕启用批):可选暗角强度,与 Web
+      // PbrAuthorColorEffects.vignette.darkness 同域 [0,3];缺省 = 不启用。
+      fields(channels, ["hue", "saturation", "brightness", "contrast"], ["temperature", "tint", "vignetteDarkness"], `${path}.colorGrading`);
       // 六通道范围与 Native AuthorGrading::new / 属性面板三方一致：hue ±180 度，其余 ±1。
       const inRange = (value: unknown, min: number, max: number): value is number =>
         typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
       requireValue(inRange(channels.hue, -180, 180)
         && (["saturation", "brightness", "contrast"] as const).every(key => inRange(channels[key], -1, 1))
-        && (["temperature", "tint"] as const).every(key => channels[key] === undefined || inRange(channels[key], -1, 1)),
+        && (["temperature", "tint"] as const).every(key => channels[key] === undefined || inRange(channels[key], -1, 1))
+        && (channels.vignetteDarkness === undefined || inRange(channels.vignetteDarkness, 0, 3)),
         `${path}.colorGrading`, "Invalid authored color grading.");
     }
     if (hdr) {

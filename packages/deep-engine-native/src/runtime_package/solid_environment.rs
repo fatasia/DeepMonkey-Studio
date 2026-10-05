@@ -160,7 +160,9 @@ impl AuthorFog {
 
 /// 作者色彩分级六通道 wire 合同（v9 档）：hue/saturation/brightness/contrast
 /// 必填，temperature/tint 为可选扩展（缺省 0，与 Web `colorGrading` 同形）。
-/// 数值校验在 `AuthorGrading::new` 里 fail-fast，与 TS `scalar()` 范围一致。
+/// vignetteDarkness(2026-10-06 渐晕启用批)为可选暗角 ∈ [0,3]（与 Web
+/// `PbrAuthorColorEffects.vignette.darkness` 同域）；缺省 = 不启用。
+/// 数值校验在 `AuthorGrading::new_with_vignette` 里 fail-fast，与 TS `scalar()` 范围一致。
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct AuthorColorGrading {
@@ -172,17 +174,20 @@ struct AuthorColorGrading {
     temperature: Option<f32>,
     #[serde(default)]
     tint: Option<f32>,
+    #[serde(default)]
+    vignette_darkness: Option<f32>,
 }
 
 impl AuthorColorGrading {
     fn grading(self) -> Result<crate::author_grading::AuthorGrading, String> {
-        crate::author_grading::AuthorGrading::new(
+        crate::author_grading::AuthorGrading::new_with_vignette(
             self.hue,
             self.saturation,
             self.brightness,
             self.contrast,
             self.temperature.unwrap_or(0.0),
             self.tint.unwrap_or(0.0),
+            self.vignette_darkness,
         )
     }
 }
