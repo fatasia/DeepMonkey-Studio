@@ -160,3 +160,13 @@ leg-raw-digest.json + 12 张 PNG 各)。
    退化为 1-texel PCF,半影宽度与参考(真实光源尺寸)不一致;给虚拟档配置
    pcssLightWorld 后应收敛(资源选项已留,`VirtualShadowResourceOptions.pcssLightWorld`)。
 3. dist:已重建(见上);GI 线程如继续演进 `sdfGiSceneAdapter.ts`,以其自身构建为准。
+
+
+## 门①口径终认(2026-10-05,用户拍板)
+
+**采纳分辨率敏感口径**(1× 渲染 vs 4×SSAA 参考的测区亮度差),关闭门①:
+- 近景:**基线 0.03580 → VSM 0.01353,ratio 0.378(↓62.2%)≤0.40 PASS**;exact=512 复测 0.385 同过;
+- 远景注记:两腿同为噪声地板(delta ~3.2e-4),无图受限锯齿可测,如实 inconclusive;
+- corner-ratio 原口径废弃:三档实证(自适应 high/固定 performance/exact 512)基线同值 0.00503——PCF linear 采样软化了 texel 阶梯,硬阈值角密度口径机理不可测,非实现缺陷。
+
+证据:test-output/vsm-gate1-fixed-tier/{tier-performance,exact-512}/(gate1.json+12 PNG);runner scripts/vsm-gate1-fixed-tier.mjs(参数化可复跑)。
