@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
-import { Database, Globe2, Radio, Table2 } from "lucide-react";
-import type { DataConnectionRecord, DataConnectionType, DataConnectorDiagnostics, DataDatasetPreview, DataFieldType } from "@bim-studio/contracts";
+import { useCallback, useRef, useState, type ReactNode } from "react";
+import { AlertTriangle, Database, Globe2, LoaderCircle, Radio, RotateCcw, Table2 } from "lucide-react";
+import type { DataConnectionRecord, DataConnectionType, DataConnectorDiagnostics, DataDatasetPreview, DataDatasetRecord, DataFieldType } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
+import { datasetFieldStats, connectorTrendBars, PREVIEW_ROW_HEIGHT, visibleRowRange, type ConnectorTrendSample, type DatasetFieldStat } from "./dataCenterWorkbenchLogic";
 
 export const SQL_CONNECTIONS = new Set<DataConnectionType>(["postgresql", "mysql", "mariadb", "tidb", "doris", "starrocks", "sqlserver", "oracle", "tdengine", "clickhouse"]);
 
@@ -17,9 +18,102 @@ export const CONNECTOR_REQUIRED = new Set<DataConnectionType>();
 
 export const WRITABLE_CONNECTIONS = new Set<DataConnectionType>(["bacnet", "s7", "ethernet-ip", "serial", "simulation"]);
 
-export function DatasetPreview({ locale, preview, datasetName }: { locale: AppLocale; preview?: DataDatasetPreview; datasetName?: string }) {
-  if (!preview)
+/** 字段统计徽章行：类型徽章 + 样例值 + 空值率（无行时不谎报 0%）。 */
+export function FieldStatBadges({ stats, locale }: { stats: DatasetFieldStat[]; locale: AppLocale }) {
+  return (
+    <div className="data-field-stats" role="list" aria-label={tr(locale, "字段统计", "Field statistics")}>
+      {stats.map((stat) => {
+        const sample = stat.type === "datetime" && stat.sample ? formatCell(stat.sample, "datetime", locale) : stat.sample;
+        return (
+        <span key={stat.key} role="listitem" className="data-field-stat" title={`${stat.key} · ${stat.type}${sample ? ` · ${tr(locale, "样例", "e.g.")} ${sample}` : ""}`}>
+          <code className={`data-field-type is-${stat.type}`}>{fieldTypeBadge(stat.type, locale)}</code>
+          <strong>{stat.key}</strong>
+          {sample && <small title={sample}>{sample}</small>}
+          <small className={`data-field-nullrate${stat.nullRate !== undefined && stat.nullRate >= 0.5 ? " is-high" : ""}`}>
+            {stat.nullRate === undefined ? tr(locale, "无行", "no rows") : tr(locale, `空值 ${(stat.nullRate * 100).toFixed(0)}%`, `${(stat.nullRate * 100).toFixed(0)}% null`)}
+          </small>
+        </span>
+        );
+      })}
+    </div>
+  );
+}
+
+/** 类型徽章文字（数值/文本/时间/布尔/枚举/JSON 六类；西门子纪律：图标位由色+文字承担）。 */
+export function fieldTypeBadge(type: DataFieldType, locale: AppLocale): string {
+  const known: Partial<Record<DataFieldType, { zh: string; en: string }>> = {
+    number: { zh: "数值", en: "num" },
+    string: { zh: "文本", en: "text" },
+    datetime: { zh: "时间", en: "time" },
+    boolean: { zh: "布尔", en: "bool" },
+    json: { zh: "JSON", en: "json" },
+  };
+  const badge = known[type];
+  return badge ? tr(locale, badge.zh, badge.en) : type;
+}
+
+/** 连接监控迷你趋势条：本会话诊断快照的延迟柱(失败快照标警示色);样本 <2 如实标注采集中。 */
+export function ConnectorTrendBars({ samples, locale }: { samples: ConnectorTrendSample[]; locale: AppLocale }) {
+  const bars = connectorTrendBars(samples);
+  const failureCount = bars.filter((bar) => bar.failures > 0).length;
+  return (
+    <div className="data-connector-trend">
+      <span className="data-connector-trend-caption">
+        {samples.length < 2
+          ? tr(locale, `延迟趋势 · 样本采集中(${samples.length}/2)——执行连接测试或刷新后累积`, `Latency trend · collecting samples (${samples.length}/2) — run a connection test or refresh`)
+          : tr(locale, `延迟趋势 · 最近 ${samples.length} 次快照${failureCount > 0 ? ` · ${failureCount} 次带失败` : ""}`, `Latency trend · last ${samples.length} snapshots${failureCount > 0 ? ` · ${failureCount} with failures` : ""}`)}
+      </span>
+      <span className="data-connector-trend-bars" role="img" aria-label={samples.length < 2 ? tr(locale, "样本采集中", "Collecting samples") : tr(locale, `${samples.length} 个延迟样本`, `${samples.length} latency samples`)}>
+        {bars.map((bar, index) => (
+          <i
+            key={index}
+            className={bar.failures > 0 ? "has-failure" : ""}
+            style={{ height: `${Math.max(8, Math.round(bar.latency * 100))}%` }}
+            title={`${bar.latencyMs} ms · ${tr(locale, "失败", "failures")} ${bar.failures}`}
+          />
+        ))}
+      </span>
+    </div>
+  );
+}
+
+export function DatasetPreview({ locale, preview, datasetName, busy, error, onRetry }: {
+  locale: AppLocale;
+  preview?: DataDatasetPreview;
+  datasetName?: string;
+  /** 加载态：骨架行（形状贴合最终表格），与其余消费方缺省行为兼容。 */
+  busy?: boolean;
+  /** 查询失败态：可操作重试；排障信息不截断。 */
+  error?: string;
+  onRetry?: () => void;
+}) {
+  if (error)
     return (
+      <div className="data-preview-error" role="alert">
+        <AlertTriangle size={20} />
+        <strong>{tr(locale, "查询失败", "Query failed")}</strong>
+        <span>{error}</span>
+        {onRetry && (
+          <button onClick={onRetry}>
+            <RotateCcw size={13} />
+            {tr(locale, "重试查询", "Retry query")}
+          </button>
+        )}
+      </div>
+    );
+  if (!preview)
+    return busy ? (
+      <div className="data-preview-skeleton" role="status" aria-label={tr(locale, "正在查询", "Querying")}>
+        <p><LoaderCircle className="spin" size={14} /> {tr(locale, "正在运行查询…", "Running query…")}</p>
+        <div className="data-preview-skeleton-table" aria-hidden="true">
+          {[0, 1, 2, 3, 4, 5].map((row) => (
+            <div key={row} className="data-preview-skeleton-row">
+              {[0, 1, 2, 3, 4].map((cell) => <i key={cell} style={{ animationDelay: `${(row * 5 + cell) * 40}ms` }} />)}
+            </div>
+          ))}
+        </div>
+      </div>
+    ) : (
       <div className="data-preview-empty">
         <Table2 size={30} />
         <strong>{datasetName ? tr(locale, "尚未运行查询", "Query not run yet") : tr(locale, "选择一个数据集", "Select a dataset")}</strong>
@@ -30,8 +124,30 @@ export function DatasetPreview({ locale, preview, datasetName }: { locale: AppLo
         </span>
       </div>
     );
+  const stats = datasetFieldStats(preview.fields, preview.rows);
   return (
     <div className="data-preview-table">
+      <FieldStatBadges stats={stats} locale={locale} />
+      <PreviewTable locale={locale} preview={preview} />
+    </div>
+  );
+}
+
+/** 预览表体：固定行高虚拟滚动（上限 100 行仍按窗口渲染，滚动不卡）。 */
+export function PreviewTable({ locale, preview }: { locale: AppLocale; preview: DataDatasetPreview }) {
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(PREVIEW_VIEWPORT_DEFAULT);
+  const attach = useCallback((element: HTMLDivElement | null) => {
+    if (element) setViewportHeight(element.clientHeight || PREVIEW_VIEWPORT_DEFAULT);
+  }, []);
+  const { start, end } = visibleRowRange({ scrollTop, viewportHeight, total: preview.rows.length });
+  const rows = preview.rows.slice(start, end);
+  return (
+    <div
+      ref={attach}
+      className="data-preview-scroll"
+      onScroll={(event) => setScrollTop((event.target as HTMLDivElement).scrollTop)}
+    >
       <table>
         <thead>
           <tr>
@@ -47,18 +163,28 @@ export function DatasetPreview({ locale, preview, datasetName }: { locale: AppLo
           </tr>
         </thead>
         <tbody>
-          {preview.rows.slice(0, 20).map((row, index) => (
-            <tr key={index}>
+          {start > 0 && <tr style={{ height: start * PREVIEW_ROW_HEIGHT }} aria-hidden="true"><td colSpan={preview.fields.length} /></tr>}
+          {rows.map((row, index) => (
+            <tr key={start + index}>
               {preview.fields.map((field) => (
                 <td key={field.key} title={field.type === "datetime" ? String(row[field.key] ?? "") : undefined}>{formatCell(row[field.key], field.type, locale)}</td>
               ))}
             </tr>
           ))}
+          {end < preview.rows.length && <tr style={{ height: (preview.rows.length - end) * PREVIEW_ROW_HEIGHT }} aria-hidden="true"><td colSpan={preview.fields.length} /></tr>}
         </tbody>
       </table>
+      {preview.rows.length > 0 && (
+        <p className="data-preview-rows-hint">
+          {tr(locale, `显示第 ${start + 1}–${end} 行 / 共 ${preview.rows.length} 行`, `Rows ${start + 1}–${end} of ${preview.rows.length}`)}
+        </p>
+      )}
     </div>
   );
 }
+
+/** 预览区可视高度缺省值（挂载后以容器实测为准）。 */
+const PREVIEW_VIEWPORT_DEFAULT = 420;
 
 export function FlowStep({ icon, index, title, caption }: { icon: ReactNode; index: string; title: string; caption: string }) {
   return (

@@ -83,7 +83,7 @@
   border-radius: 0;
   background: transparent;
 }
-.data-center-page .data-hub-tabs button:not(.data-hub-advanced):not(:nth-of-type(3))::after {
+.data-center-page .data-hub-tabs button:not(.data-hub-advanced):not(:nth-of-type(4))::after {
   margin-left: 6px;
   color: var(--muted);
   content: "›";
@@ -100,6 +100,27 @@
   border-radius: 4px;
   font-size: 11px;
 }
+/* 完成态:✓ 徽章走 success 语义色;当前态仍以 accent 承载(激活优先于完成)。 */
+.data-center-page .data-hub-tabs button.done b {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 50%, var(--line-strong));
+}
+.data-center-page .data-hub-tabs button em {
+  min-width: 16px;
+  padding: 0 5px;
+  color: var(--dc-muted);
+  background: var(--surface-2);
+  border-radius: 7px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.data-center-page .data-hub-tabs button.active em {
+  color: var(--dc-accent);
+  background: var(--surface-1);
+}
+.data-center-page .data-hub-tabs button.done strong { color: var(--text-strong); }
 .data-center-page .data-hub-tabs button strong {
   color: inherit;
   font-size: 12px;
@@ -308,6 +329,43 @@
 .data-center-page .data-connector-health-panel small,
 .data-center-page .data-connector-health-panel > div span { color: var(--muted); }
 .data-center-page .data-connector-health-panel > header i { color: var(--text); }
+
+/* 连接监控迷你趋势条:延迟柱(accent 派生),带失败样本标 danger;高度按窗口内相对值。 */
+.data-center-page .data-connector-trend { display: grid; gap: 4px; grid-column: 1 / -1; }
+.data-center-page .data-connector-trend-caption { color: var(--muted); font-size: 11px; }
+.data-center-page .data-connector-trend-bars { display: flex; gap: 2px; align-items: flex-end; height: 34px; padding: 2px; background: var(--surface-1); border: 1px solid var(--line-subtle); border-radius: 3px; }
+.data-center-page .data-connector-trend-bars i { flex: 1 1 0; min-height: 3px; background: color-mix(in srgb, var(--dc-accent) 62%, var(--surface-3)); border-radius: 1px 1px 0 0; transition: height 180ms cubic-bezier(0.16, 1, 0.3, 1); }
+.data-center-page .data-connector-trend-bars i.has-failure { background: color-mix(in srgb, var(--danger) 70%, var(--surface-3)); }
+
+/* 数据预览三态:骨架行(形状贴合表格)/错误(可重试,排障信息不截断)/行窗提示。 */
+.data-center-page .data-preview-skeleton { display: grid; gap: 10px; padding: 14px; }
+.data-center-page .data-preview-skeleton p { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--dc-muted); font-size: 12px; }
+.data-center-page .data-preview-skeleton-table { display: grid; gap: 6px; }
+.data-center-page .data-preview-skeleton-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.data-center-page .data-preview-skeleton-row i { height: 16px; border-radius: 3px; background: var(--surface-2); animation: data-skeleton-pulse 1.4s ease-in-out infinite; }
+@keyframes data-skeleton-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .data-center-page .data-preview-skeleton-row i { animation: none; } }
+.data-center-page .data-preview-error { display: grid; justify-items: center; gap: 6px; align-content: center; min-height: 220px; padding: 20px; color: var(--dc-subtle); text-align: center; }
+.data-center-page .data-preview-error strong { color: var(--text-strong); font-size: 13px; }
+.data-center-page .data-preview-error span { max-width: 560px; color: var(--danger); font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; text-align: left; }
+.data-center-page .data-preview-error button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 11px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface-2); font-size: 12px; }
+
+/* 字段统计徽章:类型(语义色)/样例值/空值率;≥50% 空值率标警示。 */
+.data-center-page .data-field-stats { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; position: sticky; top: 0; z-index: 2; background: var(--dc-panel-low); border-bottom: 1px solid var(--dc-line); }
+.data-center-page .data-field-stat { display: inline-flex; align-items: center; gap: 5px; max-width: 230px; padding: 2px 7px; background: var(--surface-2); border: 1px solid var(--line-subtle); border-radius: 3px; font-size: 10.5px; }
+.data-center-page .data-field-stat strong { overflow: hidden; color: var(--dc-text); text-overflow: ellipsis; white-space: nowrap; }
+.data-center-page .data-field-stat small { overflow: hidden; color: var(--dc-muted); text-overflow: ellipsis; white-space: nowrap; max-width: 90px; font-variant-numeric: tabular-nums; }
+.data-center-page .data-field-stat .data-field-nullrate.is-high { color: var(--warning); }
+.data-center-page .data-field-type { padding: 0 4px; border-radius: 3px; font-size: 10px; }
+.data-center-page .data-field-type.is-number, .data-center-page .data-field-type.is-boolean { color: var(--info); background: color-mix(in srgb, var(--info) 14%, transparent); }
+.data-center-page .data-field-type.is-datetime { color: var(--warning); background: color-mix(in srgb, var(--warning) 14%, transparent); }
+.data-center-page .data-field-type.is-string, .data-center-page .data-field-type.is-enum { color: var(--text); background: var(--surface-3); }
+.data-center-page .data-field-type.is-json { color: var(--accent); background: var(--accent-soft); }
+
+/* 虚拟滚动行窗:固定行高与行窗提示(行号区间/总数,tabular-nums)。 */
+.data-center-page .data-preview-scroll { position: relative; height: 100%; overflow: auto; }
+.data-center-page .data-preview-scroll td { height: 34px; padding: 4px 10px; font-variant-numeric: tabular-nums; }
+.data-center-page .data-preview-rows-hint { position: sticky; left: 0; margin: 0; padding: 4px 10px; color: var(--dc-subtle); font-size: 10.5px; font-variant-numeric: tabular-nums; }
 .data-center-page .data-write-fields input { min-height: 32px; border-radius: 3px; font-size: 12px; }
 .data-center-page .data-sql-assistant {
   margin: 0;
@@ -340,14 +398,15 @@
   align-items: center;
   gap: 10px;
   padding: 0 10px 0 0;
-  background: #102019;
+  /* 成功绿的同族色调:由 --success 派生,双主题随令牌翻转(原 hardcode #102019 清除) */
+  background: color-mix(in srgb, var(--success) 10%, var(--surface-1));
 }
 .data-center-page .data-center-preview footer > div {
   flex: 1;
   min-height: 42px;
   padding: 0 12px;
   border-radius: 0;
-  background: #102019;
+  background: color-mix(in srgb, var(--success) 10%, var(--surface-1));
 }
 .data-center-page .data-center-preview > footer > button {
   display: inline-flex;
@@ -392,6 +451,6 @@
   .data-center-page .data-center-pane { border-right: 0; border-bottom: 1px solid var(--dc-line); }
 }
 
-/* KWeaver 式开箱即用:样例装载与新建连接并列的空态动作组。 */
+/* KWeaver 式开箱即用:样例装载与新建连接并列的空态动作组(全部令牌,无回退 hardcode)。 */
 .data-list-empty-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
-.data-list-empty-actions .secondary { background: var(--bg-2, #1a252c); color: var(--text-primary, #dfe9ee); border: 1px solid var(--border, #2c3a42); }
+.data-list-empty-actions .secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--line-strong); }

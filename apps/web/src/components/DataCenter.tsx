@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Bot,
   Braces,
+  Check,
   CheckCircle2,
   Database,
   LoaderCircle,
@@ -28,6 +29,8 @@ import { DataPipelineStudio } from "./DataPipelineStudio";
 import { SecondaryPageBack } from "./SecondaryPageBack";
 import { ConnectionForm, DatasetForm } from "./DataCenterForms";
 import { loadDataCenterPreview } from "./dataCenterPreview";
+import { ConnectorTrendBars, DatasetPreview } from "./DataCenterPresentation";
+import { dataCenterStepStates, DATA_CENTER_STEP_META, DATA_CENTER_STEP_ORDER, pushConnectorSample, type ConnectorTrendSample } from "./dataCenterWorkbenchLogic";
 import { DatasetWritebackPanel } from "./DatasetWritebackPanel";
 import "./DataCenterPreview.css";
 const SemanticModelStudio = lazy(() => import("./SemanticModelStudio"));
@@ -36,7 +39,6 @@ import {
   SQL_CONNECTIONS,
   WRITABLE_CONNECTIONS,
   ConnectionIcon,
-  DatasetPreview,
   connectionLabel,
   connectionSummary,
   connectorStatusLabel,
@@ -71,10 +73,26 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
   const [endpointPipelineId, setEndpointPipelineId] = useState<string>();
   const [semanticMounted, setSemanticMounted] = useState(false);
   const [semanticDirty, setSemanticDirty] = useState(false);
+  /** 四步向导完成度：undefined = 未清点（接口失败），不谎报完成。 */
+  const [stepCounts, setStepCounts] = useState<Record<(typeof DATA_CENTER_STEP_ORDER)[number], number | undefined>>({ connect: undefined, transform: undefined, publish: undefined, semantic: undefined });
+  /** 连接监控趋势：本会话诊断快照（按连接分桶，窗口 16）。 */
+  const [trendByConnection, setTrendByConnection] = useState<Record<string, ConnectorTrendSample[]>>({});
+  const [previewError, setPreviewError] = useState<string>();
   const previewSequence = useRef(0);
   const previewScope = useRef({ projectId: project.id, selectedDatasetId });
   previewScope.current = { projectId: project.id, selectedDatasetId };
   useEffect(() => () => { previewSequence.current++; }, []);
+
+  /** 诊断快照落趋势窗口（加载/测试/写入后都会刷新诊断，此处统一采样）。 */
+  function recordTrend(next: DataConnectorDiagnostics[]) {
+    if (!next.length) return;
+    const at = new Date().toISOString();
+    setTrendByConnection((current) => {
+      const merged = { ...current };
+      for (const diagnostics of next) merged[diagnostics.connectionId] = pushConnectorSample(merged[diagnostics.connectionId] ?? [], diagnostics, at);
+      return merged;
+    });
+  }
 
   const [sampleBusy, setSampleBusy] = useState(false);
   /** KWeaver 式开箱即用:一键装载内置演示数据(http 连接→内置演示数据集),幂等防重。 */
@@ -110,6 +128,7 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
       setConnections(nextConnections);
       setDatasets(nextDatasets);
       setDiagnostics(nextDiagnostics);
+      recordTrend(nextDiagnostics);
       const connectionId = preferredConnectionId ?? selectedConnectionId;
       const nextConnectionId = nextConnections.some((item) => item.id === connectionId) ? connectionId : nextConnections[0]?.id;
       setSelectedConnectionId(nextConnectionId);
@@ -125,6 +144,13 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
     } finally {
       setBusy(false);
     }
+    // 四步向导完成度：三步产出物计数并行清点；失败步保持 undefined（不谎报完成）。
+    const [pipelines, endpoints, semanticModels] = await Promise.all([
+      api.listDataPipelines(project.id).then((items) => items.length, () => undefined),
+      api.listDataEndpoints(project.id).then((items) => items.length, () => undefined),
+      api.listSemanticModels(project.id).then((items) => (Array.isArray(items) ? items.length : undefined), () => undefined),
+    ] as const);
+    setStepCounts((current) => ({ ...current, transform: pipelines, publish: endpoints, semantic: semanticModels }));
   }
 
   useEffect(() => {
@@ -143,6 +169,7 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
     const isCurrent = () => sequence === previewSequence.current && previewScope.current.projectId === project.id && previewScope.current.selectedDatasetId === selectedAtStart;
     setBusy(true);
     if (readOnly) setNotice(undefined);
+    setPreviewError(undefined);
     try {
       const result = await loadDataCenterPreview({ read: () => api.previewDataset(project.id, datasetId), save: value => api.createDataset(project.id, value) }, datasets.find(item => item.id === datasetId), readOnly, isCurrent);
       if (!result) return "cancelled";
@@ -156,7 +183,11 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
       return "ready";
     } catch (reason) {
       if (!isCurrent()) return "cancelled";
-      if (!readOnly) setError(reason instanceof Error ? reason.message : String(reason));
+      const message = reason instanceof Error ? reason.message : String(reason);
+      if (!readOnly) {
+        setError(message);
+        setPreviewError(message);
+      }
       return "error";
     } finally {
       if (sequence === previewSequence.current) setBusy(false);
@@ -187,7 +218,9 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       try {
-        setDiagnostics(await api.listDataConnectionDiagnostics(project.id));
+        const next = await api.listDataConnectionDiagnostics(project.id);
+        setDiagnostics(next);
+        recordTrend(next);
       } catch {
         /* keep the last local snapshot */
       }
@@ -208,7 +241,9 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       try {
-        setDiagnostics(await api.listDataConnectionDiagnostics(project.id));
+        const next = await api.listDataConnectionDiagnostics(project.id);
+        setDiagnostics(next);
+        recordTrend(next);
       } catch {
         /* keep the last local snapshot */
       }
@@ -268,6 +303,14 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
     }
   }
 
+  const steps = dataCenterStepStates({ ...stepCounts, connect: connections.length });
+  const stepSections = { connect: "data", transform: "pipeline", publish: "endpoint", semantic: "semantic" } as const;
+  const openStep = (step: (typeof DATA_CENTER_STEP_ORDER)[number]) => {
+    if (step === "publish") setEndpointPipelineId(undefined);
+    if (step === "semantic") setSemanticMounted(true);
+    setSection(stepSections[step]);
+  };
+
   return (
     <main className="data-center-page">
       <header className="data-center-header secondary-page-header">
@@ -300,23 +343,26 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
           </button>
         </div>
       )}
-      <nav className="data-hub-tabs">
-        <button className={section === "data" ? "active" : ""} onClick={() => setSection("data")}>
-          <b>1</b>
-          <strong>{tr(locale, "接入数据", "Connect data")}</strong>
-        </button>
-        <button className={section === "pipeline" ? "active" : ""} onClick={() => setSection("pipeline")}>
-          <b>2</b>
-          <strong>{tr(locale, "处理逻辑", "Transform")}</strong>
-        </button>
-        <button className={section === "endpoint" ? "active" : ""} onClick={() => {
-          setEndpointPipelineId(undefined);
-          setSection("endpoint");
-        }}>
-          <b>3</b>
-          <strong>{tr(locale, "发布接口", "Publish API")}</strong>
-        </button>
-        <button aria-label={tr(locale, "语义模型", "Semantic models")} className={section === "semantic" ? "active" : ""} onClick={() => { setSemanticMounted(true); setSection("semantic"); }}><Table2 size={14} /><strong>{tr(locale, "语义模型", "Semantic models")}</strong></button>
+      {/* 四步向导：当前(active)/完成(done,✓+计数)/可跳转 三态;完成度只来自真实计数,未清点=未知 */}
+      <nav className="data-hub-tabs" aria-label={tr(locale, "数据中心四步向导", "Data center wizard")}>
+        {DATA_CENTER_STEP_ORDER.map((step, index) => {
+          const state = steps[step];
+          const active = section === stepSections[step];
+          return (
+            <button
+              key={step}
+              className={`${active ? "active" : ""} ${state.done === true ? "done" : ""}`}
+              aria-current={active ? "step" : undefined}
+              title={state.count === undefined ? tr(locale, "产出物尚未清点", "Outputs not counted yet") : tr(locale, `${DATA_CENTER_STEP_META[step].zh} · ${state.count} 项产出`, `${DATA_CENTER_STEP_META[step].en} · ${state.count} output(s)`)}
+              onClick={() => openStep(step)}
+            >
+              <b>{state.done === true ? <Check size={11} strokeWidth={3} /> : index + 1}</b>
+              <strong>{tr(locale, DATA_CENTER_STEP_META[step].zh, DATA_CENTER_STEP_META[step].en)}</strong>
+              {state.count !== undefined && <em>{state.count}</em>}
+            </button>
+          );
+        })}
+        <i aria-hidden="true" />
       </nav>
       {semanticMounted && <div hidden={section !== "semantic"}>
         <Suspense fallback={<p role="status">{tr(locale, "正在加载语义模型…", "Loading semantic models…")}</p>}><SemanticModelStudio key={project.id} projectId={project.id} locale={locale} onDirtyChange={setSemanticDirty} /></Suspense>
@@ -401,6 +447,7 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
                     <span>
                       {tr(locale, "总失败", "Total failures")} <b>{selectedDiagnostics.totalFailures}</b>
                     </span>
+                    <ConnectorTrendBars samples={trendByConnection[selectedConnection!.id] ?? []} locale={locale} />
                   </div>
                 )}
                 {selectedDiagnostics?.lastError && <small title={selectedDiagnostics.lastError}>{selectedDiagnostics.lastError}</small>}
@@ -661,7 +708,14 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
                   )}
                 </section>
               )}
-              <DatasetPreview locale={locale} {...(preview ? { preview } : {})} {...(selectedDataset ? { datasetName: selectedDataset.name } : {})} />
+              <DatasetPreview
+                locale={locale}
+                busy={busy && !preview && !previewError}
+                {...(previewError ? { error: previewError } : {})}
+                {...(preview ? { preview } : {})}
+                {...(selectedDataset ? { datasetName: selectedDataset.name } : {})}
+                {...(selectedDataset ? { onRetry: () => void inspect(selectedDataset.id) } : {})}
+              />
             </div>
             {selectedDataset && preview?.dataset.id === selectedDataset.id && preview.fields.length > 0 && !selectedConnectorUnavailable && (
               <footer>
