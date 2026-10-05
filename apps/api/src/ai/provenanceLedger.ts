@@ -27,6 +27,15 @@ import {
   type AiProvenanceActionReceiptNode,
   type AiProvenanceActionTrace,
 } from "@bim-studio/contracts";
+import {
+  analyzeDecisionImpact,
+  findSimilarDecisions,
+  traceDecisionChain,
+  type DecisionChainDocumentView,
+  type DecisionChainTrace,
+  type DecisionImpactResult,
+  type SimilarDecisionsResult,
+} from "./decisionChainQueries.js";
 
 /**
  * H-C3 档案室：ProvenanceLedger（节点=假设/内核运行/判定/报告，边=proposal→run→verdict→report）。
@@ -382,6 +391,58 @@ export class ProvenanceLedgerStore {
   async chainByResult(projectId: string, resultFingerprint: string): Promise<AiProvenanceChain | undefined> {
     const trace = await this.trace(projectId, { resultFingerprint, limit: 1 });
     return trace.chains[0];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Semantica 刀1「决策链查询面」：只读回放/先例检索/影响面反查。
+  // 数据结构零改动；逻辑在 decisionChainQueries.ts（纯函数），此处只做加载与委托。
+  // ---------------------------------------------------------------------------
+
+  /** 从任一节点沿边回放完整链（仿真链/行动链），断链如实标注（gaps），不伪造连续性。 */
+  async traceDecisionChain(projectId: string, nodeId: string): Promise<DecisionChainTrace> {
+    if (typeof nodeId !== "string" || !nodeId.trim() || nodeId.length > 200) {
+      throw new ProvenanceLedgerError("nodeId 必须是 1–200 字符的非空字符串");
+    }
+    return traceDecisionChain(await this.#documentView(projectId), nodeId);
+  }
+
+  /** 先例检索：同 proposalFingerprint/resultFingerprint 或同理由码的判定，按时间倒序。 */
+  async findSimilarDecisions(
+    projectId: string,
+    query: { fingerprint?: string; reasonCode?: string },
+    limit = 20,
+  ): Promise<SimilarDecisionsResult> {
+    if (query.fingerprint !== undefined && query.fingerprint !== "" && !/^[0-9a-f]{16}$/.test(query.fingerprint.trim())) {
+      throw new ProvenanceLedgerError("fingerprint 必须是 16 位小写十六进制指纹");
+    }
+    if (query.reasonCode !== undefined && typeof query.reasonCode !== "string") {
+      throw new ProvenanceLedgerError("reasonCode 必须是字符串");
+    }
+    if (!query.fingerprint?.trim() && !query.reasonCode?.trim()) {
+      throw new ProvenanceLedgerError("先例检索需要 fingerprint 或 reasonCode 至少其一");
+    }
+    return findSimilarDecisions(await this.#documentView(projectId), query, limit);
+  }
+
+  /** 影响面反查：锚节点指纹出现在哪些下游 verdict/报告（只读清单）。 */
+  async analyzeDecisionImpact(projectId: string, nodeId: string): Promise<DecisionImpactResult> {
+    if (typeof nodeId !== "string" || !nodeId.trim() || nodeId.length > 200) {
+      throw new ProvenanceLedgerError("nodeId 必须是 1–200 字符的非空字符串");
+    }
+    return analyzeDecisionImpact(await this.#documentView(projectId), nodeId);
+  }
+
+  /** 只读文档视图：复用既有加载/缓存路径；查询纯函数不得改写入参（出参 fresh 对象）。 */
+  async #documentView(projectId: string): Promise<DecisionChainDocumentView> {
+    const document = await this.#loadDocument(projectId);
+    return structuredClone({
+      hypotheses: document.hypotheses,
+      runs: document.runs,
+      verdicts: document.verdicts,
+      reports: document.reports,
+      studyRuns: document.studyRuns,
+      actions: document.actions,
+    });
   }
 
   #evictOldestChains(draft: ProvenanceDocument): void {

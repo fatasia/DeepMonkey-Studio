@@ -1,6 +1,16 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fingerprint64Labeled } from "@bim-studio/contracts";
+import {
+  AGENT_MEMORY_CONFLICT_DELIVERY_MAX,
+  AGENT_MEMORY_CONFLICT_MAX_RECORDS,
+  detectMemoryCandidateConflicts,
+  detectVerdictConflicts,
+  extractMemoryTopics,
+  isMemoryConflictEntry,
+  type AgentMemoryConflictEntry,
+  type MemoryConflictPair,
+} from "./memoryConflicts.js";
 
 /**
  * H-C2 记忆系统三层（增强 2 + 用户"可感知"硬要求）：
@@ -89,6 +99,12 @@ export interface AgentMemoryRecord {
   updatedAt: string;
   confirmedBy?: string;
   confirmedAt?: string;
+  /**
+   * Semantica 刀2：与本条同主题且结论相悖的既有记录标识（`verdict:<resultFingerprint>` /
+   * 记忆条目 id）。只标记不阻断——候选照常登记待确认，冲突对随投递/列表呈现供人工裁决。
+   * 判定规则是确定性指纹/理由码比对（见 memoryConflicts.ts），不做向量语义。
+   */
+  conflictWith?: string[];
 }
 
 /** verdict 回灌摘要：只存指纹+判定+理由，不复制假设原文（证据最小化）。 */
@@ -101,6 +117,8 @@ export interface AgentVerdictSummary {
   runId?: string;
   step?: number;
   recordedAt: string;
+  /** Semantica 刀2：写入时检出的冲突（翻供/理由码反转），同上只标记不阻断。 */
+  conflictWith?: string[];
 }
 
 export interface AgentMemorySourceDelivery {
@@ -117,6 +135,11 @@ export interface AgentMemoryDelivery {
   memories: Array<{ id: string; content: string }>;
   lessons: AgentLesson[];
   verdicts: AgentVerdictSummary[];
+  /**
+   * Semantica 刀2：最近冲突对（UI 呈现用元数据，不进入提示词注入内容，
+   * 不计入 injectionChars/sources——提示词组装侧按字段白名单取值）。
+   */
+  conflicts: AgentMemoryConflictEntry[];
   injectionChars: number;
   sources: AgentMemorySourceDelivery[];
 }
@@ -128,6 +151,8 @@ interface MemoryDocument {
   /** H-C6-S2：旧落盘无此段按空数组读入（与 provenanceLedger.studyRuns 同先例）。 */
   runs: AgentRunArchive[];
   lessons: AgentLesson[];
+  /** Semantica 刀2：冲突登记滚动窗口；旧落盘无此段按空数组读入（同一先例）。 */
+  conflicts: AgentMemoryConflictEntry[];
 }
 
 export class AgentMemoryLimitError extends Error {
@@ -195,7 +220,7 @@ export class AgentMemoryStore {
       rationale: clip(item.rationale, AGENT_MEMORY_ITEM_MAX_CHARS),
     }));
 
-    const delivery: AgentMemoryDelivery = { configured: false, memories: [], lessons: [], verdicts: [], injectionChars: 0, sources: [] };
+    const delivery: AgentMemoryDelivery = { configured: false, memories: [], lessons: [], verdicts: [], conflicts: [], injectionChars: 0, sources: [] };
     let remaining = Math.max(0, charBudget);
     if (rules) {
       const content = clip(rules.content, remaining);
@@ -265,7 +290,14 @@ export class AgentMemoryStore {
     }
     delivery.configured = delivery.sources.length > 0;
     delivery.injectionChars = delivery.sources.reduce((total, item) => total + item.chars, 0);
+    // Semantica 刀2：冲突对随投递一并返回供 UI 呈现（呈现用元数据，不注入提示词、不计预算）。
+    delivery.conflicts = structuredClone(draftConflicts(document)).slice(0, AGENT_MEMORY_CONFLICT_DELIVERY_MAX);
     return delivery;
+  }
+
+  /** 冲突登记清单（记忆面板用）：最近优先的滚动窗口。 */
+  async listConflicts(projectId: string): Promise<AgentMemoryConflictEntry[]> {
+    return structuredClone(draftConflicts(await this.#loadDocument(projectId)));
   }
 
   async listMemories(projectId: string): Promise<AgentMemoryRecord[]> {
@@ -289,26 +321,35 @@ export class AgentMemoryStore {
   async addMemoryCandidate(projectId: string, input: { content: string; runId?: string; step?: number; proposalFingerprint?: string }): Promise<AgentMemoryRecord> {
     const content = requireContent(input.content);
     const now = this.#now().toISOString();
-    const record: AgentMemoryRecord = {
-      id: createMemoryId(),
-      content,
-      status: "pending",
-      origin: {
-        kind: "agent-proposal",
-        ...(input.runId ? { runId: input.runId } : {}),
-        ...(input.step !== undefined ? { step: input.step } : {}),
-        ...(input.proposalFingerprint ? { proposalFingerprint: input.proposalFingerprint } : {}),
-      },
-      createdAt: now,
-      updatedAt: now,
-    };
     return this.#commit(projectId, (draft) => {
       // 容量闸在写链内判定：并发候选以已提交最新计数为准，超出 fail-closed 拒绝。
       // 链外判定会数不到并发中的新增（闸失效）且整文件覆盖互相丢候选。
       if (draft.memories.length >= this.#maxRecords) {
         throw new AgentMemoryLimitError(`项目记忆已达上限 ${this.#maxRecords} 条；请在记忆面板清理后再试`);
       }
+      // Semantica 刀2：冲突检测同样在写链内（对已提交最新 active 记忆与判定窗口比对），
+      // 标记冲突不阻断——候选照常登记，conflictWith 与冲突登记同步落盘。
+      const pairs = detectMemoryCandidateConflicts(
+        extractMemoryTopics({ originProposalFingerprint: input.proposalFingerprint ?? undefined, content }),
+        draft.memories.filter((item) => item.status === "active"),
+        draft.verdicts,
+      );
+      const record: AgentMemoryRecord = {
+        id: createMemoryId(),
+        content,
+        status: "pending",
+        origin: {
+          kind: "agent-proposal",
+          ...(input.runId ? { runId: input.runId } : {}),
+          ...(input.step !== undefined ? { step: input.step } : {}),
+          ...(input.proposalFingerprint ? { proposalFingerprint: input.proposalFingerprint } : {}),
+        },
+        createdAt: now,
+        updatedAt: now,
+        ...(pairs.length ? { conflictWith: pairs.map((pair) => pair.withRecordId) } : {}),
+      };
       draft.memories.push(record);
+      pushConflictEntries(draft, record.id, pairs, now);
       return record;
     });
   }
@@ -356,11 +397,16 @@ export class AgentMemoryStore {
     if (!/^[0-9a-f]{16}$/.test(summary.proposalFingerprint) || !/^[0-9a-f]{16}$/.test(summary.resultFingerprint)) {
       throw new AgentMemoryLimitError("verdict 摘要指纹必须是 16 位十六进制");
     }
-    const record: AgentVerdictSummary = { ...summary, rationale: clip(requireContent(summary.rationale, "rationale"), AGENT_MEMORY_ITEM_MAX_CHARS), recordedAt: this.#now().toISOString() };
-    await this.#commit(projectId, (draft) => {
+    const base: AgentVerdictSummary = { ...summary, rationale: clip(requireContent(summary.rationale, "rationale"), AGENT_MEMORY_ITEM_MAX_CHARS), recordedAt: this.#now().toISOString() };
+    return this.#commit(projectId, (draft) => {
+      // Semantica 刀2：翻供/理由码反转检测在覆盖写入前、写链内进行（看到已提交最新窗口）；
+      // 旧判定将被窗口覆盖，冲突对落 conflicts 登记留痕，新判定挂 conflictWith 只标记不阻断。
+      const pairs = detectVerdictConflicts(base, draft.verdicts);
+      const record: AgentVerdictSummary = { ...base, ...(pairs.length ? { conflictWith: pairs.map((pair) => pair.withRecordId) } : {}) };
       draft.verdicts = [record, ...draft.verdicts.filter((item) => item.proposalFingerprint !== record.proposalFingerprint)].slice(0, this.#maxVerdicts);
+      pushConflictEntries(draft, `verdict:${record.resultFingerprint}`, pairs, record.recordedAt);
+      return record;
     });
-    return record;
   }
 
   async listVerdicts(projectId: string): Promise<AgentVerdictSummary[]> {
@@ -453,7 +499,7 @@ export class AgentMemoryStore {
     const cached = this.#documents.get(projectId);
     if (cached) return cached;
     const filePath = this.#documentPath(projectId);
-    let document: MemoryDocument = { schemaVersion: 1, memories: [], verdicts: [], runs: [], lessons: [] };
+    let document: MemoryDocument = { schemaVersion: 1, memories: [], verdicts: [], runs: [], lessons: [], conflicts: [] };
     try {
       const parsed = JSON.parse(await readFile(filePath, "utf8")) as Partial<MemoryDocument>;
       if (parsed.schemaVersion === 1) {
@@ -464,6 +510,8 @@ export class AgentMemoryStore {
           // H-C6-S2：旧落盘无 runs/lessons 段按空数组读入；坏行丢弃不回退。
           runs: Array.isArray(parsed.runs) ? parsed.runs.filter(isRunArchive).slice(0, AGENT_RUN_ARCHIVE_MAX_RECORDS) : [],
           lessons: Array.isArray(parsed.lessons) ? parsed.lessons.filter(isLesson).slice(0, AGENT_LESSON_MAX_RECORDS) : [],
+          // Semantica 刀2：旧落盘无 conflicts 段按空数组读入（同一兼容先例）。
+          conflicts: Array.isArray(parsed.conflicts) ? parsed.conflicts.filter(isMemoryConflictEntry).slice(0, AGENT_MEMORY_CONFLICT_MAX_RECORDS) : [],
         };
       }
     } catch (error) {
@@ -514,6 +562,24 @@ export class AgentMemoryStore {
 
 function byConfirmedAt(left: AgentMemoryRecord, right: AgentMemoryRecord): number {
   return (left.confirmedAt ?? left.createdAt).localeCompare(right.confirmedAt ?? right.createdAt);
+}
+
+function draftConflicts(document: MemoryDocument): AgentMemoryConflictEntry[] {
+  return Array.isArray(document.conflicts) ? document.conflicts : [];
+}
+
+/** 冲突登记入档：滚动窗口（最近优先），不阻断写路径本身。 */
+function pushConflictEntries(draft: MemoryDocument, recordId: string, pairs: MemoryConflictPair[], detectedAt: string): void {
+  if (!pairs.length) return;
+  const entries: AgentMemoryConflictEntry[] = pairs.map((pair, index) => ({
+    id: `${recordId}:conflict:${index}`,
+    kind: pair.kind,
+    topic: pair.topic,
+    recordId,
+    conflictWith: [pair.withRecordId],
+    detectedAt,
+  }));
+  draft.conflicts = [...entries, ...draftConflicts(draft)].slice(0, AGENT_MEMORY_CONFLICT_MAX_RECORDS);
 }
 
 function pickVerdictFields(item: AgentVerdictSummary) {

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { ProvenanceLedgerStore } from "./provenanceLedger.js";
+import { ProvenanceLedgerError, type ProvenanceLedgerStore } from "./provenanceLedger.js";
 import { bindOntologyActionLedger } from "./ontologyActionService.js";
 
 /**
@@ -47,6 +47,63 @@ export async function registerProvenanceRoutes(
       return trace;
     },
   );
+
+  // -------------------------------------------------------------------------
+  // Semantica 刀1「决策链查询面」三个只读端点（与既有 trace 同信封、同鉴权口径：
+  // 无写操作故无审计事件；未命中由返回体 found/matched=false 如实呈现）。
+  // -------------------------------------------------------------------------
+
+  /** 决策链回放：从任一节点（假设/运行/判定/报告/行动三跳/长跑记录）回放完整链，断链如实标注。 */
+  app.get<{ Params: { projectId: string; nodeId: string } }>(
+    "/api/projects/:projectId/ai/provenance/decision-chain/:nodeId",
+    async (request, reply) => {
+      if (!await projectExists(dependencies.store, request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
+      try {
+        return await dependencies.ledger.traceDecisionChain(request.params.projectId, request.params.nodeId);
+      } catch (error) {
+        return sendProvenanceError(reply, error);
+      }
+    },
+  );
+
+  /** 先例检索：同 proposalFingerprint/resultFingerprint 或同理由码的既有判定，时间倒序。 */
+  app.get<{ Params: { projectId: string }; Querystring: Record<string, string | undefined> }>(
+    "/api/projects/:projectId/ai/provenance/similar-decisions",
+    async (request, reply) => {
+      if (!await projectExists(dependencies.store, request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
+      const limit = parseLimit(request.query.limit);
+      if (limit === null) return reply.code(400).send({ message: "limit 必须是 1 至 100 的整数" });
+      if (!request.query.fingerprint && !request.query.reasonCode) {
+        return reply.code(400).send({ message: "先例检索需要 fingerprint 或 reasonCode 查询参数至少其一" });
+      }
+      try {
+        return await dependencies.ledger.findSimilarDecisions(request.params.projectId, {
+          ...(request.query.fingerprint ? { fingerprint: request.query.fingerprint } : {}),
+          ...(request.query.reasonCode ? { reasonCode: request.query.reasonCode } : {}),
+        }, limit ?? 20);
+      } catch (error) {
+        return sendProvenanceError(reply, error);
+      }
+    },
+  );
+
+  /** 影响面反查：锚节点指纹出现在哪些下游判定/报告（只读清单）。 */
+  app.get<{ Params: { projectId: string; nodeId: string } }>(
+    "/api/projects/:projectId/ai/provenance/decision-impact/:nodeId",
+    async (request, reply) => {
+      if (!await projectExists(dependencies.store, request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
+      try {
+        return await dependencies.ledger.analyzeDecisionImpact(request.params.projectId, request.params.nodeId);
+      } catch (error) {
+        return sendProvenanceError(reply, error);
+      }
+    },
+  );
+}
+
+function sendProvenanceError(reply: import("fastify").FastifyReply, error: unknown) {
+  if (error instanceof ProvenanceLedgerError) return reply.code(400).send({ message: error.message, code: error.code });
+  return reply.code(500).send({ message: error instanceof Error ? error.message : "档案查询失败" });
 }
 
 /** undefined = 未提供（用默认）；null = 非法（路由回 400）。 */

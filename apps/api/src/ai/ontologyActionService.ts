@@ -33,6 +33,37 @@ import {
   type OntologyPreconditionEvaluator,
   type OntologyActionRejectionCode,
 } from "@bim-studio/contracts";
+import {
+  validateOntologyObjectValues,
+  type OntologyConstraintCode,
+  type OntologyConstraintRule,
+  type OntologyConstraintViolation,
+} from "./ontologyConstraintValidation.js";
+
+/**
+ * Semantica 刀3「本体约束校验」策略：行动执行写入账本前，对目标对象实例值
+ * （行动参数中与对象属性同名的键）做轻量 SHACL 式校验。
+ * - mode "report"（缺省）：只报告——violation 清单随 preview/execute 结果返回，不阻断；
+ * - mode "strict"：阻断——存在违规即 rejected（invalidArguments），不落任何账本节点。
+ * 规则表是数据（可裁剪传入），不是代码硬编码；判定确定性（类型/枚举/单位格式），
+ * 不做语义推断。
+ */
+export interface OntologyConstraintPolicy {
+  rules?: readonly OntologyConstraintRule[];
+  mode?: "report" | "strict";
+}
+
+/** preview 出参扩展（contracts 类型零改动，apps/api 结构化超集）：约束校验违规清单。 */
+export interface OntologyActionPreviewWithConstraints extends OntologyActionPreview {
+  /** partial 口径校验结果；空数组 = 通过。默认 report-only，不参与 executable 判定。 */
+  constraintViolations: OntologyConstraintViolation[];
+  /** 本次实际执行的规则 id（审计「查了什么」与「为什么没查」）。 */
+  constraintCheckedRules: OntologyConstraintCode[];
+}
+
+export type OntologyExecuteOutcomeWithConstraints = OntologyExecuteOutcome & {
+  constraintViolations?: OntologyConstraintViolation[];
+};
 
 /**
  * H-C4-P3「Harness 行动路径」服务：把已发布本体行动接入既有 Harness 执行链。
@@ -74,6 +105,8 @@ export interface OntologyActionServiceInput {
   tools: Pick<AgentToolGateway, "list" | "fingerprint" | "execute">;
   /** 前置条件评估器；缺省恒 unknown（fail-closed）。 */
   preconditionEvaluator?: OntologyPreconditionEvaluator;
+  /** Semantica 刀3：本体约束校验策略；缺省 report（只报告不阻断）、缺省规则表全开。 */
+  constraints?: OntologyConstraintPolicy;
   now?: () => Date;
 }
 
@@ -111,7 +144,7 @@ export function createOntologyActionService(input: OntologyActionServiceInput) {
    * 风险等级、是否需审批、幂等键、回滚说明、计划与审批指纹。
    * 无法解析的行动直接抛显式理由码；可解析但被阻断的返回 blockingReasons。
    */
-  async function preview(projectId: string, planInput: OntologyActionPlanInput, actor: OntologyActionActor): Promise<OntologyActionPreview> {
+  async function preview(projectId: string, planInput: OntologyActionPlanInput, actor: OntologyActionActor): Promise<OntologyActionPreviewWithConstraints> {
     const { pkg, action, boundObject } = await resolvePublishedAction(projectId, planInput, input.ontologyReader());
     const canonicalId = requireCanonicalId(planInput.target?.canonicalId);
     if (planInput.target?.objectKey !== action.boundObject) {
@@ -157,6 +190,14 @@ export function createOntologyActionService(input: OntologyActionServiceInput) {
     for (const message of argumentErrors) pushBlocking(ONTOLOGY_ACTION_REJECTION_CODES.invalidArguments, message);
 
     const arguments_ = planInput.arguments ?? {};
+    // Semantica 刀3：本体约束校验（partial 口径——参数不是完整实例，只查同名属性键的
+    // 类型/枚举/单位格式）。preview 恒 report-only（违规清单随预览返回供 UI 呈现），
+    // 是否阻断由 execute 按策略决定。
+    const constraintReport = validateOntologyObjectValues(boundObject, arguments_, {
+      ...(input.constraints?.rules ? { rules: input.constraints.rules } : {}),
+      mode: "partial",
+    });
+
     const call = buildToolCall(projectId, action.toolBinding.id, arguments_, canonicalId);
     const planFingerprint = planActionFingerprint({
       packageId: pkg.id,
@@ -197,6 +238,8 @@ export function createOntologyActionService(input: OntologyActionServiceInput) {
       approvalScopeFingerprint,
       executable: blockingReasons.length === 0,
       blockingReasons,
+      constraintViolations: constraintReport.violations,
+      constraintCheckedRules: constraintReport.checkedRules,
     };
   }
 
@@ -204,13 +247,24 @@ export function createOntologyActionService(input: OntologyActionServiceInput) {
    * 行动执行：预览复核（同一 fail-closed 门）→ 幂等重放 → 计划落账 → 审批闸 →
    * 网关执行 → 回执落账（成功/失败/阻断都如实成链，不伪造执行结果）。
    */
-  async function execute(projectId: string, planInput: OntologyActionPlanInput, context: OntologyActionExecuteContext): Promise<OntologyExecuteOutcome> {
+  async function execute(projectId: string, planInput: OntologyActionPlanInput, context: OntologyActionExecuteContext): Promise<OntologyExecuteOutcomeWithConstraints> {
     const actor: OntologyActionActor = { principal: context.principal, ...(context.role ? { role: context.role } : {}) };
     const planPreview = await preview(projectId, planInput, actor);
     if (!planPreview.executable) {
       const first = planPreview.blockingReasons[0];
       if (!first) return { status: "rejected", code: ONTOLOGY_ACTION_REJECTION_CODES.unbound, message: "行动计划被阻断且无理由码（不应发生）" };
       return { status: "rejected", code: first.code, message: first.message };
+    }
+    // Semantica 刀3（写入前闸门）：strict 模式下本体约束违规即拒绝——不落计划/执行/回执
+    // 任何账本节点；report 模式（缺省）只随结果返回违规清单，不阻断执行链。
+    if (planPreview.constraintViolations.length && input.constraints?.mode === "strict") {
+      const digest = planPreview.constraintViolations.slice(0, 3).map((item) => `${item.path}: ${item.message}`).join("；");
+      return {
+        status: "rejected",
+        code: ONTOLOGY_ACTION_REJECTION_CODES.invalidArguments,
+        message: `本体约束校验未通过（strict 模式阻断，${planPreview.constraintViolations.length} 条违规）：${digest}${planPreview.constraintViolations.length > 3 ? "…" : ""}`,
+        constraintViolations: planPreview.constraintViolations,
+      };
     }
     const ledger = input.ledger?.();
     if (!ledger) throw new OntologyActionRuntimeError("ontology-runtime-unavailable", "行动回执账本未绑定，拒绝执行（fail-closed）");
@@ -286,7 +340,7 @@ export function createOntologyActionService(input: OntologyActionServiceInput) {
       receiptedAt: now(),
     });
     await ledger.recordActionReceipt(projectId, receipt);
-    return { status, receipt: toReceipt(receipt, false) };
+    return { status, receipt: toReceipt(receipt, false), constraintViolations: planPreview.constraintViolations };
   }
 
   return { listPublishedActions, preview, execute };
