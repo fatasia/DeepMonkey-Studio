@@ -679,7 +679,67 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine-native/src/lib.rs(无 MegaLights 模块;native clustered_lighting.rs 为逐灯簇光路径,非 RIS 采样)",
     },
   },
-
+  {
+    // deep2D 线刀 1(2026-10-05,ef7d46b7):GPUI 视觉三命令。wire 层 Paint
+    // 模型扩展(solid 数组保持 legacy 字节兼容)+ 片段级解析 SDF;CPU 镜像
+    // paint_data.rs 与 WGSL 逐式一致,真 GPU readback 对拍内部零分歧。
+    // web 端如实 absent:TS 显示列表合同(deep2dDisplayList.ts)的 path fill
+    // 仅实心 Deep2dColor,无 gradient/cornerRadius/shadow 字段,TS 端也无
+    // deep2d 渲染通路——三命令是 native 渲染域能力。
+    id: "deep2d-visual-trio",
+    title: "deep2D 视觉三命令:渐变/圆角矩形/箱阴影(GPUI 对齐,解析 SDF)",
+    webFeatureKeys: [],
+    web: {
+      support: "unavailable", reason: "absent",
+      evidence: "packages/deep-engine/src/deep2dDisplayList.ts(Deep2dCommand path 变体 fill 仅 Deep2dColor 实心;wire 无 gradient/cornerRadius/shadow 字段;web 无 deep2d 渲染通路)",
+    },
+    native: {
+      support: "supported", reason: "full",
+      evidence: "packages/deep-engine-native/src/deep2d/command_types.rs(PathCommand.cornerRadius/shadow + Deep2dPaint linear/radial,legacy 实心 wire 逐字节兼容)+ deep2d/paint_data.rs(WGSL 逐式 CPU 镜像:sd_rounded_box/gradient_stops_color/quad_fragment)+ assets/shaders/native_deep2d_v1.wgsl v2(片段级求值)+ src/deep2d_paint_gpu_tests.rs(真 GPU readback 对拍:内部零分歧、通道差 ≤8)",
+    },
+  },
+  {
+    // deep2D 线刀 2(2026-10-05,c330c3f7):组件布局引擎。taffy(MIT/Apache
+    // 双许可,固定版本+SHA-256)flex solve,零新增 Deep2dCommand 变体——
+    // 布局叶结点直接产出 quad/视觉命令喂既有管线。web 端 absent:布局求解
+    // 属 native deep2d 引擎缝(app::deep2d_context::layout_content)。
+    id: "deep2d-component-layout",
+    title: "deep2D 组件布局引擎(taffy flex solve → quad/视觉命令产出)",
+    webFeatureKeys: [],
+    web: {
+      support: "unavailable", reason: "absent",
+      evidence: "packages/deep-engine/src/index.ts(无布局 solve 导出;TS 侧无 flex 引擎;组件布局属 native deep2d 域)",
+    },
+    native: {
+      support: "supported", reason: "full",
+      // 证据为单文件路径(对拍器要求 .ts/.rs 单文件;目录型证据不合规)。
+      evidence: "packages/deep-engine-native/src/deep2d/layout/solve.rs(taffy flex row/column/wrap/justify/align → 每个 leaf 产出 quad 几何喂 runtime_quad,零新增命令变体;tree/style/commands 同目录)+ app::deep2d_context::layout_content 引擎缝接线 + src/deep2d_layout_gpu_tests.rs(圆角卡片+渐变头+图标/文本占位 flex 排布真 GPU 逐像素对拍:内部零分歧)",
+    },
+  },
+  {
+    // deep2D 线刀 3(2026-10-05):stencil-then-cover 动态路径实时填充。
+    // 分路是纯运行时决策(滑窗变更计数阈值,无用户开关,wire schema 零变化):
+    // 静态路径继续 CPU 细分+缓存;动态路径 CPU 只剩展平+fence 发射,填充
+    // 三连(clear→cover→fill)在 GPU stencil 上完成。能力定义限定 fill:
+    // 动态命令的 stroke 维持 CPU 描边展开(如实);边缘 AA 为硬边(1× 采样,
+    // 与既有静态路径管线一致,非本刀扩大面)。CPU oracle
+    // (paint_reference dynamic 分支)与 GPU 同语义(半开区间中心采样)。
+    // 模板技法:nonzero 前向 IncWrap/背向 DecWrap(朝向约定颠倒只造成全局
+    // 符号翻转,≠0 判定不变);evenodd 双向 Invert 翻转 LSB、fill 测
+    // LSB==1——双向 Increment 在多重覆盖区(洞正下方 3 次覆盖)奇偶失效,
+    // 真机实测 4 像素内部分歧后修正。
+    id: "deep2d-dynamic-path-fill",
+    title: "deep2D 动态路径 stencil-then-cover 实时填充(滑窗自动分路;fill 域)",
+    webFeatureKeys: [],
+    web: {
+      support: "unavailable", reason: "absent",
+      evidence: "packages/deep-engine/src/deep2dDisplayList.ts(wire schema 无动态性标注;静态/动态分路是 native 运行时决策,wire 零变化;web 无 deep2d 渲染通路)",
+    },
+    native: {
+      support: "supported", reason: "full",
+      evidence: "packages/deep-engine-native/src/deep2d/painter_dynamic.rs(滑窗 8 帧内 ≥3 次内容变更自动分路;stencil 资格 gate:有 fill/非解析 quad/无多边形剪刀;预算超限回落静态并计数)+ deep2d/painter_cache_prepare.rs(路由记账与缓存共存)+ assets/shaders/native_deep2d_dynamic_cover_v1.wgsl + src/deep2d_dynamic_gpu.rs(clear→cover→fill 三连管线,Stencil8;nonzero 前向增/背向减,evenodd 双向 Invert LSB)+ deep2d/paint_reference.rs(oracle 同语义:fence 边带 winding/parity 中心采样)+ src/deep2d_dynamic_gpu_tests.rs(N 帧序列/fill-rule donut/渐变/scissor 裁剪/静态+动态混帧/composite 层真 GPU 对拍:内部零分歧,逐像素 worst=0)",
+    },
+  },
 ] as const);
 
 /** 能力 id 单源冻结数组(结构先例:pbrTimedPassIds.PBR_TIMED_PASS_IDS)。 */
