@@ -27,7 +27,7 @@ export function useAppStudioViewportToggles(): AppStudioViewportToggles {
   const [viewerObjectPanelOpen, setViewerObjectPanelOpen] = useState(false);
   const [engineeringOpen, setEngineeringOpen] = useState(false);
   const [qualityPanelOpen, setQualityPanelOpen] = useState(false);
-  // 刀 6:开发者 HUD(性能观测小条)开态;默认关,F9 或工具坞「仿真与开发」菜单开。
+  // 刀 6:开发者 HUD(性能观测小条)开态;默认关,F9 或工具坞「查看与分析」菜单开。
   const [devHudOpen, setDevHudOpen] = useState(false);
   // 配置易用性:实验性功能面板(URL opt-in 开关集中呈递)开态;默认关,工具坞「仿真与开发」菜单开。
   const [experimentalPanelOpen, setExperimentalPanelOpen] = useState(false);

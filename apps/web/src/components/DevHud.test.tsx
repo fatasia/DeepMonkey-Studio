@@ -5,7 +5,7 @@ import type { QualityTelemetrySnapshot } from "@bim-studio/deep-engine/webgpu";
 import type { FramePerformanceSnapshot } from "../viewer/framePerformanceMonitor";
 import type { ViewerEngine } from "../viewer/ViewerEngine";
 import type { StudioQualityTelemetryStatus } from "../viewer/StudioDeepQualityTelemetry";
-import { DevHud, formatHudBytes, formatHudCount, formatHudHeap, formatHudMs } from "./DevHud";
+import { DevHud, formatHudBytes, formatHudCount, formatHudHeap, formatHudMs, formatHudRebuilds, rtShadowRouteLabel } from "./DevHud";
 
 // 桥模块含 three.js 重依赖;HUD 测试只消费注册表读取函数,用 hoisted 状态注入。
 const state = vi.hoisted(() => ({ status: undefined as StudioQualityTelemetryStatus | undefined }));
@@ -173,7 +173,37 @@ describe("DevHud", () => {
     expect(renderHud()).toContain("dev-hud");
   });
 
-  it("格式化导出:毫秒/字节/大数计数/堆占用,非法输入 — 而非伪零", () => {
+  it("FrameMetrics 直通:RT 阴影选路与重建周期入显,重建账目进悬浮说明", () => {
+    state.status = undefined;
+    const html = renderHud(engine(perfSnapshot({
+      deep: { frame: {
+        frame: 91,
+        rtShadowRoute: { channel: "cascade", reason: "controller:unstaged" },
+        rendererRebuilds: { ordinal: 2, total: 5, last: { index: 4, atMs: 1, releasedEstimateBytes: 1_048_576,
+          bufferBytes: 0, textureBytes: 0, transientAllocatedBytes: 0, transientPeakResidentBytes: 0, pipelineCompiles: 3 } },
+      } },
+    } as unknown as Partial<FramePerformanceSnapshot>)));
+    expect(html).toContain("级联"); // cascade 通道标签
+    expect(html).toContain("controller:unstaged"); // 选路原因进 title
+    expect(html).toContain("#2 · Σ5"); // 实例序号 + 进程累计
+    expect(html).toContain("释放 1.0 MB · 管线编译 3 条"); // 最近重建账目
+    expect(html).not.toContain("光线追踪"); // 本帧实际走的是 cascade
+  });
+
+  it("非 Deep 或帧未携带披露:RT 阴影/重建两行如实 —,不伪零不崩溃", () => {
+    state.status = undefined;
+    const bare = renderHud();
+    expect(bare).toContain("RT 阴影");
+    expect(bare).toContain("渲染器重建");
+    expect((bare.match(/—/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    const noDisclosure = renderHud(engine(perfSnapshot({
+      deep: { frame: { frame: 92 } },
+    } as unknown as Partial<FramePerformanceSnapshot>)));
+    expect(noDisclosure).toContain("本帧无选路披露");
+    expect(noDisclosure).toContain("本帧未携带");
+  });
+
+  it("格式化导出:毫秒/字节/大数计数/堆占用/重建摘要/选路标签,非法输入 — 而非伪零", () => {
     expect(formatHudMs(4.2)).toBe("4.20 ms");
     expect(formatHudMs(Number.NaN)).toBe("—");
     expect(formatHudMs(undefined)).toBe("—");
@@ -189,6 +219,11 @@ describe("DevHud", () => {
     expect(formatHudHeap(268_435_456, 4_294_967_296)).toBe("256.0 MB / 4.00 GB");
     expect(formatHudHeap(268_435_456, 0)).toBe("256.0 MB"); // limit 缺测只报 used
     expect(formatHudHeap(Number.NaN, 100)).toBe("—");
+    expect(formatHudRebuilds({ ordinal: 0, total: 3 })).toBe("#0 · Σ3");
+    expect(formatHudRebuilds(undefined)).toBe("—");
+    expect(formatHudRebuilds({ ordinal: -1, total: Number.NaN })).toBe("—");
+    expect(rtShadowRouteLabel(LOCALE, "ray-traced")).toBe("光线追踪");
+    expect(rtShadowRouteLabel(LOCALE, "cascade")).toBe("级联");
   });
 
   it("样式纪律:数值 tabular-nums、等宽字体、--layer-panel 层级,不引入硬编码色值", async () => {

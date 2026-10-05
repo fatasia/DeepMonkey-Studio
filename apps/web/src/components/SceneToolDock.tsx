@@ -70,7 +70,7 @@ interface SceneToolDockProps {
   physicsDebugActive?: boolean;
   qualityPanelOpen: boolean;
   onQualityPanelToggle: () => void;
-  /** 刀 6:开发者 HUD(性能观测小条,F9 亦可开关);默认关。 */
+  /** 刀 6:开发者 HUD(性能观测小条,F9 亦可开关);开关挂「查看与分析」菜单,默认关。 */
   devHudOpen?: boolean;
   onDevHudToggle?: () => void;
   /** 配置易用性:实验性功能面板(URL opt-in 开关集中呈递);默认关。 */
@@ -250,7 +250,8 @@ export function SceneToolDock(props: SceneToolDockProps) {
           props.environmentOpen ||
           props.animationOpen ||
           props.infoEnabled ||
-          props.engineeringOpen
+          props.engineeringOpen ||
+          props.devHudOpen === true
         }
         onToggle={() => setOpenMenu((value) => (value === "inspect" ? undefined : "inspect"))}
       >
@@ -329,6 +330,12 @@ export function SceneToolDock(props: SceneToolDockProps) {
           onClick={() => run(props.onEngineeringToggle)}
         />
         <MenuAction
+          label={tr(props.locale, "开发者 HUD", "Developer HUD")}
+          icon={<Activity size={15} />}
+          active={props.devHudOpen === true}
+          onClick={() => run(() => props.onDevHudToggle?.())}
+        />
+        <MenuAction
           label={tr(props.locale, "环境与灯光", "Environment & lighting")}
           icon={<Sun size={15} />}
           active={props.environmentOpen}
@@ -357,7 +364,6 @@ export function SceneToolDock(props: SceneToolDockProps) {
           props.behaviorOpen ||
           props.physicsOpen ||
           props.qualityPanelOpen ||
-          props.devHudOpen === true ||
           props.experimentalPanelOpen === true ||
           props.bakeBenchOpen ||
           props.xrOpen ||
@@ -387,12 +393,6 @@ export function SceneToolDock(props: SceneToolDockProps) {
           icon={<Gauge size={15} />}
           active={props.qualityPanelOpen}
           onClick={() => run(props.onQualityPanelToggle)}
-        />
-        <MenuAction
-          label={tr(props.locale, "开发者 HUD", "Developer HUD")}
-          icon={<Activity size={15} />}
-          active={props.devHudOpen === true}
-          onClick={() => run(() => props.onDevHudToggle?.())}
         />
         <MenuAction
           label={tr(props.locale, "实验性功能", "Experimental features")}

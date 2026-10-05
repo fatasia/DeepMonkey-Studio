@@ -11,7 +11,8 @@ import "./DevHud.css";
 /**
  * 刀 6 开发者 HUD:对标 UE stat unit 的常驻性能观测小条。
  * 数据源全部既有(不新增轮询):`engine.getPerformanceSnapshot()`(实时帧率/帧时/
- * 堆/绘制量)+ `readStudioQualityTelemetry()`(window.__deepQualityTelemetry 镜像:
+ * 堆/绘制量,含 FrameMetrics 直通的 rendererRebuilds/rtShadowRoute 披露)+
+ * `readStudioQualityTelemetry()`(window.__deepQualityTelemetry 镜像:
  * 逐 pass GPU 计时/自适应品质档/托管显存)。刷新 4Hz 与桥侧聚合采样同拍。
  * 缺测显示「—/未接入」,绝不伪零;逐 pass 计时未开启时给出 t25-gpu-pass-timing=1 引导。
  */
@@ -156,6 +157,10 @@ export function DevHud(props: DevHudProps) {
   const { perf, quality } = snapshot;
   const timings = quality?.latestPassTimings;
   const adaptive = perf?.deep?.frame.adaptiveQuality;
+  // FrameMetrics 直通披露面:B3 RT 阴影选路 + A2 重建周期账目(只在变化帧携带)。
+  const deepFrame = perf?.deep?.frame;
+  const rtRoute = deepFrame?.rtShadowRoute;
+  const rebuilds = deepFrame?.rendererRebuilds;
   const hudStyle: CSSProperties | undefined = position
     ? { left: `${position.x}px`, top: `${position.y}px`, right: "auto" }
     : undefined;
@@ -219,6 +224,19 @@ export function DevHud(props: DevHudProps) {
               : "—"}
             title={tr(locale, "Deep 下为 F1 主 pass 包体编码量(量,非逐实例);其余为作者后端计数。",
               "On Deep these are F1 main-pass encoded counts; otherwise author-backend counters.")} />
+          <HudRow label={tr(locale, "RT 阴影", "RT shadows")}
+            value={rtRoute ? rtShadowRouteLabel(locale, rtRoute.channel) : "—"}
+            title={rtRoute?.reason ?? (deepFrame
+              ? tr(locale, "本帧无选路披露(RT 阴影未启用或场景未供给)", "No route disclosure this frame (RT shadows off or scene not supplied)")
+              : undefined)} />
+          <HudRow label={tr(locale, "渲染器重建", "Renderer rebuilds")}
+            value={formatHudRebuilds(rebuilds)}
+            title={rebuilds?.last
+              ? tr(locale, `最近重建 #${rebuilds.last.index}:释放 ${formatHudBytes(rebuilds.last.releasedEstimateBytes)} · 管线编译 ${rebuilds.last.pipelineCompiles} 条`,
+                `Last rebuild #${rebuilds.last.index}: released ${formatHudBytes(rebuilds.last.releasedEstimateBytes)} · ${rebuilds.last.pipelineCompiles} pipeline compile(s)`)
+              : deepFrame
+                ? tr(locale, "本帧未携带(该披露只在重建后的首帧出现)", "Not carried this frame (disclosed only on the first frame after a rebuild)")
+                : undefined} />
           {quality === undefined && (
             <p className="hud-note">
               {tr(locale, "质量遥测未接入:切到 Deep WebGPU 后显示逐 pass 计时与品质档。",
@@ -340,4 +358,19 @@ export function formatHudHeap(usedBytes: number, limitBytes: number): string {
   const used = formatHudBytes(usedBytes);
   if (!Number.isFinite(limitBytes) || limitBytes <= 0) return used;
   return `${used} / ${formatHudBytes(limitBytes)}`;
+}
+
+/** B3 RT 阴影选路标签:ray-traced/cascade 双语;缺测由调用方给 —。 */
+export function rtShadowRouteLabel(locale: AppLocale, channel: "ray-traced" | "cascade"): string {
+  return channel === "ray-traced" ? tr(locale, "光线追踪", "Ray-traced") : tr(locale, "级联", "Cascade");
+}
+
+/**
+ * A2 重建周期摘要:本实例序号 + 进程累计重建数。
+ * 形如 "#0 · Σ3";字段只在 total 变化后的首帧携带,缺测 — 不是"从未重建"。
+ */
+export function formatHudRebuilds(value: { readonly ordinal: number; readonly total: number } | undefined): string {
+  if (!value || !Number.isFinite(value.ordinal) || !Number.isFinite(value.total)
+    || value.ordinal < 0 || value.total < 0) return "—";
+  return `#${value.ordinal} · Σ${Math.round(value.total)}`;
 }
