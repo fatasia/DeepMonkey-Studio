@@ -31,8 +31,9 @@ export function threeOutputColorSpaceFor(space: DisplayOutputColorSpace): THREE.
   return space === "srgb" ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
 }
 
+/** three r186 起 PCFSoftShadowMap 已废弃(WebGPU 侧实现移除,warn 后回落);r186 的 PCFShadowMap 即软阴影,两个合同值统一映射到它。 */
 export function threeShadowMapTypeFor(filter: DisplayShadowFilter): THREE.ShadowMapType {
-  return filter === "pcf-soft" ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+  return THREE.PCFShadowMap;
 }
 
 export const DISPLAY_THREE_TONE_MAPPING = threeToneMappingFor(DEFAULT_DISPLAY_CONTRACT.toneMapping.operator);

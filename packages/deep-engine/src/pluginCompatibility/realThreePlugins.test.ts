@@ -80,7 +80,7 @@ async function dependencyVersion(name: "three" | "three-mesh-bvh"): Promise<stri
 
 describe("real Three library and plugin compatibility gate", () => {
   it("pins the exact dependency versions covered by this gate", async () => {
-    await expect(dependencyVersion("three")).resolves.toBe("0.185.1");
+    await expect(dependencyVersion("three")).resolves.toBe("0.186.1");
     await expect(dependencyVersion("three-mesh-bvh")).resolves.toBe("0.9.14");
   });
 

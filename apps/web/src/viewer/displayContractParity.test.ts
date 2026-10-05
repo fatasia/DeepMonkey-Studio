@@ -25,7 +25,8 @@ describe("three <-> Deep default display parity", () => {
     expect(threeOutputColorSpaceFor(contract.outputColorSpace)).toBe(THREE.SRGBColorSpace);
     expect(DISPLAY_THREE_SHADOW_MAP_TYPE).toBe(threeShadowMapTypeFor(contract.shadow.filter));
     expect(DISPLAY_THREE_SHADOW_MAP_TYPE).toBe(THREE.PCFShadowMap);
-    expect(threeShadowMapTypeFor("pcf-soft")).toBe(THREE.PCFSoftShadowMap);
+    // three r186:PCFSoftShadowMap 已废弃,PCFShadowMap 本身即软阴影,"pcf-soft" 合同值随之统一映射
+    expect(threeShadowMapTypeFor("pcf-soft")).toBe(THREE.PCFShadowMap);
   });
 
   it("dynamic exposure at unit intensity reproduces the static exposure", () => {

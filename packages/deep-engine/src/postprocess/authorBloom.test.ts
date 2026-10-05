@@ -46,7 +46,7 @@ function authorBloomFixture() {
 }
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-describe("author bloom r185", () => {
+describe("author bloom r186", () => {
   it("reuses the pooled fixed pyramid without per-frame buffer or bind-group churn", () => {
     const f = authorBloomFixture(), pool = new PbrTransientTexturePool(f.session);
     const pass = new AuthorBloomPass(f.session, pool);
@@ -88,15 +88,24 @@ describe("author bloom r185", () => {
     expect(kernel[0]).toBe(0.39894 / 2);
     expect(kernel[0]! + 2 * kernel.slice(1).reduce((sum, value) => sum + value, 0)).toBeLessThan(1);
   });
-  it("matches installed Three r185 Gaussian uniforms and composite semantics", () => {
+  it("matches installed Three r186 Gaussian uniforms and composite semantics", () => {
     const reference = new UnrealBloomPass(new Vector2(32, 16), options.strength, 0.25, options.threshold);
     const internals = reference as unknown as {
-      separableBlurMaterials: { defines: { KERNEL_RADIUS: number }; uniforms: { gaussianCoefficients: { value: number[] } }; fragmentShader: string }[];
+      separableBlurMaterials: { defines: { KERNEL_PAIRS: number };
+        uniforms: { centerWeight: { value: number }; gaussianOffsets: { value: number[] }; gaussianWeights: { value: number[] } };
+        fragmentShader: string }[];
       compositeMaterial: { fragmentShader: string }; highPassUniforms: { smoothWidth: { value: number } };
     };
     for (const material of internals.separableBlurMaterials) {
-      expect(authorBloomCoefficients(material.defines.KERNEL_RADIUS)).toEqual(material.uniforms.gaussianCoefficients.value);
-      expect(material.fragmentShader).not.toContain("diffuseSum / weightSum");
+      // r186(#34479)把相邻采样合并为双线性 fetch:KERNEL_PAIRS * 2 = 原始核半径,系数生成式与 authorBloomCpu 完全同源
+      const kernel = authorBloomCoefficients(material.defines.KERNEL_PAIRS * 2);
+      expect(material.uniforms.centerWeight.value).toBe(kernel[0]);
+      for (let pair = 0; pair < material.defines.KERNEL_PAIRS; pair += 1) {
+        const wa = kernel[2 * pair + 1]!, wb = kernel[2 * pair + 2] ?? 0;
+        expect(material.uniforms.gaussianWeights.value[pair]).toBe(wa + wb);
+        expect(material.uniforms.gaussianOffsets.value[pair]).toBe(((2 * pair + 1) * wa + (2 * pair + 2) * wb) / (wa + wb));
+      }
+      expect(material.fragmentShader).not.toContain("weightSum");
     }
     expect(internals.highPassUniforms.smoothWidth.value).toBe(0.01);
     expect(internals.compositeMaterial.fragmentShader).toContain("3.0 * bloomStrength");

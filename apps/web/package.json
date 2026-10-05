@@ -68,7 +68,7 @@
     "react-dom": "^19.2.0",
     "replicad": "1.0.0",
     "replicad-opencascadejs": "1.0.0",
-    "three": "0.185.1",
+    "three": "0.186.1",
     "three-mesh-bvh": "^0.9.14",
     "urdf-loader": "0.13.1",
     "watlas": "1.0.1",
@@ -77,7 +77,7 @@
   "devDependencies": {
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "@types/three": "^0.185.4",
+    "@types/three": "0.186.0",
     "@vitejs/plugin-react": "^5.1.0",
     "sharp": "^0.35.4",
     "typescript": "^5.9.3",

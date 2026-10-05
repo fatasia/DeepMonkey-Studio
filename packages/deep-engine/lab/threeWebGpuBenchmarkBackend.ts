@@ -65,7 +65,7 @@ export class ThreeWebGpuBenchmarkBackend implements BenchmarkBackend {
       renderer.info.autoReset = false;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1;
-      renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; // r186: PCFSoftShadowMap 已废弃,PCF 即软阴影
       const prepared = prepareScene(renderer, fixture, profile); resources.push(...prepared.resources);
       const fidelity = createBenchmarkFidelitySnapshot("three-webgpu", profile, fixture, canvas);
       const result = new ThreeWebGpuBenchmarkBackend(canvas, renderer, prepared.scene, prepared.camera,

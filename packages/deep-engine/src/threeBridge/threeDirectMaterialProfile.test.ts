@@ -9,12 +9,14 @@ it("keeps the existing production shared Smith and default Three policy", () => 
   const single = adapt(source, "single-scatter");
   expect(single.lights_physical_fragment).toBe(source.lights_physical_fragment);
   expect(single.lights_physical_pars_fragment).toContain("deepSharedGgxVisibility( a2, dotNV, dotNL )");
-  expect(single.lights_physical_pars_fragment).toContain("irradiance * BRDF_GGX( directLight.direction");
-  expect(single.lights_physical_pars_fragment).toContain("vec3 BRDF_GGX_Multiscatter(");
+  // r186:上游默认已是 BRDF_GGX × multiScatteringCompensation(#33983),单散射策略 = 剥离补偿因子
+  expect(single.lights_physical_pars_fragment).toContain("BRDF_GGX( directLight.direction");
+  expect(single.lights_physical_pars_fragment).toContain("irradiance * specularBRDF;");
+  expect(single.lights_physical_pars_fragment).not.toContain("material.multiScatteringCompensation");
 });
 it("rejects drift, repeated adaptation and unknown policy before changing source", () => {
   expect(() => adapt(source, "unknown" as never)).toThrow("Unknown");
-  expect(() => adapt({ ...source, lights_physical_pars_fragment: source.lights_physical_pars_fragment.replace("irradiance * BRDF_GGX_Multiscatter", "2.0 * irradiance * BRDF_GGX_Multiscatter") }, "single-scatter")).toThrow("drifted");
+  expect(() => adapt({ ...source, lights_physical_pars_fragment: source.lights_physical_pars_fragment.replace("irradiance * specularBRDF * material.multiScatteringCompensation", "2.0 * irradiance * specularBRDF * material.multiScatteringCompensation") }, "single-scatter")).toThrow("drifted");
   expect(() => adapt(adapt(source, "single-scatter"), "deep-single-scatter")).toThrow("already");
 });
 it("max-component geometry roughness changes under camera rotation", () => {

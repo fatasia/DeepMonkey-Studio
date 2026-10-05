@@ -12,7 +12,7 @@ export function createThreeWebglRuntime(canvas: HTMLCanvasElement, objectCount: 
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap; // r186: PCFSoftShadowMap 已废弃,PCF 即软阴影
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color("#11191d");
