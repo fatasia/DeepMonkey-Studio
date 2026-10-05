@@ -242,6 +242,12 @@ CPU 权威 oracle 逐像素镜像(raster_reference+golden,GPUI 无对外等价)�
 
 **P0 地基(≤3 人日,先做——它们决定一切能力声明的可信度)**
 
+> **执行状态(2026-10-06):三件全部收口**——①F2 RT 登记修正(5f4fff96);
+> ②TS↔金样对拍(d4826193+7ea2d62d+5f4fff96 双向行集 diff);③native 视觉三件套
+> (2fcb5f7e:vignette 全链启用 / FXAA+auto-exposure 入库为 harness-only,生产接线
+> 后继切片;审计文档 ts-rust-parity-audit §8/§9)。三方对拍网 22/22 绿、native lib
+> 792 测试绿、FXAA 真机 GPU 门 RTX 4060 通过。
+
 | 刀位 | 工作量 | 验证口径 | 来源引擎向 |
 |---|---|---|---|
 | F2 RT 登记修正(hardware-ray-query/ray-traced-shadows native 列落后实际面)+ 金样重生成 + rt_probe 补实验特性 | 0.5–1 人日 | 金样重生成;native selfCheck 逐词一致;rt_probe 探测 EXPERIMENTAL_RAY_QUERY | 全部(协商表可信度) |

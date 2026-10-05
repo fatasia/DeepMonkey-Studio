@@ -82,7 +82,7 @@
 | material-abi-192b | full(192B 打包) | degraded(160B 核心块,扩展带零填充回退) | native 不消费扩展 40..48 | native 扩展带着色消费(与 material-clearcoat 合并做)3–5 人日 |
 | gi-probe-directions | full(16/32 方向 + L1 SH 方向可见度) | degraded(直光种子 producer + 96B 布局合同;另 probe_gi_grid.rs v2 多层级联网格头合同 + CPU 三线性参考已入库,**着色消费端未接,dead_code 放行**——清单未提及该 v2,登记略滞后但档位不变) | native 无方向辐射内核采样通路 | 切片:probe_gi_grid v2 着色消费接线 5–8 人日 |
 | fog-volumetric | full(半分辨率体积 march) | degraded(屏幕空间固定步线性深度积分) | 非 froxel 体积管线 | froxel 升级 3–5 人日(工业出片收益中) |
-| author-grading-vignette | full | degraded(六通道已镜像,vignette 槽位恒未启用) | 只差一个开关+着色行 | **0.5–1 人日,性价比最高之一** |
+| author-grading-vignette | full | ~~degraded(六通道已镜像,vignette 槽位恒未启用)~~ **已启用(2026-10-06)**:wire colorGrading 可选 vignetteDarkness(双端同合同)+ WGSL 四变体分支 + CPU 镜像 apply_at,TS 真实输出对拍 → native supported/opt-in-default-off | ~~只差一个开关+着色行~~ 已收口 |
 | device-recovery | full(分型+状态机+退避) | degraded(DeviceLost 整渲染器重建) | 无错误分型/阶段机/次数预算 | 移植 classifyDeviceLost 语义 2–3 人日 |
 | local-shadow-abi-16 | full | degraded(frame v8 布局"未跨端逐字节对齐验证") | 唯一缺口是对拍验证本身 | **frame v8 双端 golden 对拍 1–2 人日**(补 SHA-256 fixture 即可闭环) |
 
@@ -293,3 +293,29 @@
 3. **诚实声明**:§1/§2 的 40 项统计是 2026-10-05 快照,未整表重写;清单行数随
    deep2D/分层材质等批次演进,以金样 fixtures 与对拍测试为实时权威。deep2d 三行
    (未提交)缺 web 自检行的红归 deep2D 刀批收口。
+
+---
+
+## 9. 修正记录二(2026-10-06,P0 第三件:native 视觉三件套)
+
+对应六引擎对标 P0 第三刀位,提交 2fcb5f7e(+d81c6884 恢复分档误剥):
+
+1. **author-grading-vignette:degraded → supported/opt-in-default-off(全链)**。
+   wire 合同双端扩展:`colorGrading.vignetteDarkness ∈ [0,3]` 可选(TS
+   `runtimePackage/environment.ts` 解码 + native `AuthorColorGrading` deny_unknown
+   同步,旧包逐字节不变);native `AuthorGrading::new_with_vignette/apply_at`(CPU
+   镜像,TS `applyPbrAuthorColorEffects` 真实输出 f32 容差对拍);pack 槽位接活
+   `switches=[1,1,1,darkness]`;WGSL `native_output_color.wgsl` vignette 分支先于
+   分级(TS p[1] 分支同序),四变体调用点传 screen uv。
+2. **spatial-aa:native absent → supported/harness-only**。`postprocess/spatial_aa.rs`:
+   Three r185 FXAAShader 逐式移植(WGSL 核与 TS `spatialAaWgsl.ts` 同构 + CPU 镜像
+   与 `spatialAaCpu.ts` **逐位** golden 对拍);真机 GPU readback 对拍
+   (tests/spatial_aa_gpu.rs,RTX 4060 Laptop/Vulkan,≤2/255)。**如实**:OutputPass
+   生产出片链接线(中间 LDR 纹理 + resize rebind 合同)为后继切片。
+3. **auto-exposure:native absent → supported/harness-only**。`postprocess/auto_exposure.rs`:
+   亮度估计器(等距柱纬度立体角加权 / 预滤波 IBL 最粗 mip 立体角加权)+ 
+   `target_exposure_from_luminance`(±EV 包络)+ `PbrAutoExposureRuntime`(EV 指数
+   平滑 + 帧间变化率硬顶,fail-closed),TS 真实输出序列 f64 1e-9 对拍。**如实**:
+   生产曝光消费接线(web 为 view.exposure 语义)为后继切片。
+4. **附带收口**:§3.3 修正注所述对拍网遗留红(deep2d 三行缺 web 自检行)已由
+   deep2D 刀批(dda6c58d)补齐——三方对拍网 22/22 绿;native lib 792 测试绿。
