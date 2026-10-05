@@ -76,6 +76,11 @@ for (let round = 1; round <= 2; round += 1) {
   const started = Date.now();
   await switchTo("webgpu");
   const wallMs = Date.now() - started;
+  // 首帧 500 攻坚后 backend 后台链(residency/validate)晚于 UI ready——等 5s 让
+  // mark 流收干再拍,分辨"迟到"与"缺失";scene-uploaded 仍以 wallMs 为准(首帧口径)。
+  await page.waitForFunction(() => performance.getEntriesByType("mark")
+    .some(entry => entry.name.endsWith("scene-uploaded") || entry.name.endsWith("backend-create-ready")),
+    undefined, { timeout: 30_000 }).catch(() => undefined);
   const all = await marks();
   const phases = all.slice(before);
   const stages = [];
