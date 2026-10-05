@@ -11,7 +11,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { SMAA_EDGE_PASS_PRESENT_WGSL, SMAA_WEIGHTS_PASS_PRESENT_WGSL, SMAA_BLEND_PASS_PRESENT_WGSL } from "../src/postprocess/smaaPresentWgsl.js";
 import { decodeSmaaAreaLut, decodeSmaaSearchLut } from "../src/postprocess/smaaLuts.js";
-import { resolveSmaaCpu } from "../src/postprocess/smaaCpu.js";
+import { resolveSmaaCpu, smaaColorEdgeDetectionPS, smaaBlendingWeightCalculationPS, smaaNeighborhoodBlendingPS } from "../src/postprocess/smaaCpu.js";
+import { DataUtils } from "three";
 import { syntheticStaircaseCase, measureAliasingEnergy, aliasingReduction } from "../src/postprocess/aliasingEnergy.js";
 import { resolveSpatialAaCpu } from "../src/postprocess/spatialAaCpu.js";
 import { resolvableStaircaseCase } from "../src/postprocess/aliasingEnergy.js";
@@ -77,7 +78,7 @@ const PAGE_KERNEL = `async (payload) => {
     const edges = device.createTexture({ size: [width, height], format: "rg8unorm",
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
     const weights = device.createTexture({ size: [width, height], format: "rgba16float",
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
     const present = device.createTexture({ size: [width, height], format: "rgba8unorm",
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST });
     const bindEdge = device.createBindGroup({ layout: pipelines.edge.getBindGroupLayout(0), entries: [{ binding: 0, resource: sourceView }, { binding: 1, resource: linear }] });
@@ -118,6 +119,14 @@ const PAGE_KERNEL = `async (payload) => {
     await edgesStaging.mapAsync(GPUMapMode.READ);
     const edgesRaw = new Uint8Array(edgesStaging.getMappedRange().slice(0));
     edgesStaging.unmap();
+    // weights 中间纹理回读(pass2 对拍,rgba16float → f16 位模式):
+    const weightsStaging = device.createBuffer({ size: width * height * 8, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    const weightsEncoder = device.createCommandEncoder();
+    weightsEncoder.copyTextureToBuffer({ texture: weights }, { buffer: weightsStaging, bytesPerRow: width * 8 }, { width, height });
+    device.queue.submit([weightsEncoder.finish()]);
+    await weightsStaging.mapAsync(GPUMapMode.READ);
+    const weightsRaw = new Uint8Array(weightsStaging.getMappedRange().slice(0));
+    weightsStaging.unmap();
     // source 回读(输入上载校验):
     const srcStaging = device.createBuffer({ size: width * height * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
     const srcEncoder = device.createCommandEncoder();
@@ -158,7 +167,9 @@ const PAGE_KERNEL = `async (payload) => {
       heat.push(rowH);
     }
     return { pixelsB64: (() => { let text = ""; for (let i = 0; i < raw.length; i++) text += String.fromCharCode(raw[i]); return btoa(text); })(),
-      timings, srcMaxDiff, srcProbe, payloadProbe, edgesB64: (() => { let text = ""; for (let i = 0; i < edgesRaw.length; i++) text += String.fromCharCode(edgesRaw[i]); return btoa(text); })(), adapter: { vendor: info.vendor ?? "", architecture: info.architecture ?? "", isFallback: adapter.isFallbackAdapter === true }, queueErrors: [] };
+      timings, srcMaxDiff, srcProbe, payloadProbe, edgesB64: (() => { let text = ""; for (let i = 0; i < edgesRaw.length; i++) text += String.fromCharCode(edgesRaw[i]); return btoa(text); })(),
+      weightsB64: (() => { let text = ""; for (let i = 0; i < weightsRaw.length; i++) text += String.fromCharCode(weightsRaw[i]); return btoa(text); })(),
+      adapter: { vendor: info.vendor ?? "", architecture: info.architecture ?? "", isFallback: adapter.isFallbackAdapter === true }, queueErrors: [] };
 }`;const width = 256, height = 256;
 const scene = AAM2_SCENE === "resolvable" ? resolvableStaircaseCase(width, height) : syntheticStaircaseCase(width, height);
 const rgbaInput = new Uint8Array(width * height * 4);
@@ -204,6 +215,87 @@ try {
   }
   const worstDump = worst.map(w => ({ x: Math.floor((w.index / 4) % width), y: Math.floor(w.index / 4 / width),
     gpu: Number(w.gpu.toFixed(3)), cpu: Number(w.cpu.toFixed(3)) }));
+  // —— 二分定位(2026-10-05 parity 残差排查):GPU weights RT 回读 vs CPU 镜像逐像素对拍 + pass3 归因 ——
+  const f16BitsToValue = (h: number): number => {
+    const s = (h & 0x8000) >> 15, e = (h & 0x7c00) >> 10, m = h & 0x03ff;
+    return e === 0 ? (s ? -1 : 1) * m * 2 ** -24
+      : e === 0x1f ? (m ? NaN : s ? -Infinity : Infinity)
+      : (s ? -1 : 1) * (1 + m / 1024) * 2 ** (e - 15);
+  };
+  const gpuWeights = (() => {
+    const bytes = Buffer.from(result.weightsB64, "base64");
+    const out = new Float32Array(bytes.length / 2);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (let i = 0; i < out.length; i++) out[i] = f16BitsToValue(view.getUint16(i * 2, true));
+    return out;
+  })();
+  const areaLut = decodeSmaaAreaLut(), searchLut = decodeSmaaSearchLut();
+  const cpuImageBisect = { width, height, color: quantizedInput };
+  // CPU pass1 镜像(edges 已真机逐位一致,直接镜像重建)+ pass2 镜像:
+  const cpuEdges = new Uint8Array(width * height * 2);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++)
+    smaaColorEdgeDetectionPS(cpuImageBisect, (x + 0.5) / width, (y + 0.5) / height, cpuEdges, (y * width + x) * 2);
+  const cpuWeights = new Float32Array(width * height * 4);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++)
+    cpuWeights.set(smaaBlendingWeightCalculationPS(cpuImageBisect, cpuEdges, areaLut, searchLut,
+      (x + 0.5) / width, (y + 0.5) / height), (y * width + x) * 4);
+  // A) pass2 直接对拍:GPU f16 权重 vs CPU f64 权重。
+  let wMax = 0, wBeyond = 0;
+  const wChannelBeyond = [0, 0, 0, 0];
+  const worstW: { x: number; y: number; pixelMax: number; gpu: number[]; cpu: number[] }[] = [];
+  for (let p = 0; p < width * height; p++) {
+    let pixelMax = 0;
+    for (let c = 0; c < 4; c++) {
+      const d = Math.abs(gpuWeights[p * 4 + c]! - cpuWeights[p * 4 + c]!);
+      if (d > wMax) wMax = d;
+      if (d > 0.002) { wBeyond++; wChannelBeyond[c]++; }
+      pixelMax = Math.max(pixelMax, d);
+    }
+    if (pixelMax > 0.002) {
+      worstW.push({ x: p % width, y: Math.floor(p / width), pixelMax,
+        gpu: [...gpuWeights.slice(p * 4, p * 4 + 4)].map(v => Number(v.toFixed(4))),
+        cpu: [...cpuWeights.slice(p * 4, p * 4 + 4)].map(v => Number(v.toFixed(4))) });
+      worstW.sort((a, b) => b.pixelMax - a.pixelMax);
+      if (worstW.length > 6) worstW.pop();
+    }
+  }
+  // B) 存储量化口径:GPU f16 权重 vs f16(CPU 权重)——分离「逻辑差」与「f16 量化」。
+  let qMax = 0, qMismatch = 0;
+  for (let i = 0; i < gpuWeights.length; i++) {
+    const d = Math.abs(gpuWeights[i]! - f16BitsToValue(DataUtils.toHalfFloat(cpuWeights[i]!)));
+    if (d > qMax) qMax = d;
+    if (d > 0) qMismatch++;
+  }
+  // C) pass3 归因:CPU pass3 消费 GPU 权重 / CPU 权重,分别对拍 GPU 终像。
+  const pass3With = (weights: Float32Array): Float32Array => {
+    const out = new Float32Array(width * height * 4);
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++)
+      out.set(smaaNeighborhoodBlendingPS(cpuImageBisect, weights, (x + 0.5) / width, (y + 0.5) / height), (y * width + x) * 4);
+    return out;
+  };
+  const compareAgainstGpuFinal = (candidate: Float32Array) => {
+    let max = 0, beyond = 0;
+    for (let i = 0; i < candidate.length; i++) {
+      if (i % 4 === 3) continue;
+      const d = Math.abs(candidate[i]! - gpuImage[i]!);
+      if (d > max) max = d;
+      if (d > 2 / 255) beyond++;
+    }
+    return { maxAbsDiff: Number(max.toFixed(4)), pixelsBeyond2of255: beyond };
+  };
+  const pass3GpuWeightsVsFinal = compareAgainstGpuFinal(pass3With(gpuWeights));
+  const pass3CpuWeightsVsFinal = compareAgainstGpuFinal(pass3With(cpuWeights));
+  // D) 模式取证:终像最差像素的 pass3 输入(中心/下邻/右邻权重,四通道,GPU vs CPU)。
+  const weightTileDump = worstDump.slice(0, 3).map(w => {
+    const tile: Record<string, { gpu: number[]; cpu: number[] }> = {};
+    for (const [label, tx, ty] of [["center", w.x, w.y], ["down", w.x, w.y + 1], ["right", w.x + 1, w.y]] as const) {
+      if (tx >= width || ty >= height) continue;
+      const p = (ty * width + tx) * 4;
+      tile[label] = { gpu: [...gpuWeights.slice(p, p + 4)].map(v => Number(v.toFixed(4))),
+        cpu: [...cpuWeights.slice(p, p + 4)].map(v => Number(v.toFixed(4))) };
+    }
+    return { x: w.x, y: w.y, tile };
+  });
   const gpuM = measure(gpuImage);
   const gpuReduction = aliasingReduction(baseline.edgeEnergy, gpuM.edgeEnergy);
   const cpuReduction = aliasingReduction(baseline.edgeEnergy, cpuM.edgeEnergy);
@@ -217,7 +309,7 @@ try {
     frameTimeWithinBudget: meanMs <= 0.8,
   };
   const evidence = {
-    schema: "aam2-smaa-gpu-acceptance-v1", createdAt: new Date().toISOString(),
+    schema: "aam2-smaa-gpu-acceptance-v2", createdAt: new Date().toISOString(),
     lane: "aa-m2-l3-smaa-port",
     scene: AAM2_SCENE === "resolvable" ? "resolvableStaircaseCase(可采样口径,门①判定)" : "syntheticStaircaseCase(欠采样极限口径)",
     method: "headless Chrome WebGPU:生产三 pass WGSL 真机编译 + 合成阶梯场景端到端 readback 对拍 CPU 权威镜像 + 1080p 全链 timestamp 帧时(20 帧,去前 2 帧)",
@@ -231,7 +323,15 @@ try {
       fxaaReduction: `${(fxaaReduction * 100).toFixed(1)}%`,
     },
     parity: { maxAbsDiff: Number(maxDiff.toFixed(4)), pixelsBeyond2of255: beyondTolerance, beyondRatio: Number((beyondTolerance / (width * height)).toFixed(4)), alphaMaxDiff: Number(alphaMaxDiff.toFixed(4)) },
-    diagnostics: { sourceMaxDiff: result.srcMaxDiff, srcProbe: result.srcProbe, payloadProbe: result.payloadProbe, worstDump, adapter: result.adapter },
+    bisection: {
+      method: "pass2 weights RT(rgba16float)回读逐像素对拍 CPU 镜像 + CPU pass3 分别消费 GPU/CPU 权重对拍 GPU 终像(二分首现 pass)",
+      pass2: { maxAbsDiff: Number(wMax.toFixed(5)), pixelsBeyond0_002: wBeyond, channelBeyond0_002: wChannelBeyond, worst: worstW },
+      pass2StorageQuantization: { maxAbsDiffGpuVsF16ofCpu: Number(qMax.toFixed(8)), pixelsMismatchingNearestF16: qMismatch },
+      pass3Attribution: { gpuFinalVsCpuPass3WithGpuWeights: pass3GpuWeightsVsFinal, gpuFinalVsCpuPass3WithCpuWeights: pass3CpuWeightsVsFinal },
+      weightTileDump: weightTileDump,
+    },
+    diagnostics: { sourceMaxDiff: result.srcMaxDiff, srcProbe: result.srcProbe, payloadProbe: result.payloadProbe, worstDump, adapter: result.adapter,
+      pixelsB64: result.pixelsB64, weightsB64: result.weightsB64 },
     edgesB64: result.edgesB64,
     frameTime: { resolution: `${1920}x${1080}`, frames: timings.length, rawSample: result.rawTimestamps?.[0], meanMs: Number(meanMs.toFixed(4)),
       minMs: Number(Math.min(...timings).toFixed(4)), maxMs: Number(Math.max(...timings).toFixed(4)), budgetMs: 0.8 },

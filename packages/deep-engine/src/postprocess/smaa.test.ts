@@ -5,7 +5,7 @@
 // 空间 AA 无法重建(信息已丢失),几何边类才可恢复;分类数字见 evidence 探针。
 import { describe, expect, it } from "vitest";
 import { aliasingReduction, measureAliasingEnergy, syntheticStaircaseCase } from "./aliasingEnergy.js";
-import { resolveSmaaCpu } from "./smaaCpu.js";
+import { resolveSmaaCpu, smaaNeighborhoodBlendingPS } from "./smaaCpu.js";
 import { resolveSpatialAaCpu } from "./spatialAaCpu.js";
 import { decodeSmaaAreaLut, decodeSmaaSearchLut } from "./smaaLuts.js";
 
@@ -72,5 +72,33 @@ describe("SMAA CPU mirror (three pass, display-encoded)", () => {
   it("decodes both LUTs to the documented byte counts", () => {
     expect(decodeSmaaAreaLut().length).toBe(160 * 560 * 2);
     expect(decodeSmaaSearchLut().length).toBe(66 * 33);
+  });
+
+  it("picks the pass-3 blend direction from official operand pairs (a.a vs a.b, a.g vs a.r)", () => {
+    // 官方 `offset.x = a.a > a.b ? a.a : -a.b`:水平方向比较「右邻的 a 权重」与「本像素的
+    // b 权重」—— a[1](下方 g 权重)只参与 offsetY。转录回归(误比 a[1])会在此被抓红:
+    // center.b=0.5 > right.a=0.25 时应向左混合 0.5(C=0.2,左邻=0.8 → 0.5),
+    // 误比则取 right.a=0.25 向右混合(右邻 0.2 → 输出 0.2)。
+    const width = 8, height = 4;
+    const color = new Float32Array(width * height * 4);
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) color.set([0.2, 0.2, 0.2, 1], (y * width + x) * 4);
+    color.set([0.8, 0.8, 0.8, 1], (1 * width + 3) * 4); // 左邻(3,1)亮
+    const weights = new Float32Array(width * height * 4);
+    weights.set([0, 0, 0.5, 0], (1 * width + 4) * 4); // center(4,1): b=0.5
+    weights.set([0, 0, 0, 0.25], (1 * width + 5) * 4); // right(5,1): a=0.25
+    const blended = smaaNeighborhoodBlendingPS({ width, height, color }, weights, (4 + 0.5) / width, (1 + 0.5) / height);
+    expect(blended[0]!).toBeCloseTo(0.5, 6);
+    // 反向:right.a > center.b 时应向右混合 right.a(锁 a[3] 为正向操作数)。
+    const weightsFlipped = new Float32Array(width * height * 4);
+    weightsFlipped.set([0, 0, 0.25, 0], (1 * width + 4) * 4); // center: b=0.25
+    weightsFlipped.set([0, 0, 0, 0.5], (1 * width + 5) * 4); // right: a=0.5
+    const blendedFlipped = smaaNeighborhoodBlendingPS({ width, height, color }, weightsFlipped, (4 + 0.5) / width, (1 + 0.5) / height);
+    expect(blendedFlipped[0]!).toBeCloseTo(0.2 + (0.2 - 0.2) * 0.5, 6); // 右邻同为 0.2 → 不变色,但方向已定
+    // 垂直操作数对(a.g=下方 vs a.r=中心):center.r=0.5 > down.g=0.25 → 向 v+ 方混合。
+    const weightsVertical = new Float32Array(width * height * 4);
+    weightsVertical.set([0.5, 0, 0, 0], (1 * width + 4) * 4); // center: r=0.5
+    weightsVertical.set([0, 0.25, 0, 0], (2 * width + 4) * 4); // down(v-, y+1 行): g=0.25
+    const blendedVertical = smaaNeighborhoodBlendingPS({ width, height, color }, weightsVertical, (4 + 0.5) / width, (1 + 0.5) / height);
+    expect(blendedVertical[0]!).toBeCloseTo(0.2, 6); // 两个邻居同为 0.2,方向语义由上例把守,此处锁不崩
   });
 });

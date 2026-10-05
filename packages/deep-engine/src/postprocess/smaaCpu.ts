@@ -173,7 +173,10 @@ export function smaaNeighborhoodBlendingPS(image: SmaaCpuImage, weights: Float32
   // Is there any blending weight with a value greater than 0.0?
   if (a[0]! + a[1]! + a[2]! + a[3]! < 1e-5) return sampleColor(image, texcoordU, texcoordV);
   // Up to 4 lines can be crossing a pixel; favor the maximum weight per direction:
-  let offsetX = a[3]! > a[1]! ? a[3]! : -a[1]!; // left vs. right
+  // 官方 `offset.x = a.a > a.b ? a.a : -a.b`:右邻的水平权重(a[3])对本像素的水平权重
+  // (a[2] = center.b)—— 此前误比 a[1](下方垂直权重,官方 a.y 只用于 offsetY);
+  // 2026-10-05 parity 残差排查以 three r185 SMAAShader.js 原文仲裁修正。
+  let offsetX = a[3]! > a[2]! ? a[3]! : -a[2]!; // left vs. right
   let offsetY = a[1]! > a[0]! ? -a[1]! : a[0]!; // top vs. bottom // WebGL port note: Changed signs
   if (Math.abs(offsetX) > Math.abs(offsetY)) offsetY = 0; else offsetX = 0; // horizontal vs. vertical
   // Fetch the opposite color and lerp by hand:

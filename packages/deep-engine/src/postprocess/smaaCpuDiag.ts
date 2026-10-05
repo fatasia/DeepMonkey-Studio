@@ -63,7 +63,11 @@ export function smaaCalculateDiagWeights(edges: Uint8Array, area: Uint8Array, wi
   }
   if (d[0]! + d[1]! > 2) { // d.x + d.y + 1 > 3
     // Fetch the crossing edges (official non-optimized variant):
-    const cx = texcoord[0]! + (-d[0]! + 0.25) / width, cy = texcoord[1]! + d[1]! / height;
+    // 官方坐标(mad(float4(-d.x + 0.25, d.x, d.y, -d.y - 0.25), RT_METRICS.xyxy, texcoord.xyxy)):
+    // 第一对角块(-1,+1)的 x/y 都绑定 d.x,第二对角块(+1,-1)的 x/y 都绑定 d.y ——
+    // 此前 cy 误绑 d[1](与 WGSL smaaDiagWgsl 的 `texcoord.y + d.x * resolution.y` 不符;
+    // 2026-10-05 parity 残差排查以 iryoku/smaa master SMAA.hlsl 原文仲裁修正)。
+    const cx = texcoord[0]! + (-d[0]! + 0.25) / width, cy = texcoord[1]! + d[0]! / height;
     const cz = texcoord[0]! + d[1]! / width, cw = texcoord[1]! + (-d[1]! - 0.25) / height;
     const c0 = smaaSampleEdgesOffset(edges, width, height, cx, cy, -1, 0)[1]!;
     const c1 = smaaSampleEdges(edges, width, height, cx, cy)[0]!;
