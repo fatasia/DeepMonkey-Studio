@@ -13,6 +13,8 @@
 mod deep2d_atlas_gpu;
 #[path = "../src/deep2d_gpu.rs"]
 mod deep2d_gpu;
+#[path = "../src/deep2d_dynamic_gpu.rs"]
+mod deep2d_dynamic_gpu; // 刀 3:deep2d_gpu.rs 引用
 // deep2d_gpu.rs 的 Windows 绘制签名引用本模块（#[path] 重组装的 bin 侧模块族，
 // 缺声明会使测试 crate 内 `crate::dashboard_video_gpu` 解析失败）。
 #[path = "../src/dashboard_video_gpu.rs"]

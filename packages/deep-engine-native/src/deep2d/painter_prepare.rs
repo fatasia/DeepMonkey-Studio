@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::{
-    PathCommand, PathResource,
+    Deep2dColor, Deep2dPaint, PathCommand, PathResource,
     paint_registry::PaintRegistry,
     painter::{Deep2dPainterIssue, Deep2dPainterIssueCode, PreparedDeep2d, issue},
     painter_clip::{ClipSets, clip_vertices, prepare_clip_sets},
@@ -12,6 +12,72 @@ use super::{
     painter_path::LinearPath,
     painter_quad,
 };
+
+/// 填充 paint 注册(静态细分与刀 3 动态 cover 共用):实心走 slot 0 顶点
+/// 色;渐变注册存储条目并返回槽号(顶点色此时只是占位,fragment 用条目
+/// 求值)。返回 (槽号, 顶点色)。
+pub(super) fn register_fill_paint(
+    command: &PathCommand,
+    paint: &Deep2dPaint,
+    scale_factor: f64,
+    registry: &mut PaintRegistry,
+    path: &str,
+) -> Result<(u32, Deep2dColor), Deep2dPainterIssue> {
+    match paint {
+        crate::deep2d::Deep2dPaint::Solid(color) => Ok((0, *color)),
+        gradient => {
+            let (slot, entry) = painter_quad::register_gradient(
+                registry,
+                gradient,
+                fill_aa_scale(command, scale_factor),
+                command.opacity.unwrap_or(1.0) as f32,
+                path,
+            )?;
+            Ok((slot, entry.color.map(f64::from)))
+        }
+    }
+}
+
+/// 描边发射(静态细分与刀 3 动态命令共用):虚线/容差/端帽与静态路完全
+/// 同源——动态命令的 fill 走 stencil,stroke 不在本刀范围,继续 CPU 展开。
+pub(super) fn emit_stroke(
+    command: &PathCommand,
+    linear: &LinearPath,
+    clip_sets: &ClipSets,
+    scale_factor: f64,
+    output: &mut PreparedDeep2d,
+    path: &str,
+) -> Result<(), Deep2dPainterIssue> {
+    let Some(color) = command.stroke else {
+        return Ok(());
+    };
+    let opacity = command.opacity.unwrap_or(1.0) as f32;
+    let dashed_storage;
+    let stroked = match command.dash.as_deref() {
+        Some(pattern) => {
+            dashed_storage = dash_subpaths(linear, pattern, command.dash_offset.unwrap_or(0.0), path)?;
+            &dashed_storage
+        }
+        None => linear,
+    };
+    // Round cap/join fans flatten to the same physical-pixel tolerance as
+    // curves: logical tolerance divided by the command's scale magnitude.
+    let stroke_tolerance = stroke_tolerance(command, scale_factor);
+    let mut vertices = Vec::new();
+    append_stroke(
+        &mut vertices,
+        stroked,
+        command,
+        color,
+        opacity,
+        stroke_tolerance,
+        path,
+    )?;
+    let vertices = clip_vertices(&vertices, clip_sets, path)?;
+    output.summary.stroke_triangles += vertices.len() / 3;
+    output.vertices.extend(vertices);
+    Ok(())
+}
 
 #[allow(clippy::too_many_arguments)] // Mirrors the flat command surface.
 pub(super) fn prepare_path(
@@ -71,19 +137,7 @@ pub(super) fn prepare_path(
     if let Some(paint) = &command.fill {
         // Solid fills keep the v1 fast path: paint slot 0 renders from the
         // vertex color, no storage entry, byte-identical geometry pipeline.
-        let (slot, vertex_color) = match paint {
-            crate::deep2d::Deep2dPaint::Solid(color) => (0, *color),
-            gradient => {
-                let (slot, entry) = painter_quad::register_gradient(
-                    registry,
-                    gradient,
-                    fill_aa_scale(command, scale_factor),
-                    opacity,
-                    path,
-                )?;
-                (slot, entry.color.map(f64::from))
-            }
-        };
+        let (slot, vertex_color) = register_fill_paint(command, paint, scale_factor, registry, path)?;
         let vertices = match command.fill_rule {
             None => {
                 let mut vertices = Vec::new();
@@ -120,33 +174,7 @@ pub(super) fn prepare_path(
         output.summary.fill_triangles += vertices.len() / 3;
         output.vertices.extend(vertices);
     }
-    if let Some(color) = command.stroke {
-        let dashed_storage;
-        let stroked = match command.dash.as_deref() {
-            Some(pattern) => {
-                dashed_storage =
-                    dash_subpaths(&linear, pattern, command.dash_offset.unwrap_or(0.0), path)?;
-                &dashed_storage
-            }
-            None => &linear,
-        };
-        // Round cap/join fans flatten to the same physical-pixel tolerance as
-        // curves: logical tolerance divided by the command's scale magnitude.
-        let stroke_tolerance = stroke_tolerance(command, scale_factor);
-        let mut vertices = Vec::new();
-        append_stroke(
-            &mut vertices,
-            stroked,
-            command,
-            color,
-            opacity,
-            stroke_tolerance,
-            path,
-        )?;
-        let vertices = clip_vertices(&vertices, &clip_sets, path)?;
-        output.summary.stroke_triangles += vertices.len() / 3;
-        output.vertices.extend(vertices);
-    }
+    emit_stroke(command, &linear, &clip_sets, scale_factor, output, path)?;
     Ok(())
 }
 

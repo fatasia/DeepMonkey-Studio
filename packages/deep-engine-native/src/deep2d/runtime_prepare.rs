@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::{
     Deep2dAtlasFormat, Deep2dAtlasKind, Deep2dComposition, Deep2dRect, Deep2dRuntimeContent,
-    ImageSampling, PreparedDeep2d, PreparedDeep2dSummary,
+    FillRule, ImageSampling, PreparedDeep2d, PreparedDeep2dSummary,
     painter_clip::clip_vertices,
     runtime_base64,
     runtime_layers::{PreparedAtlasItem, build_chunks},
@@ -31,6 +31,13 @@ impl PreparedDeep2dAtlas {
 pub enum PreparedDeep2dChunkKind {
     Path,
     Atlas { atlas_index: usize },
+    /// 刀 3 stencil 动态块:first_vertex/vertex_count 指 cover 顶点区间
+    /// (path 流),edge 区间在 `dynamic_edges`。永不参与 chunk 合并。
+    DynamicPath {
+        edge_first: u32,
+        edge_count: u32,
+        fill_rule: FillRule,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -176,7 +183,7 @@ pub(super) fn prepare_impl(
                     Deep2dAtlasKind::Image => image_quads += 1,
                 }
             }
-            let chunks = build_chunks(Deep2dComposition::ZOrdered, &path.chunks, &atlas_items);
+            let chunks = build_chunks(Deep2dComposition::ZOrdered, &path.chunks, &atlas_items, &path.dynamic_chunks);
             let summary = PreparedDeep2dRuntimeSummary {
                 path: path.summary,
                 atlases: atlases.len(),
@@ -269,7 +276,7 @@ pub(super) fn prepare_impl(
                     Deep2dAtlasKind::Image => image_quads += 1,
                 }
             }
-            let chunks = build_chunks(package.composition, &path.chunks, &atlas_items);
+            let chunks = build_chunks(package.composition, &path.chunks, &atlas_items, &path.dynamic_chunks);
             let atlas_batches = chunks
                 .iter()
                 .filter(|chunk| matches!(chunk.kind, PreparedDeep2dChunkKind::Atlas { .. }))

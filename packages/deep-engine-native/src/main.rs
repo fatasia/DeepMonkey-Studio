@@ -16,13 +16,18 @@ mod deep2d_atlas_gpu;
 mod deep2d_clip_gpu_tests;
 #[cfg(test)]
 mod deep2d_context_wiring_tests;
+mod deep2d_frame_context;
 mod deep2d_gpu;
 mod deep2d_gpu_cache;
+#[path = "deep2d_dynamic_gpu.rs"]
+mod deep2d_dynamic_gpu;
 #[cfg(test)]
 mod deep2d_gpu_cache_tests;
 mod deep2d_interleave_probe;
 #[cfg(test)]
 mod deep2d_layout_gpu_tests;
+#[cfg(test)]
+mod deep2d_dynamic_gpu_tests;
 #[cfg(test)]
 mod deep2d_paint_gpu_tests;
 mod deep2d_path_clip_gpu_tests;

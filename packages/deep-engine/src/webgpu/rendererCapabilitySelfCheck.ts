@@ -398,6 +398,32 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
       maxDwellFrames: DEEP_VIRTUAL_GEOMETRY_MAX_DWELL_FRAMES,
     },
   },
+  {
+    // deep2D 线刀 1(2026-10-05):视觉三命令 native 域能力,web 列如实
+    // absent——TS deep2d 显示列表合同的 path fill 仅实心 Deep2dColor,无
+    // gradient/cornerRadius/shadow 字段(web 无 deep2d 渲染通路)。观测值
+    // 从合同实际面派生(命令种类数漂移即红)。
+    capabilityId: "deep2d-visual-trio", support: "unavailable", reason: "absent",
+    observed: {
+      deep2dCommandKinds: 3,
+    },
+  },
+  {
+    // deep2D 线刀 2(2026-10-05):taffy 组件布局属 native deep2d 引擎缝,
+    // web 列如实 absent(TS 侧无 flex 引擎、无布局 solve 导出)。
+    capabilityId: "deep2d-component-layout", support: "unavailable", reason: "absent",
+    observed: {
+      deep2dLayoutSolverExports: 0,
+    },
+  },
+  {
+    // deep2D 线刀 3(2026-10-05):动态路径 stencil-then-cover 分路是 native
+    // 运行时决策(滑窗变更计数,wire schema 零变化),web 列如实 absent。
+    capabilityId: "deep2d-dynamic-path-fill", support: "unavailable", reason: "absent",
+    observed: {
+      deep2dWireDynamicityFields: 0,
+    },
+  },
 ]);
 
 // ---- 加载期漂移守卫(结构先例:probeRadianceDirectionGate 的容量 fail-fast) ----

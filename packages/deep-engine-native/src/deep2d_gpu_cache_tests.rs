@@ -62,7 +62,7 @@ fn path_command(id: &str, x: f64) -> Deep2dCommand {
         }),
         hit_id: None,
         path_id: "frame".into(),
-        fill: Some([1.0, 1.0, 1.0, 1.0]),
+        fill: Some([1.0, 1.0, 1.0, 1.0].into()),
         fill_rule: None,
         stroke: None,
         stroke_width: None,
@@ -71,7 +71,9 @@ fn path_command(id: &str, x: f64) -> Deep2dCommand {
         miter_limit: None,
         dash: None,
         dash_offset: None,
-    })
+        corner_radius: None,
+        shadow: None,
+        })
 }
 
 fn display_list(image_x: f64, with_path: bool) -> Deep2dDisplayList {

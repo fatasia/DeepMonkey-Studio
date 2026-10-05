@@ -17,6 +17,8 @@ pub(crate) struct ResidentAtlas {
 
 pub struct Deep2dAtlasGpuResources {
     pub pipeline: Arc<wgpu::RenderPipeline>,
+    /// 刀 3:含模板附件 pass 用的 no-op stencil 变体(见 CachedAtlasPipelines)。
+    pub pipeline_stencil: Arc<wgpu::RenderPipeline>,
     pub vertex_buffer: Arc<wgpu::Buffer>,
     pub atlases: Vec<Arc<ResidentAtlas>>,
 }
@@ -92,10 +94,46 @@ impl Deep2dAtlasGpuResources {
             });
             CachedAtlasPipelines {
                 pipeline: Arc::new(pipeline),
+                pipeline_stencil: Arc::new(device.create_render_pipeline(
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some(
+                            "Deep Engine native Deep2d atlas alpha pipeline v1 (stencil pass variant)",
+                        ),
+                        layout: Some(&pipeline_layout),
+                        vertex: wgpu::VertexState {
+                            module: &shader,
+                            entry_point: Some("vertex_main"),
+                            compilation_options: Default::default(),
+                            buffers: &buffers,
+                        },
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            cull_mode: None,
+                            ..Default::default()
+                        },
+                        depth_stencil: Some(wgpu::DepthStencilState {
+                            format: wgpu::TextureFormat::Stencil8,
+                            depth_write_enabled: Some(false),
+                            depth_compare: Some(wgpu::CompareFunction::Always),
+                            stencil: crate::deep2d_dynamic_gpu::no_op_stencil(),
+                            bias: Default::default(),
+                        }),
+                        multisample: Default::default(),
+                        fragment: Some(wgpu::FragmentState {
+                            module: &shader,
+                            entry_point: Some("fragment_main"),
+                            compilation_options: Default::default(),
+                            targets: &targets,
+                        }),
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                )),
                 atlas_layout,
             }
         });
         let pipeline = std::sync::Arc::clone(&bundle.pipeline);
+        let pipeline_stencil = std::sync::Arc::clone(&bundle.pipeline_stencil);
         let atlas_layout = &bundle.atlas_layout;
         let atlas_bytes = cast_slice(&prepared.atlas_vertices);
         let atlas_vertex_key = {
@@ -134,6 +172,7 @@ impl Deep2dAtlasGpuResources {
             .collect::<Result<Vec<_>, String>>()?;
         Ok(Self {
             pipeline,
+            pipeline_stencil,
             vertex_buffer,
             atlases,
         })

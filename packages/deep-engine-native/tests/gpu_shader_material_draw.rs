@@ -95,6 +95,8 @@ mod dashboard_video_gpu;
 mod deep2d_atlas_gpu; // deep2d_atlas_gpu.rs 被 player_picking/publication_verification 等引用
 #[path = "../src/deep2d_gpu.rs"]
 mod deep2d_gpu; // deep2d_gpu.rs 被 player_picking/publication_verification 等引用
+#[path = "../src/deep2d_dynamic_gpu.rs"]
+mod deep2d_dynamic_gpu; // 刀 3:deep2d_gpu.rs 引用
 #[path = "../src/deep2d_gpu_cache.rs"]
 mod deep2d_gpu_cache; // deep2d_gpu_cache.rs 被 player_picking/publication_verification 等引用
 #[path = "../src/deep2d_scissor.rs"]

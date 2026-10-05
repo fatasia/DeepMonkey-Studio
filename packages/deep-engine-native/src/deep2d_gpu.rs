@@ -8,11 +8,15 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     deep2d_atlas_gpu::Deep2dAtlasGpuResources,
+    deep2d_dynamic_gpu::{Deep2dDynamicPathGpuResources, StencilTarget, pipeline_pair},
     deep2d_gpu_cache::{CachedPathPipelines, Deep2dGpuAssetCache},
     deep2d_scissor::chunk_scissor,
 };
 
 const SHADER: &str = include_str!("../assets/shaders/native_deep2d_v1.wgsl");
+
+// 宿主入口保持原路径:app/deep2d_context.rs 从本模块导入帧上下文。
+pub use crate::deep2d_frame_context::{Deep2dFrameContext, deep2d_frame_context};
 #[path = "deep2d_vertex_transfer.rs"]
 mod vertex_transfer;
 pub use vertex_transfer::VertexTransferStats;
@@ -22,6 +26,9 @@ pub use draw_evidence::DrawEvidence;
 
 struct Deep2dPathGpuResources {
     pipeline: std::sync::Arc<wgpu::RenderPipeline>,
+    /// 刀 3:含模板附件 pass 用的 no-op stencil 变体(与主管线同 shader/
+    /// 布局/混合,仅 depth_stencil 声明 Stencil8)。
+    pipeline_stencil: std::sync::Arc<wgpu::RenderPipeline>,
     /// Path bind group: frame uniform (binding 0) + paint storage (binding 1).
     bind_group: wgpu::BindGroup,
     vertex_buffer: std::sync::Arc<wgpu::Buffer>,
@@ -29,62 +36,16 @@ struct Deep2dPathGpuResources {
     transfer: VertexTransferStats,
 }
 
-/// 宿主声明的帧级依赖上下文,喂给 `Deep2dPathCache` 的依赖图(P1-02)。
-///
-/// 两个维度都必须在 `prepare` 之前定格,原因见 `painter_cache::EntryWitness`:
-/// - `resource_epoch` 承载内容来源代次(本包内 legend 页等呈现资源集换代;
-///   换包走新建缓存,天然隔离);
-/// - `camera_scale` 是**物理像素/逻辑单位**的实际缩放比,由 letterbox 映射算得,
-///   直接决定描边容差与曲线细分密度。
-///
-/// 未提供上下文时缓存两侧维度保持 `None`,行为与第一批逐字节一致。
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Deep2dFrameContext {
-    pub resource_epoch: u64,
-    pub camera_scale: f64,
-}
-
-/// 由内容与物理尺寸装配帧级上下文。
-///
-/// 缩放口径必须是「物理像素 / 逻辑单位」的实际比值,而不是窗口 DPI 标称值:
-/// 二者只在逻辑尺寸等于物理尺寸时相同,非等比窗口下 letterbox 会取宽高比的
-/// 最小值而缩小实际缩放。命中与绘制用的是同一个 `LetterboxMapping`,这里取
-/// 同一映射的 `scale`,保证「见证 / 细分 / 命中」三者同源。
-pub fn deep2d_frame_context(
-    content: &Deep2dRuntimeContent,
-    physical: [u32; 2],
-    resource_epoch: u64,
-) -> Deep2dFrameContext {
-    let list = content.display_list();
-    let logical = [list.logical_width, list.logical_height];
-    let usable = physical[0] != 0
-        && physical[1] != 0
-        && logical[0].is_finite()
-        && logical[1].is_finite()
-        && logical[0] > 0.0
-        && logical[1] > 0.0;
-    let camera_scale = if usable {
-        deep_engine_native::deep2d::LetterboxMapping::new(
-            logical,
-            [physical[0].into(), physical[1].into()],
-        )
-        .scale
-    } else {
-        // 退化窗口没有可用映射;显式声明 1:1 而不是留空,
-        // 让「窗口从 0 尺寸恢复」也有确定性见证。
-        1.0
-    };
-    Deep2dFrameContext {
-        resource_epoch,
-        camera_scale,
-    }
-}
-
 use std::sync::Arc;
 
 pub struct Deep2dGpuPainter {
+    device: wgpu::Device,
     path: Option<Deep2dPathGpuResources>,
     atlas: Option<Deep2dAtlasGpuResources>,
+    /// 刀 3:动态路径 stencil 资源(动态块缺席时为 None,零开销)。
+    dynamic: Option<Deep2dDynamicPathGpuResources>,
+    /// 刀 3:按物理尺寸惰性创建的模板附件(动态块缺席的帧不附加)。
+    stencil: std::cell::RefCell<Option<StencilTarget>>,
     cache: Arc<Deep2dGpuAssetCache>,
     path_cache: Arc<std::sync::Mutex<Deep2dPathCache>>,
     queue: Arc<wgpu::Queue>,
@@ -186,6 +147,16 @@ impl Deep2dGpuPainter {
                 Deep2dAtlasGpuResources::new(device, queue, format, &frame_layout, &prepared, cache)
             })
             .transpose()?;
+        let dynamic = (!prepared.path.dynamic_edges.is_empty()).then(|| {
+            Deep2dDynamicPathGpuResources::new(
+                device,
+                &frame_layout,
+                &frame_bind_group.buffer,
+                &prepared.path,
+                format,
+                cache,
+            )
+        });
         let resources_ms = timing.elapsed().as_secs_f64() * 1000.0 - prepare_ms;
         if let Some(path) = &mut path {
             let byte_len = prepared.path.vertices.len() * vertex_transfer::STRIDE;
@@ -200,8 +171,11 @@ impl Deep2dGpuPainter {
             );
         }
         Ok(Self {
+            device: device.clone(),
             path,
             atlas,
+            dynamic,
+            stencil: std::cell::RefCell::new(None),
             cache: Arc::clone(cache),
             path_cache,
             queue: Arc::new(queue.clone()),
@@ -347,12 +321,32 @@ impl Deep2dGpuPainter {
                 store: wgpu::StoreOp::Store,
             },
         })];
+        // 刀 3:动态块存在才附加模板附件并逐帧清零;纯静态帧的 pass 描述
+        // 符与既有行为完全一致(不建纹理、不附加)。
+        let has_dynamic = self
+            .chunks
+            .iter()
+            .any(|chunk| matches!(chunk.kind, PreparedDeep2dChunkKind::DynamicPath { .. }));
+        let stencil_guard = has_dynamic.then(|| self.stencil_view(physical_size));
+        let depth_stencil_attachment = stencil_guard.as_ref().map(|stencil| {
+            wgpu::RenderPassDepthStencilAttachment {
+                view: &stencil.view,
+                depth_ops: None,
+                stencil_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(0),
+                    store: wgpu::StoreOp::Store,
+                }),
+            }
+        });
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Deep Engine native Deep2d ordered pass v2"),
             color_attachments: &color_attachments,
-            depth_stencil_attachment: None,
+            depth_stencil_attachment,
             ..Default::default()
         });
+        // 模板附件存在时,pass 内全部管线必须声明 Stencil8:静态 path/atlas
+        // 用 no-op 变体,动态块用三连管线。
+        let with_stencil = has_dynamic;
         let draw_chunk = |pass: &mut wgpu::RenderPass<'_>, chunk: &PreparedDeep2dChunk| {
             let Some(scissor) = chunk_scissor(chunk.clip_rect, self.logical_size, physical_size)
             else {
@@ -364,15 +358,58 @@ impl Deep2dGpuPainter {
                     let path = self.path.as_ref().expect("prepared path resource");
                     // Path pipeline binds frame uniform + paint storage.
                     pass.set_bind_group(0, &path.bind_group, &[]);
-                    pass.set_pipeline(&path.pipeline);
+                    pass.set_pipeline(if with_stencil {
+                        &path.pipeline_stencil
+                    } else {
+                        &path.pipeline
+                    });
                     pass.set_vertex_buffer(0, path.vertex_buffer.slice(..));
                 }
                 PreparedDeep2dChunkKind::Atlas { atlas_index } => {
                     let atlas = self.atlas.as_ref().expect("prepared atlas resource");
                     pass.set_bind_group(0, &self.frame_resources.bind_group, &[]);
-                    pass.set_pipeline(&atlas.pipeline);
+                    pass.set_pipeline(if with_stencil {
+                        &atlas.pipeline_stencil
+                    } else {
+                        &atlas.pipeline
+                    });
                     pass.set_vertex_buffer(0, atlas.vertex_buffer.slice(..));
                     pass.set_bind_group(1, &atlas.atlases[atlas_index].bind_group, &[]);
+                }
+                PreparedDeep2dChunkKind::DynamicPath {
+                    edge_first,
+                    edge_count,
+                    fill_rule,
+                } => {
+                    // stencil-then-cover 三连:clear(bbox 模板归零)→
+                    // cover(fence winding)→ fill(模板测试 + v2 着色)。
+                    let path = self.path.as_ref().expect("prepared path resource");
+                    let dynamic = self.dynamic.as_ref().expect("prepared dynamic resource");
+                    let (cover_pipeline, fill_pipeline) =
+                        pipeline_pair(&dynamic.pipelines, fill_rule);
+                    pass.set_bind_group(0, &path.bind_group, &[]);
+                    pass.set_pipeline(&dynamic.pipelines.clear);
+                    pass.set_stencil_reference(0);
+                    pass.set_vertex_buffer(0, path.vertex_buffer.slice(..));
+                    pass.draw(chunk.first_vertex..chunk.first_vertex + chunk.vertex_count, 0..1);
+                    pass.set_pipeline(cover_pipeline);
+                    pass.set_bind_group(0, &dynamic.edge_bind_group, &[]);
+                    pass.set_vertex_buffer(0, dynamic.edge_buffer.slice(..));
+                    pass.draw(edge_first..edge_first + edge_count, 0..1);
+                    pass.set_pipeline(fill_pipeline);
+                    pass.set_bind_group(0, &path.bind_group, &[]);
+                    // nonzero 比较 winding≠0(ref 0);evenodd 测 LSB==1
+                    // (Invert 位翻转后的奇偶,read_mask 0x01)。
+                    pass.set_stencil_reference(match fill_rule {
+                        deep_engine_native::deep2d::FillRule::Nonzero => 0,
+                        deep_engine_native::deep2d::FillRule::Evenodd => 1,
+                    });
+                    pass.set_vertex_buffer(0, path.vertex_buffer.slice(..));
+                    pass.draw(chunk.first_vertex..chunk.first_vertex + chunk.vertex_count, 0..1);
+                    // 动态块自管绘制(clear/cover/fill),不走 match 后的尾随
+                    // draw——否则 fill 会以当前管线再执行一次(实测二次混合)。
+                    self.draw_evidence.record(chunk);
+                    return;
                 }
             }
             pass.draw(
@@ -416,6 +453,44 @@ impl Deep2dGpuPainter {
 
     pub fn draw_evidence(&self) -> Vec<DrawEvidence> {
         self.draw_evidence.snapshot()
+    }
+
+    /// 按物理尺寸惰性取模板附件;尺寸变更重建(与 frame uniform 的
+    /// `last_physical_size` 同样的懒策略,动态块缺席的帧从不创建)。
+    fn stencil_view(&self, physical_size: (u32, u32)) -> StencilTarget {
+        let mut guard = self.stencil.borrow_mut();
+        if let Some(stencil) = guard.as_ref()
+            && stencil.size == physical_size
+        {
+            return StencilTarget {
+                size: stencil.size,
+                view: stencil.view.clone(),
+            };
+        }
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Deep Engine native Deep2d dynamic stencil"),
+            size: wgpu::Extent3d {
+                width: physical_size.0,
+                height: physical_size.1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Stencil8,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&Default::default());
+        let target = StencilTarget {
+            size: physical_size,
+            view: view.clone(),
+        };
+        *guard = Some(StencilTarget {
+            size: physical_size,
+            view,
+        });
+        target
     }
     #[cfg(windows)]
     pub fn dashboard_video_slots(&self) -> &[DashboardVideoSlot] {
@@ -528,11 +603,44 @@ impl Deep2dPathGpuResources {
                 multiview_mask: None,
                 cache: None,
             });
+            let pipeline_stencil = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Deep Engine native Deep2d alpha pipeline v2 (stencil pass variant)"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vertex_main"),
+                    compilation_options: Default::default(),
+                    buffers: &buffers,
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: wgpu::TextureFormat::Stencil8,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::Always),
+                    stencil: crate::deep2d_dynamic_gpu::no_op_stencil(),
+                    bias: Default::default(),
+                }),
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fragment_main"),
+                    compilation_options: Default::default(),
+                    targets: &targets,
+                }),
+                multiview_mask: None,
+                cache: None,
+            });
             CachedPathPipelines {
                 pipeline: Arc::new(pipeline),
+                pipeline_stencil: Arc::new(pipeline_stencil),
             }
         });
         let pipeline = std::sync::Arc::clone(&cached.pipeline);
+        let pipeline_stencil = std::sync::Arc::clone(&cached.pipeline_stencil);
         let previous = previous.and_then(|p| {
             p.snapshot
                 .as_ref()
@@ -563,6 +671,7 @@ impl Deep2dPathGpuResources {
         });
         Self {
             pipeline,
+            pipeline_stencil,
             bind_group,
             vertex_buffer,
             snapshot: None,
@@ -573,8 +682,9 @@ impl Deep2dPathGpuResources {
 
 /// Path-stage bind group layout: frame uniform (vertex) + paint storage
 /// (fragment). Separate from the shared atlas frame layout so the atlas
-/// pipeline never pays for the storage binding.
-fn path_paint_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+/// pipeline never pays for the storage binding. 刀 3 动态 clear/fill 管线
+/// 复用同一布局以共享 bind group。
+pub(crate) fn path_paint_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("Deep Engine native Deep2d paint layout"),
         entries: &[

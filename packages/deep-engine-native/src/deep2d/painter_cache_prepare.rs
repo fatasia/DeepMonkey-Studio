@@ -1,12 +1,55 @@
-//! 按当前依赖准备几何并在成功细分后更新缓存。
-use super::super::painter::PathPrepareFrame;
+//! 按当前依赖准备几何并在成功细分后更新缓存;刀 3 起按滑窗变更计数把
+//! 动态路径自动分路到 stencil-then-cover(见 `painter_dynamic`)。
+use super::super::painter::{PathPrepareFrame, PathPrepareRoute};
 use super::super::{Deep2dPainterIssue, PreparedDeep2d};
-use super::keys::{resource_bytes, same_clip_ids, same_resource};
 use super::super::paint_data::Deep2dPaintData;
 use super::super::paint_registry::PaintRegistry;
+use super::super::painter_dynamic::{
+    MAX_DYNAMIC_FILL_EDGES_TOTAL, VERTICES_PER_EDGE, cover_vertices, dynamic_fence,
+    dynamic_fill_rule, resource_content_hash, stencil_eligible,
+};
+use super::super::painter_path::LinearPath;
+use super::super::painter_prepare::{emit_stroke, prepare_path, register_fill_paint};
+use super::keys::{resource_bytes, same_clip_ids, same_resource};
 use super::{
     Deep2dPathCache, Deep2dPathCacheMissReason, Entry, EntryWitness, PathCommand, PathResource,
 };
+
+/// 失效原因只记首要原因,判定顺序固定并在此注释化:相机 → epoch → 结构 → clip → resource → 风格。
+/// 先说清各维度的作用域:相机/epoch 是帧级依赖(整帧同值),结构/clip/resource/风格是条目级。
+/// 帧级维度先判定,因为它们解释「为什么整批条目一起失效」,比条目级差异更接近根因;
+/// LRU 逐出优先于一切——id 不在表中时只能靠逐出记忆区分「刚被淘汰」与「首次出现」。
+fn miss_reason(
+    entry: Option<&Entry>,
+    document: EntryWitness,
+    clips_intact: bool,
+    command: &PathCommand,
+    resource: &PathResource,
+    recently_evicted: bool,
+) -> Deep2dPathCacheMissReason {
+    match entry {
+        None => {
+            if recently_evicted {
+                Deep2dPathCacheMissReason::Evicted
+            } else {
+                Deep2dPathCacheMissReason::StructureChanged
+            }
+        }
+        Some(entry) => {
+            if entry.witness.camera_scale_bits != document.camera_scale_bits {
+                Deep2dPathCacheMissReason::CameraChanged
+            } else if entry.witness.resource_epoch != document.resource_epoch {
+                Deep2dPathCacheMissReason::EpochChanged
+            } else if !clips_intact || !same_clip_ids(entry, command) {
+                Deep2dPathCacheMissReason::ClipChanged
+            } else if !same_resource(&entry.resource, resource) {
+                Deep2dPathCacheMissReason::ResourceChanged
+            } else {
+                Deep2dPathCacheMissReason::StyleChanged
+            }
+        }
+    }
+}
 
 impl Deep2dPathCache {
     #[allow(clippy::too_many_arguments)]
@@ -19,7 +62,7 @@ impl Deep2dPathCache {
         frame: &PathPrepareFrame<'_>,
         registry: &mut PaintRegistry,
         output: &mut PreparedDeep2d,
-    ) -> Result<(), Deep2dPainterIssue> {
+    ) -> Result<PathPrepareRoute, Deep2dPainterIssue> {
         let display_scale = frame.scale_factor;
         let paths = frame.paths;
         self.tick = self.tick.saturating_add(1);
@@ -51,6 +94,41 @@ impl Deep2dPathCache {
                 && entry.witness == document
                 && same_resource(&entry.resource, resource)
         }) && clips_intact;
+        // 刀 3:动态性观察——每帧每命令推进滑窗(内容指纹),达到阈值自动分路。
+        let dynamic = self.dynamic.observe(&command.id, resource_content_hash(resource));
+        if dynamic && stencil_eligible(command) {
+            // 动态帧记账:条目几何不再消费;内容/见证未变记 hit,内容变化记
+            // 首要原因(与静态同一套词表,条目原地保留以便退静态时正确归因)。
+            let recently_evicted = if entry.is_none() {
+                self.recently_evicted.remove(command.id.as_str())
+            } else {
+                false
+            };
+            if same {
+                self.stats.hits += 1;
+            } else {
+                self.stats.misses += 1;
+                self.stats
+                    .miss_reasons
+                    .record(miss_reason(entry, document, clips_intact, command, resource, recently_evicted));
+            }
+            return self.emit_dynamic(
+                command,
+                resource,
+                resource_path,
+                path,
+                frame,
+                registry,
+                output,
+                camera.scale,
+                paths,
+            );
+        }
+        if dynamic {
+            // 判为动态但不满足 stencil 资格(多边形剪刀/解析 quad/无 fill):
+            // 该帧回落静态 CPU 细分,计数上报,不静默。
+            output.summary.dynamic_fallbacks += 1;
+        }
         if same {
             let entry = self.entries.get_mut(&command.id).unwrap();
             self.order.remove(&(entry.touched, command.id.clone()));
@@ -79,46 +157,54 @@ impl Deep2dPathCache {
             output.summary.path_segments += entry.segments;
             output.summary.fill_triangles += entry.fill_triangles;
             output.summary.stroke_triangles += entry.stroke_triangles;
-            return Ok(());
+            return Ok(PathPrepareRoute::Static);
         }
-        // 失效原因只记首要原因,判定顺序固定并在此注释化:相机 → epoch → 结构 → clip → resource → 风格。
-        // 先说清各维度的作用域:相机/epoch 是帧级依赖(整帧同值),结构/clip/resource/风格是条目级。
-        // 帧级维度先判定,因为它们解释「为什么整批条目一起失效」,比条目级差异更接近根因;
-        // LRU 逐出优先于一切——id 不在表中时只能靠逐出记忆区分「刚被淘汰」与「首次出现」。
-        let reason = match entry {
-            None => {
-                if self.recently_evicted.remove(command.id.as_str()) {
-                    Deep2dPathCacheMissReason::Evicted
-                } else {
-                    Deep2dPathCacheMissReason::StructureChanged
-                }
-            }
-            Some(entry) => {
-                if entry.witness.camera_scale_bits != document.camera_scale_bits {
-                    Deep2dPathCacheMissReason::CameraChanged
-                } else if entry.witness.resource_epoch != document.resource_epoch {
-                    Deep2dPathCacheMissReason::EpochChanged
-                } else if !clips_intact || !same_clip_ids(entry, command) {
-                    Deep2dPathCacheMissReason::ClipChanged
-                } else if !same_resource(&entry.resource, resource) {
-                    Deep2dPathCacheMissReason::ResourceChanged
-                } else {
-                    Deep2dPathCacheMissReason::StyleChanged
-                }
-            }
-        };
         self.stats.misses += 1;
-        self.stats.miss_reasons.record(reason);
+        let recently_evicted = entry.is_none() && self.recently_evicted.remove(command.id.as_str());
+        self.stats
+            .miss_reasons
+            .record(miss_reason(entry, document, clips_intact, command, resource, recently_evicted));
+        self.prepare_static(
+            command,
+            resource,
+            resource_path,
+            path,
+            registry,
+            output,
+            camera.scale,
+            paths,
+            &style,
+            document,
+        )?;
+        Ok(PathPrepareRoute::Static)
+    }
+
+    /// 静态路由:CPU 细分 + 条目存储(命中返回后不会走到这里)。
+    /// 动态候选的预算回落也走这条,保证回落帧与从未判动态的帧逐字节一致。
+    #[allow(clippy::too_many_arguments)]
+    fn prepare_static(
+        &mut self,
+        command: &PathCommand,
+        resource: &PathResource,
+        resource_path: &str,
+        path: &str,
+        registry: &mut PaintRegistry,
+        output: &mut PreparedDeep2d,
+        scale: f64,
+        paths: &std::collections::HashMap<&str, (usize, &PathResource)>,
+        style: &PathCommand,
+        document: EntryWitness,
+    ) -> Result<(), Deep2dPainterIssue> {
         let first = output.vertices.len();
         let before = output.summary;
-        super::super::painter_prepare::prepare_path(
+        prepare_path(
             command,
             resource,
             resource_path,
             path,
             // 用见证同源的相机缩放,而非直接把 display_list.scale_factor 传下去:
             // 宿主显式声明的相机必须真正决定细分容差。
-            camera.scale,
+            scale,
             paths,
             registry,
             output,
@@ -168,7 +254,7 @@ impl Deep2dPathCache {
             return Ok(());
         }
         let entry = Entry {
-            style,
+            style: style.clone(),
             resource: resource.clone(),
             clips,
             witness: document,
@@ -182,6 +268,118 @@ impl Deep2dPathCache {
         };
         self.store(command.id.clone(), entry);
         Ok(())
+    }
+
+    /// 刀 3 动态路由:展平(仅线性化)+ fence 发射 + cover 顶点;描边部分
+    /// 如实保留 CPU 展开。预算超限整条回落静态(fail-safe,计数上报)。
+    #[allow(clippy::too_many_arguments)]
+    fn emit_dynamic(
+        &mut self,
+        command: &PathCommand,
+        resource: &PathResource,
+        resource_path: &str,
+        path: &str,
+        frame: &PathPrepareFrame<'_>,
+        registry: &mut PaintRegistry,
+        output: &mut PreparedDeep2d,
+        scale: f64,
+        paths: &std::collections::HashMap<&str, (usize, &PathResource)>,
+    ) -> Result<PathPrepareRoute, Deep2dPainterIssue> {
+        let linear = LinearPath::from_resource(resource, resource_path, path, command.transform, scale)?;
+        // 预算判定先于任何登记:回落帧必须与从未判动态的帧逐字节一致
+        // (segments/paints 记账都留给静态路完成)。
+        let fence = dynamic_fence(&linear, &command.transform).filter(|fence| {
+            output.dynamic_edges.len() / VERTICES_PER_EDGE + fence.edge_count
+                <= MAX_DYNAMIC_FILL_EDGES_TOTAL
+        });
+        let Some(fence) = fence else {
+            output.summary.dynamic_fallbacks += 1;
+            return self.static_after_dynamic(
+                command, resource, resource_path, path, frame, registry, output, scale, paths,
+            );
+        };
+        output.summary.path_segments += linear.segment_count();
+        output.summary.dynamic_edges += fence.edge_count;
+        let opacity = command.opacity.unwrap_or(1.0) as f32;
+        let fill = command.fill.as_ref().expect("stencil eligibility checked");
+        let (slot, vertex_color) = register_fill_paint(command, fill, scale, registry, path)?;
+        let edge_first = output.dynamic_edges.len() as u32;
+        output.dynamic_edges.extend_from_slice(&fence.edges);
+        let cover_first = output.vertices.len() as u32;
+        let rgba = [
+            vertex_color[0] as f32,
+            vertex_color[1] as f32,
+            vertex_color[2] as f32,
+            vertex_color[3] as f32 * opacity,
+        ];
+        output
+            .vertices
+            .extend(cover_vertices(fence.bbox, &command.transform, rgba, slot));
+        let cover_count = output.vertices.len() as u32 - cover_first;
+        // 描边不在本刀范围:动态命令的 stroke 继续 CPU 展开,并追加静态
+        // chunk 保证被绘制(与静态帧同一管线/同一顶点流)。
+        let stroke_first = output.vertices.len() as u32;
+        let stroke = if command.stroke.is_some() {
+            let clip_sets = super::super::painter_clip::prepare_clip_sets(
+                command.clip_path_ids.as_deref(),
+                paths,
+                command.transform,
+                scale,
+                path,
+            )?;
+            emit_stroke(command, &linear, &clip_sets, scale, output, path)?;
+            Some((stroke_first, output.vertices.len() as u32 - stroke_first))
+        } else {
+            None
+        };
+        Ok(PathPrepareRoute::Dynamic(super::super::painter::DynamicEmission {
+            cover_first,
+            cover_count,
+            edge_first,
+            edge_count: fence.edges.len() as u32,
+            fill_rule: dynamic_fill_rule(command),
+            stroke,
+        }))
+    }
+
+    /// 动态候选的静态回落:与从未判动态的帧走完全相同的静态路
+    /// (细分 + 条目存储),仅多计一次 dynamic_fallbacks。
+    #[allow(clippy::too_many_arguments)]
+    fn static_after_dynamic(
+        &mut self,
+        command: &PathCommand,
+        resource: &PathResource,
+        resource_path: &str,
+        path: &str,
+        frame: &PathPrepareFrame<'_>,
+        registry: &mut PaintRegistry,
+        output: &mut PreparedDeep2d,
+        scale: f64,
+        paths: &std::collections::HashMap<&str, (usize, &PathResource)>,
+    ) -> Result<PathPrepareRoute, Deep2dPainterIssue> {
+        let mut style = command.clone();
+        style.id = String::new();
+        style.z_order = 0;
+        style.hit_id = None;
+        style.clip_rect = None;
+        let camera = self.camera_witness(frame.scale_factor);
+        let document = EntryWitness {
+            camera_scale_bits: camera.scale_bits,
+            resource_epoch: self.resource_epoch,
+        };
+        self.prepare_static(
+            command,
+            resource,
+            resource_path,
+            path,
+            registry,
+            output,
+            scale,
+            paths,
+            &style,
+            document,
+        )?;
+        Ok(PathPrepareRoute::Static)
     }
 }
 

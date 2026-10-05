@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     Deep2dAtlasQuad, Deep2dCommand, Deep2dDisplayList, Deep2dPaintData, Deep2dRect, Deep2dResource,
+    FillRule,
     paint_registry::PaintRegistry,
     painter_atlas::{prepare_image, prepare_text},
     painter_clip::ClipSets,
@@ -66,6 +67,12 @@ pub struct PreparedDeep2dSummary {
     pub fill_triangles: usize,
     pub stroke_triangles: usize,
     pub vertices: usize,
+    /// 刀 3:本帧走 stencil-then-cover 的命令数(自动分路结果)。
+    pub dynamic_commands: usize,
+    /// 本帧动态 fence 边数(每边 6 顶点,canvas 空间)。
+    pub dynamic_edges: usize,
+    /// 因预算/资格不满足而回落静态 CPU 细分的动态候选数。
+    pub dynamic_fallbacks: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -74,6 +81,24 @@ pub struct PreparedDeep2dPathChunk {
     pub source_index: usize,
     pub first_vertex: u32,
     pub vertex_count: u32,
+    pub clip_rect: Option<Deep2dRect>,
+}
+
+/// 刀 3 stencil 动态块的准备产物:edge 区间指 `dynamic_edges`(fence 三角
+/// 形汤,独立顶点布局),cover 区间指 `vertices`(PathVertex bbox quad,
+/// fill/clear 管线消费)。每个动态块自 bracket(clear→cover→fill),
+/// chunk 间禁止合并——stencil 是逐块复用的。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PreparedDynamicPathChunk {
+    pub z_order: i32,
+    pub source_index: usize,
+    /// fill pass / clear pass 的 cover 顶点区间(`vertices` 流内)。
+    pub cover_first: u32,
+    pub cover_count: u32,
+    /// cover pass 的 fence 顶点区间(`dynamic_edges` 流内,顶点数)。
+    pub edge_first: u32,
+    pub edge_count: u32,
+    pub fill_rule: FillRule,
     pub clip_rect: Option<Deep2dRect>,
 }
 
@@ -105,6 +130,10 @@ pub struct PreparedDeep2d {
     /// `paints[i]`; slot 0 is the reserved solid dummy).
     pub paints: Vec<Deep2dPaintData>,
     pub chunks: Vec<PreparedDeep2dPathChunk>,
+    /// 刀 3:动态命令的 fence 三角形汤(canvas 空间,`[f32; 2]` 位置)。
+    pub dynamic_edges: Vec<[f32; 2]>,
+    /// 刀 3:动态命令块(与 chunks 同 z 序,由 runtime 层合并排序)。
+    pub dynamic_chunks: Vec<PreparedDynamicPathChunk>,
     pub images: Vec<PreparedDeep2dImage>,
     pub glyphs: Vec<PreparedDeep2dGlyph>,
     pub summary: PreparedDeep2dSummary,
@@ -114,6 +143,27 @@ pub struct PreparedDeep2d {
 pub(super) struct PathPrepareFrame<'a> {
     pub scale_factor: f64,
     pub paths: &'a HashMap<&'a str, (usize, &'a super::PathResource)>,
+}
+
+/// 缓存准备的路由结果:静态(CPU 细分顶点已入 `vertices`)或动态
+/// (stencil 发射完成,区间由本层补齐 z/clip/源索引元数据后登记)。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum PathPrepareRoute {
+    Static,
+    Dynamic(DynamicEmission),
+}
+
+/// 一次动态发射的顶点区间(fence 在 `dynamic_edges`,cover/描边在
+/// `vertices`)。`stroke` 是动态命令回退 CPU 展开的描边区间,由本层
+/// 追加一个静态 chunk 保证被绘制。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct DynamicEmission {
+    pub cover_first: u32,
+    pub cover_count: u32,
+    pub edge_first: u32,
+    pub edge_count: u32,
+    pub fill_rule: FillRule,
+    pub stroke: Option<(u32, u32)>,
 }
 
 pub fn prepare_display_list(
@@ -174,6 +224,8 @@ pub(super) fn prepare_impl(
         vertices: Vec::new(),
         paints: Vec::new(),
         chunks: Vec::new(),
+        dynamic_edges: Vec::new(),
+        dynamic_chunks: Vec::new(),
         images: Vec::new(),
         glyphs: Vec::new(),
         summary: PreparedDeep2dSummary {
@@ -182,6 +234,9 @@ pub(super) fn prepare_impl(
             fill_triangles: 0,
             stroke_triangles: 0,
             vertices: 0,
+            dynamic_commands: 0,
+            dynamic_edges: 0,
+            dynamic_fallbacks: 0,
         },
     };
     let frame = PathPrepareFrame {
@@ -196,6 +251,7 @@ pub(super) fn prepare_impl(
             Deep2dCommand::Path(command) => {
                 let (resource_index, resource) = paths[command.path_id.as_str()];
                 let first_vertex = output.vertices.len() as u32;
+                let before_dynamic = output.dynamic_chunks.len();
                 let result = if let Some(cache) = cache.as_deref_mut() {
                     cache.prepare(
                         command,
@@ -217,18 +273,45 @@ pub(super) fn prepare_impl(
                         &mut registry,
                         &mut output,
                     )
+                    .map(|()| PathPrepareRoute::Static)
                 };
                 match result {
-                    Ok(()) if output.vertices.len() as u32 > first_vertex => {
-                        output.chunks.push(PreparedDeep2dPathChunk {
-                            z_order: command.z_order,
-                            source_index: index,
-                            first_vertex,
-                            vertex_count: output.vertices.len() as u32 - first_vertex,
-                            clip_rect: command.clip_rect,
-                        })
-                    }
-                    Ok(()) => {}
+                    Ok(route) => match route {
+                        PathPrepareRoute::Static => {
+                            if output.vertices.len() as u32 > first_vertex {
+                                output.chunks.push(PreparedDeep2dPathChunk {
+                                    z_order: command.z_order,
+                                    source_index: index,
+                                    first_vertex,
+                                    vertex_count: output.vertices.len() as u32 - first_vertex,
+                                    clip_rect: command.clip_rect,
+                                });
+                            }
+                        }
+                        PathPrepareRoute::Dynamic(emission) => {
+                            output.summary.dynamic_commands += 1;
+                            output.dynamic_chunks.push(PreparedDynamicPathChunk {
+                                z_order: command.z_order,
+                                source_index: index,
+                                cover_first: emission.cover_first,
+                                cover_count: emission.cover_count,
+                                edge_first: emission.edge_first,
+                                edge_count: emission.edge_count,
+                                fill_rule: emission.fill_rule,
+                                clip_rect: command.clip_rect,
+                            });
+                            if let Some((first, count)) = emission.stroke {
+                                output.chunks.push(PreparedDeep2dPathChunk {
+                                    z_order: command.z_order,
+                                    source_index: index,
+                                    first_vertex: first,
+                                    vertex_count: count,
+                                    clip_rect: command.clip_rect,
+                                });
+                            }
+                            debug_assert_eq!(before_dynamic + 1, output.dynamic_chunks.len());
+                        }
+                    },
                     Err(issue) => issues.push(issue),
                 }
             }

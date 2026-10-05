@@ -106,6 +106,8 @@ pub struct Deep2dPathCache {
     // 容量随 max_entries 有界,溢出清空属有损记忆(被遗忘的回归 id 回退记 structure_changed),
     // 只影响归因标签,不影响命中/失效判定。
     recently_evicted: HashSet<String>,
+    // 刀 3:动态性判定(滑窗变更计数),决定路径走静态细分缓存还是 stencil 实时填充。
+    dynamic: super::painter_dynamic::DynamicPathTracker,
 }
 impl Default for Deep2dPathCache {
     fn default() -> Self {
@@ -120,6 +122,7 @@ impl Default for Deep2dPathCache {
             resource_epoch: None,
             camera_scale: None,
             recently_evicted: HashSet::new(),
+            dynamic: Default::default(),
         }
     }
 }

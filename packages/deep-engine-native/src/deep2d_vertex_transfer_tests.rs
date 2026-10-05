@@ -22,6 +22,8 @@ fn prepared(parts: &[(usize, f32)]) -> PreparedDeep2d {
         vertices,
         paints: Vec::new(),
         chunks,
+        dynamic_edges: Vec::new(),
+        dynamic_chunks: Vec::new(),
         images: vec![],
         glyphs: vec![],
         summary: PreparedDeep2dSummary {
@@ -30,6 +32,9 @@ fn prepared(parts: &[(usize, f32)]) -> PreparedDeep2d {
             fill_triangles: count / 3,
             stroke_triangles: 0,
             vertices: count,
+            dynamic_commands: 0,
+            dynamic_edges: 0,
+            dynamic_fallbacks: 0,
         },
     }
 }

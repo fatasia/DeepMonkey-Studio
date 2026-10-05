@@ -46,10 +46,17 @@ pub(super) fn prepare(
         let summary = combined_summary(output.summary, part.summary)?;
         let path_offset = u32::try_from(output.path.vertices.len())
             .map_err(|_| "composite path offset overflow")?;
+        let edge_offset =
+            u32::try_from(output.path.dynamic_edges.len()).map_err(|_| "composite edge overflow")?;
         let atlas_offset = u32::try_from(output.atlas_vertices.len())
             .map_err(|_| "composite atlas offset overflow")?;
         let atlas_index_offset = output.atlases.len();
         for vertex in &mut part.path.vertices {
+            vertex[0] += layer.translation[0] as f32;
+            vertex[1] += layer.translation[1] as f32;
+        }
+        // 刀 3 动态 fence 与 cover 同层平移:fence 是 canvas 空间位置顶点。
+        for vertex in &mut part.path.dynamic_edges {
             vertex[0] += layer.translation[0] as f32;
             vertex[1] += layer.translation[1] as f32;
         }
@@ -82,6 +89,15 @@ pub(super) fn prepare(
                         .checked_add(atlas_offset)
                         .ok_or("composite atlas overflow")?;
                 }
+                PreparedDeep2dChunkKind::DynamicPath { edge_first, .. } => {
+                    chunk.first_vertex = chunk
+                        .first_vertex
+                        .checked_add(path_offset)
+                        .ok_or("composite path overflow")?;
+                    *edge_first = edge_first
+                        .checked_add(edge_offset)
+                        .ok_or("composite edge overflow")?;
+                }
             }
             output.chunks.push(chunk);
         }
@@ -99,6 +115,8 @@ pub(super) fn prepare(
             }
         }
         output.path.vertices.extend(part.path.vertices);
+        output.path.dynamic_edges.extend(part.path.dynamic_edges);
+        output.path.dynamic_chunks.extend(part.path.dynamic_chunks);
         output.atlas_vertices.extend(part.atlas_vertices);
         output.atlases.extend(part.atlases);
         output.path.summary = summary.path;
@@ -148,6 +166,15 @@ pub(super) fn combined_summary(
                 incoming.path.stroke_triangles,
             )?,
             vertices: add(current.path.vertices, incoming.path.vertices)?,
+            dynamic_commands: add(
+                current.path.dynamic_commands,
+                incoming.path.dynamic_commands,
+            )?,
+            dynamic_edges: add(current.path.dynamic_edges, incoming.path.dynamic_edges)?,
+            dynamic_fallbacks: add(
+                current.path.dynamic_fallbacks,
+                incoming.path.dynamic_fallbacks,
+            )?,
         },
         atlases: add(current.atlases, incoming.atlases)?,
         atlas_bytes: add(current.atlas_bytes, incoming.atlas_bytes)?,

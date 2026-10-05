@@ -1,6 +1,6 @@
 use super::{
     Deep2dComposition, Deep2dRect, PreparedDeep2dChunk, PreparedDeep2dChunkKind,
-    PreparedDeep2dPathChunk,
+    PreparedDeep2dPathChunk, PreparedDynamicPathChunk,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -28,6 +28,7 @@ pub(super) fn build_chunks(
     composition: Deep2dComposition,
     paths: &[PreparedDeep2dPathChunk],
     atlases: &[PreparedAtlasItem],
+    dynamics: &[PreparedDynamicPathChunk],
 ) -> Vec<PreparedDeep2dChunk> {
     let mut candidates = paths
         .iter()
@@ -40,6 +41,19 @@ pub(super) fn build_chunks(
             vertex_count: path.vertex_count,
             clip_rect: path.clip_rect,
         })
+        .chain(dynamics.iter().map(|dynamic| Candidate {
+            z_order: dynamic.z_order,
+            source_index: dynamic.source_index,
+            kind_order: 0,
+            kind: PreparedDeep2dChunkKind::DynamicPath {
+                edge_first: dynamic.edge_first,
+                edge_count: dynamic.edge_count,
+                fill_rule: dynamic.fill_rule,
+            },
+            first_vertex: dynamic.cover_first,
+            vertex_count: dynamic.cover_count,
+            clip_rect: dynamic.clip_rect,
+        }))
         .chain(atlases.iter().map(|atlas| Candidate {
             z_order: atlas.z_order,
             source_index: atlas.source_index,
@@ -62,7 +76,10 @@ pub(super) fn build_chunks(
     }
     let mut chunks = Vec::<PreparedDeep2dChunk>::new();
     for candidate in candidates {
-        if let Some(chunk) = chunks.last_mut().filter(|chunk| {
+        // 刀 3 动态块永不合并:每个块自带 stencil bracket(clear→cover→fill),
+        // 相邻合并会破坏逐块模板隔离。
+        let mergeable = !matches!(candidate.kind, PreparedDeep2dChunkKind::DynamicPath { .. });
+        if mergeable && let Some(chunk) = chunks.last_mut().filter(|chunk| {
             chunk.kind == candidate.kind
                 && chunk.clip_rect == candidate.clip_rect
                 && chunk.first_vertex + chunk.vertex_count == candidate.first_vertex

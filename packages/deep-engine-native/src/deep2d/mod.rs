@@ -17,6 +17,7 @@ mod painter_path;
 mod painter_path_intersections;
 mod painter_polygon;
 mod painter_polygon_bridge;
+mod painter_dynamic;
 mod painter_prepare;
 mod painter_quad;
 mod painter_stroke;
@@ -96,8 +97,12 @@ pub use paint_data::{
 };
 pub use painter::{
     Deep2dPainterError, Deep2dPainterIssue, Deep2dPainterIssueCode, PathVertex, PreparedDeep2d,
-    PreparedDeep2dGlyph, PreparedDeep2dPathChunk, PreparedDeep2dSummary, prepare_display_list,
-    prepare_display_list_cached,
+    PreparedDeep2dGlyph, PreparedDeep2dPathChunk, PreparedDeep2dSummary, PreparedDynamicPathChunk,
+    prepare_display_list, prepare_display_list_cached,
+};
+pub use painter_dynamic::{
+    DYNAMIC_CHANGES_THRESHOLD, DYNAMIC_WINDOW_FRAMES, MAX_DYNAMIC_FILL_EDGES_PER_COMMAND,
+    MAX_DYNAMIC_FILL_EDGES_TOTAL, DynamicPathTracker,
 };
 pub use painter_path::{DEEP2D_CURVE_TOLERANCE, DEEP2D_MAX_FLATTENED_SEGMENTS};
 pub use paint_reference::rasterize_prepared;

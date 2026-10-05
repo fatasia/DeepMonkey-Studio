@@ -24,6 +24,8 @@ pub struct Deep2dCacheStats {
     pub frame_buffer_hits: u64,
     pub path_pipeline_creates: u64,
     pub path_pipeline_hits: u64,
+    pub dynamic_pipeline_creates: u64,
+    pub dynamic_pipeline_hits: u64,
     pub atlas_pipeline_creates: u64,
     pub atlas_pipeline_hits: u64,
     pub atlas_texture_creates: u64,
@@ -78,13 +80,29 @@ impl<T> Bounded<T> {
 }
 
 /// Cached path-stage pipeline (shader + layout + pipeline for one format).
+/// `pipeline_stencil` 是 no-op 模板状态变体:deep2d pass 附带 Stencil8 附件
+/// (动态块存在)时,pass 内所有管线都必须声明同一 depth-stencil 格式。
 pub struct CachedPathPipelines {
     pub pipeline: Arc<wgpu::RenderPipeline>,
+    pub pipeline_stencil: Arc<wgpu::RenderPipeline>,
+}
+
+/// 刀 3 stencil-then-cover 动态路径管线族(每格式一套):
+/// clear(bbox 模板清零)→ cover(fence winding 写模板;nonzero/evenodd
+/// 两个变体)→ fill(模板测试 + v2 着色)。
+pub struct CachedDynamicPipelines {
+    pub clear: Arc<wgpu::RenderPipeline>,
+    pub cover: Arc<wgpu::RenderPipeline>,
+    pub cover_evenodd: Arc<wgpu::RenderPipeline>,
+    pub fill_nonzero: Arc<wgpu::RenderPipeline>,
+    pub fill_evenodd: Arc<wgpu::RenderPipeline>,
 }
 
 /// Cached atlas-stage pipeline plus its texture bind-group layout.
+/// `pipeline_stencil` 见 `CachedPathPipelines`。
 pub struct CachedAtlasPipelines {
     pub pipeline: Arc<wgpu::RenderPipeline>,
+    pub pipeline_stencil: Arc<wgpu::RenderPipeline>,
     pub atlas_layout: wgpu::BindGroupLayout,
 }
 
@@ -100,6 +118,7 @@ struct CacheInner {
     /// logical_height) bits; identical canvas size reuses the upload.
     frame_resources: HashMap<u64, Arc<FrameResources>>,
     path_pipelines: HashMap<wgpu::TextureFormat, Arc<CachedPathPipelines>>,
+    dynamic_pipelines: HashMap<wgpu::TextureFormat, Arc<CachedDynamicPipelines>>,
     atlas_pipelines: HashMap<wgpu::TextureFormat, Arc<CachedAtlasPipelines>>,
     atlas_textures: Bounded<ResidentAtlas>,
     vertex_buffers: Bounded<wgpu::Buffer>,
@@ -120,6 +139,7 @@ impl Deep2dGpuAssetCache {
                 path_paint_layout: None,
                 frame_resources: HashMap::new(),
                 path_pipelines: HashMap::new(),
+                dynamic_pipelines: HashMap::new(),
                 atlas_pipelines: HashMap::new(),
                 atlas_textures: Bounded::new(MAX_ATLAS_TEXTURES),
                 vertex_buffers: Bounded::new(MAX_VERTEX_BUFFERS),
@@ -207,6 +227,22 @@ impl Deep2dGpuAssetCache {
         inner.stats.path_pipeline_creates += 1;
         let cached = Arc::new(create());
         inner.path_pipelines.insert(format, Arc::clone(&cached));
+        cached
+    }
+
+    pub fn dynamic_pipelines(
+        &self,
+        format: wgpu::TextureFormat,
+        create: impl FnOnce() -> CachedDynamicPipelines,
+    ) -> Arc<CachedDynamicPipelines> {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.dynamic_pipelines.contains_key(&format) {
+            inner.stats.dynamic_pipeline_hits += 1;
+            return Arc::clone(inner.dynamic_pipelines.get(&format).unwrap());
+        }
+        inner.stats.dynamic_pipeline_creates += 1;
+        let cached = Arc::new(create());
+        inner.dynamic_pipelines.insert(format, Arc::clone(&cached));
         cached
     }
 
