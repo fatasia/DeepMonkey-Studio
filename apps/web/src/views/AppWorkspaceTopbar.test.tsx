@@ -45,6 +45,20 @@ describe("Play mode toolbar state", () => {
   });
 });
 
+describe("Publish-app zero-config semantics (P2-7)", () => {
+  it("states the publication defaults (browser rendering, authored canvas, no native package) on the one-click action", () => {
+    const html = setup().render();
+    expect(html).toContain("零配置一键发布");
+    expect(html).toContain("浏览器渲染");
+    expect(html).toContain("画布与分辨率沿用各页面设置");
+    expect(html).toContain("不生成本地安装包");
+    // 指路离线包的正确入口,而不是让作者在发布动作上寻找打包配置。
+    expect(html).toContain("离线运行包请用二维看板工具栏的「离线包」");
+    // 完整构建配置属产品决策,本修复只做说明不引入配置 UI。
+    expect(html).not.toContain("构建配置");
+  });
+});
+
 describe("3D workspace exit save contract (P2-5 carry-first)", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());

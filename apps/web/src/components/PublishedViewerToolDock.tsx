@@ -80,6 +80,7 @@ export function PublishedViewerToolDock(props: PublishedViewerToolDockProps) {
         className="viewer-tool-toggle"
         type="button"
         aria-expanded={props.open}
+        aria-label={props.open ? tr(locale, "收起浏览工具", "Collapse viewer tools") : tr(locale, "展开浏览工具", "Expand viewer tools")}
         title={props.open ? tr(locale, "收起浏览工具", "Collapse viewer tools") : tr(locale, "展开浏览工具", "Expand viewer tools")}
         onClick={() => props.onOpenChange(!props.open)}
       >
@@ -110,7 +111,7 @@ export function PublishedViewerToolDock(props: PublishedViewerToolDockProps) {
           <div>
             <strong>{tr(locale, "标准视图", "Standard views")}</strong>
             {(["top", "front", "right", "back", "bottom", "left"] as const).map((view) => (
-              <button key={view} onClick={() => props.onStandardView(view)}>{standardViewLabel(locale, view)}</button>
+              <button key={view} aria-label={standardViewLabel(locale, view)} onClick={() => props.onStandardView(view)}>{standardViewLabel(locale, view)}</button>
             ))}
           </div>
           <div>

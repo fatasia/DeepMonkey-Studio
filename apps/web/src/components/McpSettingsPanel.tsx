@@ -57,10 +57,16 @@ export function McpSettingsPanel({ locale, client = api }: { locale: AppLocale; 
     <div className="mcp-settings">
       {error && <div className="mcp-inline-error" role="alert"><CircleAlert /><span>{error}</span><button type="button" onClick={load}>{t("重试", "Retry")}</button></div>}
       <section className="mcp-overview">
-        <header><div className="mcp-status-icon"><ServerCog /></div><span><strong>{t("MCP 接入", "MCP connection")}</strong><small>{data.serverName} · v{data.serverVersion}</small></span><i><Check />{t("连接正常", "Connected")}</i></header>
+        <header><div className="mcp-status-icon"><ServerCog /></div><span><strong>{t("MCP 接入", "MCP connection")}</strong><small>{data.serverName} · {t("服务版本", "server")} v{data.serverVersion}</small></span><i><Check />{t("连接正常", "Connected")}</i></header>
         <div className="mcp-facts">
           <article><small>{t("服务端点", "Endpoint")}</small><code title={data.endpoint}>{data.endpoint}</code></article>
-          <article><small>{t("协议版本", "Protocol")}</small><strong>{data.protocolVersion}</strong></article>
+          <article>
+            <small>{t("MCP 协议版本", "MCP protocol")}</small><strong>{data.protocolVersion}</strong>
+            {data.supportedVersions.length > 1 && <small>
+              {t(`现代协议通道；旧版客户端 initialize 握手兼容 ${data.supportedVersions.slice(1).join(" / ")}`,
+                `Modern protocol channel; legacy initialize handshakes negotiate ${data.supportedVersions.slice(1).join(" / ")}`)}
+            </small>}
+          </article>
           <article><small>{t("当前身份", "Identity")}</small><strong>{data.authenticated ? t("登录会话令牌", "Signed-in session token") : t("未检测到令牌", "No token detected")}</strong></article>
           <article><small>{t("已授权工具", "Authorized tools")}</small><strong>{data.tools.length}</strong></article>
         </div>

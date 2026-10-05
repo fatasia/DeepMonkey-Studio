@@ -27,7 +27,7 @@ export function PublishedViewerObjectPanel(props: PublishedViewerObjectPanelProp
           <strong>{tr(props.locale, "场景对象", "Scene objects")}</strong>
           <small>{props.models.length}</small>
         </div>
-        <button title={tr(props.locale, "关闭", "Close")} onClick={props.onClose}><X size={15} /></button>
+        <button aria-label={tr(props.locale, "关闭对象面板", "Close object panel")} title={tr(props.locale, "关闭", "Close")} onClick={props.onClose}><X size={15} /></button>
       </header>
       <div className="viewer-object-actions">
         <button disabled={!props.isolationActive} onClick={props.onRestoreIsolation}><RotateCcw size={13} />{tr(props.locale, "恢复隔离", "Restore isolation")}</button>
@@ -40,11 +40,12 @@ export function PublishedViewerObjectPanel(props: PublishedViewerObjectPanelProp
               <Layers3 size={14} />
               <span><strong>{model.name}</strong><small>{model.kind === "model" ? tr(props.locale, "模型", "Model") : tr(props.locale, "基础元素", "Primitive")}</small></span>
             </button>
-            <button title={tr(props.locale, "定位", "Focus")} onClick={() => props.onFocus(model.id)}><Focus size={14} /></button>
-            <button title={model.visible ? tr(props.locale, "隐藏", "Hide") : tr(props.locale, "显示", "Show")} onClick={() => props.onVisibilityChange(model.id, !model.visible)}>
+            <button aria-label={`${tr(props.locale, "定位", "Focus")}：${model.name}`} title={tr(props.locale, "定位", "Focus")} onClick={() => props.onFocus(model.id)}><Focus size={14} /></button>
+            <button aria-label={`${model.visible ? tr(props.locale, "隐藏", "Hide") : tr(props.locale, "显示", "Show")}：${model.name}`}
+              title={model.visible ? tr(props.locale, "隐藏", "Hide") : tr(props.locale, "显示", "Show")} onClick={() => props.onVisibilityChange(model.id, !model.visible)}>
               {model.visible ? <Eye size={14} /> : <EyeOff size={14} />}
             </button>
-            <button title={tr(props.locale, "隔离", "Isolate")} onClick={() => props.onIsolate(model.id)}><Layers3 size={14} /></button>
+            <button aria-label={`${tr(props.locale, "隔离", "Isolate")}：${model.name}`} title={tr(props.locale, "隔离", "Isolate")} onClick={() => props.onIsolate(model.id)}><Layers3 size={14} /></button>
           </div>
         ))}
         {props.models.length === 0 && <p>{tr(props.locale, "场景中暂无可查看对象", "No viewable objects in this scene")}</p>}

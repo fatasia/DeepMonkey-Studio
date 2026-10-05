@@ -47,6 +47,8 @@ export interface McpInspection {
   endpoint: string;
   authenticated: boolean;
   protocolVersion: string;
+  /** 服务端支持的完整版本表(与握手协商同源);首项为现代协议版本,其余为旧客户端兼容档。 */
+  supportedVersions: readonly string[];
   serverName: string;
   serverVersion: string;
   tools: McpToolDescriptor[];
@@ -81,6 +83,7 @@ export function createMcpApi(request: ApiRequest, endpoint: () => string, authen
       const server = discovery._meta?.["io.modelcontextprotocol/serverInfo"];
       return {
         endpoint: endpoint(), authenticated: authenticated(), protocolVersion: discovery.supportedVersions[0] ?? PROTOCOL_VERSION,
+        supportedVersions: discovery.supportedVersions.length > 0 ? discovery.supportedVersions : [PROTOCOL_VERSION],
         serverName: server?.name ?? "bim-industrial-core", serverVersion: server?.version ?? "unknown",
         tools: listed.tools, resources: resourcePage.resources, capabilities: catalog.capabilities, resourcesSupported,
       };

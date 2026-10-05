@@ -272,7 +272,9 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
               <button
                 className="button ghost topbar-publish-action"
                 aria-label={tr(locale, "发布应用", "Publish app")}
-                title={tr(locale, "保存并发布整个应用", "Save and publish the whole app")}
+                title={tr(locale,
+                  "零配置一键发布：按当前保存内容原样发布为在线浏览版本——浏览器渲染，画布与分辨率沿用各页面设置，不生成本地安装包。离线运行包请用二维看板工具栏的「离线包」。",
+                  "Zero-config one-click publish: republishes the saved content as an online browsable version — rendered in the browser, canvas and resolution follow each page's settings, and no native package is built. Use Offline in the dashboard toolbar for offline runtime packages.")}
                 onClick={() => void saveScene().then((saved) => saved && publishActiveApplication())}
                 disabled={busy || playMode?.active}
               >

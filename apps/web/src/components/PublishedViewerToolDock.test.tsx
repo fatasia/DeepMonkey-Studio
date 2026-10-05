@@ -81,3 +81,53 @@ describe("PublishedViewerToolDock", () => {
     expect(html).toContain("剖切查看");
   });
 });
+
+describe("PublishedViewerToolDock accessible names (P2-6)", () => {
+  /** 按 </button> 切出每个按钮的属性+内容段；工具坞内按钮无嵌套。 */
+  function buttonChunks(html: string): string[] {
+    return html.split(/<button\b/).slice(1)
+      .map(chunk => chunk.slice(0, chunk.indexOf("</button>")));
+  }
+  /** 可访问名:显式 aria-label 优先,其次元素内可见文本;两者皆空即 a11y 缺陷。 */
+  function accessibleName(chunk: string): string {
+    const aria = / aria-label="([^"]*)"/.exec(chunk)?.[1]?.trim() ?? "";
+    if (aria) return aria;
+    return chunk.slice(chunk.indexOf(">") + 1).replace(/<[^>]*>/g, "").trim();
+  }
+  const base = {
+    locale: "zh-CN" as const, navigationMode: "orbit" as const, measureEnabled: false,
+    clippingEnabled: false,
+    explosionActive: false, avatarVisible: false, infoEnabled: false, objectPanelOpen: false,
+    onOpenChange: vi.fn(), onFitAll: vi.fn(), onNavigationChange: vi.fn(),
+    onMeasurementToggle: vi.fn(), onClippingToggle: vi.fn(), onExplosionToggle: vi.fn(),
+    onAvatarToggle: vi.fn(), onInfoToggle: vi.fn(), onObjectPanelOpenChange: vi.fn(),
+    onStandardView: vi.fn(), onFullscreen: vi.fn(), onStartXR: vi.fn(),
+  };
+
+  it.each([
+    ["expanded with clipping", { open: true, clippingEnabled: true, toolsAvailability: { clippingAvailable: true, physicsAvailable: false } as const }],
+    ["collapsed", { open: false, clippingEnabled: false, toolsAvailability: { clippingAvailable: true, physicsAvailable: false } as const }],
+    ["expanded without clipping capability", { open: true, clippingEnabled: false, toolsAvailability: { clippingAvailable: false, physicsAvailable: false } as const }],
+  ] as const)("every toolbar button has an accessible name when %s", (_case, overrides) => {
+    const html = renderToStaticMarkup(<PublishedViewerToolDock {...base} {...overrides} />);
+    const buttons = buttonChunks(html);
+    expect(buttons.length).toBeGreaterThanOrEqual(6);
+    const unnamed = buttons.map((chunk, index) => ({ name: accessibleName(chunk), index }))
+      .filter(item => !item.name);
+    expect(unnamed).toEqual([]);
+  });
+
+  it("collapsed dock exposes the toggle by name and keeps every button named", () => {
+    // moreOpen 是内部 state,静态渲染从收起起步;收起态只剩切换按钮,必须自带可访问名。
+    const html = renderToStaticMarkup(<PublishedViewerToolDock {...base} open={false}
+      toolsAvailability={{ clippingAvailable: true, physicsAvailable: false }} />);
+    expect(html).toContain("aria-label=\"展开浏览工具\"");
+    expect(buttonChunks(html).every(chunk => accessibleName(chunk))).toBe(true);
+  });
+
+  it("expanded dock toggle switches to the collapse name", () => {
+    const html = renderToStaticMarkup(<PublishedViewerToolDock {...base} open
+      toolsAvailability={{ clippingAvailable: true, physicsAvailable: false }} />);
+    expect(html).toContain("aria-label=\"收起浏览工具\"");
+  });
+});
