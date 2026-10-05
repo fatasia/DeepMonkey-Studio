@@ -13,6 +13,8 @@ import { sharedOutputPipeline } from "./pbrOutputPipelineCache.js";
 import { pipelineCompileCacheForDevice, renderPipelineFingerprint } from "./pipelineCache.js";
 import type { PipelineCompileRecord } from "./pipelineCache.js";
 import { PipelineWarmupQueue } from "./pipelineWarmup.js";
+import { browserLocalStorage, loadPipelineWarmupPlan, orderDeferredByWarmupPlan,
+  persistPipelineWarmupPlanToBrowser, pipelineWarmupEntriesFromLedger } from "./pipelineCachePersistence.js";
 import { composeLayeredMaterialSceneShader } from "./pbrLayeredMaterialShader.js";
 import { composeAdvancedMaterialSceneShader } from "./pbrAdvancedMaterialShader.js";
 import { layeredMaterialLayoutEntries, LAYERED_MATERIAL_REQUIRED_TEXTURES } from "./pbrLayeredMaterialBindings.js";
@@ -425,7 +427,13 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   const deferredMainReady = criticalMainReady.then(async () => {
     await releaseGate;
     // 入队全部后才放水:首帧关键子集结算前队列保持暂停,背景变体零启动。
-    const pending = deferredMains.map(({ key, descriptor, create }) =>
+    // C26 跨会话预热:上会话持久化计划把实测最耗时的背景变体排最前(并发 2 下
+    // 最长编译最早起步);无计划/指纹未命中保持原序(fail-open,不抛)。
+    const warmupStorage = browserLocalStorage();
+    const warmupPlan = warmupStorage ? loadPipelineWarmupPlan(warmupStorage) : undefined;
+    const orderedDeferredMains = orderDeferredByWarmupPlan(deferredMains, warmupPlan,
+      ({ descriptor }) => renderPipelineFingerprint([moduleCode], descriptor));
+    const pending = orderedDeferredMains.map(({ key, descriptor, create }) =>
       track(mainPipelines, key, backgroundQueue.enqueue({
         fingerprint: renderPipelineFingerprint([moduleCode], descriptor),
         label: descriptor.label ?? key, priority: "background", create,
@@ -433,6 +441,13 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     backgroundQueue.resume();
     const value = await Promise.all(pending);
     markPipeline("main-ready");
+    // C26 跨会话预热计划回写:本次实测编译样本入 localStorage(fail-open;
+    // 缓存命中/失败样本经 pipelineWarmupEntriesFromLedger 排除,浏览器外静默跳过)。
+    try {
+      const target = browserLocalStorage();
+      if (target) persistPipelineWarmupPlanToBrowser(
+        pipelineWarmupEntriesFromLedger(compileCache.records, criticalFingerprints, Date.now()), target);
+    } catch { /* fail-open */ }
     return value;
   });
   if (deferredMains.length === 0) releaseDeferredQueues?.();

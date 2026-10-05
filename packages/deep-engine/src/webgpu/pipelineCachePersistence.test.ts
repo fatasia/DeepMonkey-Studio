@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { PIPELINE_WARMUP_PLAN_SCHEMA, PIPELINE_WARMUP_PLAN_SCHEMA_VERSION,
   clearPipelineWarmupPlan, loadPipelineWarmupPlan, persistPipelineWarmupPlanToBrowser,
   pipelineWarmupEntriesFromLedger, savePipelineWarmupPlan,
-  type PipelineWarmupPlanEntry, type StorageLike } from "./pipelineCachePersistence.js";
+  type PipelineWarmupPlanEntry, type StorageLike, orderDeferredByWarmupPlan, } from "./pipelineCachePersistence.js";
 
 function memoryStorage(): StorageLike & { map: Map<string, string>; failWrites: boolean } {
   const map = new Map<string, string>();
@@ -106,5 +106,23 @@ describe("C26 ledger -> warmup plan classification", () => {
     vi.stubGlobal("localStorage", undefined);
     expect(persistPipelineWarmupPlanToBrowser([entry()])).toBe(false);
     vi.unstubAllGlobals();
+  });
+});
+
+describe("orderDeferredByWarmupPlan", () => {
+  const plan: PipelineWarmupPlan = { schema: PIPELINE_WARMUP_PLAN_SCHEMA, schemaVersion: 1, entries: [
+    { fingerprint: "fp-slow", label: "slow", priority: "background", lastDurationMs: 900, sampleCount: 1, updatedAtEpochMs: 1 },
+    { fingerprint: "fp-fast", label: "fast", priority: "background", lastDurationMs: 5, sampleCount: 1, updatedAtEpochMs: 2 },
+  ] };
+  const items = [{ key: "a", fp: "fp-x" }, { key: "b", fp: "fp-slow" }, { key: "c", fp: "fp-fast" }, { key: "d", fp: "fp-y" }];
+  const fpOf = (item: { fp: string }) => item.fp;
+
+  it("orders known-expensive fingerprints first, unknown items keep original relative order after", () => {
+    const ordered = orderDeferredByWarmupPlan(items, plan, fpOf);
+    expect(ordered.map(i => i.key)).toEqual(["b", "c", "a", "d"]);
+  });
+  it("returns the original array order without a plan or empty entries", () => {
+    expect(orderDeferredByWarmupPlan(items, undefined, fpOf).map(i => i.key)).toEqual(["a", "b", "c", "d"]);
+    expect(orderDeferredByWarmupPlan(items, { ...plan, entries: [] }, fpOf).map(i => i.key)).toEqual(["a", "b", "c", "d"]);
   });
 });

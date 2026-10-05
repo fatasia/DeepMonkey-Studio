@@ -154,6 +154,19 @@ export function pipelineWarmupEntriesFromLedger(records: readonly PipelineCompil
   return [...byFingerprint.values()];
 }
 
+/** 背景变体入队排序:有上会话实测耗时的指纹按耗时降序排最前(最长编译最早
+ * 起步,并发 2 下隐藏延迟),未知指纹保持原相对顺序随后。确定性、不突变入参。 */
+export function orderDeferredByWarmupPlan<T>(items: readonly T[],
+  plan: PipelineWarmupPlan | undefined, fingerprintOf: (item: T) => string): readonly T[] {
+  if (!plan || plan.entries.length === 0) return items;
+  const known = new Map<string, number>();
+  for (const entry of plan.entries) known.set(entry.fingerprint, entry.lastDurationMs);
+  return items
+    .map((item, index) => ({ item, index, durationMs: known.get(fingerprintOf(item)) }))
+    .sort((a, b) => (b.durationMs ?? -1) - (a.durationMs ?? -1) || a.index - b.index)
+    .map(({ item }) => item);
+}
+
 /** 浏览器落盘:不可用/配额失败一律 false,绝不抛(fail-open)。 */
 export function persistPipelineWarmupPlanToBrowser(entries: readonly PipelineWarmupPlanEntry[],
   storage?: StorageLike): boolean {
