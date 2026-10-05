@@ -230,7 +230,7 @@ export function SceneToolDock(props: SceneToolDockProps) {
               label={primitiveKindLabel(kind, props.locale)}
               icon={<Box size={14} />}
               // F11：播放模式禁用创建面——播放产物是临时态，退出即恢复，放置只会造成困惑。
-              disabled={props.editingDisabled}
+              disabled={props.editingDisabled ?? false}
               disabledReason={tr(props.locale, "播放中不可放置对象，请先退出播放模式", "Placement is unavailable during Play; exit Play first")}
               onClick={() => run(() => props.onPrimitivePlace(kind))}
             />

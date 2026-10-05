@@ -1,3 +1,4 @@
+import { Play, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
 import { selectionDeleteCommand } from "../commands/engineEditCommand";
@@ -143,6 +144,8 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
     openDocs,
     physics,
     physicsOpen,
+    playModeActive,
+    exitPlayMode,
     pointerInfo,
     postProcessing,
     project,
@@ -456,6 +459,17 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
             onRvtImportSettings: openRvtImportSettings,
           }}
         />
+        {/* F11：播放模式常驻警示条(Unity Play 醒目提示口径)——编辑产物为临时态,退出整体恢复。 */}
+        {route.view === "studio" && playModeActive && (
+          <div className="play-mode-banner" role="status">
+            <Play size={14} fill="currentColor" />
+            <span>{tr(locale, "播放模式：场景修改为临时态，退出播放将恢复进入前场景", "Play mode: edits are temporary; exiting Play restores the scene")}</span>
+            <button type="button" onClick={() => void (exitPlayMode?.() ?? Promise.resolve())}>
+              <Square size={12} fill="currentColor" />
+              {tr(locale, "退出播放", "Stop Play")}
+            </button>
+          </div>
+        )}
         {route.view === "studio" && (
           <div className="workspace-panel-controls" role="group" aria-label={locale === "zh-CN" ? "三维工作区面板" : "3D workspace panels"}>
             <button
@@ -496,6 +510,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
           {...(project ? { projectId: project.id } : {})}
           onLibraryImported={refreshProject}
           uploading={uploading}
+          importDisabled={playModeActive}
           importOpen={sceneImportOpen}
           rvtConversionMode={rvtConversionMode}
           revitVersion={rvtRevitVersion}
@@ -545,6 +560,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
             {simulationTree}
             <SceneSelectionBar
               locale={locale}
+              editingDisabled={playModeActive}
               selectedObjects={selectedSceneObjects}
               onGroup={() => createSceneGroup("")}
               onSaveAsPrefab={() => setSavePrefabOpen(true)}
@@ -575,6 +591,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
                   locale={locale}
                   model={model}
                   loaded={loaded}
+                  editingDisabled={playModeActive}
                   tree={loaded && expandedModels.has(model.id) ? engine?.getLayerTree(model.id) : undefined}
                   expanded={expandedModels.has(model.id)}
                   modelFloors={floorStatesByModel.get(model.id) ?? []}

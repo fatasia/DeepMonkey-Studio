@@ -49,7 +49,7 @@ export function DeferredNumberInput({ value, onCommit, min, max, step, disabled,
   ariaLabel?: string;
   placeholder?: string;
   /** F6：非法输入（空串/非有限数）提交时回调一次供上层发一次性提示；红框由组件内置。 */
-  onInvalidInput?: (raw: string) => void;
+  onInvalidInput?: ((raw: string) => void) | undefined;
 }) {
   const formatted = value === undefined ? "" : String(value);
   const [draft, setDraft] = useState(formatted);
@@ -131,7 +131,7 @@ export function TransformFields({ title, transform, suffix, disabled = false, on
   disabled?: boolean;
   onChange: (axis: "x" | "y" | "z", value: string) => void;
   /** 非法输入一次性提示回调；不传时仍有组件内置红框。 */
-  onInvalidInput?: (raw: string) => void;
+  onInvalidInput?: ((raw: string) => void) | undefined;
   min?: number;
   max?: number;
 }) {
