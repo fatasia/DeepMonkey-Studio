@@ -15,9 +15,23 @@ import "./DashboardOfflinePackageDialog.css";
 export function DashboardOfflinePackageEntry() {
   const { application, busy, locale } = useDashboardWorkspace();
   const [open, setOpen] = useState(false);
+  // 装配态门控:未装配 Dashboard Native 运行时的部署(core-only/桌面本地)禁用入口并说明原因,
+  // 而不是让作者点击后收到 404。装配态来自 /api/meta,读取失败时保持可用,由错误转译兜底。
+  const [assembly, setAssembly] = useState<"unknown" | "available" | "unavailable">("unknown");
+  useEffect(() => {
+    let cancelled = false;
+    api.readServerMeta()
+      .then(meta => { if (!cancelled) setAssembly(meta.capabilities.dashboardNative.offlinePackage ? "available" : "unavailable"); })
+      .catch(() => { if (!cancelled) setAssembly("unknown"); });
+    return () => { cancelled = true; };
+  }, []);
+  const unavailable = assembly === "unavailable";
   return <>
-    <button disabled={busy} aria-haspopup="dialog"
-      title={tr(locale, "准备离线运行包并下载", "Prepare the offline runtime package for download")}
+    <button disabled={busy || unavailable} aria-haspopup="dialog"
+      title={unavailable
+        ? tr(locale, "离线包需要完整部署运行时（Dashboard Native 编译与校验），当前部署未装配，暂不可用",
+          "Offline packaging needs the full deployment runtime (Dashboard Native compiler and verifier), which this deployment does not assemble")
+        : tr(locale, "准备离线运行包并下载", "Prepare the offline runtime package for download")}
       onClick={() => setOpen(true)}>
       <Package size={15} />
       {tr(locale, "离线包", "Offline")}
@@ -152,9 +166,12 @@ function DashboardOfflinePackageDialog({ locale, projectId, applicationId, onClo
           {tr(locale, "发布版本缺少有效入口页。请修正并重新发布。", "The published version has no valid entry page. Correct it and publish again.")}
         </p>}
         {state.phase === "failed" && <p className="dashboard-offline-error" role="alert">
-          {state.error.code === "candidate_rejected" && state.error.status === 0
-            ? tr(locale, "网络中断或服务不可用，请稍后重试", "Network interrupted or service unavailable; retry later")
-            : downloadFailureGuidance(state.error)}
+          {downloadFailureGuidance(state.error)}
+          <code className="dashboard-offline-error-code">
+            {state.error.status > 0
+              ? tr(locale, `错误码 ${state.error.code}（HTTP ${state.error.status}）`, `Code ${state.error.code} (HTTP ${state.error.status})`)
+              : tr(locale, `错误码 ${state.error.code}`, `Code ${state.error.code}`)}
+          </code>
         </p>}
         {state.phase === "preparing" && <p className="dashboard-offline-hint dashboard-offline-busy">
           <LoaderCircle className="spin" size={15} />

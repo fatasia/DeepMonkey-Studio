@@ -201,7 +201,6 @@ export async function buildApp() {
     limits: { fileSize: 2 * 1024 * 1024 * 1024, files: 1 }
   });
   const serverInstanceId = await loadOrCreateServerInstanceId(config.dataDir);
-  await registerServerMetaRoute(app, serverInstanceId);
   await registerSystemRoutes(app, store, config.dataDir, {
     assistant: createAssistantService(industrialCapabilities.registry, {
       audit: aiAudit,
@@ -251,7 +250,10 @@ export async function buildApp() {
   await registerConversionTaskRoutes(app, { service: conversionTasks, projectExists: (projectId) => Boolean(store.getProject(projectId)) });
   await registerDataEndpointRuntime(app, store, config);
   await registerApplicationRoutes(app, store);
-  await registerConfiguredDashboardNative(app, { store, objects, config });
+  // 装配态先于 /api/meta 注册收集：meta 的 dashboardNative.offlinePackage 是
+  // 作者端离线包入口的门控事实来源，core-only 部署必须如实报 false。
+  const dashboardNativeRuntime = await registerConfiguredDashboardNative(app, { store, objects, config });
+  await registerServerMetaRoute(app, serverInstanceId, { dashboardOfflinePackage: Boolean(dashboardNativeRuntime) });
   const scriptDependencies = new ScriptDependencyService({ dataDir: config.dataDir, objects });
   await registerPublishedApplicationRoutes(app, { store, dependencies: scriptDependencies });
   await registerScriptDependencyRoutes(app, {

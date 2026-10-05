@@ -20,7 +20,8 @@ export async function loadOrCreateServerInstanceId(dataDir: string): Promise<str
   return anchor;
 }
 
-export function createServerMeta(serverInstanceId: string, now = () => new Date()): ServerMetaResponse {
+export function createServerMeta(serverInstanceId: string, now = () => new Date(),
+  dashboardOfflinePackage = false): ServerMetaResponse {
   return {
     serverInstanceId,
     apiVersion: "1.0",
@@ -29,13 +30,15 @@ export function createServerMeta(serverInstanceId: string, now = () => new Date(
       applications: { schemaVersions: [2], immutablePublications: true },
       legacyScenes: { schemaVersions: [1], routes: true },
       authentication: { providers: ["local"] },
-      hosts: { browser: true, tauri: false }
+      hosts: { browser: true, tauri: false },
+      dashboardNative: { offlinePackage: dashboardOfflinePackage }
     }
   };
 }
 
-export async function registerServerMetaRoute(app: FastifyInstance, serverInstanceId: string, now = () => new Date()): Promise<void> {
-  app.get("/api/meta", async () => createServerMeta(serverInstanceId, now));
+export async function registerServerMetaRoute(app: FastifyInstance, serverInstanceId: string,
+  options: { dashboardOfflinePackage?: boolean } = {}, now = () => new Date()): Promise<void> {
+  app.get("/api/meta", async () => createServerMeta(serverInstanceId, now, options.dashboardOfflinePackage ?? false));
 }
 
 type IdentityFileState =

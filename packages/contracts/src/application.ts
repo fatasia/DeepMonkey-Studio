@@ -300,6 +300,12 @@ export interface ServerMetaResponse {
     legacyScenes: { schemaVersions: [1]; routes: true };
     authentication: { providers: ["local"] };
     hosts: { browser: true; tauri: false };
+    /**
+     * Dashboard 离线运行包（dashboard-candidates 链路）是否已随部署装配。
+     * core-only / 未配置 DASHBOARD_NATIVE_DEPLOYMENT_FILE 的部署为 false，
+     * 作者端据此禁用离线包入口而不是点击后得到 404。
+     */
+    dashboardNative: { offlinePackage: boolean };
   };
 }
 

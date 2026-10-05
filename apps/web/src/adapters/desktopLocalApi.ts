@@ -618,6 +618,8 @@ function localMeta() {
       legacyScenes: { schemaVersions: [1] as [1], routes: true },
       authentication: { providers: ["local"] as ["local"] },
       hosts: { browser: false, tauri: true },
+      // 桌面本地运行时没有 Dashboard Native 编译器装配，离线包入口保持禁用。
+      dashboardNative: { offlinePackage: false },
     },
   };
 }

@@ -15,7 +15,11 @@ export class DashboardCandidateError extends Error {
 
 const CANDIDATE_CODES = new Set<string>(["candidate_stale", "candidate_timeout", "candidate_concurrent", "candidate_invalid", "candidate_expired"]);
 
-/** 服务端的 409/410 携带机器码;其余失败(401/403/404/5xx/断网)一律归 candidate_rejected。 */
+/**
+ * 服务端的 409/410 携带机器码;其余失败(401/403/404/5xx/断网)一律归 candidate_rejected。
+ * rejected 分支不透出原始服务端文案(如 Fastify 的 "Route POST:… not found"),
+ * 按状态转译为用户语言,错误码由界面另行展示(视觉中心/Harness 错误呈现口径)。
+ */
 export function mapDashboardCandidateError(reason: unknown): DashboardCandidateError {
   if (reason instanceof DashboardCandidateError) return reason;
   const status = typeof (reason as { status?: unknown })?.status === "number" ? (reason as { status: number }).status : 0;
@@ -23,7 +27,18 @@ export function mapDashboardCandidateError(reason: unknown): DashboardCandidateE
   const code = typeof body === "object" && body !== null && typeof (body as { code?: unknown }).code === "string"
     ? (body as { code: string }).code : undefined;
   const message = reason instanceof Error && reason.message.trim() ? reason.message : "Dashboard 离线包请求失败";
-  return new DashboardCandidateError(isDashboardCandidateCode(code) ? code : "candidate_rejected", message, status);
+  return new DashboardCandidateError(isDashboardCandidateCode(code) ? code : "candidate_rejected",
+    isDashboardCandidateCode(code) ? message : rejectedCandidateMessage(status), status);
+}
+
+/** rejected 分支的用户语言文案;原始 message 一律丢弃,不进界面。 */
+function rejectedCandidateMessage(status: number): string {
+  if (status === 404) return "离线包服务未在当前部署启用（需要完整部署运行时）。请确认部署模式或联系管理员。";
+  if (status === 401) return "请先登录，再准备离线运行包";
+  if (status === 403) return "当前账号没有该项目的离线包权限";
+  if (status === 0) return "网络中断或服务不可用，请稍后重试";
+  if (status >= 500) return "离线包服务暂时不可用，请稍后重试";
+  return "离线包请求未完成，请稍后重试";
 }
 
 function isDashboardCandidateCode(code: string | undefined): code is DashboardCandidateErrorCode {
@@ -109,10 +124,11 @@ export function reduceDashboardOfflinePackage(state: DashboardOfflinePackageStat
   }
 }
 
-/** 下载失败语义:过期/失效必须引导重新准备,其余失败给出服务端原话。 */
+/** 下载失败语义:过期/失效必须引导重新准备;rejected 分支按状态转译,绝不透出原始服务端文案。 */
 export function downloadFailureGuidance(error: DashboardCandidateError): string {
   if (error.code === "candidate_expired") return "离线包候选已过期，请重新准备后再下载";
   if (error.code === "candidate_invalid") return "离线包候选已失效，请重新准备";
+  if (error.code === "candidate_rejected") return rejectedCandidateMessage(error.status);
   return error.message || "下载失败，请稍后重试";
 }
 

@@ -5,7 +5,7 @@ import type { DashboardPublicationPointer } from "./dashboardOfflinePackageState
 const harness = vi.hoisted(() => ({ cursor: 0, cells: [] as unknown[], effects: new Set<number>(),
   application: { metadata: { projectId: "project", id: "application" }, pages: [{ id: "draft-only" }],
     publicationProfiles: [{ entryPageId: "draft-only" }] },
-  read: vi.fn(), prepare: vi.fn(), download: vi.fn() }));
+  read: vi.fn(), prepare: vi.fn(), download: vi.fn(), meta: vi.fn() }));
 vi.mock("react", async original => ({ ...await original<typeof import("react")>(),
   useRef: (value: unknown) => harness.cells[harness.cursor++] ??= { current: value },
   useCallback: (fn: unknown) => fn,
@@ -21,7 +21,7 @@ vi.mock("react", async original => ({ ...await original<typeof import("react")>(
 }));
 vi.mock("react-dom", () => ({ createPortal: (node: ReactNode) => node }));
 vi.mock("../api", () => ({ api: { readActivePublication: harness.read, prepareDashboardCandidate: harness.prepare,
-  openDashboardCandidateDownload: harness.download } }));
+  openDashboardCandidateDownload: harness.download, readServerMeta: harness.meta } }));
 vi.mock("./dashboardWorkspaceContext", () => ({ useDashboardWorkspace: () => ({ application: harness.application, busy: false, locale: "zh-CN" }) }));
 vi.mock("../hooks/useGlobalDialogEscape", () => ({ useDialogEscape: () => undefined }));
 import { DashboardOfflinePackageEntry } from "./DashboardOfflinePackageEntry";
@@ -51,6 +51,7 @@ beforeEach(() => {
   vi.clearAllMocks(); harness.cursor = 0; harness.cells = []; harness.effects.clear();
   harness.application.pages = [{ id: "draft-only" }]; harness.application.publicationProfiles = [{ entryPageId: "draft-only" }];
   harness.read.mockResolvedValue(publication()); harness.prepare.mockReturnValue(new Promise(() => {}));
+  harness.meta.mockResolvedValue({ capabilities: { dashboardNative: { offlinePackage: true } } });
   vi.stubGlobal("document", { body: {}, activeElement: null });
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -141,5 +142,30 @@ describe("dashboard offline entry publication authority", () => {
     const apk = nodes.find(node => node.type === "button" && label(node.props.children) === "安卓 APK");
     expect(apk?.props.disabled).toBe(true);
     expect(nodes.some(node => node.type === "summary" && label(node.props.children).includes("必须填写"))).toBe(true);
+  });
+});
+
+describe("dashboard offline entry deployment gating", () => {
+  function entryButton() {
+    return render().find(node => node.type === "button" && label(node.props.children) === "离线包");
+  }
+  it("disables the entry with a reason when the deployment does not assemble the offline runtime", async () => {
+    harness.meta.mockResolvedValue({ capabilities: { dashboardNative: { offlinePackage: false } } });
+    render(); await flush();
+    const button = entryButton();
+    expect(button?.props.disabled).toBe(true);
+    expect(String(button?.props.title)).toContain("完整部署运行时");
+    // 禁用态下点击不打开对话框（按钮不可点,对话体不渲染）
+    expect(render().some(node => node.props?.role === "dialog")).toBe(false);
+  });
+  it("keeps the entry usable when the offline runtime is assembled", async () => {
+    harness.meta.mockResolvedValue({ capabilities: { dashboardNative: { offlinePackage: true } } });
+    render(); await flush();
+    expect(entryButton()?.props.disabled).toBe(false);
+  });
+  it("falls back to usable (translated errors downstream) when the deployment meta cannot be read", async () => {
+    harness.meta.mockRejectedValue(new Error("meta unavailable"));
+    render(); await flush();
+    expect(entryButton()?.props.disabled).toBe(false);
   });
 });

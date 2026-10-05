@@ -64,11 +64,25 @@ describe("dashboard candidate failure mapping", () => {
     expect(mapDashboardCandidateError(passthrough)).toBe(passthrough);
   });
 
+  it("translates rejected raw server text into user language and never leaks route internals (P3)", () => {
+    const notFound = mapDashboardCandidateError({ status: 404,
+      body: { message: "Route POST:/api/projects/p/applications/a/dashboard-candidates not found" } });
+    expect(notFound.code).toBe("candidate_rejected");
+    expect(notFound.message).toBe("离线包服务未在当前部署启用（需要完整部署运行时）。请确认部署模式或联系管理员。");
+    expect(notFound.message).not.toContain("Route POST");
+    expect(downloadFailureGuidance(notFound)).not.toContain("Route POST");
+    expect(mapDashboardCandidateError({ status: 403, body: {} }).message).toContain("权限");
+    expect(mapDashboardCandidateError(new TypeError("fetch failed")).message).toContain("网络中断");
+    expect(mapDashboardCandidateError({ status: 502, body: {} }).message).toContain("稍后重试");
+  });
+
   it("gives actionable guidance for expired or invalid downloads", () => {
     expect(downloadFailureGuidance(new DashboardCandidateError("candidate_expired", "x", 410))).toContain("重新准备");
     expect(downloadFailureGuidance(new DashboardCandidateError("candidate_invalid", "x", 409))).toContain("重新准备");
+    // rejected 分支由展示层兜底转译,直接构造的错误也拿不到原文
     expect(downloadFailureGuidance(new DashboardCandidateError("candidate_rejected", "服务返回空响应（HTTP 503）", 503)))
-      .toBe("服务返回空响应（HTTP 503）");
+      .toBe("离线包服务暂时不可用，请稍后重试");
+    expect(downloadFailureGuidance(new DashboardCandidateError("candidate_stale", "版本已变更", 409))).toBe("版本已变更");
   });
 });
 

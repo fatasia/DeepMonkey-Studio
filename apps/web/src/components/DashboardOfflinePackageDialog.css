@@ -13,6 +13,7 @@
 .dashboard-offline-meta { margin: 0; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .dashboard-offline-error { margin: 0; padding: 8px 10px; color: var(--text-strong); background: color-mix(in srgb, var(--danger) 14%, transparent);
   border: 1px solid var(--danger, rgba(220, 60, 60, 0.5)); border-radius: var(--radius-xs); }
+.dashboard-offline-error-code { display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px; }
 .dashboard-offline-objects p { margin: 0 0 6px; }
 .dashboard-offline-objects ul { display: flex; flex-direction: column; gap: 4px; max-height: 160px; margin: 0; padding: 0;
   list-style: none; overflow: auto; }

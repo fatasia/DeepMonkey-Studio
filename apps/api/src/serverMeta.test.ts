@@ -71,11 +71,22 @@ describe("server metadata", () => {
 
   it("returns the public capability contract", async () => {
     const app = Fastify();
-    await registerServerMetaRoute(app, "server-test", () => new Date("2026-08-25T00:00:00.000Z"));
+    await registerServerMetaRoute(app, "server-test", {}, () => new Date("2026-08-25T00:00:00.000Z"));
     const response = await app.inject({ method: "GET", url: "/api/meta" });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual(createServerMeta("server-test", () => new Date("2026-08-25T00:00:00.000Z")));
     expect(response.json().capabilities.applications).toEqual({ schemaVersions: [2], immutablePublications: true });
+    // 未装配 Dashboard Native 时必须如实报 false，作者端据此禁用离线包入口。
+    expect(response.json().capabilities.dashboardNative).toEqual({ offlinePackage: false });
+    await app.close();
+  });
+
+  it("reports the assembled dashboard offline-package runtime to authors", async () => {
+    const app = Fastify();
+    await registerServerMetaRoute(app, "server-test", { dashboardOfflinePackage: true });
+    const response = await app.inject({ method: "GET", url: "/api/meta" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().capabilities.dashboardNative).toEqual({ offlinePackage: true });
     await app.close();
   });
 

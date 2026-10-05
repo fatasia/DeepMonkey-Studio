@@ -3,6 +3,11 @@ import type {
 } from "../components/dashboardOfflinePackageState.js";
 import type { ClientPackageBranding } from "../components/clientPackageBranding.js";
 
+/** /api/meta 的离线包装配态切片；作者端据此门控离线包入口。 */
+export interface DashboardDeploymentMeta {
+  readonly capabilities: { readonly dashboardNative: { readonly offlinePackage: boolean } };
+}
+
 /** 发布身份与离线候选共用认证客户端，保持取消信号贯穿准备和下载。 */
 export function createDashboardPublicationApi(
   request: <T>(url: string, init?: RequestInit) => Promise<T>,
@@ -16,6 +21,7 @@ export function createDashboardPublicationApi(
   return {
     readActivePublication: (applicationId: string) =>
       request<DashboardPublicationPointer>(`/api/public/applications/${encodeURIComponent(applicationId)}`),
+    readServerMeta: () => request<DashboardDeploymentMeta>("/api/meta"),
     prepareDashboardCandidate: (
       projectId: string, applicationId: string,
       authority: { publicationId: string; applicationRevision: number; entryPageId: string },
