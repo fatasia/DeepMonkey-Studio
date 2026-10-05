@@ -134,6 +134,9 @@ export interface PbrRendererFrameHost {
   readonly msaaMetrics: FrameMetrics["msaa"];
   /** A2C-P1 运行时 a2c 有效性探针(一次性;MSAA4 渲染器才持有,1x 恒 undefined)。 */
   readonly a2cProbe: import("./a2cFrameProbe.js").A2cFrameProbe | undefined;
+  /** a2c 设备级自证探针(a2cDeviceProbe,场景无关判定):host 供 GPUDevice 时
+   * 一次性前置判定;与场景探针互补——设备探针拦驱动层缺陷,场景探针拦使用侧。 */
+  readonly a2cDeviceProbe: ((device: GPUDevice) => Promise<import("./a2cDeviceProbe.js").A2cDeviceProbeVerdict>) | undefined;
   readonly localShadows: LocalSpotShadowRuntime;
   readonly mainBindings: PbrMainBindings;
   readonly outputs: PbrOutputBindings;
