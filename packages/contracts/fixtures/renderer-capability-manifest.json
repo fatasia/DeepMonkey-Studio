@@ -135,6 +135,21 @@
       }
     },
     {
+      "id": "ray-traced-reflections",
+      "title": "反射 closest-hit 帧通道(帧内联 BVH;B3 光追双通道)",
+      "webFeatureKeys": [],
+      "web": {
+        "support": "supported",
+        "reason": "harness-only",
+        "evidence": "packages/deep-engine/src/rayTracing/rayTraceClosestFrameKernel.ts(depth 重建着色点+深度差分法线,沿镜面反射方向两级 TLAS→BLAS closest-hit,rgba32float [t,normal.xyz] 记录,miss=[-1,0,0,0];执行器同目录 rayTraceClosestFramePass.ts 场景五缓冲持久+增量 TLAS+bind LRU;真机门 scripts/reflectionRayGpuTest.mjs)"
+      },
+      "native": {
+        "support": "unavailable",
+        "reason": "absent",
+        "evidence": "packages/deep-engine-native/src/lib.rs(native 无 compute BVH 反射通道;与 ray-traced-shadows 同口径)"
+      }
+    },
+    {
       "id": "virtual-textures",
       "title": "虚拟纹理驻留/采样(F3)",
       "webFeatureKeys": [],

@@ -191,6 +191,12 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         evidence: "无 compute BVH/帧内联遮挡射线模块(方向光阴影走 cascaded_shadow;web RT 阴影见 deep-engine rayTracing/shadowRayFrame*)",
     },
     NativeCapabilitySelfCheck {
+        capability_id: "ray-traced-reflections",
+        support: RendererCapabilitySupport::Unavailable,
+        reason: RendererCapabilityReasonCode::Absent,
+        evidence: "无 compute BVH 反射 closest-hit 通道(与 ray-traced-shadows 同口径;web 反射通道见 deep-engine rayTracing/rayTraceClosestFrame*)",
+    },
+    NativeCapabilitySelfCheck {
         capability_id: "cluster-lod",
         support: RendererCapabilitySupport::Unavailable,
         reason: RendererCapabilityReasonCode::Absent,

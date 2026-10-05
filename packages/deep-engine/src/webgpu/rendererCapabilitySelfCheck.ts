@@ -169,6 +169,13 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
     observed: { rayTracedShadows: FEATURE_DEFAULTS.rayTracedShadows },
   },
   {
+    // B3 反射 closest-hit 帧通道(2026-10-05):内核/执行器+真机对拍门就位
+    // (scripts/reflectionRayGpuTest.mjs PASSED);生产帧消费接线(SSR 屏外合成族)
+    // 属下一切片,如实 harness-only,不加 PbrRendererFeatures 键。
+    capabilityId: "ray-traced-reflections", support: "supported", reason: "harness-only",
+    observed: {},
+  },
+  {
     capabilityId: "virtual-textures", support: "supported", reason: "opt-in-default-off",
     observed: {},
   },

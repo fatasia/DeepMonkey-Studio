@@ -219,6 +219,22 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     native: { support: "unavailable", reason: "absent", evidence: "packages/deep-engine-native/src/lib.rs(native 无 compute BVH 模块)" },
   },
   {
+    // B3 光追双通道·reflection 二通道(2026-10-05):帧内联 closest-hit 通道
+    // rayTraceClosestFrameKernel/Pass 就位 + 真机对拍门 PASSED(scripts/reflectionRayGpuTest.mjs,
+    // test-output/reflection-ray-gpu-20261005:901 命中逐像素恒等/t≤max(2e-3,1e-4)/
+    // 法线点积 ≥1-1e-3/f16 逐位一致/哨兵零)。如实 harness-only:生产帧消费接线
+    // (SSR 屏外合成/环境采样族)属下一切片,故不加 PbrRendererFeatures 键与 URL 开关
+    // (无消费面的开关是虚假面)。
+    id: "ray-traced-reflections",
+    title: "反射 closest-hit 帧通道(帧内联 BVH;B3 光追双通道)",
+    webFeatureKeys: [],
+    web: {
+      support: "supported", reason: "harness-only",
+      evidence: "packages/deep-engine/src/rayTracing/rayTraceClosestFrameKernel.ts(depth 重建着色点+深度差分法线,沿镜面反射方向两级 TLAS→BLAS closest-hit,rgba32float [t,normal.xyz] 记录,miss=[-1,0,0,0];执行器同目录 rayTraceClosestFramePass.ts 场景五缓冲持久+增量 TLAS+bind LRU;真机门 scripts/reflectionRayGpuTest.mjs)",
+    },
+    native: { support: "unavailable", reason: "absent", evidence: "packages/deep-engine-native/src/lib.rs(native 无 compute BVH 反射通道;与 ray-traced-shadows 同口径)" },
+  },
+  {
     id: "virtual-textures",
     title: "虚拟纹理驻留/采样(F3)",
     webFeatureKeys: [],

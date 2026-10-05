@@ -279,7 +279,8 @@
     "test:probe-occlusion-gpu": "node scripts/probeOcclusionGpuTest.mjs",
     "test:probe-radiance-gpu": "node scripts/probeRadianceGpuTest.mjs",
     "test:probe-grid-bake-gpu": "node scripts/probeGridBakeGpuTest.mjs",
-    "test:shadow-ray-gpu": "node scripts/shadowRayGpuTest.mjs"
+    "test:shadow-ray-gpu": "node scripts/shadowRayGpuTest.mjs",
+    "test:reflection-ray-gpu": "node scripts/reflectionRayGpuTest.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
