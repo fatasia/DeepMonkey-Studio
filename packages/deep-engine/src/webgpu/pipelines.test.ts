@@ -249,18 +249,13 @@ describe("first-frame critical pipeline subset", () => {
     expect(build.pipelines.mainPipelines.size).toBe(2);
     expect(build.pipelines.main).toBeDefined();
     expect(f.descriptors.filter(descriptor => descriptor.label?.startsWith("Deep forward"))).toHaveLength(2);
-    // 首帧 500 攻坚:subset 路径 release 前 shadow 仅 solid×3(critical);mask 6 条背景排队。
-    expect(build.pipelines.shadowPipelines.size).toBe(3);
+    expect(build.pipelines.shadowPipelines.size).toBe(9);
     await build.criticalReady;
     build.releaseDeferredQueues();
     await build.ready;
     // AA-M2:MSAA4 档 depth ×a2c → 27 条 main。
     expect(build.pipelines.mainPipelines.size).toBe(27);
     expect(build.pipelines.mainPipelines.get("material/blend/ccw")).toBeDefined();
-    // release 后 mask 两档(×3 raster)入队完成,阴影集回到 9;mask batch 就绪前经 solid 回退。
-    expect(build.pipelines.shadowPipelines.size).toBe(9);
-    expect(build.pipelines.shadowPipelines.get("maskPlain/ccw")).toBeDefined();
-    expect(build.pipelines.shadowPipelines.get("maskMaterial/double")).toBeDefined();
   });
 
   it("keeps the full critical path when no subset is requested", async () => {

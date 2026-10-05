@@ -379,17 +379,10 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   const shadowMaterialLayout = device.createPipelineLayout({ label: "Deep shadow material layout",
     bindGroupLayouts: [shadowFrameLayout, material] });
   const shadowPipelines = new Map<string, GPURenderPipeline>(), pendingShadow: Array<Promise<GPURenderPipeline>> = [], pendingShadowKeys: string[] = [];
-  // 首帧 500 攻坚(2026-10-06):与 main 分级同开关——仅 firstFrameKeys 路径(外部承诺
-  // releaseBackgroundPipelineQueues)把 shadow 缩到 solid×3 raster,mask 两档与 authored
-  // 变体转背景队列(release 后编译,mask batch 经 solid 回退按实心投影,与页物化同
-  // documented 简化;就绪后自动恢复逐像素掩码)。直调路径(无 firstFrameKeys,无外部
-  // release 承诺)保持全量 critical 旧语义,避免死锁。D3D12 编译驱动锁实质串行,
-  // critical 段 18→3 条直接缩短首帧里程碑(实测 shadow 段 663ms 量级)。
-  const shadowDeferrable = firstFrameKeys !== undefined;
-  const shadowDeferredKeys: Array<{ readonly key: string; readonly mode: "solid" | "maskPlain" | "maskMaterial"; readonly authored: boolean; readonly raster: "ccw" | "cw" | "double" }> = [];
   for (const authored of directDisplayOneCascade ? [false, true] : [false]) for (const mode of ["solid", "maskPlain", "maskMaterial"] as const) for (const raster of ["ccw", "cw", "double"] as const) {
     const key = (authored ? "author/" : "") + shadowPipelineKey(mode, raster), doubleSided = raster === "double";
-    const descriptor: GPURenderPipelineDescriptor = {
+    pendingShadowKeys.push(key);
+    pendingShadow.push(track(shadowPipelines, key, createCriticalPipeline({
       label: `Deep shadow ${key}`, layout: mode === "maskMaterial" ? shadowMaterialLayout : shadowPlainLayout,
       vertex: { module, entryPoint: deformation ? mode === "solid" ? "shadowDeformed" : "shadowMaskDeformed"
         : mode === "solid" ? "shadowMain" : "shadowMaskMain",
@@ -397,13 +390,7 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
       ...(mode === "solid" ? {} : { fragment: { module, entryPoint: mode === "maskPlain" ? "shadowMaskPlain" : "shadowMaskTextured", targets: [] } }),
       primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : authored ? "front" : "back", frontFace: raster === "cw" ? "cw" : "ccw" },
       depthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less", depthBias: authored ? 0 : 1, depthBiasSlopeScale: authored ? 0 : 1 },
-    };
-    if (!shadowDeferrable || (mode === "solid" && !authored)) {
-      pendingShadowKeys.push(key);
-      pendingShadow.push(track(shadowPipelines, key, createCriticalPipeline(descriptor)));
-    } else {
-      shadowDeferredKeys.push({ key, mode, authored, raster });
-    }
+    })));
   }
   // B1 Brief-VSM 虚拟阴影页物化管线:与级联阴影同顶点/同键位,片元额外把线性光深
   // (builtin z,WebGPU 0..1)写进 r32float 页 atlas;depth32float 附件仍承担近者胜。
@@ -479,36 +466,9 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     } catch { /* fail-open */ }
     return value;
   });
-  if (deferredMains.length === 0 && shadowDeferredKeys.length === 0) releaseDeferredQueues?.();
-  // 首帧 500 攻坚:shadowDeferredKeys 仅在 firstFrameKeys 路径非空(与 main 同受 release 门;
-  // 直调路径为空,deferredShadowReady 直落)。mask/authored 15 变体与背景 main 同队列
-  // (concurrency 2)排队,release 后编译,完成自动恢复逐像素掩码(packetDraw 按 key 命中)。
-  const deferredShadowReady = criticalMainReady.then(async () => {
-    if (shadowDeferredKeys.length === 0) return;
-    await releaseGate;
-    const pending = shadowDeferredKeys.map(({ key, mode, authored, raster }) => {
-      const doubleSided = raster === "double";
-      const descriptor: GPURenderPipelineDescriptor = {
-        label: `Deep shadow ${key}`, layout: mode === "maskMaterial" ? shadowMaterialLayout : shadowPlainLayout,
-        vertex: { module, entryPoint: deformation ? mode === "solid" ? "shadowDeformed" : "shadowMaskDeformed"
-          : mode === "solid" ? "shadowMain" : "shadowMaskMain",
-          buffers: mode === "solid" ? shadowBuffers : shadowMaskBuffers },
-        ...(mode === "solid" ? {} : { fragment: { module, entryPoint: mode === "maskPlain" ? "shadowMaskPlain" : "shadowMaskTextured", targets: [] } }),
-        primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : authored ? "front" : "back", frontFace: raster === "cw" ? "cw" : "ccw" },
-        depthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less", depthBias: authored ? 0 : 1, depthBiasSlopeScale: authored ? 0 : 1 },
-      };
-      return track(shadowPipelines, key, backgroundQueue.enqueue({
-        fingerprint: renderPipelineFingerprint([moduleCode], descriptor),
-        label: descriptor.label ?? key, priority: "background",
-        create: () => device.createRenderPipelineAsync(descriptor),
-      }));
-    });
-    backgroundQueue.resume();
-    await Promise.all(pending);
-    markPipeline("shadow-variants-ready");
-  });
+  if (deferredMains.length === 0) releaseDeferredQueues?.();
   // B1 Brief-VSM:页物化管线失败同样让 ready 拒绝(不静默;虚拟档 opt-in 构造即需可用)。
-  const ready = Promise.all([deferredMainReady, deferredShadowReady, displayReady, directionalReady, shadowReady, pageShadowReady, outputPipelineReady])
+  const ready = Promise.all([deferredMainReady, displayReady, directionalReady, shadowReady, pageShadowReady, outputPipelineReady])
     .then(() => { markPipeline("ready"); });
   let outputPipeline: GPURenderPipeline | undefined;
   let outputProvenance: PbrOutputShaderProvenance | undefined;
