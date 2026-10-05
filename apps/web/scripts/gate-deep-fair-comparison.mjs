@@ -30,6 +30,7 @@ const poses = (process.env.FAIR_POSES ?? "前,右,顶").split(",").map(name => n
 // (冻结 1.26、取景错位 0.44)严 40 倍以上,回归必然红。
 const cameraTolerance = Number(process.env.FAIR_CAMERA_TOLERANCE ?? 1e-2);
 const cameraContractTolerance = Number(process.env.FAIR_CAMERA_CONTRACT_TOLERANCE ?? 1e-6);
+const CONTRACT_FIELDS = ["position", "target", "up", "fov", "zoom"];
 // F2 输入门阈值:输入帧 P95 硬门(默认仅 Deep WebGPU;同轮 WebGL 参考的倍率上限)。
 // 同轮成对测量下环境噪声对两侧等价作用,倍率口径比绝对值稳健——防"切换成功即通过"。
 // WASM 的提交链落后单独切片治理,暂走 exceeds informational(FAIR_INPUT_P95_GATE_BACKENDS 可扩)。
@@ -353,8 +354,6 @@ async function capturePose(page, backend, pose, clip) {
  * ② "适应整个场景"复位后相机状态与 WebGL 参考对拍(合同字段 1e-6 + matrixWorld 1e-2);
  * ③ 每个位姿点击后相机状态与 WebGL 参考对拍(同上双层)。
  */
-
-const CONTRACT_FIELDS = ["position", "target", "up", "fov", "zoom"];
 
 function cameraContractDelta(a, b) {
   let max = 0;

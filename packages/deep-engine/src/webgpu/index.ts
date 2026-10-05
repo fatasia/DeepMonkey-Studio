@@ -106,6 +106,8 @@ export type { FrameCaptureBufferReadbackRequest, FrameCaptureReadbackOptions, Fr
 export { PbrFrameReadbackPlan, PBR_FRAME_READBACK_RESOURCES, isPbrFrameReadbackSnapshot } from "./pbrFrameCaptureReadback.js";
 export type { PbrFrameReadbackRequest, PbrFrameReadbackPlanOptions, PbrFrameReadbackResourceId,
   PbrFrameReadbackSnapshot, PbrFrameReadbackUnavailable, PbrFrameReadbackResult } from "./pbrFrameCaptureReadback.js";
+export { frameFingerprint, compareFrameFingerprints } from "./pbrFrameFingerprintDiff.js";
+export type { FrameFingerprint, FrameFingerprintDiff, FrameFingerprintIncompatible } from "./pbrFrameFingerprintDiff.js";
 export { PbrTransientTexturePool, PBR_HISTORY_TRANSIENT_EXCLUDED, isPbrTransientPoolEligible,
   framePlanUsageFlags, transientTextureBytes, pbrTransientTextureKeyValue } from "./pbrTransientTexturePool.js";
 export type { PbrTransientTextureKey, PbrTransientRequest, PbrTransientTextureHandle,
