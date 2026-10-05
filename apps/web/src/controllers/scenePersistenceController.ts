@@ -27,6 +27,7 @@ import { normalizeSceneCoordinates } from "../viewer/sceneCoordinates";
 import { readAnimationPlayheadSec } from "../viewer/animationPlayheadReader";
 import { normalizeSceneEngineeringAnalysis } from "../viewer/engineeringAnalysisState";
 import { createBrowserCooperativeWorkScheduler } from "../cooperativeWorkScheduler";
+import { setMaterialGraphSceneBridge } from "../materials/materialGraphStore";
 import type { ScenePersistenceControllerContext } from "./scenePersistenceControllerContext";
 import { shouldRecycleWebGpuRenderer, webGpuSceneReplacementThreshold } from "../viewer/webGpuRendererLifecyclePolicy";
 import { createSceneFileTransferActions } from "./sceneFileTransferActions";
@@ -108,6 +109,32 @@ export function createScenePersistenceController(context: ScenePersistenceContro
     setViewerLoadState,
     setWeather,
   } = context;
+
+  // Tier-2:材质图定义经 SceneSnapshot.materialGraphs 持久化 —— 在控制器装配时给
+  // store 注入场景读写面(先于任何编辑器子组件 effect,消除挂载时序竞态)。
+  // 定义是场景级数据:写入 bump revision 走自动保存;不入撤销历史(与刀 5 预设库同规,
+  // 编辑期以面板状态为权威),旧 localStorage 键由 store 的一次性迁移读取收编。
+  setMaterialGraphSceneBridge({
+    getScene: (sceneId) => {
+      const scene = context.getActiveScene();
+      return scene && scene.id === sceneId ? scene : undefined;
+    },
+    commitMaterialGraph: (sceneId, modelId, graph) => {
+      setActiveScene((current) => {
+        if (!current || current.id !== sceneId) return current;
+        const { [modelId]: _dropped, ...remaining } = current.materialGraphs ?? {};
+        if (!graph) {
+          if (!Object.keys(remaining).length) {
+            const { materialGraphs: _omitted, ...withoutGraphs } = current;
+            return withoutGraphs;
+          }
+          return { ...current, materialGraphs: remaining };
+        }
+        return { ...current, materialGraphs: { ...remaining, [modelId]: graph } };
+      });
+      setRevision((value) => value + 1);
+    },
+  });
 
   function makeSnapshot(): SceneSnapshot | undefined {
     if (!engine?.isSceneSnapshotReady(activeScene?.id)) return;

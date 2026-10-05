@@ -110,6 +110,10 @@ export function makeSceneSnapshot(source: SceneSnapshotSource): SceneSnapshot | 
     ...(rootLayerOrder ? { rootLayerOrder: structuredClone(rootLayerOrder) } : {}),
     // 仿真输入不属于引擎对象；显式复制，避免保存遗漏或后续编辑污染历史快照。
     ...(activeScene?.simulationEntities ? { simulationEntities: structuredClone(activeScene.simulationEntities) } : {}),
+    // 材质图定义(Tier-2)随 activeScene 走保存/发布/导出/复制链路;空映射不落字段。
+    ...(activeScene?.materialGraphs && Object.keys(activeScene.materialGraphs).length
+      ? { materialGraphs: structuredClone(activeScene.materialGraphs) }
+      : {}),
     ...(activeScene?.thumbnail ? { thumbnail: activeScene.thumbnail } : {}),
     ...(activeScene?.publicationToolbarVisible !== undefined ? { publicationToolbarVisible: activeScene.publicationToolbarVisible } : {}),
     ...(selected ? { selectedModelId: selected.id } : {}),

@@ -715,6 +715,8 @@ export interface SceneSnapshot {
   userPrefabInstances?: import("./userPrefab.js").UserPrefabInstanceRecord[];
   /** 用户自定义材质预设（编辑器刀 5）；随场景持久化，只含标量外观域。 */
   userMaterialPresets?: import("./sceneMaterial.js").UserMaterialPresetDefinition[];
+  /** 可编辑材质图定义（编辑器刀 7，Tier-2）：按场景对象 id 键控；可选 = 旧快照无该字段照常加载。 */
+  materialGraphs?: Record<string, import("./sceneMaterial.js").SceneMaterialGraphDefinition>;
   /** 缺省沿用旧目录顺序；组内顺序由 selectionSets.objectIds 保存。 */
   rootLayerOrder?: SceneRootLayerRef[];
   selectedModelId?: string;

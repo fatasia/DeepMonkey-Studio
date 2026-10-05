@@ -14,7 +14,8 @@ import "./MaterialGraphEditor.css";
  *
  * 即时反馈链路:图定义变更 → rAF 合帧 → 纹理遮罩预读(带缓存)→ 预合成编译
  * (纯 JS 网格 + Canvas 光栅)→ onApplyMaterialPatch(既有 selectionMaterialCommand
- * 写路径,对象即时更新)。定义随 localStorage(sceneId:modelId)持久化并在挂载时恢复;
+ * 写路径,对象即时更新)。定义随场景快照(SceneSnapshot.materialGraphs,Tier-2,
+ * 旧 localStorage 键由 store 一次性迁移)持久化并在挂载时恢复;
  * "断开图"用捕获的原材质 patch 还原全部接管槽位。
  */
 

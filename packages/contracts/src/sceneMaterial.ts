@@ -105,6 +105,68 @@ export interface UserMaterialPresetDefinition {
   values: SceneMaterialState;
 }
 
+/**
+ * 可编辑材质图定义(编辑器刀 7,Tier-2):分层材质(底材质 + ≤4 调整层 × 遮罩)的
+ * 持久化形状,与 apps/web 的 MaterialGraphDefinition 结构对齐(契约只定形状,
+ * 收敛与编译逻辑留在应用侧)。以场景对象 id 为键存于 SceneSnapshot.materialGraphs;
+ * 只持久化定义本身,编译产物(参数+预合成贴图)仍走既有材质序列化。
+ */
+
+/** 底材质节点 = PBR 参数快照(编译合成基底,不直接写回对象)。 */
+export interface SceneMaterialGraphBaseState {
+  /** #RRGGBB。 */
+  color: string;
+  metalness: number;
+  roughness: number;
+}
+
+/** 遮罩参数:程序化 3 种共用采样参数;texture 另带上传灰度图(dataURL ≤256KB)。 */
+export interface SceneMaterialGraphMaskState {
+  kind: "wear" | "dust" | "stripes" | "texture";
+  /** 确定性种子(整数);同图同输出字节的根。 */
+  seed: number;
+  /** 图案密度 1–8(周期格数,平铺无缝)。 */
+  scale: number;
+  /** 覆盖率 0–1。 */
+  coverage: number;
+  /** 边缘柔和 0–1。 */
+  softness: number;
+  /** 图案角度(度,条纹/划痕方向)。 */
+  angle: number;
+  textureName?: string;
+  textureUrl?: string;
+}
+
+/** 调整层:每通道独立开关,遮罩只作用于启用通道。 */
+export interface SceneMaterialGraphLayerState {
+  id: string;
+  name: string;
+  enabled: boolean;
+  blend: "mix" | "multiply";
+  color: string;
+  useColor: boolean;
+  roughness: number;
+  useRoughness: boolean;
+  metalness: number;
+  useMetalness: boolean;
+  /** 凹凸高度贡献 0–1(编译为法线贴图)。 */
+  bump: number;
+  /** 层强度 0–1。 */
+  opacity: number;
+  mask: SceneMaterialGraphMaskState;
+}
+
+export interface SceneMaterialGraphDefinition {
+  /** 合同版本;序列化演进从 2 开始。 */
+  version: 1;
+  /** 形如 `matgraph:<uuid>`;场景内唯一。 */
+  id: string;
+  name: string;
+  base: SceneMaterialGraphBaseState;
+  layers: SceneMaterialGraphLayerState[];
+  updatedAt: string;
+}
+
 export interface SceneMaterialUvAnimationState {
   enabled: boolean;
   /** 关闭循环时从进入场景开始播放一次。 */
