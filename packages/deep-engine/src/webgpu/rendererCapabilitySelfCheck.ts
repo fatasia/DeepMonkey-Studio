@@ -128,6 +128,7 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
     // 逐 pass 计时登记（PBR_TIMED_PASS_IDS 原子 diff）仍暂存；SSGDI 动态直接层 GPU 核
     // 不消费。观测值从实现常量派生（步数档/α/开关默认/物化 texel 布局漂移即红）。
     capabilityId: "sdf-gi", support: "supported", reason: "opt-in-default-off",
+    passIds: passes("sdf-gi-sky-trace", "sdf-gi-probe-update"),
     observed: {
       sdfGi: FEATURE_DEFAULTS.sdfGi,
       skyTraceStepsMin: SDF_SKY_VISIBILITY_MIN_STEPS,
