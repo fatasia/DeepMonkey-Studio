@@ -43,6 +43,7 @@ export function AppStudioViewportToolDock({ controller, toggles, physicsDebug, s
     sceneBehaviorOpen,
     animationOpen,
     physicsOpen,
+    playModeActive,
     selected,
     selectionScope,
     setAnimationOpen,
@@ -117,6 +118,7 @@ export function AppStudioViewportToolDock({ controller, toggles, physicsDebug, s
           locale={locale}
           navigationMode={navigationMode}
           transformMode={transformMode}
+          editingDisabled={playModeActive}
           hasSelection={Boolean(selected)}
           hasModelSelection={selected?.kind === "model"}
           selectionScope={selectionScope}

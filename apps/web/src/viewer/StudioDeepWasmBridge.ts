@@ -3,7 +3,7 @@ import type { CameraState } from "@bim-studio/contracts";
 import type { RendererBackend } from "./viewerTypes";
 import { captureAuthorStyle, createDeepCanvas, prepareAuthorInputCanvas, restoreAuthorStyle,
   type AuthorCanvasStyle } from "./studioDeepPresentationCanvas";
-import { DeepCameraController, type CameraPose } from "./deepCameraController";
+import { DeepCameraController, sameHostCameraPose, type CameraPose } from "./deepCameraController";
 import { DeepCameraInputSession } from "./deepCameraInputSession";
 import { DeepGizmoInteraction, type DeepGizmoInteractionHost } from "./deepGizmoInteraction";
 
@@ -86,6 +86,8 @@ export class StudioDeepWasmBridge {
   private inputSession: DeepCameraInputSession | undefined;
   private gestureActive = false;
   private lastGestureTickAt: number | undefined;
+  /** 控制器最后写回/采纳的姿态:区分"手势收敛中"与"宿主程序性变更"。 */
+  private lastAppliedPose: CameraPose | undefined;
   private readonly gizmoInteraction: DeepGizmoInteraction | undefined;
 
   constructor(
@@ -254,6 +256,7 @@ export class StudioDeepWasmBridge {
     this.controller ??= new DeepCameraController({ verticalFovDegrees: projection.verticalFovDegrees });
     this.controller.setPose([state.position.x, state.position.y, state.position.z],
       [state.target.x, state.target.y, state.target.z]);
+    this.lastAppliedPose = this.controller.getPose();
     if (this.viewer.enableViewportGestureTakeover?.() !== true || !this.canvas) {
       // 宿主拒绝(如导航模式不支持):保持既有输入路径,不视为失败。
       this.controller.setPose([state.position.x, state.position.y, state.position.z],
@@ -300,8 +303,20 @@ export class StudioDeepWasmBridge {
       const now = performance.now();
       const dt = this.lastGestureTickAt === undefined ? 16 : Math.min(100, now - this.lastGestureTickAt);
       this.lastGestureTickAt = now;
-      this.controller.tick(dt);
-      this.viewer.applyViewportCameraPose?.(this.controller.getPose());
+      const stillConverging = this.controller.tick(dt);
+      const state = this.viewer.getCameraState();
+      if (!sameHostCameraPose(state, this.lastAppliedPose)) {
+        // 宿主相机偏离控制器最后同步姿态 = 程序性变更(fitAll/标准视角/快照恢复):
+        // 以宿主为准重设控制器。此前的无条件写回会把接管时刻的旧球坐标每帧刷回
+        // 宿主相机,覆盖 fitAll 与位姿点击——相机被冻结在切换时刻(F1 实测根因)。
+        this.controller.setPose([state.position.x, state.position.y, state.position.z],
+          [state.target.x, state.target.y, state.target.z]);
+        this.lastAppliedPose = this.controller.getPose();
+      } else if (stillConverging) {
+        const pose = this.controller.getPose();
+        this.viewer.applyViewportCameraPose?.(pose);
+        this.lastAppliedPose = pose;
+      }
     }
     try { this.syncEditorOverlay(); }
     catch (reason) {

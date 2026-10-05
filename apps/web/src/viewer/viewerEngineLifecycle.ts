@@ -12,6 +12,8 @@ export abstract class ViewerEngineLifecycle extends ViewerEngineNavigationTools 
   dispose(): void {
     if (this.rendererDisposalStarted) return;
     this.rendererDisposalStarted = true;
+    this.uninstallCameraProbe?.();
+    this.uninstallCameraProbe = undefined;
     this.teardownXRSessionOnDispose();
     this.presentationFrameListeners.clear();
     this.onRestrictedInteraction = undefined;

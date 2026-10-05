@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import assert from "node:assert/strict";
 import { StudioDeepWasmBridge, type DeepWasmRuntimeModule, type StudioDeepWasmAuthorHost } from "./StudioDeepWasmBridge";
 
 // 视口手势接管合同:宿主接受 → Deep 画布持有输入+每帧姿态写回;宿主拒绝/缺缝 → 优雅降级保持旧输入路径;回退 WebGL → 恢复。
@@ -11,6 +12,16 @@ describe("StudioDeepWasmBridge viewport gesture takeover", () => {
     vi.stubGlobal("window", { isSecureContext: true });
     vi.stubGlobal("navigator", { gpu: {} });
     vi.stubGlobal("performance", { now: performance.now.bind(performance), mark: vi.fn() });
+    // 输入会话转发路径需要 PointerEvent/MouseEvent 构造器(jsdom 未引入的最小桩)。
+    class FakeDomEvent {
+      type: string;
+      constructor(type: string, init: Record<string, unknown> = {}) {
+        this.type = type;
+        Object.assign(this, init);
+      }
+    }
+    vi.stubGlobal("PointerEvent", FakeDomEvent);
+    vi.stubGlobal("MouseEvent", FakeDomEvent);
     const realNow = performance.now;
     vi.stubGlobal("document", { createElement: () => {
       const value = canvas();
@@ -32,7 +43,7 @@ describe("StudioDeepWasmBridge viewport gesture takeover", () => {
     });
     const hostObject = {
       renderer: { domElement: canvas() as unknown as HTMLCanvasElement },
-      getCameraState: () => ({ position: { x: 7, y: 2, z: 3 }, target: { x: 4, y: 0, z: 0 } }),
+      getCameraState: () => ({ position: { x: 7, y: 2, z: 3 }, target: { x: 4, y: 0, z: 0 }, mode: "orbit" as const }),
       getCameraProjectionState: () => ({ verticalFovDegrees: 50, near: 0.1, far: 900 }),
       setPresentationRendererBackend: vi.fn(),
       subscribePresentationFrames,
@@ -45,7 +56,7 @@ describe("StudioDeepWasmBridge viewport gesture takeover", () => {
     return { hostObject, frame: () => frameListener() };
   }
 
-  it("activates takeover when the host accepts and applies poses per author frame", async () => {
+  it("activates takeover when the host accepts; settled poses are not rewritten per author frame", async () => {
     const runtime = fakeRuntime();
     const author = canvas() as unknown as HTMLCanvasElement;
     const { hostObject: hostStub, frame } = host({ renderer: { domElement: author } });
@@ -61,14 +72,77 @@ describe("StudioDeepWasmBridge viewport gesture takeover", () => {
     expect(hostStub.enableViewportGestureTakeover).toHaveBeenCalledOnce();
     expect(createdCanvases[0]?.style.pointerEvents).toBe("auto");
 
-    // 作者帧:控制器 tick 后姿态写回宿主,再经 ε 去重走 set_viewer_camera。
+    // 作者帧:控制器姿态已与宿主一致且无收敛需求——不再每帧把接管时刻姿态刷回
+    // 宿主(旧的无条件写回会覆盖 fitAll/标准视角,相机被冻结在切换时刻)。
     frame();
-    expect(hostStub.applyViewportCameraPose).toHaveBeenCalledTimes(1);
-    expect(runtime.camera).toHaveBeenCalled();
+    expect(hostStub.applyViewportCameraPose).not.toHaveBeenCalled();
+    expect(runtime.camera).toHaveBeenCalled(); // 相机 FFI 仍经 ε 去重正常同步
 
     await bridge.switchTo("webgl");
     expect(hostStub.disableViewportGestureTakeover).toHaveBeenCalledOnce();
     expect(createdCanvases[0]?.style.pointerEvents).toBe("none");
+  });
+
+  it("follows programmatic host camera changes instead of freezing the takeover pose", async () => {
+    const runtime = fakeRuntime();
+    const author = canvas() as unknown as HTMLCanvasElement;
+    let cameraState = { position: { x: 7, y: 2, z: 3 }, target: { x: 4, y: 0, z: 0 }, mode: "orbit" as const };
+    const { hostObject: hostStub, frame } = host({
+      renderer: { domElement: author },
+      getCameraState: () => cameraState,
+    });
+    const bridge = new StudioDeepWasmBridge(hostStub, container(), {
+      loadModule: async () => runtime.module,
+      compilePackage: async () => new Uint8Array([1, 2, 3]),
+      preparationTimeoutMs: 100,
+    });
+    owned.push(bridge);
+    await bridge.switchTo("wasm");
+
+    // 模拟"适应整个场景"/魔方位姿:宿主程序性改写相机(顶位姿)。
+    cameraState = { position: { x: 0, y: 20, z: 0.001 }, target: { x: 0, y: 0, z: 0 }, mode: "orbit" as const };
+    frame();
+    // 控制器重设为宿主姿态,禁止把接管时刻的旧球坐标刷回(冻结回归)。
+    expect(hostStub.applyViewportCameraPose).not.toHaveBeenCalled();
+    const call = runtime.camera.mock.calls.at(-1) as unknown[] | undefined;
+    assert.ok(call, "set_viewer_camera should receive the new host pose");
+    expect(call[1]).toBeCloseTo(0, 6); // positionX
+    expect(call[2]).toBeCloseTo(20, 6); // positionY
+
+    // 已就位后继续作者帧:无收敛、无漂移,保持不写回。
+    frame();
+    expect(hostStub.applyViewportCameraPose).not.toHaveBeenCalled();
+  });
+
+  it("still applies converging gesture poses while the host camera matches the controller", async () => {
+    const runtime = fakeRuntime();
+    const author = canvas() as unknown as HTMLCanvasElement;
+    const { hostObject: hostStub, frame } = host({ renderer: { domElement: author } });
+    const bridge = new StudioDeepWasmBridge(hostStub, container(), {
+      loadModule: async () => runtime.module,
+      compilePackage: async () => new Uint8Array([1, 2, 3]),
+      preparationTimeoutMs: 100,
+    });
+    owned.push(bridge);
+    await bridge.switchTo("wasm");
+
+    // Deep 画布由桥经 document.createElement 创建;从其 addEventListener 调用记录取回绑定的事件。
+    const deepCanvas = createdCanvases.at(-1)!;
+    const addMock = deepCanvas.addEventListener as unknown as ReturnType<typeof vi.fn>;
+    const registered = new Map<string, EventListener>(
+      addMock.mock.calls.map(call => [call[0] as string, call[1] as EventListener]));
+    assert.ok(registered.get("pointerdown"), "input session should bind pointerdown on the deep canvas");
+
+    // 指针轨道手势:down+move 驱动控制器目标,作者帧把收敛中的姿态写回宿主。
+    const down = { pointerId: 1, button: 0, buttons: 1, clientX: 100, clientY: 100, shiftKey: false,
+      pointerType: "mouse", isPrimary: true, pressure: 0.5, preventDefault: () => undefined } as unknown as PointerEvent;
+    registered.get("pointerdown")!(down);
+    const move = { ...down, clientX: 160, clientY: 100 } as unknown as PointerEvent;
+    registered.get("pointermove")!(move);
+    frame();
+    expect(hostStub.applyViewportCameraPose).toHaveBeenCalled();
+
+    await bridge.switchTo("webgl");
   });
 
   it("degrades gracefully when the host declines the takeover", async () => {
@@ -115,7 +189,7 @@ describe("StudioDeepWasmBridge viewport gesture takeover", () => {
 function canvas() {
   return { style: { position: "", inset: "", width: "", height: "", opacity: "1", zIndex: "", pointerEvents: "auto" },
     dataset: {}, clientWidth: 640, clientHeight: 480, setAttribute: vi.fn(), remove: vi.fn(),
-    addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(),
     setPointerCapture: vi.fn(), releasePointerCapture: vi.fn(), hasPointerCapture: vi.fn(() => false) };
 }
 

@@ -70,6 +70,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
     selectedTransform,
     selectionColor,
     selectionLocked,
+    playModeActive,
     selectionMaterial,
     selectionName,
     selectionOpacity,
@@ -97,6 +98,8 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
     updateSelectionOpacity,
     updateSelectionVisibility,
   } = controller;
+  // F11：播放模式统一禁用属性面板编辑——播放产物是临时态，退出即恢复（Unity Play 口径）。
+  const editingDisabled = selectionLocked || playModeActive;
 
   return (
     <aside className="right-panel">
@@ -169,7 +172,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
               <label className="field">
                 <span>{selectedLayerId && selectedLayerId !== "root" ? tr(locale, "图层名称", "Layer name") : tr(locale, "名称", "Name")}</span>
                 <input
-                  disabled={selectionLocked}
+                  disabled={editingDisabled}
                   value={selectionName}
                   data-layer-rename-scope="scene" data-layer-rename-id={JSON.stringify([selected.id, selectedLayerId && selectedLayerId !== "root" ? selectedLayerId : null])}
                   onChange={(event) => {
@@ -189,7 +192,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
               <label className="field color-field">
                 <span>{tr(locale, "图层颜色", "Layer color")}</span>
                 <div>
-                  <input disabled={selectionLocked} type="color" value={selectionColor} onChange={(event) => updateSelectionColor(event.target.value)} />
+                  <input disabled={editingDisabled} type="color" value={selectionColor} onChange={(event) => updateSelectionColor(event.target.value)} />
                   <output>{selectionColor.toUpperCase()}</output>
                 </div>
               </label>
@@ -205,6 +208,8 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                   <span>{tr(locale, "锁定", "Lock")}</span>
                   <button
                     className={`toggle ${selectionLocked ? "on" : ""}`}
+                    disabled={playModeActive}
+                    title={playModeActive ? tr(locale, "先退出播放模式，再切换锁定", "Exit Play mode before toggling lock") : undefined}
                     onClick={() => {
                       if (!engine || !selected) return;
                       // 批 2 收编:锁定走命令总线;layerId 有无镜像既有分发条件,参数与直调逐项一致。
@@ -228,7 +233,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                     <span>{tr(locale, "碰撞检测", "Collision")}</span>
                     <button
                       className={`toggle ${engine.isCollisionEnabled(selected.id) ? "on" : ""}`}
-                      disabled={selectionLocked}
+                      disabled={editingDisabled}
                       onClick={() => {
                         const enabled = !engine.isCollisionEnabled(selected.id);
                         engine.setCollisionEnabled(selected.id, enabled);
@@ -247,7 +252,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                 <output>{Math.round(selectionOpacity * 100)}%</output>
               </label>
               <input
-                disabled={selectionLocked}
+                disabled={editingDisabled}
                 className="range"
                 type="range"
                 min="0"
@@ -260,7 +265,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
           )}
           {inspectorTab === "overview" && engine && (
             <RobotSceneInspector key={`${activeScene?.id}:${selected.id}`} locale={locale} engine={engine} modelId={selected.id}
-                  disabled={selectionLocked || bindings.state.busy} onChange={() => setRevision(value => value + 1)} />
+                  disabled={editingDisabled || bindings.state.busy} onChange={() => setRevision(value => value + 1)} />
           )}
           {inspectorTab === "data" && project && activeScene && (
             <SceneDataBindingEditor
@@ -271,7 +276,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
               targetName={selectionName || selected.name}
               bindings={sceneDataBindings}
               runtimeStates={sceneDataBindingRuntime}
-              disabled={selectionLocked}
+              disabled={editingDisabled}
               onChange={setSceneDataBindings}
               onTest={(bindingId, message) => {
                 publishLocalSceneData(message);
@@ -296,7 +301,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                   materialSlots={engine?.getSelectionMaterialSlots() ?? []}
                   locale={locale}
                   rendererBackend={rendererBackend}
-                  disabled={selectionLocked}
+                  disabled={editingDisabled}
                   material={selectionMaterial}
                   projectAssets={project?.assets ?? []}
                   {...(selectedEffects ? { effects: selectedEffects } : {})}
@@ -314,7 +319,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                 {selected.kind === "model" && activeScene && (
                   <MaterialGraphEditor
                     locale={locale}
-                    disabled={selectionLocked}
+                    disabled={editingDisabled}
                     sceneId={activeScene.id}
                     modelId={selected.id}
                     material={selectionMaterial}
@@ -326,7 +331,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                     <span>{tr(locale, "模型爆炸", "Model explosion")}</span>
                     <output>{Math.round(explosionFactor * 100)}%</output>
                     <input
-                      disabled={selectionLocked}
+                      disabled={editingDisabled}
                       className="range"
                       type="range"
                       min="0"
@@ -338,7 +343,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                     <div className="explosion-modes">
                       {(["radial", "vertical", "x", "y", "z"] as const).map((mode) => (
                         <button
-                          disabled={selectionLocked}
+                          disabled={editingDisabled}
                           key={mode}
                           className={explosionMode === mode ? "active" : ""}
                           onClick={() => updateExplosion(Math.max(explosionFactor, 0.55), mode)}
@@ -346,24 +351,24 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                           {explosionModeName(mode, locale)}
                         </button>
                       ))}
-                      <button disabled={selectionLocked} onClick={() => updateExplosion(0)}>
+                      <button disabled={editingDisabled} onClick={() => updateExplosion(0)}>
                         {tr(locale, "复位", "Reset")}
                       </button>
                     </div>
                   </div>
                 )}
                 {selected.kind === "model" && engine && (
-                  <SpatialAudioEditor locale={locale} engine={engine} modelId={selected.id} disabled={selectionLocked} onChange={() => setRevision((value) => value + 1)} />
+                  <SpatialAudioEditor locale={locale} engine={engine} modelId={selected.id} disabled={editingDisabled} onChange={() => setRevision((value) => value + 1)} />
                 )}
                 {engine?.hasAnimation(selected.id) && (
-                  <ModelAnimationControl locale={locale} engine={engine} modelId={selected.id} disabled={selectionLocked} onChange={() => setRevision((value) => value + 1)} />
+                  <ModelAnimationControl locale={locale} engine={engine} modelId={selected.id} disabled={editingDisabled} onChange={() => setRevision((value) => value + 1)} />
                 )}
                 {engine && (
-                  <IndustrialPrefabInspector locale={locale} engine={engine} modelId={selected.id} disabled={selectionLocked}
+                  <IndustrialPrefabInspector locale={locale} engine={engine} modelId={selected.id} disabled={editingDisabled}
                     onChange={() => setRevision((value) => value + 1)} onCommit={recordSceneEdit} />
                 )}
                 {engine?.hasSkeleton(selected.id) && (
-                  <ModelRigControl locale={locale} engine={engine} modelId={selected.id} disabled={selectionLocked} onChange={() => setRevision((value) => value + 1)} />
+                  <ModelRigControl locale={locale} engine={engine} modelId={selected.id} disabled={editingDisabled} onChange={() => setRevision((value) => value + 1)} />
                 )}
                 {selectedComponent && (
                   <div className="component-actions">
@@ -395,7 +400,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
           {inspectorTab === "overview" && (
             <>
               <TransformFields
-                disabled={selectionLocked}
+                disabled={editingDisabled}
                 title={`${tr(locale, "位置", "Position")} · ${sceneCoordinates.upAxis.toUpperCase()}↑`}
                 transform={selectedProjectPosition ?? selectedTransform.position}
                 suffix={sceneCoordinates.unit}
@@ -403,7 +408,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                 onChange={(axis, value) => updateSelectedTransform("position", axis, value)}
               />
               <TransformFields
-                disabled={selectionLocked}
+                disabled={editingDisabled}
                 title={tr(locale, "旋转", "Rotation")}
                 transform={{
                   x: (selectedTransform.rotation.x * 180) / Math.PI,
@@ -415,7 +420,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                 onChange={(axis, value) => updateSelectedTransform("rotation", axis, value)}
               />
               <TransformFields
-                disabled={selectionLocked}
+                disabled={editingDisabled}
                 title={tr(locale, "缩放", "Scale")}
                 transform={selectedTransform.scale}
                 onInvalidInput={() => setMessage(tr(locale, "输入不是有效数字，已保留草稿供修正", "Not a valid number; draft kept for correction"))}
@@ -435,7 +440,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                       <small>{tr(locale, "为当前对象挂载生命周期与业务事件", "Attach lifecycle logic and business events")}</small>
                     </span>
                   </span>
-                  <button disabled={selectionLocked} onClick={() => setSceneBehaviorOpen(true)}>
+                  <button disabled={editingDisabled} onClick={() => setSceneBehaviorOpen(true)}>
                     {activeApplication?.scripts.filter((script) => script.target?.kind !== "scene" && script.target?.id === selectedBehaviorTarget?.id).length ?? 0}{" "}
                     {tr(locale, "个行为", "behaviors")}
                     <ChevronRight size={13} />
@@ -443,7 +448,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                 </section>
                 <InteractionEditor
                   locale={locale}
-                  disabled={selectionLocked}
+                  disabled={editingDisabled}
                   target={{ kind: "object", modelId: selected.id, ...(selectedLayerId && selectedLayerId !== "root" ? { layerId: selectedLayerId } : {}) }}
                   targetName={selectionName || selected.name}
                   interactions={sceneInteractions}
@@ -462,7 +467,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
           {inspectorTab === "overview" && (
             <button
               className="button remove-scene"
-              disabled={selectionLocked}
+              disabled={editingDisabled}
               onClick={() => {
                 if (selectedLayerId && selectedLayerId !== "root") {
                   dispatchEngineEditCommand(engine, selectionDeleteCommand(locale, { modelId: selected.id }));

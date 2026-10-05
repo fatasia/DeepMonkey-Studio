@@ -15,7 +15,7 @@ import type { StudioDeepRenderView } from "./StudioDeepRenderView";
 import type { TemporalFrameSettler } from "./temporalFrameSettler";
 import type { ViewerEngine } from "./ViewerEngine";
 import type { RendererBackend } from "./viewerTypes";
-import { DeepCameraController } from "./deepCameraController";
+import { DeepCameraController, type CameraPose } from "./deepCameraController";
 import { DeepCameraInputSession } from "./deepCameraInputSession";
 import type { DeepGizmoInteraction } from "./deepGizmoInteraction";
 import { flowProbe, recordProbeSample } from "./studioDeepWebGpuBridgeFlowProbe";
@@ -72,6 +72,8 @@ export interface StudioDeepBridgePresentationHost {
   lastDemandRevision: number;
   gestureActive: boolean;
   lastGestureTickAt: number | undefined;
+  /** 控制器最后写回/采纳的姿态:区分"手势收敛中"与"宿主程序性变更"(与 WASM 桥同族)。 */
+  lastAppliedPose: CameraPose | undefined;
   controller: DeepCameraController | undefined;
   inputSession: DeepCameraInputSession | undefined;
 }
@@ -243,8 +245,11 @@ export function takeoverGesturePresentation(host: StudioDeepBridgePresentationHo
     const controller = host.controller ??= new DeepCameraController({
       verticalFovDegrees: host.viewer.getCameraProjectionState?.().verticalFovDegrees ?? 50,
     });
-    if (state) controller.setPose([state.position.x, state.position.y, state.position.z],
-      [state.target.x, state.target.y, state.target.z]);
+    if (state) {
+      controller.setPose([state.position.x, state.position.y, state.position.z],
+        [state.target.x, state.target.y, state.target.z]);
+      host.lastAppliedPose = controller.getPose();
+    }
     if (host.viewer.enableViewportGestureTakeover?.() !== true || !host.deepCanvas) return;
     host.gestureActive = true;
     host.deepCanvas.style.pointerEvents = "auto";

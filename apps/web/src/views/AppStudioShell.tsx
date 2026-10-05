@@ -598,6 +598,9 @@ function createAppStudioController({ bindings }: { bindings: AppViewBindings }) 
     userPrefabInstances,
     userMaterialPresets,
     materialPresetActions,
+    // F11：播放模式禁用面——编辑面板/工具坞/场景树需要感知播放态并统一禁用写操作。
+    playModeActive: bindings.playMode?.active ?? false,
+    exitPlayMode: bindings.playMode ? () => { if (bindings.playMode?.active) void bindings.playMode.exit(); } : undefined,
     selectionVisible,
     setAiAssistantOpen,
     setAnimationOpen,

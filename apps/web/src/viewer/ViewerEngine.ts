@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { ClippingGroup } from "three/webgpu";
 import { type RendererBackend } from "./viewerTypes";
 import { ViewerEngineModelDiff } from "./viewerEngineModelDiff";
+import { installStudioCameraProbe } from "./studioCameraProbe";
 import { bindViewerPerformancePreferences } from "./viewerPerformanceBinding";
 import { normalizeRendererDeviceLoss, runtimeGpuDevice, type RendererInstance, type WebGpuRendererWithLossHandler } from "./viewerRendererTypes";
 import { installThreeDisplayToneMapping } from "./threeDisplayToneMapping";
@@ -34,6 +35,17 @@ export class ViewerEngine extends ViewerEngineModelDiff {
   private constructor(container: HTMLElement, renderer: RendererInstance, backend: RendererBackend, modelRoot: THREE.Group | ClippingGroup) {
     super(container, renderer, backend, modelRoot);
     bindViewerPerformancePreferences(this);
+    // 跨后端公平对比取证缝:门禁脚本经 window.__studioCameraProbe 只读采集
+    // 相机矩阵与场景对象计数(见 studioCameraProbe.ts);dispose 时摘除。
+    this.uninstallCameraProbe = installStudioCameraProbe({
+      scene: this.scene,
+      camera: this.camera,
+      orbit: this.orbit,
+      renderer: this.renderer,
+      container: this.container,
+      listModels: () => this.listModels(),
+      getCameraState: () => this.getCameraState(),
+    });
     this.startRuntime();
   }
 

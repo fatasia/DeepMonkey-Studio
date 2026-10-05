@@ -404,6 +404,7 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   protected lastInteractionHoverCheck = 0;
   protected presentationRendererBackend: RendererBackend;
   protected readonly presentationFrameListeners = new Set<() => void>();
+  protected uninstallCameraProbe: (() => void) | undefined;
   protected constructor(
     protected readonly container: HTMLElement,
     renderer: RendererInstance,

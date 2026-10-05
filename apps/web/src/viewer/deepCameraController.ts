@@ -104,6 +104,28 @@ function offsetFromSpherical(spherical: Spherical, up: Vec3): Vec3 {
     scale(upAxis, spherical.radius * Math.cos(spherical.polar)));
 }
 
+/**
+ * 宿主相机合同(CameraState 的 position/target)与引擎中立姿态(CameraPose 的
+ * eye/target)是否一致。手势接管期间的帧驱动用它区分"控制器仍在收敛"与
+ * "宿主相机被程序性变更(fitAll/标准视角/快照恢复)改写"——后者必须以宿主为
+ * 准重设控制器,禁止把控制器旧姿态写回(否则相机被冻结在接管时刻,位姿点击
+ * 全部失效,跨后端公平对比失真)。
+ */
+export function sameHostCameraPose(
+  state: { readonly position: { readonly x: number; readonly y: number; readonly z: number };
+    readonly target: { readonly x: number; readonly y: number; readonly z: number } },
+  pose: CameraPose | undefined,
+  epsilon = 1e-6,
+): boolean {
+  return pose !== undefined
+    && Math.abs(state.position.x - pose.eye[0]) <= epsilon
+    && Math.abs(state.position.y - pose.eye[1]) <= epsilon
+    && Math.abs(state.position.z - pose.eye[2]) <= epsilon
+    && Math.abs(state.target.x - pose.target[0]) <= epsilon
+    && Math.abs(state.target.y - pose.target[1]) <= epsilon
+    && Math.abs(state.target.z - pose.target[2]) <= epsilon;
+}
+
 /** 引擎中立轨道相机:所有方法都是纯状态更新,渲染由调用方 tick 驱动。 */
 export class DeepCameraController {
   private readonly options: DeepCameraControllerOptions;

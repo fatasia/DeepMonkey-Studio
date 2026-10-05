@@ -23,7 +23,7 @@ import type { StudioDeepPerformance } from "./StudioDeepPerformance";
 import type { StudioDeformationPoseSync } from "./studioDeformationPoseSync";
 import type { StudioDeepOutlineSync } from "./studioDeepOutlineSync";
 import { updateAuthorProjectionState } from "./authorLodSelection";
-import type { DeepCameraController } from "./deepCameraController";
+import { sameHostCameraPose, type DeepCameraController } from "./deepCameraController";
 import type { DeepCameraInputSession } from "./deepCameraInputSession";
 import { DeepGizmoInteraction } from "./deepGizmoInteraction";
 import { createDeepCanvas, prepareAuthorInputCanvas, captureAuthorStyle, restoreAuthorStyle,
@@ -95,6 +95,8 @@ export class StudioDeepWebGpuBridge {
   private inputSession: DeepCameraInputSession | undefined;
   private gestureActive = false;
   private lastGestureTickAt: number | undefined;
+  /** 控制器最后写回/采纳的姿态:区分"手势收敛中"与"宿主程序性变更"(与 WASM 桥同族)。 */
+  private lastAppliedPose: import("./deepCameraController").CameraPose | undefined;
   private readonly gizmoInteraction: DeepGizmoInteraction;
   /** True after an immutable SceneSnapshot packet was accepted for this session. */
   private independentPacketPath = false;
@@ -741,8 +743,21 @@ export class StudioDeepWebGpuBridge {
     const now = performance.now();
     const dt = this.lastGestureTickAt === undefined ? 16 : Math.min(100, now - this.lastGestureTickAt);
     this.lastGestureTickAt = now;
-    this.controller.tick(dt);
-    this.viewer.applyViewportCameraPose?.(this.controller.getPose());
+    const stillConverging = this.controller.tick(dt);
+    const state = this.viewer.getCameraState();
+    if (!sameHostCameraPose(state, this.lastAppliedPose)) {
+      // 宿主相机偏离控制器最后同步姿态 = 程序性变更(fitAll/标准视角/快照恢复):
+      // 以宿主为准重设控制器,禁止把手势中的旧球坐标刷回覆盖程序性相机命令(与 WASM 桥同族)。
+      this.controller.setPose([state.position.x, state.position.y, state.position.z],
+        [state.target.x, state.target.y, state.target.z]);
+      this.lastAppliedPose = this.controller.getPose();
+      return;
+    }
+    if (stillConverging) {
+      const pose = this.controller.getPose();
+      this.viewer.applyViewportCameraPose?.(pose);
+      this.lastAppliedPose = pose;
+    }
   };
 
   private scheduleCameraSettle(): void {
