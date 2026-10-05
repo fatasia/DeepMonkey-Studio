@@ -10,6 +10,7 @@ import type { PanoramaBackground } from "./pbrPanoramaBackground.js";
 import type { PbrFog } from "./pbrFog.js";
 import type { PbrAuthorColorEffects } from "./pbrAuthorColorEffects.js";
 import type { PbrPostProcessOverrides } from "./pbrPostProcessOverrides.js";
+import type { RtShadowRoute } from "./rtShadowScheduling.js";
 
 export interface PbrFrameUniformView {
   readonly eye: Vec3; readonly target: Vec3; readonly up?: Vec3; readonly extent: number;
@@ -55,7 +56,11 @@ export function updatePbrFrameUniforms(queue: GPUQueue, cameraHistory: CameraFra
   view: PbrFrameUniformView, width: number, height: number, forceCut: boolean,
   resources: PbrFrameUniformResources,
   primaryLight: PbrPrimaryDirectionalLight = DEFAULT_PBR_PRIMARY_DIRECTIONAL_LIGHT,
-  features: PbrRendererFeatures = DEFAULT_PBR_RENDERER_FEATURES): PbrFrameUniformResult {
+  features: PbrRendererFeatures = DEFAULT_PBR_RENDERER_FEATURES,
+  /** B3 RT 阴影自动选路(rtShadowScheduling):cascade 帧压 outputData[1] 开关位为 0
+   *  (WGSL 分支不进入,行为逐位等于级联档;features 快照不动,管线保持 RT 变体)。
+   *  undefined = 未接选路的调用方,行为与历史逐位一致。 */
+  rayTracedShadowRoute?: RtShadowRoute): PbrFrameUniformResult {
   const environmentIntensity = resolvePbrEnvironmentIntensity(view.environmentIntensity);
   const extent = view.extent, projection = resolvePbrCameraProjection(view), origin = view.cameraWorldPosition;
   const worldToView = origin === undefined ? lookAt(view.eye, view.target, view.up)
@@ -88,7 +93,7 @@ export function updatePbrFrameUniforms(queue: GPUQueue, cameraHistory: CameraFra
   // 回级联(mask 供给异常的帧清 0 位即回退,无需重建管线)。features 关时写 0,
   // 与历史打包逐位一致。写 outputData 槽(经下方 set 拷入 frameData[89],frame ABI
   // 的 Frame.output.bloom),不直写 frameData —— 那会被 output 段拷贝覆写。
-  resources.outputData[1] = features.rayTracedShadows ? 1 : 0;
+  resources.outputData[1] = features.rayTracedShadows && rayTracedShadowRoute?.channel !== "cascade" ? 1 : 0;
   resources.outputData[0] = view.exposure;
   resources.outputData[2] = features.vignette ? 0.25 : 0;
   resources.outputData[3] = features.toneMapping === "three-aces-r185" ? 1 : 0;

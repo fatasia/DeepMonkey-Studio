@@ -124,6 +124,8 @@ export class PbrRenderer {
    *  +ShadowRayFramePass 供给。构造期场景供给未就绪或 staging 降级时 features 快照的
    *  RT 位回退(开关位 0 → WGSL 回级联),后置 stage 成功再切回(下一帧生效)。 */
   readonly rtShadows: RtShadowFrameController | undefined;
+  /** B3 RT 阴影自动选路状态(滞回冷却计数;与 rtShadows 同生命周期,未接选路为 undefined)。 */
+  readonly rtShadowScheduling: import("./rtShadowScheduling.js").RtShadowSchedulingState | undefined;
   private rtShadowsFallbackReason: string | undefined;
   private readonly frameCapture: PbrFrameCapture | undefined;
   private lastFrameReadback: Promise<readonly PbrFrameReadbackResult[]> | undefined;
@@ -237,6 +239,8 @@ export class PbrRenderer {
     // (fail-closed 回级联,原因经 rayTracedShadowStatus 披露,不静默假开)。
     if (features.rayTracedShadows) {
       this.rtShadows = new RtShadowFrameController(session, { ...(options.rayTracedShadowF16 ? { f16: true } : {}) });
+      // B3 自动选路状态(帧粒度混合调度;帧钩子逐帧 resolve+tick)。
+      this.rtShadowScheduling = { cascadeCooldownFrames: 0 };
       if (options.rayTracedShadowScene !== undefined) this.stageRayTracedShadowScene(options.rayTracedShadowScene);
       else this.rtShadowsFallbackReason = "scene-not-supplied";
     }

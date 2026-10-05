@@ -81,6 +81,7 @@ import { resolveClusterLodSlotOption } from "./clusterLodSlotSupport.js";
 import { PbrAutoExposureRuntime } from "./pbrAutoExposure.js";
 import { createVirtualTextureFrameBridge, type VirtualTextureFrameBridge } from "./virtualTextureFrameBridge.js";
 import { VirtualTextureTileLookupPass } from "./virtualTextureSampling.js";
+import { resolveRtShadowRoute, tickRtShadowScheduling, rtShadowRouteMetrics } from "./rtShadowScheduling.js";
 
 import { driveVirtualTextures, validateFrame, collectVirtualShadowObjects, resolutionScaleMetrics,
   passTimingsMetrics, sampleAdaptiveQuality, captureForFrame, allocationPlanFor, executedCapturePassIds } from "./pbrRendererFrameSupport.js";
@@ -105,6 +106,8 @@ export interface PbrRendererFrameHost {
   readonly sdfGi: SdfGiProductionRuntime | undefined;
   /** M2 方向光 RT 阴影(opt-in features.rayTracedShadows):帧内 mask dispatch 钩子。 */
   readonly rtShadows: import("./rtShadowFrame.js").RtShadowFrameController | undefined;
+  /** B3 RT 阴影自动选路状态(与 rtShadows 同生命周期;undefined = 未接选路)。 */
+  readonly rtShadowScheduling: import("./rtShadowScheduling.js").RtShadowSchedulingState | undefined;
   /**
    * B2 MegaLights M2 万灯 RIS 生产 dispatch(opt-in features.megaLights):帧编排内
    * 懒构造(PbrRenderer 构造器零改动),默认 undefined = 既有帧逐位零变化;路径
@@ -289,10 +292,26 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       ? undefined : pbrDirectDisplayClear(view, host.features, drawProfile.hasTransparent, host.writeGeometryBuffers);
     const directionalDisplay = directClear !== undefined && !host.lighting.hasProbeClipmap && !hasClusteredLights(sceneLighting.clustered)
       && !drawProfile.hasMaterialTextures && host.pipelines.displayDirectionalMain !== undefined;
+    // B3 RT 阴影自动选路(帧粒度,2026-10-05):质量档+健康度+滞回裁决本帧走 RT mask
+    // 还是级联。cascade 帧压开关位 0(行为逐位等于级联档)并跳过 dispatch;状态计数
+    // 随帧 tick(resolve 纯裁决,tick 是唯一变异入口)。undefined = 未接选路的旧宿主,
+    // 行为与历史逐位一致。
+    const rtShadowRoute = host.rtShadows !== undefined && host.rtShadowScheduling !== undefined
+      ? resolveRtShadowRoute({
+          rtHealthy: host.rtShadows.sceneStaged && host.rtShadows.disabled === undefined,
+          ...(host.rtShadows.disabled?.reason !== undefined
+            ? { controllerFallbackReason: host.rtShadows.disabled.reason } : {}),
+          shadowTier: host.adaptiveQuality?.state().knobs.shadowTier ?? "ultra",
+          state: host.rtShadowScheduling,
+        })
+      : undefined;
+    if (host.rtShadowScheduling !== undefined && rtShadowRoute !== undefined) {
+      tickRtShadowScheduling(host.rtShadowScheduling, rtShadowRoute);
+    }
     const frameState = updatePbrFrameUniforms(host.session.device.queue, host.cameraHistory, view,
       size.width, size.height, host.historyDirty, { frameBuffer: host.frameBuffer, outputBuffer: host.outputs.buffer,
         groundInstance: host.ground.instance, frameData: host.frameData, outputData: host.outputs.data, groundData: host.ground.data },
-      sceneLighting.primary, host.features);
+      sceneLighting.primary, host.features, rtShadowRoute);
     const history = frameState.history;
     host.previousFrameCameraCut = history.cameraCut;
     const hiZPlan = host.features.occlusionCulling ? host.previousHiZ.beginFrame({
@@ -361,7 +380,8 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     // M2 方向光 RT 阴影(opt-in):mask dispatch 先于直接光绘制(同一 encoder)。
     // 深度为上一已提交帧的主帧 depth(mask 恒一帧延迟,与 TAA 抖动序列同构);
     // 钩子返回 undefined(pass 未就绪/降级/分辨率失配)时开关位已为 0,级联生效。
-    if (host.rtShadows) {
+    // B3:选路 cascade(自适应档/滞回/控制器降级)的帧同样跳过 dispatch,开关位已压 0。
+    if (host.rtShadows && (rtShadowRoute === undefined || rtShadowRoute.channel === "ray-traced")) {
       host.rtShadows.ensureSurface(size.width, size.height);
       void host.rtShadows.encodeFrame({ encoder, width: size.width, height: size.height,
         depthTexture: host.targets.depthTexture,
@@ -752,6 +772,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       ...(a2cProbeMetrics ? { a2cProbe: a2cProbeMetrics } : {}),
       ...(host.autoExposure ? { autoExposure: host.autoExposure.metrics() } : {}),
       ...(clusterLod ? { clusterLod: clusterLod.metrics() } : {}),
+      ...(rtShadowRoute ? { rtShadowRoute: rtShadowRouteMetrics(rtShadowRoute) } : {}),
       cameraCut: history.cameraCut, postProcessPasses: opaqueEffects.passCount + finalEffects.passCount + (hasTransparent ? 2 + Number(host.transparency.currentReactiveMask !== undefined) : 0) + (upscaling ? 1 : 0) + (!directClear && host.outputs.spatialAaActive ? 1 : 0),
       weightedOit: hasTransparent,
       hiZMipLevels: opaqueEffects.hiZ?.mipLevelCount ?? 0,

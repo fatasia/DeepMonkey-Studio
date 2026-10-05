@@ -192,6 +192,11 @@ export interface FrameMetrics {
    * fallbackReason = fail-closed 原因（sticky，重 stage 恢复）。
    */
   readonly clusterLod?: import("./clusterLodRenderSlot.js").ClusterLodSlotMetrics;
+  /**
+   * B3 RT 阴影自动选路遥测(features.rayTracedShadows + 场景已供给的帧出现):
+   * channel = 本帧实际生效通道;cascade 帧附 reason(controller:* / 自适应档 / 滞回)。
+   */
+  readonly rtShadowRoute?: import("./rtShadowScheduling.js").RtShadowRouteMetrics;
   readonly frame: number; readonly cpuSubmitMs: number;
   readonly drawCalls: number; readonly triangles: number;
   readonly width: number; readonly height: number; readonly resources: number;
