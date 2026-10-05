@@ -38,17 +38,21 @@ export class ThreeProjectionBridge {
   private readonly advancedMaterials: boolean;
   /** AA-M2:渲染器声明 MSAA≥4 主 pass 能力时放行 material.alphaToCoverage 投影(opt-in)。 */
   private readonly alphaToCoverage: boolean;
+  /** A2C-P1 降级档(渲染器探针判掩码未生效后由桥粘性开启):a2c 材质投影为 MASK
+   * (cutoff 见 A2C_MASK_FALLBACK_ALPHA_CUTOFF),不再 fail-closed,也不再携带 a2c 旗标。 */
+  private readonly alphaToCoverageMaskFallback: boolean;
   private readonly authorLod: boolean;
   private readonly lodProjector = new ThreeAuthorLodProjector();
   private readonly authorTransformResolver: AuthorTransformResolver | undefined;
 
-  constructor(options: { readonly hooks: ThreeProjectionHooks; readonly capabilities?: { readonly authorDeformation?: boolean; readonly authorLod?: boolean; readonly advancedMaterials?: boolean; readonly alphaToCoverage?: boolean }; readonly authorTransformResolver?: AuthorTransformResolver }) {
+  constructor(options: { readonly hooks: ThreeProjectionHooks; readonly capabilities?: { readonly authorDeformation?: boolean; readonly authorLod?: boolean; readonly advancedMaterials?: boolean; readonly alphaToCoverage?: boolean; readonly alphaToCoverageMaskFallback?: boolean }; readonly authorTransformResolver?: AuthorTransformResolver }) {
     const keys: readonly (keyof ThreeProjectionHooks)[] = ["objectBeforeRender", "objectAfterRender", "objectBeforeShadow", "objectAfterShadow", "materialBeforeRender", "materialBeforeCompile", "materialProgramCacheKey"];
     for (const key of keys) if (typeof options.hooks[key] !== "function") throw new Error("Three projection requires default prototype hooks.");
     this.hooks = { ...options.hooks };
     this.authorDeformation = options.capabilities?.authorDeformation === true;
     this.advancedMaterials = options.capabilities?.advancedMaterials === true;
     this.alphaToCoverage = options.capabilities?.alphaToCoverage === true;
+    this.alphaToCoverageMaskFallback = options.capabilities?.alphaToCoverageMaskFallback === true;
     this.authorLod = options.capabilities?.authorLod === true;
     this.authorTransformResolver = options.authorTransformResolver;
   }
@@ -299,7 +303,7 @@ export class ThreeProjectionBridge {
       if (instances.length + transforms.length > 16_384) limit("instances");
       const materialId = this.id(slice.material as object, "material");
       if (!materials.has(materialId)) {
-        const projected = projectMaterial(slice.material, materialId, this.hooks, this.textureProjector, this.advancedMaterials, this.alphaToCoverage);
+        const projected = projectMaterial(slice.material, materialId, this.hooks, this.textureProjector, this.advancedMaterials, this.alphaToCoverage, this.alphaToCoverageMaskFallback);
         materials.set(materialId, projected);
         for (const texture of projected.textures) textures.set(texture.id, texture);
       }

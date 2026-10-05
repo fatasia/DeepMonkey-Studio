@@ -81,9 +81,12 @@ try {
   await saveDataUrl(result.masked.deep, "a2c-parity-deep-masked.png");
   await saveDataUrl(result.singleTarget.three, "a2c-parity-three-single-target.png");
   await saveDataUrl(result.singleTarget.deep, "a2c-parity-deep-single-target.png");
+  await saveDataUrl(result.fallback.three, "a2c-parity-three-fallback.png");
+  await saveDataUrl(result.fallback.deep, "a2c-parity-deep-fallback.png");
   const verdict = variant => ({
     rmse: +variant.rmse.toFixed(3), deepMsaa: variant.deepMsaa, mrt: variant.mrt,
     targetFormat: variant.targetFormat, presentAlpha: variant.presentAlpha, targetAlpha: variant.targetAlpha, targetRgb: variant.targetRgb,
+    a2cProbe: variant.a2cProbe,
     verdict: variant.verdict });
   const evidence = { probe: "a2c-parity", date: new Date().toISOString(), width: result.width, height: result.height,
     userAgent: await page.evaluate(() => navigator.userAgent),
@@ -91,7 +94,8 @@ try {
     opaque: { alphaTest: result.opaque.alphaTest, ...verdict(result.opaque) },
     masked: { alphaTest: result.masked.alphaTest, ...verdict(result.masked) },
     singleTarget: { alphaTest: result.singleTarget.alphaTest, ...verdict(result.singleTarget) },
-    note: "three=WebGL MSAA + SAMPLE_ALPHA_TO_COVERAGE;deep=WebGPU MSAA4 main-pass alphaToCoverageEnabled variant. targetAlpha/targetRgb come from the opaque-hdr readback (main pass target0 resolve, before the present chain); presentAlpha from the actual swapchain. Hardware a2c dither matrices are unspecified; this is evidence capture, thresholds are deferred to the parity-gate merge." };
+    fallback: { alphaTest: result.fallback.alphaTest, maskFallback: true, ...verdict(result.fallback) },
+    note: "three=WebGL MSAA + SAMPLE_ALPHA_TO_COVERAGE;deep=WebGPU MSAA4 main-pass alphaToCoverageEnabled variant. targetAlpha/targetRgb come from the opaque-hdr readback (main pass target0 resolve, before the present chain); presentAlpha from the actual swapchain. a2cProbe is the runtime one-shot probe disclosure (FrameMetrics.a2cProbe, settled after the async readback; null on the maskFallback arm because downgraded materials no longer request a2c). Hardware a2c dither matrices are unspecified; this is evidence capture, thresholds are deferred to the parity-gate merge." };
   await writeFile(path.join(out, "evidence.json"), JSON.stringify(evidence, null, 2));
   console.log("[a2c-parity] saved evidence:", JSON.stringify(evidence));
 } finally {

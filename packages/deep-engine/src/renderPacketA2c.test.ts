@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { packInstanceBatches } from "./renderPacketBatches.js";
-import { projectMaterial } from "./threeBridge/materials.js";
+import { A2C_MASK_FALLBACK_ALPHA_CUTOFF, projectMaterial } from "./threeBridge/materials.js";
 import type { PbrMaterial, PreparedBatch, RenderInstance } from "./renderPacketTypes.js";
 import { compileMaterialEffectLedger } from "./webgpu/materialEffectLedger.js";
 import { drawPacketBatches } from "./webgpu/packetDraw.js";
@@ -106,6 +106,62 @@ describe("a2c three projection bridge (AA-M2)", () => {
       .toThrow("material.alphaToCoverage");
     expect(() => projectMaterial(threeMaterial({ alphaHash: true }), "m1", hooks, textures, false, true))
       .toThrow("material alphaHash");
+  });
+
+  describe("A2C-P1 maskFallback projection (runtime downgrade)", () => {
+    it("downgrades a pure a2c material to MASK@cutoff without the a2c flag when the capability is off", () => {
+      // 探针判掩码未生效后的降级投影:能力门关(第 6 参 false)+ maskFallback 开(第 7 参 true)
+      // ⇒ 不再 fail-closed,OPAQUE+a2c 落到已验证的 MASK 档(alphaTest≈0.4)。
+      const downgraded = projectMaterial(threeMaterial({ alphaToCoverage: true }), "m1", hooks, textures, false, false, true);
+      expect(downgraded.material.alphaMode).toBe("MASK");
+      expect(downgraded.material.alphaCutoff).toBe(A2C_MASK_FALLBACK_ALPHA_CUTOFF);
+      expect(A2C_MASK_FALLBACK_ALPHA_CUTOFF).toBe(0.4);
+      expect(downgraded.material.alphaToCoverage).toBeUndefined();
+      expect(downgraded.material.baseColorAlpha).toBe(1);
+      expect(downgraded.depthWrite).toBe(true);
+    });
+
+    it("keeps the author cutoff for MASK+a2c materials and only drops the flag", () => {
+      const masked = projectMaterial(threeMaterial({ alphaToCoverage: true, alphaTest: 0.25 }), "m1", hooks, textures, false, false, true);
+      expect(masked.material.alphaMode).toBe("MASK");
+      expect(masked.material.alphaCutoff).toBe(0.25);
+      expect(masked.material.alphaToCoverage).toBeUndefined();
+    });
+
+    it("keeps the BLEND combination fail-closed under maskFallback (undefined semantics, not a capability gap)", () => {
+      expect(() => projectMaterial(threeMaterial({ alphaToCoverage: true, transparent: true, depthWrite: false }),
+        "m1", hooks, textures, false, false, true)).toThrow("alphaToCoverage with transparent");
+    });
+
+    it("keeps the capability-gate rejection when maskFallback is off (default path unchanged)", () => {
+      expect(() => projectMaterial(threeMaterial({ alphaToCoverage: true }), "m1", hooks, textures, false, false, false))
+        .toThrow("material alphaToCoverage");
+    });
+
+    it("routes the downgraded material through a plain MASK batch (no /a2c pipeline key, no 512 flag)", () => {
+      const downgraded = projectMaterial(threeMaterial({ alphaToCoverage: true }), "m1", hooks, textures, false, false, true).material;
+      const [batch] = prepare({ ...downgraded, id: "m" }, [instance("i")]);
+      expect(batch.alphaMode).toBe("MASK");
+      expect(batch.alphaCutoff).toBe(0.4);
+      expect(batch.alphaToCoverage ?? false).toBe(false);
+      expect(batch.key.includes("/a2c")).toBe(false);
+      // instance 行 offset+31:surfaceFlags 只有 MASK 位(2),512 a2c 位已随降级清除。
+      expect(batch.data[31]).toBe(2);
+      // 绘制回落普通 MASK 管线(mainPipelineKey 无 a2c 后缀)——管线集不再需要 a2c 变体。
+      const geometry: CachedPacketGeometry = { source: { id: "g", revision: 1, vertices: new Float32Array(18),
+        indices: new Uint32Array([0, 1, 2]) }, mesh: { draw: vi.fn(), indexCount: 6 } as never,
+        center: [0, 0, 0], radius: 1 };
+      const plainKey = mainPipelineKey("plain", false, "ccw");
+      const pass = { setPipeline: vi.fn(), setBindGroup: vi.fn(), draw: vi.fn() } as never;
+      const result = drawPacketBatches(pass,
+        { mainPipelines: new Map([[plainKey, { key: plainKey } as unknown as GPURenderPipeline]]),
+          displayPipelines: new Map(), displayDirectionalPipelines: new Map(), shadowPipelines: new Map() } as never,
+        "opaque", new Map([[batch.key, { source: batch, buffer: {} as GPUBuffer, capacity: 0,
+          previousBuffer: {} as GPUBuffer, previousCapacity: 0, previousTransforms: new Float32Array(0) }]]),
+        new Map([["g", geometry]]), {} as PacketCullingResources);
+      expect(result.drawCalls).toBe(1);
+      expect(pass.setPipeline).toHaveBeenCalledWith(expect.objectContaining({ key: plainKey }));
+    });
   });
 });
 describe("a2c draw-time pipeline selection (AA-M2)", () => {

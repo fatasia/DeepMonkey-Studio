@@ -201,6 +201,14 @@ export interface FrameMetrics {
    */
   readonly msaa?: { readonly requested: 1 | 4; readonly active: 1 | 4; readonly fallbackReason?: string };
   /**
+   * A2C-P1 运行时 a2c 有效性探针(一次性,首个含 a2c 批次的 MSAA 主 pass 帧后结算,
+   * 读回异步 → 披露滞后测量帧 ≥1;结算后每帧披露):a2c 采样掩码在本机是否真实生效。
+   * verdict=inconclusive 为 fail-open(不可判定时保持 a2c);渲染器只披露不决策,
+   * 降级决策在宿主。edgeDitherThreshold 是取证场景校准值(8·W),场景自适应判据属后续,
+   * 见 test-output/A2C-P1-HANDOFF.md 诚实边界。
+   */
+  readonly a2cProbe?: import("./a2cFrameProbe.js").A2cProbeMetrics;
+  /**
    * B1 Brief-VSM 虚拟阴影遥测(shadowMode="virtual" 档每帧):物化/驻留/动态失效/
    * 预算利用率;fallbackReason = 构造或启用失败的原因(fail-closed 回级联,不伪零)。
    */

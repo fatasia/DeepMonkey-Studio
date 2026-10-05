@@ -78,6 +78,7 @@ import { createGpuParticleRuntimeFromEmitters, submitGpuParticleEmitterFrame } f
 import type { GpuParticleRuntime } from "./gpuParticleRuntime.js";
 import { PBR_DEPTH_FORMAT, PBR_HDR_FORMAT, resolvePbrMsaaSampleCount } from "./renderTargets.js";
 import { PbrDepthResolvePass } from "./pbrDepthResolve.js";
+import { A2cFrameProbe } from "./a2cFrameProbe.js";
 import { VisibilityBufferPath } from "./visibilityBufferPass.js";
 import { SoftRasterizeFallback } from "./softRasterizeFallback.js";
 import { ClusterLodRenderSlot, type ClusterLodSceneStaging } from "./clusterLodRenderSlot.js";
@@ -154,6 +155,8 @@ export class PbrRenderer {
   /** AA-M1:主 pass 生效采样数与遥测快照(能力探针结果);帧宿主接口与 FrameMetrics 消费。 */
   readonly mainSampleCount: 1 | 4;
   readonly msaaMetrics: import("./pbrRendererTypes.js").FrameMetrics["msaa"];
+  /** A2C-P1 运行时 a2c 有效性探针(一次性;MSAA4 渲染器才持有,见构造注释)。 */
+  readonly a2cProbe: import("./a2cFrameProbe.js").A2cFrameProbe | undefined;
   readonly depthResolve: import("./pbrDepthResolve.js").PbrDepthResolvePass | undefined;
   /** G1-S1 簇级微多边形绘制槽位；仅 options.clusterLod === true 时可经 stageClusterLodScene 注入。 */
   private readonly clusterLodEnabled: boolean;
@@ -260,6 +263,10 @@ export class PbrRenderer {
     this.mainSampleCount = msaa.sampleCount;
     this.msaaMetrics = Object.freeze({ requested: resolvePbrMsaaSampleCount(options.msaaSampleCount),
       active: msaa.sampleCount, ...(msaa.fallbackReason ? { fallbackReason: msaa.fallbackReason } : {}) });
+    // A2C-P1 运行时有效性探针(一次性):仅 MSAA≥4 渲染器持有(a2c 管线变体只在多采样
+    // 档存在,1x 渲染器物理上画不出 a2c 批次)。空闲控制器零开销;首个含 a2c 批次的帧
+    // 编码一次 opaque-hdr 读回并经 FrameMetrics.a2cProbe 披露(只披露不决策)。
+    this.a2cProbe = msaa.sampleCount === 4 ? new A2cFrameProbe() : undefined;
     // AA-M1:深度 resolve pass 仅 MSAA 渲染器持有(管线 + 按帧源视图的 bind group 缓存)。
     this.depthResolve = msaa.sampleCount > 1 ? new PbrDepthResolvePass(session) : undefined;
     this.probeDirectionsOverride = options.probeDirections;

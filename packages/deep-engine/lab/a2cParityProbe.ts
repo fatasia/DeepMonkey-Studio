@@ -53,6 +53,10 @@ export interface A2cVariantEvidence {
   readonly targetFormat: GPUTextureFormat;
   /** opaque-hdr RGB 图案统计:实心板 ≈ 少色无边,抖动图案 ≈ 多色多边;saturated = HDR 截断量。 */
   readonly targetRgb: { readonly uniqueColors: number; readonly edgePixels: number; readonly saturatedPixels: number };
+  /** A2C-P1 运行时有效性探针披露(FrameMetrics.a2cProbe;读回异步结算,第二帧起出现)。
+   * maskFallback 臂材质不再请求 a2c ⇒ 探针从不进入测量 ⇒ null 本身即降级生效的证据。 */
+  readonly a2cProbe: { readonly frame: number; readonly verdict: string; readonly alphaNonOpaquePixels: number;
+    readonly edgePixels: number; readonly edgeDitherThreshold: number; readonly reason?: string } | null;
   readonly verdict: {
     /** coverage() 512 位到达 WGSL 并写进 target0 alpha。 */
     readonly wgslAlphaPassthrough: boolean;
@@ -72,6 +76,10 @@ export interface A2cParityReport {
   readonly masked: A2cVariantEvidence;
   /** 判别实验:纯 a2c 但单 HDR 目标(非 MRT)——区分"D3D12 不执行 a2c"与"a2c×MRT 组合触发"。 */
   readonly singleTarget: A2cVariantEvidence;
+  /** A2C-P1 降级刀:同一 a2c 材质经 alphaToCoverageMaskFallback 能力投影(→ MASK@0.4)。
+   * 预期:图案回到抖动档(masked 同构)、探针不触发(材质无 a2c 请求)、RMSE 显著低于
+   * opaque 臂的全画实心板 —— 降级路径真机行为的端到端证据。 */
+  readonly fallback: A2cVariantEvidence;
 }
 
 /**
@@ -103,13 +111,14 @@ function alphaPatternTexture(): THREE.Texture {
   return texture;
 }
 
-function projection(): ThreeProjectionBridge {
+function projection(maskFallback = false): ThreeProjectionBridge {
   return new ThreeProjectionBridge({ hooks: {
     objectBeforeRender: THREE.Object3D.prototype.onBeforeRender, objectAfterRender: THREE.Object3D.prototype.onAfterRender,
     objectBeforeShadow: THREE.Object3D.prototype.onBeforeShadow, objectAfterShadow: THREE.Object3D.prototype.onAfterShadow,
     materialBeforeRender: THREE.Material.prototype.onBeforeRender, materialBeforeCompile: THREE.Material.prototype.onBeforeCompile,
     materialProgramCacheKey: THREE.Material.prototype.customProgramCacheKey,
-  }, capabilities: { alphaToCoverage: true } });
+  }, capabilities: { alphaToCoverage: !maskFallback,
+    ...(maskFallback ? { alphaToCoverageMaskFallback: true } : {}) } });
 }
 
 function halfToFloat(bits: number): number {
@@ -159,7 +168,7 @@ function targetRgbStats(pixels: Uint8Array, bytesPerRow: number, width: number, 
   return { uniqueColors: colors.size, edgePixels, saturatedPixels };
 }
 
-async function runVariant(alphaTest: number, mrt: boolean): Promise<A2cVariantEvidence> {
+async function runVariant(alphaTest: number, mrt: boolean, maskFallback = false): Promise<A2cVariantEvidence> {
   const scene = new THREE.Scene(), root = new THREE.Group(); scene.add(root);
   const geometry = new THREE.PlaneGeometry(4, 3);
   const material = new THREE.MeshStandardMaterial({ map: alphaPatternTexture(), transparent: false,
@@ -190,7 +199,7 @@ async function runVariant(alphaTest: number, mrt: boolean): Promise<A2cVariantEv
     renderer.setSize(WIDTH, HEIGHT, false); renderer.setPixelRatio(1); renderer.setClearColor(0x0a0d10);
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.debug.onShaderError = (gl, program, vertex, fragment) => errors.push([gl.getProgramInfoLog(program), gl.getShaderInfoLog(vertex), gl.getShaderInfoLog(fragment)].join("\n"));
-    backend = await bounded(DeepWebGpuBackend.create({ canvas, gpu: navigator.gpu, projection: projection(), root, view,
+    backend = await bounded(DeepWebGpuBackend.create({ canvas, gpu: navigator.gpu, projection: projection(maskFallback), root, view,
       signal: lifetime.signal,
       renderer: { msaaSampleCount: 4,
         // mrt:true(生产 Studio 的 SSR/体积雾同构路径)把主 pass 切进 MRT+MSAA4;
@@ -220,6 +229,15 @@ async function runVariant(alphaTest: number, mrt: boolean): Promise<A2cVariantEv
     if (!metrics) throw Error("Deep produced no frame.");
     const frames = await readVariantFrames(runtime);
     if (errors.length) throw Error(errors.join("\n"));
+    // A2C-P1 降级刀:渲染器一次性探针在读回异步结算后经 FrameMetrics.a2cProbe 披露
+    // (滞后 ≥1 帧)。逐帧轮询直到披露出现;maskFallback 臂材质无 a2c 请求 ⇒ 探针
+    // 永不触发 ⇒ 轮询以 null 收口(这本身就是降级生效的证据)。
+    let a2cProbe: A2cVariantEvidence["a2cProbe"] = null;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      const next = backend.render(view);
+      if (next?.a2cProbe) { a2cProbe = next.a2cProbe; break; }
+    }
     // RMSE(sRGB 显示域,翻转 three 的行序后对齐)。
     let squared = 0;
     for (let y = 0; y < HEIGHT; y++) for (let x = 0; x < WIDTH; x++) {
@@ -236,7 +254,7 @@ async function runVariant(alphaTest: number, mrt: boolean): Promise<A2cVariantEv
     const dithered = targetRgb.edgePixels > 8 * WIDTH;
     const alphaNonOpaque = targetAlpha.partial + targetAlpha.transparent > 0;
     return { alphaTest, mrt, three: threeDataUrl, deep: frames.presentDataUrl, rmse,
-      deepMsaa: metrics.msaa ?? null, presentAlpha, targetAlpha, targetFormat: frames.hdrFormat, targetRgb,
+      deepMsaa: metrics.msaa ?? null, presentAlpha, targetAlpha, targetFormat: frames.hdrFormat, targetRgb, a2cProbe,
       verdict: { wgslAlphaPassthrough: alphaNonOpaque, hardwareCoverageDither: dithered,
         presentAlphaPreserved: (presentAlpha.partial + presentAlpha.transparent > 0) === alphaNonOpaque } };
   } finally {
@@ -294,11 +312,13 @@ async function rgbaToPngDataUrl(pixels: Uint8Array, width: number, height: numbe
 async function runA2cParityOnce(): Promise<A2cParityReport> {
   installThreeMaterialMath(); installThreeDisplayToneMapping();
   // P1 主对象在前:纯 a2c(OPAQUE,无 alphaTest,discard 关闭,覆盖抖动是唯一图案来源);
-  // MASK(alphaTest=0.4)为上一刀已验证的对照组;singleTarget 为 a2c×MRT 判别实验。
+  // MASK(alphaTest=0.4)为上一刀已验证的对照组;singleTarget 为 a2c×MRT 判别实验;
+  // fallback(A2C-P1 降级刀)为同一 a2c 材质经 maskFallback 能力投影的降级路径端到端证据。
   const opaque = await runVariant(0, true);
   const masked = await runVariant(0.4, true);
   const singleTarget = await runVariant(0, false);
-  return { width: WIDTH, height: HEIGHT, opaque, masked, singleTarget };
+  const fallback = await runVariant(0, true, true);
+  return { width: WIDTH, height: HEIGHT, opaque, masked, singleTarget, fallback };
 }
 
 let inFlight: Promise<A2cParityReport> | undefined;

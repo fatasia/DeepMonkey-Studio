@@ -13,6 +13,10 @@ const physicalTextureFields = ["anisotropyMap", "clearcoatMap", "clearcoatNormal
 
 export function materialVisible(value: unknown): boolean { return record(value, "material").visible !== false; }
 
+/** A2C-P1 maskFallback 的降级截止值:取证已验证的 MASK 档(0.4)—— discard 先于 a2c,
+ * 图案在本机正确;纯 a2c 的阶梯覆盖语义退化为硬切,但远好于掩码失效时的全画实心板。 */
+export const A2C_MASK_FALLBACK_ALPHA_CUTOFF = 0.4;
+
 export interface ProjectedMaterial {
   readonly material: PbrMaterial;
   readonly textures: readonly DecodedTexture[];
@@ -28,7 +32,8 @@ export interface ProjectedMaterial {
 
 /** advancedMaterials=true 表示渲染器带 advancedMaterials 变体:clearcoat / sheen / iridescence / 透射体积按 three r185 语义投影,否则维持"非中性即 fail-closed"。 */
 export function projectMaterial(value: unknown, id: string, hooks: ThreeProjectionHooks,
-  textures: ThreeTextureProjector, advancedMaterials = false, alphaToCoverageSupported = false): ProjectedMaterial {
+  textures: ThreeTextureProjector, advancedMaterials = false, alphaToCoverageSupported = false,
+  alphaToCoverageMaskFallback = false): ProjectedMaterial {
   const m = record(value, "material"), physical = m.isMeshPhysicalMaterial === true;
   const basic = m.type === "MeshBasicMaterial" && m.isMeshBasicMaterial === true;
   const standard = m.type === "MeshStandardMaterial" && m.isMeshStandardMaterial === true && !physical;
@@ -44,7 +49,11 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
   if (m.alphaHash) unsupported("material alphaHash");
   if (m.alphaToCoverage !== undefined && typeof m.alphaToCoverage !== "boolean") invalid("material.alphaToCoverage");
   const alphaToCoverage = m.alphaToCoverage === true;
-  if (alphaToCoverage && !alphaToCoverageSupported) unsupported("material alphaToCoverage");
+  // A2C-P1 降级门(maskFallback,渲染器探针判掩码未生效后由桥粘性开启):作者仍请求
+  // a2c 时不再 fail-closed,而是把 a2c 语义降级为已验证的 MASK 档 —— 纯 a2c(OPAQUE,
+  // 无 alphaTest)落到 alphaCutoff=0.4;作者已给 alphaTest>0 的 MASK 材质保留作者截止,
+  // 仅丢弃 a2c 旗标。降级画质取舍如实:阶梯覆盖 → 硬切,边缘平滑损失换取图案正确。
+  if (alphaToCoverage && !alphaToCoverageSupported && !alphaToCoverageMaskFallback) unsupported("material alphaToCoverage");
   // DE26/C03：premultipliedAlpha 缺省=未请求(straight)；true 仅在 BLEND 支持矩阵内，否则 fail-closed。
   if (m.premultipliedAlpha !== undefined && typeof m.premultipliedAlpha !== "boolean") invalid("material.premultipliedAlpha");
   if (m.blending !== THREE.normalBlending) unsupported("material.blending");
@@ -54,7 +63,8 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
   if (typeof m.fog !== "boolean") invalid("material.fog");
   const alphaMode: AlphaMode = m.transparent ? "BLEND" : alphaTest > 0 ? "MASK" : "OPAQUE";
   // AA-M2:a2c 的 sample-mask 语义只存在于多采样主 pass;BLEND 走 1x weighted OIT,
-  // 组合无定义 → fail-closed(three 侧 a2c 与 transparent 共存时 a2c 实际不生效,这里显式拒绝)。
+  // 组合无定义 → fail-closed(three 侧 a2c 与 transparent 共存时 a2c 实际不生效,这里显式拒绝;
+  // maskFallback 档同样保留 —— 透明材质本就不吃 a2c 语义,拒绝的是无定义组合而不是能力缺失)。
   if (alphaToCoverage && alphaMode === "BLEND") unsupported("material alphaToCoverage with transparent");
   if (alphaMode === "OPAQUE" && opacity !== 1) unsupported("material opacity without alpha mode");
   // 透明语义矩阵(DE26/C03)：alphaMode 单值——transparent 压过 alphaTest，投影为 BLEND+alphaCutoff，
@@ -95,6 +105,12 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
   const emissiveMap = basic || m.emissiveMap == null ? undefined : textures.projectEmissive(m.emissiveMap);
   // THREE.Color 和 emissive 已经处于线性工作色彩空间；不能再次执行 sRGB 解码。
   if (physical && (typeof m.ior !== "number" || m.ior < 1 || !Number.isFinite(Math.fround(m.ior)))) invalid("material.ior");
+  // A2C-P1 降级投影(见上门注释):OPAQUE+a2c → MASK@A2C_MASK_FALLBACK_ALPHA_CUTOFF;
+  // 作者已给截止的 MASK 保留作者 alphaTest,仅丢弃 a2c 旗标。alphaMode 校验(含
+  // OPAQUE 要求 opacity=1)全部按作者原语义先行完成,这里只做投影端重映射。
+  const maskFallbackActive = alphaToCoverage && alphaToCoverageMaskFallback;
+  const projectedAlphaMode: AlphaMode = maskFallbackActive && alphaMode === "OPAQUE" ? "MASK" : alphaMode;
+  const projectedCutoff = maskFallbackActive && alphaMode === "OPAQUE" ? A2C_MASK_FALLBACK_ALPHA_CUTOFF : alphaTest;
   const material: PbrMaterial = { id, baseColor: color, metallic, roughness,
     ...(physical ? { ior: m.ior as number } : {}),
     ...(lobes?.extended ? { extendedParameters: { ...lobes.extended, ior: m.ior as number } } : {}),
@@ -107,9 +123,9 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
     ...(occlusion ? { occlusionTexture: { ...occlusion.texture.slot, strength: occlusion.strength } } : {}),
     ...(emissiveFactor.some(component => component !== 0) ? { emissiveFactor } : {}),
     ...(emissiveMap ? { emissiveTexture: emissiveMap.slot } : {}),
-    ...(alphaMode === "OPAQUE" ? {} : { alphaMode, baseColorAlpha: opacity }),
-    ...(alphaTest > 0 ? { alphaCutoff: alphaTest } : {}),
-    ...(alphaToCoverage ? { alphaToCoverage: true } : {}),
+    ...(projectedAlphaMode === "OPAQUE" ? {} : { alphaMode: projectedAlphaMode, baseColorAlpha: opacity }),
+    ...(projectedCutoff > 0 ? { alphaCutoff: projectedCutoff } : {}),
+    ...(alphaToCoverage && !maskFallbackActive ? { alphaToCoverage: true } : {}),
     ...(m.premultipliedAlpha === true ? { premultipliedAlpha: true } : {}),
     ...(side === THREE.doubleSide ? { doubleSided: true } : {}) };
   return { material, textures: [base, metallicRoughness, normal?.texture, occlusion?.texture, emissiveMap]

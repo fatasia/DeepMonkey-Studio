@@ -323,6 +323,49 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     await microtasks();
     expect(f.create).toHaveBeenCalledOnce(); expect(f.failure).toHaveBeenCalledOnce(); expect(f.bridge.activeBackend).toBe("webgl");
   });
+
+  it("rebuilds once with the mask-fallback capability when the renderer probe reports a2c ineffective", async () => {
+    const f = setup();
+    const flagged = new THREE.Mesh(new THREE.BoxGeometry(),
+      new THREE.MeshStandardMaterial({ alphaToCoverage: true }));
+    f.scene.add(flagged);
+    await activate(f.bridge);
+    expect(f.projectionOptions[0]?.capabilities?.alphaToCoverage).toBe(true);
+    // A2C-P1:渲染器探针只披露(FrameMetrics.a2cProbe,读回异步结算后滞后披露),降级决策在桥。
+    f.first.render.mockImplementation(() => ({ frame: 2, a2cProbe: { frame: 1, verdict: "ineffective",
+      alphaNonOpaquePixels: 7000, edgePixels: 636, edgeDitherThreshold: 4096 } }));
+    // frame():作者帧回调驱动的完整绘制路径(settle 静置后 frame(false) 无新绘制)。
+    await frame();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await microtasks(); await frame(false); await frame(false); await microtasks();
+    expect(f.create).toHaveBeenCalledTimes(2);
+    // 降级档:a2c 能力门关闭(材质投影失去 a2c 语义),改投 maskFallback(MASK@cutoff);
+    // MSAA 回缺省——重建后材质不再请求 a2c,渲染器探针也不会再进入测量。
+    expect(f.projectionOptions[1]?.capabilities?.alphaToCoverage).toBeUndefined();
+    expect(f.projectionOptions[1]?.capabilities?.alphaToCoverageMaskFallback).toBe(true);
+    expect(f.create.mock.calls[1]![0].renderer.msaaSampleCount).toBeUndefined();
+    expect(f.bridge.activeBackend).toBe("webgpu");
+    expect(f.second.dispose).not.toHaveBeenCalled(); expect(f.failure).not.toHaveBeenCalled();
+    // 粘性:降级后再次收到无效披露不再重触发(一次性,无重建环)。
+    f.second.render.mockImplementation(() => ({ frame: 3, a2cProbe: { frame: 2, verdict: "ineffective",
+      alphaNonOpaquePixels: 7000, edgePixels: 636, edgeDitherThreshold: 4096 } }));
+    await frame();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await microtasks();
+    expect(f.create).toHaveBeenCalledTimes(2);
+    flagged.geometry.dispose(); (flagged.material as THREE.Material).dispose();
+  });
+
+  it("does not trigger the mask-fallback rebuild for inconclusive or effective probe disclosures", async () => {
+    const f = setup();
+    await activate(f.bridge);
+    f.first.render.mockImplementation(() => ({ frame: 2, a2cProbe: { frame: 1, verdict: "inconclusive",
+      alphaNonOpaquePixels: 0, edgePixels: 0, edgeDitherThreshold: 4096 } }));
+    await frame(false);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await microtasks();
+    expect(f.create).toHaveBeenCalledOnce();
+  });
   it("allocates author frame capture only for an explicitly opened diagnostics session", async () => {
     const regular = setup();
     await activate(regular.bridge);

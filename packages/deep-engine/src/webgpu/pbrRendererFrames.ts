@@ -132,6 +132,8 @@ export interface PbrRendererFrameHost {
   /** AA-M1:主 pass 生效采样数(bootstrap 能力探针结果;1x 渲染器逐字节回旧行为)。 */
   readonly mainSampleCount: 1 | 4;
   readonly msaaMetrics: FrameMetrics["msaa"];
+  /** A2C-P1 运行时 a2c 有效性探针(一次性;MSAA4 渲染器才持有,1x 恒 undefined)。 */
+  readonly a2cProbe: import("./a2cFrameProbe.js").A2cFrameProbe | undefined;
   readonly localShadows: LocalSpotShadowRuntime;
   readonly mainBindings: PbrMainBindings;
   readonly outputs: PbrOutputBindings;
@@ -682,6 +684,12 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
         "linear-depth": host.targets.linearDepthTexture,
       });
     }
+    // A2C-P1 运行时有效性探针(一次性):首个含 a2c 批次的 MSAA 主 pass 帧后,把主 pass
+    // target0 的 MSAA resolve(opaque-hdr,COPY_SRC 为既有 usage)读回,按 handoff 判据
+    // (alpha 非 opaque 存在 && edgePixels ≤ 8·W ⇒ 无效)结算。直出 display 帧无 MSAA
+    // 主通路(a2c 批次物理回退普通管线),不探测。渲染器只披露不决策。
+    const a2cProbePending = host.a2cProbe?.wantsProbe(drawProfile.hasAlphaToCoverage) === true && !directClear;
+    if (a2cProbePending) host.a2cProbe!.beginFrame(frameNumber, device, encoder, host.targets.hdrTexture);
     timing?.resolve(encoder);
     passTiming?.resolve(encoder);
     const commands = encoder.finish();
@@ -698,6 +706,8 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     if (particleReactive) { host.transientTextures.release(particleReactive); particleReactive = undefined; }
     host.targets.commitFrame();
     if (host.frameCapture && captureOpen) host.lastFrameReadback = host.frameCapture.collectReadbacksAfterSubmit();
+    // A2C-P1 探针:submit 已落队,读回异步结算后冻结判定(下一帧起经 FrameMetrics 披露)。
+    if (a2cProbePending) host.a2cProbe!.collectAfterSubmit();
     host.postProcess.commitFrame(history.revision);
     const submitted = host.performanceTelemetry.enabled ? host.now() : 0;
     if (host.frameCapture && captureOpen) {
@@ -716,10 +726,12 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     passTiming?.read();
     host.shadowDirty = false; host.historyDirty = false;
     host.diagnostics.recordFrame(frameNumber, begin, encoded, submitted, present!.acquireMs);
+    const a2cProbeMetrics = host.a2cProbe?.metrics();
     const metrics: FrameMetrics = { frame: ++host.frame, cpuSubmitMs: host.now() - begin, drawCalls, triangles, ...lodWork.snapshot(),
       width: size.width, height: size.height, resources: host.session.resourceCount, shadowUpdated, transientTextures: host.targets.transientStats,
       deviceResourceMemory: host.session.resourceMemory,
       ...(host.msaaMetrics ? { msaa: host.msaaMetrics } : {}),
+      ...(a2cProbeMetrics ? { a2cProbe: a2cProbeMetrics } : {}),
       ...(host.autoExposure ? { autoExposure: host.autoExposure.metrics() } : {}),
       ...(clusterLod ? { clusterLod: clusterLod.metrics() } : {}),
       cameraCut: history.cameraCut, postProcessPasses: opaqueEffects.passCount + finalEffects.passCount + (hasTransparent ? 2 + Number(host.transparency.currentReactiveMask !== undefined) : 0) + (upscaling ? 1 : 0) + (!directClear && host.outputs.spatialAaActive ? 1 : 0),
@@ -764,6 +776,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       host.transparency.cancelFrame();
       if (particleReactive) { host.transientTextures.release(particleReactive); particleReactive = undefined; }
       host.targets.failFrame();
+      host.a2cProbe?.cancelFrame();
       host.packets.cancelDeformationFrame();
       if (submitAttempted) host.packets.failLodFrame(); else host.packets.cancelLodFrame();
       host.lighting.invalidateAssignment(); host.localShadows.failFrame(); host.cameraHistory.cancelPendingFrame();

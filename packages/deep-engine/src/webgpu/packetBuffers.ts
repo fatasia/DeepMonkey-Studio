@@ -288,10 +288,16 @@ export class PacketBuffers {
     return staged.changed;
   }
 
-  drawProfile(): { readonly hasTransparent: boolean; readonly hasMaterialTextures: boolean; readonly hasDeformation: boolean } {
-    let hasTransparent = false, hasMaterialTextures = false;
-    for (const { source } of this.batches.values()) { hasTransparent ||= source.alphaMode === "BLEND"; hasMaterialTextures ||= source.textures !== undefined; }
-    return { hasTransparent, hasMaterialTextures, hasDeformation: this.deformation.hasDeformation };
+  drawProfile(): { readonly hasTransparent: boolean; readonly hasMaterialTextures: boolean;
+    readonly hasDeformation: boolean; readonly hasAlphaToCoverage: boolean } {
+    let hasTransparent = false, hasMaterialTextures = false, hasAlphaToCoverage = false;
+    for (const { source } of this.batches.values()) {
+      hasTransparent ||= source.alphaMode === "BLEND"; hasMaterialTextures ||= source.textures !== undefined;
+      // A2C-P1:批次级 a2c 请求(材质旗标 → /a2c 管线变体)是有效性探针的触发前提;
+      // 与 alphaMode 正交 —— MASK/OPAQUE 材质都可携带 a2c。
+      hasAlphaToCoverage ||= source.alphaToCoverage === true;
+    }
+    return { hasTransparent, hasMaterialTextures, hasDeformation: this.deformation.hasDeformation, hasAlphaToCoverage };
   }
 
   /** P0-2 可见性 pass 输入：当前绘制集的只读视图（opt-in 特性专用，不影响既有路径）。 */

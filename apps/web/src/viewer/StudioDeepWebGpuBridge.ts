@@ -122,6 +122,11 @@ export class StudioDeepWebGpuBridge {
   private alphaToCoverageActive = false;
   /** 编辑中新出现 a2c 材质后受控重建的粘性请求:此后每次创建都带能力门,直到 bridge 释放。 */
   private alphaToCoverageRequested = false;
+  /** 当前 backend 是否以 a2c maskFallback 降级档创建(创建时判定,见 switchTo)。 */
+  private a2cMaskFallbackActive = false;
+  /** 渲染器探针判 a2c 掩码未生效后的粘性降级请求:此后每次创建都不带 a2c 能力门,
+   * 改投 alphaToCoverageMaskFallback(材质 → MASK@cutoff),直到 bridge 释放。 */
+  private a2cMaskFallbackRequested = false;
   private recoveryCandidateFailure: { readonly generation: number; readonly attempts: number } | undefined;
 
   constructor(
@@ -264,11 +269,19 @@ export class StudioDeepWebGpuBridge {
           // packetDraw 显式报错(fail-closed,不静默降级);引擎缺省本就是 4,显式传递把
           // "a2c ⇒ MSAA4" 的依赖钉死在创建契约上,不受缺省值未来变动影响。晚到材质的
           // 投影拒绝走受控重建(与 advancedMaterials 同族,见 failRuntime)。
-          const alphaToCoverage = this.alphaToCoverageRequested || (authorRenderPacket
+          // A2C-P1 运行时降级(maskFallback,渲染器探针判掩码未生效后的粘性档):不再
+          // 声明 a2c 能力门(材质投影因此失去 a2c 管线语义),改投 alphaToCoverageMaskFallback
+          // —— a2c 材质投影为 MASK@A2C_MASK_FALLBACK_ALPHA_CUTOFF(0.4),纯 a2c 的阶梯
+          // 覆盖退化为硬切,但消除全画实心板。重建一次性:a2cMaskFallbackActive 落定后
+          // 不再重触发。
+          const a2cWanted = this.alphaToCoverageRequested || (authorRenderPacket
             ? packetUsesAlphaToCoverage(authorRenderPacket) : sceneUsesAlphaToCoverage(this.viewer.scene));
+          const alphaToCoverage = a2cWanted && !this.a2cMaskFallbackRequested;
+          const a2cMaskFallback = a2cWanted && this.a2cMaskFallbackRequested;
           this.projectionBridge = authorRenderPacket ? undefined : new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(),
             capabilities: { authorDeformation: true, authorLod: true, ...(advancedMaterials ? { advancedMaterials: true } : {}),
-              ...(alphaToCoverage ? { alphaToCoverage: true } : {}) },
+              ...(alphaToCoverage ? { alphaToCoverage: true } : {}),
+              ...(a2cMaskFallback ? { alphaToCoverageMaskFallback: true } : {}) },
             authorTransformResolver: source => resolveAuthorWorldTransform(this.viewer, source),
           });
           // T07 动态分辨率与 T25 逐 pass 计时均为 opt-in；缺省字段不进快照。
@@ -333,6 +346,7 @@ export class StudioDeepWebGpuBridge {
           markSwitchPhase("deep-webgpu:scene-uploaded");
           this.advancedMaterialsActive = advancedMaterials;
           this.alphaToCoverageActive = alphaToCoverage;
+          this.a2cMaskFallbackActive = a2cMaskFallback;
           if (replacementBudget !== undefined && !signal.aborted) candidateObserver = observeRecoveryCandidate(backend, signal);
           return backend;
         },
@@ -616,6 +630,13 @@ export class StudioDeepWebGpuBridge {
         this.performanceSource?.record(metrics, view.width, document.visibilityState !== "hidden");
         // T25:帧循环唯一采集点;true = 完成一次聚合落账,发布最新遥测状态。
         if (this.quality?.record(metrics) === true) publishStudioQualityTelemetry(this.quality.status());
+        // A2C-P1 运行时降级决策点(渲染器只披露,决策在桥):探针判 a2c 掩码未生效、
+        // 且当前 backend 是 a2c 门创建且未降级时,走与 restartWithAlphaToCoverage 同族的
+        // 粘性事务重建。setTimeout(0) 逃出帧回调,不在渲染中重入切换事务。
+        if (metrics.a2cProbe?.verdict === "ineffective" && this.alphaToCoverageActive
+          && !this.a2cMaskFallbackActive && !this.a2cMaskFallbackRequested) {
+          setTimeout(() => { if (!this.closed) this.restartWithAlphaToCoverageMaskFallback(); }, 0);
+        }
       }
       this.shadowSession?.acknowledgeMapSize(metrics?.shadowMapSize);
       // F5-L4: 渲染帧之外仍可能欠捕获(初始填充/包 dirty/调度器 deferred),武装心跳泵。
@@ -680,6 +701,19 @@ export class StudioDeepWebGpuBridge {
   private restartWithAlphaToCoverage(): void {
     this.alphaToCoverageRequested = true;
     this.restartDeepWithStickyVariant("Alpha-to-coverage renderer rebuild failed.");
+  }
+
+  /**
+   * A2C-P1 运行时降级:渲染器一次性有效性探针判 a2c 采样掩码未生效(descriptor 被驱动
+   * 接受但不按片元 alpha 生成掩码 → 纯 a2c 材质全画实心板,证据链见
+   * test-output/A2C-P1-HANDOFF.md)时,走与 restartWithAlphaToCoverage 同族的粘性事务
+   * 重建 —— a2c 能力门关闭,a2c 材质经 alphaToCoverageMaskFallback 投影为 MASK
+   * (alphaTest≈0.4)。一次性:a2cMaskFallbackRequested/Active 落定后不再重触发;重建
+   * 后材质不再请求 a2c,渲染器探针也不会再进入测量。
+   */
+  private restartWithAlphaToCoverageMaskFallback(): void {
+    this.a2cMaskFallbackRequested = true;
+    this.restartDeepWithStickyVariant("Alpha-to-coverage mask-fallback renderer rebuild failed.");
   }
 
   /** restartWithAdvancedMaterials / restartWithAlphaToCoverage 的事务骨架(先回作者画布,再换粘性变体重建)。 */
