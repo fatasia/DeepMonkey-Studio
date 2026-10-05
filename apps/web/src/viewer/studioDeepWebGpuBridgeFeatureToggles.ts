@@ -140,3 +140,16 @@ export function sdfGiEnabled(): boolean {
   const value = params?.get("sdf-gi")?.toLowerCase();
   return value === "1" || value === "true" || value === "on";
 }
+
+/**
+ * SSGI 屏空间漫射一次反弹开关（P2 六引擎对标）：`ssgi=1`（opt-in，默认关）。
+ * 关闭 = 渲染链不构建 SSGI pass，帧逐位零变化；开启后半分辨率余弦半球采样
+ * 一次反弹 + 全分辨率加性合成（输出在 SSR/TAA 前，TAA 顺带时域平滑）。与
+ * `sdf-gi` 叠加合法：探针 ambient 在 shader 内替换，SSGI 只补表面间反弹。
+ */
+export function ssgiEnabled(): boolean {
+  const params = typeof location !== "undefined" && location.search
+    ? new URLSearchParams(location.search) : undefined;
+  const value = params?.get("ssgi")?.toLowerCase();
+  return value === "1" || value === "true" || value === "on";
+}

@@ -17,6 +17,8 @@ export const PBR_TIMED_PASS_IDS = Object.freeze([
   "volumetric-fog-composite",
   "screen-space-reflection-trace",
   "screen-space-reflection-composite",
+  "screen-space-gi-trace",
+  "screen-space-gi-composite",
   "temporal-aa",
   "temporal-upscale",
   "bloom",

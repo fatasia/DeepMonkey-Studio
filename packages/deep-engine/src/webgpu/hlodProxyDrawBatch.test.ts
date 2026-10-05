@@ -218,14 +218,16 @@ describe("绘制账目与逐 pass 计时登记", () => {
     expect(() => hlodProxyDrawCost(10, 720, 11)).toThrow(TypeError);
   });
 
-  it("hlod-proxy 为暂缓登记:冻结清单含 GI-FIN 两 pass 共 17 项,阶段键在登记前被 telemetry 拒绝", () => {
+  it("hlod-proxy 为暂缓登记:冻结清单含 GI-FIN 两 pass + P2 SSGI 两 pass 共 19 项,阶段键在登记前被 telemetry 拒绝", () => {
     expect(HLOD_PROXY_TIMED_PASS_ID).toBe("hlod-proxy");
     // 冻结钉:既有 pass id 清单逐项不变(其他智能体在用,禁止重排/改名)。
     // GI-FIN(2026-10-05)追加 sdf-gi-sky-trace / sdf-gi-probe-update 两项。
+    // P2(2026-10-05)追加 screen-space-gi-trace / screen-space-gi-composite 两项(SSGI)。
     expect([...PBR_TIMED_PASS_IDS]).toEqual([
       "contact-shadow", "contact-apply", "opaque", "ambient-occlusion", "apply-ambient-occlusion",
       "transparent-oit", "composite-oit", "volumetric-fog-march", "volumetric-fog-composite",
-      "screen-space-reflection-trace", "screen-space-reflection-composite", "temporal-aa",
+      "screen-space-reflection-trace", "screen-space-reflection-composite",
+      "screen-space-gi-trace", "screen-space-gi-composite", "temporal-aa",
       "temporal-upscale", "bloom", "sdf-gi-sky-trace", "sdf-gi-probe-update", "present"]);
     // 登记合同(见 hlodProxyTimedPass.ts 文件头原子 diff):清单必须与 MAPPED_EXECUTORS
     // 键集合一致,渲染侧尚无 hlod-proxy pass → 追加必须与 pass 落地同切片。

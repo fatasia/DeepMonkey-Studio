@@ -231,6 +231,23 @@
       }
     },
     {
+      "id": "ssgi",
+      "title": "SSGI 屏空间漫射一次反弹(P2 六引擎对标)",
+      "webFeatureKeys": [
+        "ssgi"
+      ],
+      "web": {
+        "support": "supported",
+        "reason": "opt-in-default-off",
+        "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:ssgi(默认 false,opt-in;关闭 = 运行时不构建,帧逐位零变化) + postprocess/screenSpaceGi.ts:ScreenSpaceGiPass(半分辨率余弦半球采样一次反弹 trace + 全分辨率加性 composite,输出在 SSR/TAA 前,TAA 顺带时域平滑;seed=帧 revision 旋转,PCG 整数哈希 TS 镜像逐位同构 postprocess/screenSpaceGiCpu.ts) + postprocess/screenSpaceGiWgsl.ts(生产核:与 SSR 同构的线性视深度重建/视空间法线解码/厚度带命中/二分细化/屏边衰减) + pbrRendererFeatures.ts:ssgi + pbrTimedPassIds.ts:screen-space-gi-trace/composite(逐 pass 计时披露) + 与 probe/sdf GI 分工裁决:探针 ambient 在 shader 内替换(pbrShader mix(environmentIrradiance,gi.rgb,gi.a),编码天空辐射可见性),SSGI 为 post 链加性层(表面间反弹),叠加无双计,screenSpaceGiTypes.ts 注释单源"
+      },
+      "native": {
+        "support": "unavailable",
+        "reason": "absent",
+        "evidence": "packages/deep-engine-native/src/lib.rs(无屏空间 GI 模块)"
+      }
+    },
+    {
       "id": "fog-volumetric",
       "title": "雾(Web 体积雾 march / native 屏幕空间近似)",
       "webFeatureKeys": [

@@ -226,6 +226,12 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         evidence: "无 SSR 模块",
     },
     NativeCapabilitySelfCheck {
+        capability_id: "ssgi",
+        support: RendererCapabilitySupport::Unavailable,
+        reason: RendererCapabilityReasonCode::Absent,
+        evidence: "无屏空间 GI 模块",
+    },
+    NativeCapabilitySelfCheck {
         capability_id: "fog-volumetric",
         support: RendererCapabilitySupport::Degraded,
         reason: RendererCapabilityReasonCode::ReducedTier,

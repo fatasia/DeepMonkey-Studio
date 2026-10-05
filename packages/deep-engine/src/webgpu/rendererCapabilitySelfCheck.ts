@@ -217,6 +217,13 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
     observed: { screenSpaceReflection: FEATURE_DEFAULTS.screenSpaceReflection },
   },
   {
+    // P2 六引擎对标 SSGI:屏空间漫射一次反弹后链加性层(与 probe/sdf GI 的 shader 内
+    // ambient 替换叠加无双计;裁决见 postprocess/screenSpaceGiTypes.ts)。
+    capabilityId: "ssgi", support: "supported", reason: "opt-in-default-off",
+    passIds: passes("screen-space-gi-"),
+    observed: { ssgi: FEATURE_DEFAULTS.ssgi },
+  },
+  {
     capabilityId: "fog-volumetric", support: "supported", reason: "opt-in-default-off",
     passIds: passes("volumetric-fog-"),
     observed: {
@@ -440,6 +447,7 @@ const REQUIRED_NON_EMPTY_PASS_ROWS: ReadonlyArray<{ id: string; prefixes: readon
   { id: "contact-shadows", prefixes: ["contact-shadow"] },
   { id: "temporal-upscale", prefixes: ["temporal-upscale"] },
   { id: "ssr", prefixes: ["screen-space-reflection-"] },
+  { id: "ssgi", prefixes: ["screen-space-gi-"] },
   { id: "fog-volumetric", prefixes: ["volumetric-fog-"] },
   { id: "taa", prefixes: ["temporal-aa"] },
   { id: "ambient-occlusion", prefixes: ["ambient-occlusion"] },

@@ -24,4 +24,8 @@ export * from "./screenSpaceReflectionTypes.js";
 export * from "./screenSpaceReflectionWgsl.js";
 export * from "./screenSpaceReflectionCpu.js";
 export * from "./screenSpaceReflection.js";
+export * from "./screenSpaceGiTypes.js";
+export * from "./screenSpaceGiWgsl.js";
+export * from "./screenSpaceGiCpu.js";
+export * from "./screenSpaceGi.js";
 export * from "./instanceOutlineCpu.js";

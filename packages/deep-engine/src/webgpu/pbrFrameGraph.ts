@@ -93,6 +93,16 @@ export function buildPbrFrameGraph(options: PbrFrameGraphOptions): RenderGraphBu
       .addPass({ id: "volumetric-fog-composite", kind: "compute", inputs: [temporalInput, "volumetric-fog-scatter"], outputs: ["volumetric-fog-hdr"] });
     temporalInput = "volumetric-fog-hdr";
   }
+  // P2 SSGI 屏空间漫射一次反弹:插在雾/环境合成之后、SSR 之前(SSR 反射含 GI 的
+  // 表面;TAA 在后顺带平滑逐帧旋转采样噪声)。与 PBR_TIMED_PASS_IDS / MAPPED_EXECUTORS /
+  // PBR_FRAME_RESOURCE_CONTRACTS / describePasses 同切片原子 diff;关闭 = 拓扑零变化。
+  if (features.ssgi) {
+    graph.addResource({ id: "ssgi-trace", descriptor: "rgba16float-half" })
+      .addResource({ id: "ssgi-hdr", descriptor: "rgba16float" })
+      .addPass({ id: "screen-space-gi-trace", kind: "compute", inputs: [temporalInput, "linear-depth", "view-normal"], outputs: ["ssgi-trace"] })
+      .addPass({ id: "screen-space-gi-composite", kind: "compute", inputs: [temporalInput, "ssgi-trace"], outputs: ["ssgi-hdr"] });
+    temporalInput = "ssgi-hdr";
+  }
   if (features.screenSpaceReflection) {
     graph.addResource({ id: "ssr-trace", descriptor: "rgba16float-half" })
       .addResource({ id: "ssr-hdr", descriptor: "rgba16float" })

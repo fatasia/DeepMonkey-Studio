@@ -4,6 +4,7 @@ import { BLOOM_COLOR_FORMAT } from "../postprocess/bloomTypes.js";
 import { TEMPORAL_UPSCALE_COLOR_FORMAT } from "../postprocess/temporalUpscaleTypes.js";
 import { TEMPORAL_AA_COLOR_FORMAT } from "../postprocess/temporalAaTypes.js";
 import { SSR_COMPOSITE_FORMAT, SSR_TRACE_FORMAT } from "../postprocess/screenSpaceReflectionTypes.js";
+import { SSGI_COMPOSITE_FORMAT, SSGI_TRACE_FORMAT } from "../postprocess/screenSpaceGiTypes.js";
 import { VOLUMETRIC_FOG_SCATTER_FORMAT } from "../fog/volumetricFogPassTypes.js";
 import { VOLUMETRIC_FOG_COMPOSITE_FORMAT } from "../fog/volumetricFogCompositeTypes.js";
 import { PBR_HDR_FORMAT, PBR_LINEAR_DEPTH_FORMAT,
@@ -89,6 +90,12 @@ export const PBR_FRAME_RESOURCE_CONTRACTS: readonly PbrFrameResourceContract[] =
   { id: "ssr-trace", descriptor: "rgba16float-half", format: SSR_TRACE_FORMAT, sampleCount: 1,
     usages: ["storage-binding", "texture-binding"], sizeRole: "half", external: false },
   { id: "ssr-hdr", descriptor: "rgba16float", format: SSR_COMPOSITE_FORMAT, sampleCount: 1,
+    usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "surface", external: false },
+  // P2 SSGI:trace 半分辨率(compute storage 写),composite 全分辨率加性输出(COPY_SRC
+  // 承接 present-color 读回链在 SSGI 为链尾效果时的落点,与 ssr-hdr 同合同)。
+  { id: "ssgi-trace", descriptor: "rgba16float-half", format: SSGI_TRACE_FORMAT, sampleCount: 1,
+    usages: ["storage-binding", "texture-binding"], sizeRole: "half", external: false },
+  { id: "ssgi-hdr", descriptor: "rgba16float", format: SSGI_COMPOSITE_FORMAT, sampleCount: 1,
     usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "surface", external: false },
   { id: "volumetric-fog-scatter", descriptor: "rgba16float-half", format: VOLUMETRIC_FOG_SCATTER_FORMAT, sampleCount: 1,
     usages: ["storage-binding", "texture-binding"], sizeRole: "half", external: false },

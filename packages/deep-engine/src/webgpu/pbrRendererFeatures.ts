@@ -64,6 +64,13 @@ export interface PbrRendererFeatureOptions {
    * 下一切片——开启本键当前只挂载管线与帧计时,不改变画面。
    */
   readonly rayTracedReflections?: boolean;
+  /**
+   * P2 六引擎对标 SSGI(opt-in,默认关):屏空间漫射一次反弹后链加性层(半分辨率
+   * 余弦半球采样 + 全分辨率加性合成,输出在 SSR/TAA 前,TAA 顺带做时域平滑)。
+   * 与 probe/sdf GI 分工见 screenSpaceGiTypes.ts 裁决:探针 ambient(shader 内)
+   * + SSGI 反弹(post 链)叠加无双计。关闭时运行时不构建,既有帧逐位零变化。
+   */
+  readonly ssgi?: boolean;
 }
 
 export interface PbrRendererFeatures {
@@ -91,6 +98,7 @@ export interface PbrRendererFeatures {
   readonly sdfGi: boolean;
   readonly megaLights: boolean;
   readonly rayTracedReflections: boolean;
+  readonly ssgi: boolean;
 }
 
 export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze({
@@ -105,6 +113,7 @@ export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze(
   sdfGi: false,
   megaLights: false,
   rayTracedReflections: false,
+  ssgi: false,
 });
 
 export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = {}): PbrRendererFeatures {
@@ -138,5 +147,6 @@ export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = 
     rayTracedShadows: boolean("rayTracedShadows"),
     sdfGi: boolean("sdfGi"),
     megaLights: boolean("megaLights"),
-    rayTracedReflections: boolean("rayTracedReflections") });
+    rayTracedReflections: boolean("rayTracedReflections"),
+    ssgi: boolean("ssgi") });
 }

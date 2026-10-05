@@ -118,6 +118,16 @@ export const EXPERIMENTAL_FEATURES: readonly ExperimentalFeatureSpec[] = [
     group: "rendering",
   },
   {
+    param: "ssgi",
+    kind: "opt-in",
+    label: ["SSGI 屏空间漫射", "SSGI screen-space diffuse"],
+    detail: [
+      "P2 六引擎对标:半分辨率余弦半球一次反弹 + 加性合成(输出在 SSR/TAA 前,TAA 顺带时域平滑);与 GI 光照烘焙叠加合法(探针管 ambient,SSGI 管反弹)。",
+      "Six-engine parity P2: half-res cosine-hemisphere one-bounce with additive composite (before SSR/TAA; TAA stabilizes); stacks safely with SDF GI (probes own ambient, SSGI owns bounce).",
+    ],
+    group: "rendering",
+  },
+  {
     param: "t25-gpu-pass-timing",
     kind: "opt-in",
     label: ["逐 Pass GPU 计时", "Per-pass GPU timing"],

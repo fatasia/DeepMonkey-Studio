@@ -13,6 +13,8 @@ import { TEMPORAL_UPSCALE_COLOR_FORMAT } from "../postprocess/temporalUpscaleTyp
 import { internalRenderSize } from "../postprocess/temporalUpscaleCpu.js";
 import { ScreenSpaceReflectionPass } from "../postprocess/screenSpaceReflection.js";
 import { SSR_COMPOSITE_FORMAT } from "../postprocess/screenSpaceReflectionTypes.js";
+import { ScreenSpaceGiPass, defaultScreenSpaceGiOptions } from "../postprocess/screenSpaceGi.js";
+import { SSGI_COMPOSITE_FORMAT, SSGI_TRACE_FORMAT } from "../postprocess/screenSpaceGiTypes.js";
 import { VolumetricFogPass } from "../fog/volumetricFogPass.js";
 import { VolumetricGodRaysPass } from "../fog/volumetricGodRaysPass.js";
 import type { GodRaysShadowSource } from "../fog/volumetricGodRaysPassTypes.js";
@@ -102,6 +104,7 @@ export class PbrPostProcessChain {
   private readonly ambientOcclusion: AmbientOcclusionPass | undefined;
   private readonly ambientOcclusionComposite: AmbientOcclusionCompositePass | undefined;
   private readonly screenSpaceReflection: ScreenSpaceReflectionPass | undefined;
+  private readonly screenSpaceGi: ScreenSpaceGiPass | undefined;
   private readonly volumetricFog: VolumetricFogPass | undefined;
   private volumetricGodRays: VolumetricGodRaysPass | undefined;
   private readonly volumetricFogComposite: VolumetricFogCompositePass | undefined;
@@ -122,6 +125,7 @@ export class PbrPostProcessChain {
     let hiZ: HiZPyramid | undefined, ambientOcclusion: AmbientOcclusionPass | undefined;
     let ambientOcclusionComposite: AmbientOcclusionCompositePass | undefined;
     let screenSpaceReflection: ScreenSpaceReflectionPass | undefined;
+    let screenSpaceGi: ScreenSpaceGiPass | undefined;
     let volumetricFog: VolumetricFogPass | undefined, volumetricFogComposite: VolumetricFogCompositePass | undefined;
     let temporalAa: TemporalAaPass | undefined, bloom: BloomPass | undefined;
     let temporalUpscale: TemporalUpscalePass | undefined;
@@ -132,6 +136,11 @@ export class PbrPostProcessChain {
         ambientOcclusionComposite = new AmbientOcclusionCompositePass(session, pool);
       }
       if (this.features.screenSpaceReflection) screenSpaceReflection = new ScreenSpaceReflectionPass(session, pool);
+      // P2 SSGI(opt-in,默认关):生产帧池恒在;pool 缺席 + ssgi 开启 = 显式配置错误。
+      if (this.features.ssgi) {
+        if (!pool) throw new Error("Screen-space GI requires the transient texture pool.");
+        screenSpaceGi = new ScreenSpaceGiPass(session, pool);
+      }
       if (this.features.volumetricFog) {
         volumetricFog = new VolumetricFogPass(session, pool);
         volumetricFogComposite = new VolumetricFogCompositePass(session, pool);
@@ -142,6 +151,7 @@ export class PbrPostProcessChain {
     } catch (error) {
       failWithResourceCleanup(error, "Post-process construction failed", [
         () => bloom?.dispose(), () => temporalUpscale?.dispose(), () => temporalAa?.dispose(), () => screenSpaceReflection?.dispose(),
+        () => screenSpaceGi?.dispose(),
         () => volumetricFogComposite?.dispose(), () => volumetricFog?.dispose(),
         () => ambientOcclusionComposite?.dispose(),
         () => ambientOcclusion?.dispose(), () => hiZ?.dispose(),
@@ -150,6 +160,7 @@ export class PbrPostProcessChain {
     this.hiZ = hiZ; this.ambientOcclusion = ambientOcclusion;
     this.ambientOcclusionComposite = ambientOcclusionComposite;
     this.screenSpaceReflection = screenSpaceReflection;
+    this.screenSpaceGi = screenSpaceGi;
     this.volumetricFog = volumetricFog; this.volumetricFogComposite = volumetricFogComposite;
     this.temporalAa = temporalAa; this.temporalUpscale = temporalUpscale; this.bloom = bloom;
   }
@@ -234,6 +245,17 @@ export class PbrPostProcessChain {
       }).texture;
       input.passTiming?.endMarker(encoder, "volumetric-fog-composite");
       effectPasses += 2;
+    }
+    // P2 SSGI 屏空间漫射一次反弹(opt-in):在 SSR 前(SSR 反射含 GI 的表面)、TAA 前
+    // (TAA 顺带平滑逐帧旋转采样噪声,与 SSR 同策略)。加性合成,seed 用帧 revision
+    // 旋转(确定性,CPU 镜像同源)。与 probe/sdf GI 分工见 screenSpaceGiTypes.ts 裁决。
+    if (this.features.ssgi && this.screenSpaceGi) {
+      const bounced = this.screenSpaceGi.encode(encoder, {
+        color: marched, depth: targets.linearDepthTexture, normal: targets.normalTexture, revision,
+        depthEncoding: "linear-view-depth-positive", normalSpace: "view", colorEncoding: "linear-hdr",
+      }, { ...defaultScreenSpaceGiOptions(extent), verticalFovRadians, seed: revision >>> 0,
+        ...(input.passTiming ? { passTiming: input.passTiming } : {}) });
+      marched = bounced.texture; effectPasses += bounced.passCount;
     }
     if (active.screenSpaceReflection && this.screenSpaceReflection) {
       // E04 首切片:SSR 在 TAA 前,TAA 顺带平滑半分辨率步进痕迹;顺序与 Babylon SSR→TAA 一致。
@@ -352,15 +374,20 @@ export class PbrPostProcessChain {
     const opaqueColorResource = options.opaqueColorResource ?? (features.ambientOcclusion ? "ao-hdr" : "opaque-hdr");
     const opaqueDomain = transparency ? "composited-hdr" : opaqueColorResource;
     const fogInput = opaqueDomain;
-    const reflectionInput = features.volumetricFog ? "volumetric-fog-hdr" : fogInput;
+    // P2 SSGI:漫射反弹插在雾合成之后、SSR 之前(SSR 反射含 GI 的表面;TAA 在后平滑)。
+    const giInput = features.volumetricFog ? "volumetric-fog-hdr" : fogInput;
+    const reflectionInput = features.ssgi ? "ssgi-hdr" : giInput;
     // E04:SSR 插在透明合成之后、TAA 之前;启用时 TAA 的输入域改为 ssr-hdr。
     const temporalInput = features.screenSpaceReflection ? "ssr-hdr" : reflectionInput;
     // 输入资源的创建 usage 随生产者不同:composited-hdr 来自 OIT scratch;ao-hdr 来自 AO composite 输出。
     const opaqueInputUsages: readonly FramePlanUsage[] = transparency || opaqueColorResource === "opaque-hdr"
       ? ["render-attachment", "texture-binding", "storage-binding", "copy-src"]
       : ["storage-binding", "texture-binding", "render-attachment", "copy-src"];
-    const reflectionInputUsages: readonly FramePlanUsage[] = features.volumetricFog
+    const giInputUsages: readonly FramePlanUsage[] = features.volumetricFog
       ? ["storage-binding", "texture-binding", "copy-src"] : opaqueInputUsages;
+    const reflectionInputUsages: readonly FramePlanUsage[] = features.ssgi
+      ? ["storage-binding", "texture-binding", "copy-src"]
+      : features.volumetricFog ? ["storage-binding", "texture-binding", "copy-src"] : opaqueInputUsages;
     // ssr-hdr 自 C12 起带 COPY_SRC(present-color 读回链落点);其余输入域不变。
     const temporalInputUsages: readonly FramePlanUsage[] = features.screenSpaceReflection
       ? ["storage-binding", "texture-binding", "copy-src"] : reflectionInputUsages;
@@ -416,6 +443,31 @@ export class PbrPostProcessChain {
       { id: "volumetric-fog-hdr", access: "write", format: VOLUMETRIC_FOG_COMPOSITE_FORMAT, sampleCount: 1,
         usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "surface" }],
       unplannedAttachments: [{ id: "volumetric-fog-sampler", reason: "半分辨率散射上采样的私有 filtering sampler" }],
+      gpuPassCount: 1,
+    });
+    if (features.ssgi) passes.push({
+      passId: "screen-space-gi-trace", executor: "ScreenSpaceGiPass.encode/trace", kind: "compute",
+      reads: [giInput, "linear-depth", "view-normal"], writes: ["ssgi-trace"],
+      claims: [{ id: giInput, access: "read", format: PBR_HDR_FORMAT, sampleCount: 1,
+        usages: giInputUsages, sizeRole: "surface" },
+        geometryRead("linear-depth"), geometryRead("view-normal"),
+        { id: "ssgi-trace", access: "write", format: SSGI_TRACE_FORMAT, sampleCount: 1,
+          usages: ["storage-binding", "texture-binding"], sizeRole: "half" }],
+      unplannedAttachments: [
+        { id: "ssgi-sampler", reason: "trace 命中点双线性采色与半分辨率合成的私有 filtering sampler" },
+      ],
+      gpuPassCount: 1,
+    }, {
+      passId: "screen-space-gi-composite", executor: "ScreenSpaceGiPass.encode/composite", kind: "compute",
+      reads: [giInput, "ssgi-trace"], writes: ["ssgi-hdr"],
+      claims: [{ id: giInput, access: "read", format: PBR_HDR_FORMAT, sampleCount: 1,
+        usages: giInputUsages, sizeRole: "surface" },
+        { id: "ssgi-trace", access: "read", format: SSGI_TRACE_FORMAT, sampleCount: 1,
+          usages: ["storage-binding", "texture-binding"], sizeRole: "half" },
+        // copy-src:SSGI 为链尾效果时 present-color 读回链落在本输出上(与 ssr-hdr 同合同)。
+        { id: "ssgi-hdr", access: "write", format: SSGI_COMPOSITE_FORMAT, sampleCount: 1,
+          usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "surface" }],
+      unplannedAttachments: [{ id: "ssgi-composite-sampler", reason: "composite 双线性上采样的私有 filtering sampler" }],
       gpuPassCount: 1,
     });
     if (features.screenSpaceReflection) passes.push({
@@ -505,6 +557,7 @@ export class PbrPostProcessChain {
     this.disposed = true;
     runResourceCleanup("Post-process disposal failed", [() => this.instanceOutline?.dispose(), () => this.authorBloom?.dispose(), () => this.bloom?.dispose(),
       () => this.temporalAa?.dispose(), () => this.temporalUpscale?.dispose(), () => this.screenSpaceReflection?.dispose(),
+      () => this.screenSpaceGi?.dispose(),
       () => this.volumetricFogComposite?.dispose(), () => this.volumetricGodRays?.dispose(), () => this.volumetricFog?.dispose(),
       () => this.ambientOcclusionComposite?.dispose(),
       () => this.ambientOcclusion?.dispose(), () => this.hiZ?.dispose()]);

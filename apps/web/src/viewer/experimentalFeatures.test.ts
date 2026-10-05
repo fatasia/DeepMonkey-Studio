@@ -8,6 +8,7 @@ import {
   megaLightsEnabled,
   rayTracedShadowsEnabled,
   sdfGiEnabled,
+  ssgiEnabled,
   t07DynamicResolutionPolicy,
   t11PipelineBootstrap,
   t25GpuPassTimingEnabled,
@@ -44,12 +45,12 @@ afterEach(() => {
 const TRUTH_MATRIX = ["", "?x=1", "=1", "=true", "=on", "=0", "=false", "=off", "=yes", "=TRUE", "=On"] as const;
 
 describe("experimental feature registry", () => {
-  it("注册表覆盖全部 12 个 URL 开关,无重复参数", () => {
-    expect(EXPERIMENTAL_FEATURES).toHaveLength(12);
-    expect(new Set(EXPERIMENTAL_FEATURES.map((spec) => spec.param)).size).toBe(12);
+  it("注册表覆盖全部 13 个 URL 开关,无重复参数", () => {
+    expect(EXPERIMENTAL_FEATURES).toHaveLength(13);
+    expect(new Set(EXPERIMENTAL_FEATURES.map((spec) => spec.param)).size).toBe(13);
     const known = new Set([
       "t07-dynamic-resolution", "f4-temporal-upscale", "f3-virtual-textures", "b4-hlod-cluster",
-      "g1-cluster-lod", "mega-lights", "ray-traced-shadows", "sdf-gi", "t25-gpu-pass-timing",
+      "g1-cluster-lod", "mega-lights", "ray-traced-shadows", "sdf-gi", "ssgi", "t25-gpu-pass-timing",
       "debug-full-render", "t11-critical-pipelines", "t11-defer-deformation",
     ]);
     for (const spec of EXPERIMENTAL_FEATURES) expect(known.has(spec.param)).toBe(true);
@@ -67,6 +68,7 @@ describe("experimental feature registry", () => {
       ["ray-traced-shadows", rayTracedShadowsEnabled],
       ["f3-virtual-textures", f3VirtualTexturesEnabled],
       ["sdf-gi", sdfGiEnabled],
+      ["ssgi", ssgiEnabled],
     ]);
     for (const spec of EXPERIMENTAL_FEATURES.filter((item) => item.kind === "opt-in")) {
       const bridge = optIn.get(spec.param);
@@ -111,7 +113,7 @@ describe("experimental feature registry", () => {
     expect(states["sdf-gi"]).toBe(false);
     expect(states["t07-dynamic-resolution"]).toBe(false); // opt-in 缺省 = 关
     expect(states["t11-critical-pipelines"]).toBe(true); // opt-out 缺省 = 开
-    expect(Object.keys(states)).toHaveLength(12);
+    expect(Object.keys(states)).toHaveLength(13);
   });
 
   it("buildExperimentalFeatureHref:opt-in 开写入 =1,关移除;opt-out 开(默认)移除,关写入 =1;其余参数保留", () => {
@@ -129,6 +131,7 @@ describe("experimental feature registry", () => {
       "debug-full-render": false,
       "t07-dynamic-resolution": false,
       "t11-defer-deformation": true,
+      "ssgi": false,
     });
     const params = new URL(out).searchParams;
     expect(out.startsWith("http://localhost/studio/abc")).toBe(true);
