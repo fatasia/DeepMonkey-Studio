@@ -10,11 +10,11 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { ShaderGraphAssetV1 } from "@bim-studio/deep-engine/shader-graph";
+import { lowerShaderGraphAsset, validateShaderGraphAsset } from "@bim-studio/deep-engine/shader-graph";
 import { translate as tr, type AppLocale } from "../i18n";
-import { validateShaderGraphAsset } from "@bim-studio/deep-engine/shader-graph";
 import {
-  addNode, canvasEdges, canvasNodes, connect, disconnect,
-  removeNode, updateNodeConfig, type CanvasNodePosition,
+  SURFACE_FIELD_KEYS, addNode, bindSurfaceField, canvasEdges, canvasNodes, connect, disconnect,
+  removeNode, surfaceBindings, updateNodeConfig, type CanvasNodePosition, type SurfaceFieldKey,
 } from "./shaderNodeCanvasModel.js";
 
 interface Props {
@@ -28,6 +28,7 @@ interface Props {
 export function ShaderNodeCanvas({ locale, asset, onAssetChange, disabled }: Props) {
   const [positions, setPositions] = useState<Record<string, CanvasNodePosition>>({});
   const [selectedId, setSelectedId] = useState<string | undefined>();
+  const [bindField, setBindField] = useState<SurfaceFieldKey>("baseColor");
 
   const nodes = useMemo<Node[]>(() => canvasNodes(asset).map((node) => ({
     id: node.id,
@@ -77,10 +78,27 @@ export function ShaderNodeCanvas({ locale, asset, onAssetChange, disabled }: Pro
   }, [asset, onAssetChange, selectedId]);
 
   const diagnostics = useMemo(() => validateShaderGraphAsset(asset), [asset]);
+  // 降级检查 = 图 → 既有 WGSL 编译器 IR 的确定性检查(非管线编译;节点输入未补全时
+  // 引擎 tuple 抛错,如实报告为「待补全」,不伪报编译通过)。
+  const loweringNote = useMemo(() => {
+    if (!diagnostics.valid) return "";
+    try {
+      const result = lowerShaderGraphAsset(asset);
+      if (result.success) {
+        const nodeCount = result.stages?.[0]?.nodes.length ?? 0;
+        return tr(locale, ` · 降级通过(${nodeCount} 节点)`, ` · lowering ok (${nodeCount} nodes)`);
+      }
+      return tr(locale, ` · 降级未通过:${result.diagnostics[0]?.message ?? ""}`, ` · lowering failed: ${result.diagnostics[0]?.message ?? ""}`);
+    } catch (error) {
+      return tr(locale, ` · 输入待补全(${error instanceof Error ? error.message : "lowering error"})`,
+        ` · inputs incomplete (${error instanceof Error ? error.message : "lowering error"})`);
+    }
+  }, [asset, diagnostics.valid, locale]);
   const errorText = diagnostics.diagnostics
     .filter(d => d.severity === "error")
     .map(d => d.message)
     .join("；") || tr(locale, "图有效", "Graph is valid");
+  const bindings = useMemo(() => surfaceBindings(asset), [asset]);
 
   return (
     <div className="shader-node-canvas" role="application" aria-label={tr(locale, "材质节点图", "Material node graph")}>
@@ -114,7 +132,7 @@ export function ShaderNodeCanvas({ locale, asset, onAssetChange, disabled }: Pro
           {tr(locale, "删除选中", "Delete selected")}
         </button>
         <span className={`shader-node-canvas-status ${diagnostics.valid ? "ok" : "error"}`} role="status">
-          {errorText}
+          {errorText}{loweringNote}
         </span>
       </div>
       <div className="shader-node-canvas-flow">
@@ -159,6 +177,44 @@ export function ShaderNodeCanvas({ locale, asset, onAssetChange, disabled }: Pro
               />
             </label>
           )}
+          <div className="shader-node-canvas-surface">
+            <strong>{tr(locale, "表面输出绑定", "Surface outputs")}</strong>
+            <ul className="shader-node-canvas-bindings">
+              {Object.entries(bindings).map(([field, nodeId]) => (
+                <li key={field}>
+                  <span>{field}</span>
+                  <code>{nodeId}</code>
+                  <button type="button" disabled={disabled}
+                    aria-label={tr(locale, `解绑 ${field}`, `Unbind ${field}`)}
+                    title={tr(locale, "解绑", "Unbind")}
+                    onClick={() => onAssetChange(bindSurfaceField(asset, field as SurfaceFieldKey, undefined))}>
+                    ×
+                  </button>
+                </li>
+              ))}
+              {Object.keys(bindings).length === 0 && (
+                <li className="empty">{tr(locale, "未绑定——图不写任何表面参数", "Nothing bound — the graph writes no surface fields")}</li>
+              )}
+            </ul>
+            <div className="shader-node-canvas-bindrow">
+              <select aria-label={tr(locale, "选择表面字段", "Surface field")} disabled={disabled}
+                value={bindField}
+                onChange={(event) => setBindField(event.currentTarget.value as SurfaceFieldKey)}>
+                {SURFACE_FIELD_KEYS.map((field) => (
+                  <option key={field} value={field}>{field}</option>
+                ))}
+              </select>
+              <button type="button" disabled={disabled}
+                onClick={() => onAssetChange(bindSurfaceField(asset, bindField, selectedId))}>
+                {tr(locale, "绑定选中节点", "Bind selected node")}
+              </button>
+            </div>
+            <small>
+              {tr(locale,
+                "图是草稿面:实时校验+降级检查,随材质槽本地持久;绑定到材质的权威路径仍是「源码」页签的 DeepSL 绑定。",
+                "The graph is a draft surface: validated and lowered live, persisted locally per material slot; the authoritative material binding remains the DeepSL source tab.")}
+            </small>
+          </div>
         </div>
       )}
     </div>

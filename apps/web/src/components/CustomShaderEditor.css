@@ -11,3 +11,44 @@
 .custom-shader-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .custom-shader-result { display: grid; gap: 3px; margin-top: 8px; padding: 8px; border: 1px solid var(--line-subtle); border-radius: 6px; color: var(--text); font-size: 11px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .custom-shader-result strong { color: var(--text-strong); }
+
+/* 源码/节点图双模式页签 */
+.custom-shader-mode-toggle { display: flex; gap: 4px; margin-top: 8px; }
+.custom-shader-mode-toggle button { min-height: 26px; padding-inline: 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 11px; cursor: pointer; }
+.custom-shader-mode-toggle button.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.custom-shader-mode-toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 节点图画布(ReactFlow 薄壳;高度给 fitView 一个稳定视口) */
+.shader-node-canvas { display: flex; flex-direction: column; gap: 6px; height: 320px; margin-top: 8px; }
+.shader-node-canvas-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.shader-node-canvas-toolbar select,
+.shader-node-canvas-toolbar button,
+.shader-node-canvas-bindrow select,
+.shader-node-canvas-bindrow button { min-height: 26px; padding-inline: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--text-strong); font-size: 11px; cursor: pointer; }
+.shader-node-canvas-toolbar select:focus-visible,
+.shader-node-canvas-toolbar button:focus-visible,
+.shader-node-canvas-bindrow select:focus-visible,
+.shader-node-canvas-bindrow button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shader-node-canvas-toolbar button:disabled,
+.shader-node-canvas-toolbar select:disabled,
+.shader-node-canvas-bindrow button:disabled,
+.shader-node-canvas-bindrow select:disabled { opacity: .45; cursor: not-allowed; }
+.shader-node-canvas-status { min-width: 0; flex: 1; color: var(--text-muted); font-size: 11px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.shader-node-canvas-status.ok { color: var(--success); }
+.shader-node-canvas-status.error { color: var(--danger); }
+.shader-node-canvas-flow { flex: 1; min-height: 0; border: 1px solid var(--line-subtle); border-radius: 6px; overflow: hidden; background: var(--surface-1); }
+.shader-node-canvas-props { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line-subtle); border-radius: 6px; color: var(--text); font-size: 11px; }
+.shader-node-canvas-props > strong { color: var(--text-strong); }
+.shader-node-canvas-props label { display: grid; gap: 3px; color: var(--text-muted); }
+.shader-node-canvas-props input { box-sizing: border-box; min-height: 26px; padding-inline: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-1); color: var(--text-strong); font-size: 11px; }
+.shader-node-canvas-props input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shader-node-canvas-surface { display: grid; gap: 4px; border-top: 1px solid var(--line-subtle); padding-top: 6px; }
+.shader-node-canvas-surface > strong { color: var(--text-strong); }
+.shader-node-canvas-surface small { color: var(--text-muted); line-height: 1.5; }
+.shader-node-canvas-bindings { list-style: none; display: grid; gap: 3px; margin: 0; padding: 0; }
+.shader-node-canvas-bindings li { display: flex; align-items: center; gap: 6px; }
+.shader-node-canvas-bindings li.empty { color: var(--text-muted); }
+.shader-node-canvas-bindings code { color: var(--text-strong); overflow-wrap: anywhere; }
+.shader-node-canvas-bindings button { flex: none; min-width: 20px; min-height: 20px; padding-inline: 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-2); color: var(--text-muted); font-size: 11px; line-height: 1; cursor: pointer; }
+.shader-node-canvas-bindings button:hover { color: var(--danger); border-color: var(--danger); }
+.shader-node-canvas-bindrow { display: flex; gap: 6px; }

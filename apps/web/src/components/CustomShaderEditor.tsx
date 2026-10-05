@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ShaderGraphAssetV1 } from "@bim-studio/deep-engine/shader-graph";
 import type { SceneMaterialState } from "@bim-studio/contracts";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import { inspectSceneCustomShader } from "../delivery/sceneCustomShader";
 import { ShaderNodeCanvas } from "./ShaderNodeCanvas";
+import { resolveShaderGraphDraft, saveShaderGraphDraft, type KeyValueStore } from "./shaderNodeCanvasModel.js";
 import "./CustomShaderEditor.css";
 
 const STARTER = `shader deep.material {
@@ -24,9 +26,19 @@ interface Props {
   readonly disabled: boolean;
   readonly material: SceneMaterialState;
   readonly onChange: (patch: SceneMaterialState) => void;
+  /** 节点图草稿的持久化键(材质槽身份);缺省 = 草稿仅本会话内存有效。 */
+  readonly storageKey?: string | undefined;
 }
 
-export function CustomShaderEditor({ locale, disabled, material, onChange }: Props) {
+/** localStorage 访问守卫:隐私模式/禁用存储时返回 undefined,草稿退化为会话内存态。 */
+function safeLocalStorage(): KeyValueStore | undefined {
+  try {
+    if (typeof localStorage === "undefined") return undefined;
+    return localStorage;
+  } catch { return undefined; }
+}
+
+export function CustomShaderEditor({ locale, disabled, material, onChange, storageKey }: Props) {
   const [mode, setMode] = useState<EditorMode>("text");
   const bound = material.customShader?.source;
   const [draft, setDraft] = useState(bound ?? "");
@@ -38,6 +50,14 @@ export function CustomShaderEditor({ locale, disabled, material, onChange }: Pro
     setInspection(result);
     if (result.success) onChange({ customShader: { source: draft } });
   };
+  const graphStore = useMemo(safeLocalStorage, []);
+  const [graphDraft, setGraphDraft] = useState<ShaderGraphAssetV1>(() => resolveShaderGraphDraft(graphStore, storageKey));
+  // 材质槽切换(键变化)时重载该槽的草稿;未提供键 = 会话内存草稿,不跨槽复用。
+  useEffect(() => { setGraphDraft(resolveShaderGraphDraft(graphStore, storageKey)); }, [graphStore, storageKey]);
+  const changeGraphDraft = useCallback((asset: ShaderGraphAssetV1) => {
+    setGraphDraft(asset);
+    saveShaderGraphDraft(graphStore, storageKey, asset);
+  }, [graphStore, storageKey]);
   return <details className="custom-shader-editor" open={Boolean(bound)}>
     <summary>
       <span>DeepSL</span>
@@ -79,8 +99,8 @@ export function CustomShaderEditor({ locale, disabled, material, onChange }: Pro
       <ShaderNodeCanvas
         locale={locale}
         disabled={disabled}
-        asset={{ schemaVersion: 1, id: "custom-material", target: "webgpu-forward", properties: [], stages: [{ stage: "fragment", nodes: [], edges: [], outputs: [] }] }}
-        onAssetChange={() => {}}
+        asset={graphDraft}
+        onAssetChange={changeGraphDraft}
       />
     )}
   </details>;

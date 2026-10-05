@@ -2,7 +2,8 @@ import type { ShaderGraphAssetV1, ShaderGraphStage } from "@bim-studio/deep-engi
 import type { ShaderGraphNodeInstance } from "@bim-studio/deep-engine/shader-graph";
 
 type NodeValueType = ShaderGraphNodeInstance["type"];
-import { shaderGraphNodeMetadata, shaderGraphNodeRegistry } from "@bim-studio/deep-engine/shader-graph";
+import { SHADER_GRAPH_SCHEMA_VERSION, shaderGraphNodeMetadata, shaderGraphNodeRegistry,
+  validateShaderGraphAsset } from "@bim-studio/deep-engine/shader-graph";
 
 /** 画布节点 UI 态(位置不进资产合同;由画布本地保存)。 */
 export interface CanvasNodePosition { x: number; y: number }
@@ -51,11 +52,11 @@ export function addNode(asset: ShaderGraphAssetV1, op: string): { asset: ShaderG
   };
 }
 
-/** 删除节点与其关联边。 */
+/** 删除节点与其关联边,并清理指向该节点的表面输出绑定(不给降级器留悬挂引用)。 */
 export function removeNode(asset: ShaderGraphAssetV1, nodeId: string): ShaderGraphAssetV1 {
   const stage = asset.stages.find(s => s.stage === FRAGMENT_STAGE);
   if (!stage) return asset;
-  return {
+  let next: ShaderGraphAssetV1 = {
     ...asset,
     stages: replaceStage(asset.stages, {
       ...stage,
@@ -63,6 +64,11 @@ export function removeNode(asset: ShaderGraphAssetV1, nodeId: string): ShaderGra
       edges: stage.edges.filter(e => e.from !== nodeId && e.to !== nodeId),
     }),
   };
+  const bindings = surfaceBindings(next);
+  for (const field of SURFACE_FIELD_KEYS) {
+    if (bindings[field] === nodeId) next = bindSurfaceField(next, field, undefined);
+  }
+  return next;
 }
 
 /** 更新节点 config(literal value/property name 等)。 */
@@ -126,4 +132,80 @@ function defaultTypeFor(meta: { ports: readonly { direction: string; type: NodeV
 
 function replaceStage(stages: readonly ShaderGraphStage[], next: ShaderGraphStage): readonly ShaderGraphStage[] {
   return stages.map(s => s.stage === FRAGMENT_STAGE ? next : s);
+}
+
+/** 表面输出字段槽位(与引擎 ShaderStandardSurfaceFields 对齐;值为产出该字段的节点 id)。 */
+export const SURFACE_FIELD_KEYS = ["baseColor", "normal", "metallic", "roughness", "occlusion", "emission", "alpha"] as const;
+export type SurfaceFieldKey = (typeof SURFACE_FIELD_KEYS)[number];
+
+/** 读取 fragment 表面输出绑定(field → 节点 id);无 surface 输出返回空表。 */
+export function surfaceBindings(asset: ShaderGraphAssetV1): Partial<Record<SurfaceFieldKey, string>> {
+  const stage = fragmentStageOf(asset);
+  const surface = stage.outputs.find(
+    output => (output as { semantic?: unknown }).semantic === "surface",
+  ) as { fields?: Record<string, unknown> } | undefined;
+  const result: Partial<Record<SurfaceFieldKey, string>> = {};
+  if (!surface || typeof surface.fields !== "object" || surface.fields === null) return result;
+  for (const key of SURFACE_FIELD_KEYS) {
+    const value = surface.fields[key];
+    if (typeof value === "string" && value) result[key] = value;
+  }
+  return result;
+}
+
+/**
+ * 绑定/解绑表面输出字段:nodeId=undefined 为解绑;最后一个字段解绑后整个 surface
+ * 输出条目移除(空 fields 条目对降级器是噪音)。形状对齐引擎 lowerOutput 的
+ * surface 分支(model/context 为合同固定值)。
+ */
+export function bindSurfaceField(asset: ShaderGraphAssetV1, field: SurfaceFieldKey, nodeId: string | undefined): ShaderGraphAssetV1 {
+  const stage = asset.stages.find(s => s.stage === FRAGMENT_STAGE);
+  if (!stage) return asset;
+  const others = stage.outputs.filter(output => (output as { semantic?: unknown }).semantic !== "surface");
+  const fields: Partial<Record<SurfaceFieldKey, string>> = { ...surfaceBindings(asset) };
+  if (nodeId === undefined) delete fields[field];
+  else fields[field] = nodeId;
+  const outputs = Object.keys(fields).length === 0 ? others
+    : [...others, { semantic: "surface", model: "standard-pbr", context: "deep-lighting-v1", fields }];
+  return { ...asset, stages: replaceStage(asset.stages, { ...stage, outputs }) };
+}
+
+/** 空白图资产(画布初始化与草稿回退共用,形状同 CustomShaderEditor 既有内联值)。 */
+export function emptyShaderGraph(id = "custom-material"): ShaderGraphAssetV1 {
+  return { schemaVersion: SHADER_GRAPH_SCHEMA_VERSION, id, target: "webgpu-forward",
+    properties: [], stages: [{ stage: FRAGMENT_STAGE, nodes: [], edges: [], outputs: [] }] };
+}
+
+/** 草稿持久化的最小存储面(组件层注入 localStorage;测试注入内存实现)。 */
+export interface KeyValueStore {
+  getItem(key: string): string | null | undefined;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
+/**
+ * 读取图草稿:仅接受 schemaVersion 匹配、target 为 forward、且通过引擎校验的资产;
+ * 损坏/不合法一律返回 undefined,由调用方回退 emptyShaderGraph(绝不半信脏数据)。
+ */
+export function loadShaderGraphDraft(store: KeyValueStore | undefined, key: string | undefined): ShaderGraphAssetV1 | undefined {
+  if (!store || !key) return undefined;
+  try {
+    const raw = store.getItem(key);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as ShaderGraphAssetV1;
+    if (parsed?.schemaVersion !== SHADER_GRAPH_SCHEMA_VERSION) return undefined;
+    if (typeof parsed.id !== "string" || parsed.target !== "webgpu-forward" || !Array.isArray(parsed.stages)) return undefined;
+    return validateShaderGraphAsset(parsed).valid ? parsed : undefined;
+  } catch { return undefined; }
+}
+
+/** 已存草稿或空白图(load 的便利封装;undefined 存储/键 = 会话空白图)。 */
+export function resolveShaderGraphDraft(store: KeyValueStore | undefined, key: string | undefined): ShaderGraphAssetV1 {
+  return loadShaderGraphDraft(store, key) ?? emptyShaderGraph();
+}
+
+/** 写入图草稿;存储异常(配额/隐私模式)静默——草稿退化为会话内存态,不阻塞编辑。 */
+export function saveShaderGraphDraft(store: KeyValueStore | undefined, key: string | undefined, asset: ShaderGraphAssetV1): void {
+  if (!store || !key) return;
+  try { store.setItem(key, JSON.stringify(asset)); } catch { /* ignore */ }
 }

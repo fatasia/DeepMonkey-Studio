@@ -52,7 +52,8 @@ interface ObjectAppearanceEditorProps {
   onApplyMaterialPreset?: ((values: PresetMaterialValues, label: string) => void) | undefined;
   onSaveMaterialPreset?: ((name: string, values: PresetMaterialValues) => void) | undefined;
   onDeleteMaterialPreset?: ((id: string) => void) | undefined;
-
+  /** 材质槽身份(MaterialScopeEditor 解析):作为着色器节点图草稿的持久化键。 */
+  shaderGraphSlot?: string | undefined;
 }
 
 const TEXTURE_CONTROLS: ReadonlyArray<{
@@ -76,6 +77,7 @@ export function ObjectAppearanceEditor(props: ObjectAppearanceEditorProps) {
     slots={props.materialSlots ?? []} onChange={props.onMaterialChange}>
     {(material, onMaterialChange, slotId) => <ObjectAppearanceFields {...props}
       material={material} onMaterialChange={onMaterialChange}
+      shaderGraphSlot={slotId}
       onChooseTexture={kind => props.onChooseTexture(kind, slotId)} />}
   </MaterialScopeEditor>;
 }
@@ -97,6 +99,7 @@ function ObjectAppearanceFields({
   onApplyMaterialPreset,
   onSaveMaterialPreset,
   onDeleteMaterialPreset,
+  shaderGraphSlot,
 }: ObjectAppearanceEditorProps) {
   const hasTexture = TEXTURE_CONTROLS.some(({ urlKey }) => Boolean(material[urlKey]));
   const [textureSettingsOpen, setTextureSettingsOpen] = useState(hasTexture);
@@ -289,7 +292,8 @@ function ObjectAppearanceFields({
             </>
           )}
         </details>
-        <CustomShaderEditor locale={locale} disabled={disabled} material={material} onChange={onMaterialChange} />
+        <CustomShaderEditor locale={locale} disabled={disabled} material={material} onChange={onMaterialChange}
+          storageKey={shaderGraphSlot ? `deep-shader-graph:${shaderGraphSlot}` : undefined} />
       </div>
 
       <ModelScreenEditor locale={locale} disabled={disabled} screen={material.screen} onChange={onMaterialChange} />
