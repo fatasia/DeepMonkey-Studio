@@ -33,6 +33,7 @@ export function SceneResourceBrowser(props: Pick<SceneOutlinerPanelProps, "local
   const userPrefabs = props.userPrefabs ?? [];
   const drag = useSceneResourceDrag(props.projectId, async payload => {
     if (catalog.importingId) return;
+    if (payload.source === "userPrefab") { props.onInsertUserPrefab?.(payload.id); return; }
     if (payload.source === "library") { await insertLibraryItem(payload.id); return; }
     const model = (props.projectModels ?? []).find(item => item.id === payload.id);
     if (model?.status === "ready") props.onInsertProjectModel(model);
@@ -59,11 +60,15 @@ export function SceneResourceBrowser(props: Pick<SceneOutlinerPanelProps, "local
     </button>}
     <div className="scene-resource-count">{resultCount.toLocaleString()} {tr(props.locale, "项", "items")}</div>
     <div className="scene-resource-drop-target" onDragOver={drag.over} onDrop={event => void drag.drop(event)}>
-      <Plus size={13} />{tr(props.locale, "将模型拖到这里载入当前场景", "Drag a model here to load it into the current scene")}
+      <Plus size={13} />{tr(props.locale, "将模型或预制体拖到这里载入当前场景", "Drag a model or prefab here to load it into the current scene")}
     </div>
     {scope === "prefab" && userPrefabs.length > 0 && <section className="user-prefab-section" aria-label={tr(props.locale, "我的预制体", "My prefabs")}>
       <div className="user-prefab-section-header"><span><Package size={12} /> {tr(props.locale, "我的预制体", "MY PREFABS")}</span><small>{userPrefabs.length}</small></div>
-      {userPrefabs.map((prefab) => <article className="user-prefab-row" key={prefab.id} data-user-prefab-id={prefab.id}>
+      {userPrefabs.map((prefab) => <article className="user-prefab-row" key={prefab.id} data-user-prefab-id={prefab.id}
+        draggable
+        onDragStart={event => drag.begin(event, "userPrefab", prefab.id)}
+        onDragEnd={drag.cancel}
+        onDoubleClick={() => props.onInsertUserPrefab?.(prefab.id)}>
         {prefab.thumbnail ? <img src={prefab.thumbnail} alt="" /> : <span className="user-prefab-row-icon"><Package size={14} /></span>}
         <span className="user-prefab-row-copy">
           <strong title={prefab.name}>{prefab.name}</strong>
