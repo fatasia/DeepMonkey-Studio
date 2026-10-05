@@ -323,6 +323,12 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         evidence: "ies_shading 字节布局镜像 WebGPU E02 表",
     },
     NativeCapabilitySelfCheck {
+        capability_id: "material-layered-304b",
+        support: RendererCapabilitySupport::Supported,
+        reason: RendererCapabilityReasonCode::OptInDefaultOff,
+        evidence: "pbr_layered.rs LAYERED_SURFACE_BLOCK_BYTES=304 逐字节镜像 TS 布局;求值响应级混合 CPU 参考;layered_*_gpu_tests",
+    },
+    NativeCapabilitySelfCheck {
         capability_id: "material-clearcoat",
         support: RendererCapabilitySupport::Unavailable,
         reason: RendererCapabilityReasonCode::Absent,

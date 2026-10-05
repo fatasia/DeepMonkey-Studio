@@ -5,6 +5,7 @@ import { SceneDrillWizard } from "../components/SceneDrillWizard";
 import { PathTraceAuthorDialog } from "../components/PathTraceAuthorDialog";
 import { WorkspaceModeSwitch } from "../components/WorkspaceModeSwitch";
 import { flushPendingBehaviorDraft } from "../behavior/behaviorDraftNavigation";
+import { disambiguatedProjectLabels } from "../studio/projectNameDisambiguation";
 import { translate as tr } from "../i18n";
 import type { AppViewBindings } from "./appViewBindings";
 
@@ -57,6 +58,8 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
   const { commitSceneName, exportSceneConfig, exportSingleFileScene, exportGlbScene, exportFbxScene, browseActiveScene, saveScene } = scenePersistence;
   const { publishActiveApplication, changeAutoSave, upsertBehaviorScript } = applicationRuntime;
   const { switchProjectById, openProjectDialog, changeRendererBackend, navigate } = actions;
+  // F10：重名项目在下拉中以创建日期消歧（缺失时间回退 ID 尾号），无同名保持原名。
+  const projectOptionLabels = disambiguatedProjectLabels(projects);
   const flushBehaviorDraft = () => {
     const result = flushPendingBehaviorDraft(state.pendingBehaviorDraftRef, upsertBehaviorScript);
     if (result === "write-rejected") return false;
@@ -150,7 +153,7 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
               >
                 {projects.map((item) => (
                   <option key={item.id} value={item.id} disabled={playMode?.active && item.id !== project?.id}>
-                    {item.name}
+                    {projectOptionLabels.get(item.id) ?? item.name}
                   </option>
                 ))}
               </select>

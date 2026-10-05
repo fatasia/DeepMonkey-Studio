@@ -23,7 +23,7 @@ await p.waitForTimeout(1500);
 await p.getByLabel("更多场景工具", { exact: true }).click();
 await p.getByRole("button", { name: "渲染引擎设置", exact: true }).click();
 const d = p.getByRole("dialog", { name: "渲染引擎设置", exact: true });
-await d.getByRole("button", { name: "启用 Deep WebGPU Beta", exact: true }).click();
+await d.getByRole("button", { name: "启用 Deep WebGPU", exact: true }).click();
 const t0 = Date.now();
 for (let i=0;i<24;i++){ await p.waitForTimeout(5000);
   const m = await p.evaluate(()=>performance.getEntriesByType("mark").filter(m=>/packet|runtime-ready/i.test(m.name)).map(m=>m.name.replace("deep-webgpu:","")+"@"+Math.round(m.startTime)));

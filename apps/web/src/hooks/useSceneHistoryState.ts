@@ -92,6 +92,15 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
   const firstSavedSceneIdRef = useRef<string | undefined>(undefined);
   const sceneHistoryRecordRef = useRef<(label: string) => void>(() => undefined);
   const sceneEditTransactionRef = useRef<SceneEditTransaction | undefined>(undefined);
+  // F4（2026-10-05 对抗测试）：载入静默期。applyScene 执行至挂载稳定的窗口内，模型挂载、
+  // 灯光/环境恢复触发的引擎回调不得落撤销栈，否则打开场景即预置"幽灵编辑"（首次撤销吞刀）。
+  // until 是 performance.now() 时间戳：Infinity=静默中；settle 后时间戳自然过期，无需定时器。
+  const sceneLoadSilenceUntilRef = useRef(0);
+  const isSceneLoadSilent = () => performance.now() < sceneLoadSilenceUntilRef.current;
+  /** 载入开始：无限期静默（必须由 endSceneLoadSilence 解除，漏解除等于永久禁记，测试会暴露）。 */
+  function beginSceneLoadSilence(): void { sceneLoadSilenceUntilRef.current = Number.POSITIVE_INFINITY; }
+  /** 载入结束：settleMs>0 时再静默一个窗口，吸收挂载尾巴的防抖散记；0=立即恢复记账。 */
+  function endSceneLoadSilence(settleMs = 0): void { sceneLoadSilenceUntilRef.current = performance.now() + settleMs; }
   const [sceneHistoryRevision, setSceneHistoryRevision] = useState(0);
   // S2b：Play 会话内被门禁吸收的记账次数（防抖散记 + 离散命令）＝播放中临时修改的
   // 可呈现计数。会话开始由 App 显式清零，退出时读取后写入丢弃汇报；不影响任何记账裁决。
@@ -122,6 +131,8 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
     sceneHistoryTimerRef.current = undefined;
     // T30：Play 态的一切记账吸收（含待落的防抖编辑），播放产物不进撤销栈。
     if (playModeActive || sceneHistoryApplyingRef.current) return;
+    // F4：载入静默期的待落编辑直接丢弃——载入期挂载触发不构成用户编辑。
+    if (isSceneLoadSilent()) return;
     // T27：事务窗口内的散记全部吸收，由 commit 统一落一条。
     if (sceneEditTransactionRef.current) return;
     const snapshot = sceneSnapshotFactoryRef.current?.();
@@ -130,6 +141,8 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
 
   function scheduleSceneHistoryEdit(label: string): void {
     if (routeView !== "studio" || sceneHistoryApplyingRef.current || sceneBehaviorActive || animationPlaying) return;
+    // F4：载入静默期吸收 schedule 入口，防止恢复序列的引擎回调开出防抖计时器。
+    if (isSceneLoadSilent()) return;
     // S2b：Play 门禁吸收的防抖散记计入临时修改计数（记账裁决不变）。
     if (playModeActive) {
       playAbsorbedEditsRef.current += 1;
@@ -193,6 +206,8 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
     playAbsorbedEditsRef,
     sceneEditTransactionRef,
     sceneHistoryRevision,
+    beginSceneLoadSilence,
+    endSceneLoadSilence,
     flushSceneHistoryEdit: sceneEditFlush,
     runSceneHistoryEdit,
     beginSceneEditTransaction,

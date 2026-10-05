@@ -42,6 +42,7 @@ import type { SceneManagerController } from "./SceneManager";
 import { SceneManagerDialogs } from "./SceneManagerDialogs";
 import { UnifiedAssetLibraryPage } from "./UnifiedAssetLibraryPage";
 import { sceneThumbnailItems } from "./sceneManagerPresentation";
+import { disambiguatedProjectLabels } from "../studio/projectNameDisambiguation";
 import { TopologyMiniature } from "./TopologyMiniature";
 import { ManagerDirectoryStatus, managerDirectoryIssue } from "./ManagerDirectoryStatus";
 
@@ -143,6 +144,8 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
   // V3-P3 预防提示：同名场景计数，仅提示不自动删除（数据治理需用户确认）。
   const duplicateSceneNames = new Map<string, number>();
   for (const scene of sortedScenes) duplicateSceneNames.set(scene.name, (duplicateSceneNames.get(scene.name) ?? 0) + 1);
+  // F10：项目下拉重名消歧——同名项目以创建日期区分（缺失时间回退 ID 尾号），与场景侧同名告警同口径。
+  const projectOptionLabels = disambiguatedProjectLabels(projects);
   const directoryIssue = managerDirectoryIssue(directory, Boolean(project));
   const projectDirectoryBlocked = directory !== undefined && directory.projects.phase !== "ready";
   function projectAction(event: MouseEvent<HTMLButtonElement>, action: () => void) {
@@ -180,7 +183,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
         <div className="manager-project-switch">
           <select disabled={projectDirectoryBlocked} value={project?.id ?? ""} onChange={(event) => onProjectChange(event.target.value)} aria-label={tr(locale, "当前项目", "Current project")}>
             {!project && <option value="">{projectDirectoryBlocked ? tr(locale, "项目目录未就绪", "Directory not ready") : tr(locale, "暂无项目", "No projects")}</option>}
-            {projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            {projects.map((item) => <option key={item.id} value={item.id}>{projectOptionLabels.get(item.id) ?? item.name}</option>)}
           </select>
           <details>
             <summary aria-label={tr(locale, "项目管理", "Project management")} title={tr(locale, "项目管理", "Project management")}><MoreHorizontal size={15} /></summary>

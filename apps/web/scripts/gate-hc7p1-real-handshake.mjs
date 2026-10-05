@@ -183,7 +183,7 @@ try {
   step("打开诊断面板（requested=true 先于 backend 创建），切换 Deep WebGPU");
   await page.getByLabel("更多场景工具").click();
   await page.getByRole("button", { name: "渲染引擎设置", exact: true }).click();
-  await page.getByRole("button", { name: "启用 Deep WebGPU Beta", exact: true }).click();
+  await page.getByRole("button", { name: "启用 Deep WebGPU", exact: true }).click();
   // 切换含引擎重建（rendererSwitching 期间写事务 viewer 不可用）；等后端翻转完成且切换提示消失。
   await page.waitForFunction(() => {
     const text = document.body?.innerText ?? "";

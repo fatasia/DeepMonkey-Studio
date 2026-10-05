@@ -49,7 +49,7 @@ await page.waitForTimeout(1_500);
     await page.getByRole("button", { name: "渲染引擎设置", exact: true }).click();
   }
   await dialog.waitFor({ state: "visible" });
-  await dialog.getByRole("button", { name: "启用 Deep WebGPU Beta", exact: true }).click();
+  await dialog.getByRole("button", { name: "启用 Deep WebGPU", exact: true }).click();
   await page.locator(`.viewport canvas[data-renderer-backend="deep-webgpu"]`).waitFor({ state: "attached", timeout: 120_000 });
   await page.waitForFunction(() => {
     const canvas = document.querySelector(`.viewport canvas[data-renderer-backend="deep-webgpu"]`);

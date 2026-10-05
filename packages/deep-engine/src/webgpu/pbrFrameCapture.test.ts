@@ -46,6 +46,28 @@ describe("PbrFrameCapture", () => {
     expect(session.endFrame(11).frameId).toBe("external");
   });
 
+  it("declines a frame when the session gate returns false, keeping readback and record off", () => {
+    // 门禁合同:宿主在渲染器构建后禁用会话(如 Studio 切后端对话框关闭)时,
+    // begin 必须返回 false 且不锁存 frameId —— 否则白名单 readback(每帧多兆字节
+    // mapAsync + 拷贝)会在禁用后永远跑在渲染循环里。
+    class GatedSession extends FrameCaptureSession {
+      #gate = true;
+      setGate(value: boolean): void { this.#gate = value; }
+      override beginFrame(frameId: string, startedAtMs: number, planHash?: string): boolean | void {
+        if (!this.#gate) return false;
+        super.beginFrame(frameId, startedAtMs, planHash);
+      }
+    }
+    const session = new GatedSession();
+    const capture = new PbrFrameCapture({ session, now: () => 10 });
+    session.setGate(false);
+    expect(capture.begin("frame-1", PLAN)).toBe(false);
+    session.setGate(true);
+    expect(capture.begin("frame-2", PLAN)).toBe(true);
+    expect(capture.end().frameId).toBe("frame-2");
+    expect(session.records().map(record => record.frameId)).toEqual(["frame-2"]);
+  });
+
   it("cancels its own frame if the initial marker fails and permits retry", () => {
     const session = new FrameCaptureSession();
     const times = [10, 9, 20, 21, 22];

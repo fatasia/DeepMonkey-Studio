@@ -171,6 +171,13 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 input[type="number"]:focus { border-color: var(--accent); }
 input[type="number"]:disabled { cursor: not-allowed; opacity: .38; }
+/* F6 数字输入非法草稿标记(2026-10-05 对抗测试):DeferredNumberInput 校验失败时保留草稿
+   并以危险色描边提示,合法提交/Esc/外部值更新即清除;令牌驱动,明暗主题自动跟随。 */
+input.numeric-input-invalid {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface-1));
+}
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,

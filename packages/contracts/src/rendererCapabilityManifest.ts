@@ -498,6 +498,19 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     },
   },
   {
+    id: "material-layered-304b",
+    title: "分层材质 304B 层块(TS packLayeredSurfaceBlock ↔ native pbr_layered.rs 逐字节镜像)",
+    webFeatureKeys: ["layeredMaterials"],
+    web: {
+      support: "supported", reason: "opt-in-default-off",
+      evidence: "packages/deep-engine/src/shader/materialParameters.ts+packLayeredSurfaceBlock(304B = header 16B + 2×144B 行,16B 对齐 uniform;LAYERED_SURFACE_ABI_VERSION=1 与 native 互钉;活动层清漆复用 T08 核;layered_*_gpu_tests)",
+    },
+    native: {
+      support: "supported", reason: "opt-in-default-off",
+      evidence: "packages/deep-engine-native/src/pbr_layered.rs(LAYERED_SURFACE_BLOCK_BYTES=304 逐字节镜像 TS 布局;求值响应级混合 CPU 参考;layered_*_gpu_tests;pbr_layered_contract_tests)",
+    },
+  },
+  {
     id: "material-clearcoat",
     title: "清漆层与扩展材质带(C9)",
     webFeatureKeys: ["layeredMaterials"],

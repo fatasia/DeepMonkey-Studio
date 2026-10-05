@@ -23,7 +23,7 @@ await p.waitForTimeout(1500);
 await p.getByLabel("更多场景工具", { exact: true }).click();
 await p.getByRole("button", { name: "渲染引擎设置", exact: true }).click();
 const d = p.getByRole("dialog", { name: "渲染引擎设置", exact: true });
-await d.getByRole("button", { name: "启用 Deep WebGPU Beta", exact: true }).click();
+await d.getByRole("button", { name: "启用 Deep WebGPU", exact: true }).click();
 const cdp = await ctx.newCDPSession(p);
 await p.waitForTimeout(30000); console.log("MARKS", JSON.stringify(await p.evaluate(()=>performance.getEntriesByType("mark").filter(m=>/packet|runtime-ready|env/i.test(m.name)).map(m=>m.name.replace("deep-webgpu:","")+"@"+Math.round(m.startTime)).slice(-6))), "now", await p.evaluate(()=>Math.round(performance.now())));
 await cdp.send("Profiler.enable"); await cdp.send("Profiler.setSamplingInterval",{interval:1000}); await cdp.send("Profiler.start");

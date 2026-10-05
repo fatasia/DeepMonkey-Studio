@@ -107,7 +107,7 @@ async function runSwitchCycle() {
 
   const webGpuStartedAt = Date.now();
   await page.evaluate(() => performance.clearMarks());
-  await page.getByRole("button", { name: "启用 Deep WebGPU Beta", exact: true }).click();
+  await page.getByRole("button", { name: "启用 Deep WebGPU", exact: true }).click();
   await waitForPresentedCanvas(page, "deep-webgpu");
   report.timings.webgpuSwitchMs = Date.now() - webGpuStartedAt;
   report.timings.webgpuPhases = await switchPhases(page, "deep-webgpu");

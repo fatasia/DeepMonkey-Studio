@@ -31,8 +31,10 @@ class StudioFrameCaptureSession extends FrameCaptureSession {
     this.enabled = value;
   }
 
-  override beginFrame(frameId: string, startedAtMs: number, planHash?: string): void {
-    if (this.enabled) super.beginFrame(frameId, startedAtMs, planHash);
+  /** 禁用帧返回 false:渲染循环据此整帧跳过捕获编码与 readback(合同见 r12/frameCapture)。 */
+  override beginFrame(frameId: string, startedAtMs: number, planHash?: string): boolean | void {
+    if (!this.enabled) return false;
+    super.beginFrame(frameId, startedAtMs, planHash);
   }
 
   override recordPass(pass: PassCaptureInput): void {

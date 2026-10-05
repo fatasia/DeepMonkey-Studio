@@ -49,7 +49,7 @@ try {
   await dialog.waitFor({ state: "visible" });
   const cdp = profileCpu ? await context.newCDPSession(page) : undefined;
   if (cdp) { await cdp.send("Profiler.enable"); await cdp.send("Profiler.start"); }
-  await dialog.getByRole("button", { name: "启用 Deep WebGPU Beta", exact: true }).click();
+  await dialog.getByRole("button", { name: "启用 Deep WebGPU", exact: true }).click();
   await page.locator('.viewport canvas[data-renderer-backend="deep-webgpu"]').waitFor({ state: "attached" });
   await page.waitForFunction(() => {
     const canvas = document.querySelector('.viewport canvas[data-renderer-backend="deep-webgpu"]');

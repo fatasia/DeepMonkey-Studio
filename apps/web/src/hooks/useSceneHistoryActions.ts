@@ -30,6 +30,8 @@ export function useSceneHistoryActions({ state, history, playModeActive = false,
     sceneSnapshotFactoryRef,
     setRecoveryBusy,
     setRecoveryDraft,
+    beginSceneLoadSilence,
+    endSceneLoadSilence,
     flushSceneHistoryEdit,
   } = history;
 
@@ -48,6 +50,8 @@ export function useSceneHistoryActions({ state, history, playModeActive = false,
         && latest.route.view === "studio" && currentScene?.id === owner.sceneId;
     };
     sceneHistoryApplyingRef.current = true;
+    // F4：撤销/重做的恢复同走 applyScene，恢复期一并静默；完成即解除，不留 settle 尾巴。
+    beginSceneLoadSilence();
     try {
       // Ordinary apply swallows load failures; history must settle only a complete restore.
       await applyScene(snapshot, false, project, false, false, false, true, false, undefined, false, true);
@@ -65,6 +69,8 @@ export function useSceneHistoryActions({ state, history, playModeActive = false,
       }
       showError(reason);
     } finally {
+      // F4：立即解除（覆盖 applyScene finally 里的 settle 窗口），保证恢复后的正常编辑不被吸收。
+      endSceneLoadSilence();
       sceneHistoryApplyingRef.current = false;
     }
   }

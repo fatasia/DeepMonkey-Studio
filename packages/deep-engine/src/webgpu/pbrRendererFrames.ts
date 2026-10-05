@@ -335,8 +335,9 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       // async gpuPassTimings channel.
       const capturePlan = captureForFrame(host, size, drawProfile.hasTransparent, postProcess, directClear !== undefined, depthConsumedAfterPass);
       if (host.frameCapture && capturePlan) {
-        host.frameCapture.begin(`frame-${frameNumber}`, capturePlan.plan);
-        captureOpen = true;
+        // begin() 返回 false = 会话被宿主门禁拒绝(如切换后关闭诊断):本帧
+        // 跳过全部捕获侧 encode/readback/collect 工作,保持渲染循环原速。
+        captureOpen = host.frameCapture.begin(`frame-${frameNumber}`, capturePlan.plan) !== false;
       }
       const allocationPlan = allocationPlanFor(host, drawProfile.hasTransparent, postProcess, directClear !== undefined);
       // Capture can append readbacks outside the production graph; keep its resources physically distinct.

@@ -399,6 +399,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                 title={`${tr(locale, "位置", "Position")} · ${sceneCoordinates.upAxis.toUpperCase()}↑`}
                 transform={selectedProjectPosition ?? selectedTransform.position}
                 suffix={sceneCoordinates.unit}
+                onInvalidInput={() => setMessage(tr(locale, "输入不是有效数字，已保留草稿供修正", "Not a valid number; draft kept for correction"))}
                 onChange={(axis, value) => updateSelectedTransform("position", axis, value)}
               />
               <TransformFields
@@ -410,12 +411,14 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                   z: (selectedTransform.rotation.z * 180) / Math.PI,
                 }}
                 suffix="°"
+                onInvalidInput={() => setMessage(tr(locale, "输入不是有效数字，已保留草稿供修正", "Not a valid number; draft kept for correction"))}
                 onChange={(axis, value) => updateSelectedTransform("rotation", axis, value)}
               />
               <TransformFields
                 disabled={selectionLocked}
                 title={tr(locale, "缩放", "Scale")}
                 transform={selectedTransform.scale}
+                onInvalidInput={() => setMessage(tr(locale, "输入不是有效数字，已保留草稿供修正", "Not a valid number; draft kept for correction"))}
                 onChange={(axis, value) => updateSelectedTransform("scale", axis, value)}
               />
             </>

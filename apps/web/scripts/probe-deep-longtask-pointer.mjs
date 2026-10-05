@@ -54,7 +54,7 @@ await page.locator(".viewport canvas:not([data-renderer-backend])").first().wait
 const dialog = page.getByRole("dialog", { name: "渲染引擎设置", exact: true });
 await page.getByLabel("更多场景工具", { exact: true }).click();
 await page.getByRole("button", { name: "渲染引擎设置", exact: true }).click();
-await dialog.getByRole("button", { name: "启用 Deep WebGPU Beta", exact: true }).click();
+await dialog.getByRole("button", { name: "启用 Deep WebGPU", exact: true }).click();
 await page.waitForFunction(() => {
   const c = document.querySelector('.viewport canvas[data-renderer-backend="deep-webgpu"]');
   return c && getComputedStyle(c).opacity === "1";

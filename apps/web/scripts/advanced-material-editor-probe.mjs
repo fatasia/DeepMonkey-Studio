@@ -56,7 +56,7 @@ report.threeCanvas = await backend();
 // 切 Deep:快照含激活 lobe → 自动启用变体
 await page.getByLabel("更多场景工具", { exact: true }).click();
 await page.getByRole("button", { name: "渲染引擎设置", exact: true }).click();
-await page.getByRole("button", { name: "启用 Deep WebGPU Beta", exact: true }).click();
+await page.getByRole("button", { name: "启用 Deep WebGPU", exact: true }).click();
 await page.locator(`.viewport canvas[data-renderer-backend="deep-webgpu"]`).waitFor({ state: "attached", timeout: 60_000 });
 await page.getByRole("button", { name: "关闭", exact: true }).click();
 await page.waitForTimeout(10000);

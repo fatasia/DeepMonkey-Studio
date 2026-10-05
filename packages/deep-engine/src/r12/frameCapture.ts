@@ -319,7 +319,13 @@ export class FrameCaptureSession {
 
   get budget(): FrameCaptureBudget { return this.#budget; }
 
-  beginFrame(frameId: string, startedAtMs: number, planHash?: string): void {
+  /**
+   * Opens a capture frame. Returning `false` declines the frame (host gate
+   * disabled the session): the renderer must skip all capture-side encode,
+   * readback and collect work for this frame. Returning `undefined` (plain
+   * `void`, the historical shape) keeps the frame open as before.
+   */
+  beginFrame(frameId: string, startedAtMs: number, planHash?: string): boolean | void {
     if (this.#active) fail(`frame ${this.#active.frameId} is still open.`);
     const normalizedId = requireId(frameId, "frameId", this.#budget.maxStringLength);
     const start = requireTimestamp(startedAtMs, "startedAtMs");

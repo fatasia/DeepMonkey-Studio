@@ -80,9 +80,21 @@ export class PbrFrameCapture {
 
   get session(): FrameCaptureSession { return this.options.session; }
 
-  begin(frameId: string, plan: PbrFrameExecutionPlan): void {
+  /**
+   * Opens a capture frame. Returns false when the session declined the frame
+   * (e.g. a host gate disabled the session after renderer construction):
+   * no frame id is latched and readback/record work must stay off for this
+   * frame. Callers must treat false as "capture closed" and skip all
+   * capture-side encode/collect work for the frame.
+   */
+  begin(frameId: string, plan: PbrFrameExecutionPlan): boolean {
     // A rejected begin must not cancel a transaction owned by another caller.
-    this.options.session.beginFrame(frameId, this.now(), plan.planHash);
+    // A session returning false (disabled gate) keeps this a no-op: latching
+    // currentFrameId here used to leave whitelisted texture readbacks
+    // (multi-megabyte mapAsync + copy per rendered frame) running forever
+    // after the host disabled diagnostics post-switch.
+    const declined = this.options.session.beginFrame(frameId, this.now(), plan.planHash) === false;
+    if (declined) return false;
     this.currentFrameId = frameId;
     try {
       this.options.session.markTimeline({ markerId: "encode-start", label: "render-loop encode start", timestampMs: this.now() });
@@ -91,6 +103,7 @@ export class PbrFrameCapture {
       this.options.session.cancelFrame();
       throw error;
     }
+    return true;
   }
 
   /** Encodes whitelisted resource snapshots on the frame encoder; must run before encoder.finish(). */

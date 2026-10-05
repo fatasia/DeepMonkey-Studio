@@ -50,7 +50,7 @@ async function switchTo(backend) {
     await page.getByRole("button", { name: "渲染引擎设置", exact: true }).click();
   }
   await dialog.waitFor({ state: "visible" });
-  const button = backend === "webgl" ? "切换到兼容模式" : "启用 Deep WebGPU Beta";
+  const button = backend === "webgl" ? "切换到兼容模式" : "启用 Deep WebGPU";
   await dialog.getByRole("button", { name: button, exact: true }).click();
   if (backend === "webgl") {
     await page.waitForFunction(() => {

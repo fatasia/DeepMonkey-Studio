@@ -38,7 +38,7 @@ export function StructuredProperties({ locale, entries, emptyText }: { locale: A
   </div>;
 }
 
-export function DeferredNumberInput({ value, onCommit, min, max, step, disabled, className, ariaLabel, placeholder }: {
+export function DeferredNumberInput({ value, onCommit, min, max, step, disabled, className, ariaLabel, placeholder, onInvalidInput }: {
   value: number | undefined;
   onCommit: (value: number) => void;
   min?: number;
@@ -48,13 +48,16 @@ export function DeferredNumberInput({ value, onCommit, min, max, step, disabled,
   className?: string;
   ariaLabel?: string;
   placeholder?: string;
+  /** F6：非法输入（空串/非有限数）提交时回调一次供上层发一次性提示；红框由组件内置。 */
+  onInvalidInput?: (raw: string) => void;
 }) {
   const formatted = value === undefined ? "" : String(value);
   const [draft, setDraft] = useState(formatted);
+  const [invalid, setInvalid] = useState(false);
   const focused = useRef(false);
   const cancelled = useRef(false);
   useEffect(() => {
-    if (!focused.current) setDraft(formatted);
+    if (!focused.current) { setDraft(formatted); setInvalid(false); }
   }, [value]);
 
   function commit() {
@@ -63,13 +66,18 @@ export function DeferredNumberInput({ value, onCommit, min, max, step, disabled,
     if (cancelled.current) {
       cancelled.current = false;
       setDraft(formatted);
+      setInvalid(false);
       return;
     }
     const parsed = Number(draft);
     if (draft.trim() === "" || !Number.isFinite(parsed)) {
-      setDraft(formatted);
+      // F6：非法输入不再静默回退——保留草稿供修正，红框标记并回调上层提示；
+      // 合法提交、Esc 还原或外部值更新都会清除标记。
+      setInvalid(true);
+      onInvalidInput?.(draft);
       return;
     }
+    setInvalid(false);
     const next = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, parsed));
     setDraft(String(next));
     if (next !== value) onCommit(next);
@@ -81,8 +89,9 @@ export function DeferredNumberInput({ value, onCommit, min, max, step, disabled,
   }
 
   return <input
-    className={className}
+    className={`${className ?? ""} ${invalid ? "numeric-input-invalid" : ""}`.trim()}
     aria-label={ariaLabel}
+    aria-invalid={invalid || undefined}
     placeholder={placeholder}
     disabled={disabled}
     type="text"
@@ -105,23 +114,31 @@ export function DeferredNumberInput({ value, onCommit, min, max, step, disabled,
         event.stopPropagation();
         cancelled.current = true;
         setDraft(formatted);
+        setInvalid(false);
         event.currentTarget.blur();
       }
     }}
   />;
 }
 
-export function TransformFields({ title, transform, suffix, disabled = false, onChange }: {
+/** F6：场景尺度界限。变换类字段缺省钳制，防止 1e999/超大负值把对象直接送出可恢复范围。 */
+const TRANSFORM_FIELD_LIMIT = 1e6;
+
+export function TransformFields({ title, transform, suffix, disabled = false, onChange, onInvalidInput, min = -TRANSFORM_FIELD_LIMIT, max = TRANSFORM_FIELD_LIMIT }: {
   title: string;
   transform: { x: number; y: number; z: number };
   suffix?: string;
   disabled?: boolean;
   onChange: (axis: "x" | "y" | "z", value: string) => void;
+  /** 非法输入一次性提示回调；不传时仍有组件内置红框。 */
+  onInvalidInput?: (raw: string) => void;
+  min?: number;
+  max?: number;
 }) {
   return (
     <fieldset className="transform-fields">
       <legend>{title}</legend>
-      <div>{(["x", "y", "z"] as const).map((axis) => <label key={axis}><span>{axis.toUpperCase()}</span><DeferredNumberInput ariaLabel={`${title} ${axis.toUpperCase()}${suffix ? ` (${suffix})` : ""}`} disabled={disabled} step={0.1} value={Number(transform[axis].toFixed(3))} onCommit={(value) => onChange(axis, String(value))} />{suffix && <i>{suffix}</i>}</label>)}</div>
+      <div>{(["x", "y", "z"] as const).map((axis) => <label key={axis}><span>{axis.toUpperCase()}</span><DeferredNumberInput ariaLabel={`${title} ${axis.toUpperCase()}${suffix ? ` (${suffix})` : ""}`} disabled={disabled} step={0.1} min={min} max={max} value={Number(transform[axis].toFixed(3))} onCommit={(value) => onChange(axis, String(value))} onInvalidInput={onInvalidInput} />{suffix && <i>{suffix}</i>}</label>)}</div>
     </fieldset>
   );
 }
