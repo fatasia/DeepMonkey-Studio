@@ -14,6 +14,7 @@ import type { SurfaceSize } from "./surfaceSize.js";
 import { PbrTransparencyPass } from "./pbrTransparencyPass.js";
 import { PbrPostProcessChain } from "./pbrPostProcessChain.js";
 import { describeContactShadowPass, describeContactApplyPass } from "../shadows/contactShadowResources.js";
+import { describeSdfGiSkyTracePass, describeSdfGiProbeUpdatePass } from "../gi/sdfGiFramePlanDescriptors.js";
 
 /** DE26/B03 第一切片:把 compilePbrFrameGraph 的编译计划落成可执行、可对拍、可回执的执行计划。 */
 
@@ -270,7 +271,10 @@ export function collectActualPbrFramePasses(features: PbrRendererFeatures, trans
   options: { readonly opaqueColorResource?: string; readonly presentInputResource?: string;
     readonly directDisplay?: boolean; readonly writeGeometryBuffers?: boolean; readonly bloom?: boolean; readonly godRays?: boolean; readonly hdrDisplay?: boolean;
     readonly msaa?: boolean; readonly depthResolved?: boolean } = {}): readonly PbrActualPassDescription[] {
-  if (options.directDisplay) return Object.freeze([describePbrOpaquePass(options)]);
+  // GI-FIN(2026-10-05)sdfGi 两 pass 的实际描述由 gi 域单源提供(sdfGiFramePlanDescriptors);
+  // 真实编码序:主 encoder 上 opaque 之前(pbrRendererFrames host.sdfGi 分支,直出帧同序)。
+  const sdfGiPasses = features.sdfGi ? [describeSdfGiSkyTracePass(), describeSdfGiProbeUpdatePass()] : [];
+  if (options.directDisplay) return Object.freeze([...sdfGiPasses, describePbrOpaquePass(options)]);
   const opaqueColorResource = options.opaqueColorResource ?? (features.ambientOcclusion ? "ao-hdr" : "opaque-hdr");
   const effects = PbrPostProcessChain.describePasses(features, transparency, { opaqueColorResource, ...(options.godRays ? { godRays: true } : {}) });
   const opaqueEffect = (pass: PbrActualPassDescription): boolean =>
@@ -285,6 +289,7 @@ export function collectActualPbrFramePasses(features: PbrRendererFeatures, trans
     : features.screenSpaceReflection ? "ssr-hdr" : features.volumetricFog ? "volumetric-fog-hdr"
       : transparency ? "composited-hdr" : opaqueColorResource;
   return Object.freeze([
+    ...sdfGiPasses,
     describePbrOpaquePass(options),
     ...effects.filter(opaqueEffect),
     ...(transparency ? PbrTransparencyPass.describePasses(opaqueColorResource) : []),
