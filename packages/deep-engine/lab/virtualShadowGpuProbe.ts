@@ -22,7 +22,9 @@ export {
   PROBE_WIDTH,
   buildDeviceUpdate,
   buildProbeScene,
+  downsampleLuma2x,
   edgeAliasingEnergy,
+  fenceRegionFor,
   frameDistance,
   holeCheck,
   meanAbsDiff,
@@ -35,7 +37,9 @@ export type {
 } from "./virtualShadowProbeScene.js";
 export {
   beginLeg,
+  captureEdgeSamples,
   captureStill,
+  captureStillSsaa,
   dynamicLatencyLeg,
   finishLeg,
   setActiveView,
@@ -43,6 +47,7 @@ export {
   timeLeg,
 } from "./virtualShadowProbeSession.js";
 export type {
+  BeginLegOptions,
   ProbeLegResult,
   ShadowBandField,
 } from "./virtualShadowProbeSession.js";

@@ -63,6 +63,64 @@ CPU 镜像单测锁定走查序(`virtualShadowSampling.test.ts`)。
   基线固定为非自适应档(exactProfile medium)或改用对分辨率敏感的度量
   (如 grazing 光细杆阴影的梯度带能量)—— 属验收口径变更,须用户裁决。
 
+### 门①口径裁决执行(2026-10-05,用户拍板"固定档级联基线重测")
+
+执行方式:级联腿经 `beginLeg(mode, withCapture, { shadows })` 参数化钉固定档
+(`requestedTier: "performance"` = 2×1024/λ0.65/blend0.12;`selectProfile` 单独收
+requestedTier 走 `resolveCascadedShadowQuality`,且 `stageAdaptiveShadow` 仅在
+exactProfile.cascadeCount===1 时生效 —— 档位由参数唯一钉死,自适应压力不可达,
+探针不硬编码)。真机 headless Chrome WebGPU,每腿 5 组采样(帧间 min=max=mean,
+渲染确定性成立),腿清单与判定 runner:`scripts/vsm-gate1-fixed-tier.mjs`,
+证据 `test-output/vsm-gate1-fixed-tier/`(gate1.json + leg-raw-digest.json + 12 张 PNG)。
+
+| 口径 | 机位 | 固定档基线(performance) | VSM | ratio | 判定 |
+|---|---|---|---|---|---|
+| ① corner-ratio(原门口径) | 近景 | 0.2007 | 0.1948 | 0.971 | fail(重合,地板) |
+| ① corner-ratio | 远景 | 0.00503 | 0.00494 | 0.983 | inconclusive(基线不显著) |
+| ①-alt 分辨率敏感(1× vs 4×SSAA 测区亮度差) | 近景 | 0.03580 | 0.01353 | **0.378** | **pass(↓62.2%,≤0.40)** |
+| ①-alt 分辨率敏感 | 远景 | 0.000316 | 0.000332 | 1.048 | inconclusive(两腿同噪声地板) |
+
+**调档实证(exact=512 单级联,证据 `test-output/vsm-gate1-fixed-tier/exact-512/`)**:
+远景 cornerRatio = 0.00503 —— 与 1024 双级联、2048 四级联(上一节自适应档)**三档同值**,
+corner-ratio 与阴影图分辨率完全解耦,机理推断升级为三档实证;近景 corner-ratio 0.1948
+仍与 VSM 重合(ratio 1.0);分辨率敏感口径近景 0.03514/0.01353 → ratio **0.385 PASS**
+(↓61.5%,与 performance 档 0.378 一致)。两档证据分目录固化:
+`test-output/vsm-gate1-fixed-tier/{tier-performance,exact-512}/`(gate1.json +
+leg-raw-digest.json + 12 张 PNG 各)。
+
+**裁决数据结论(如实)**:
+
+1. **corner-ratio 口径对"图受限锯齿"不可测,机理已三档实证**:performance(2×1024)
+   远景 cornerRatio = 0.00503,与自适应档 high(4×2048,上一节)、exact=512 单级联
+   **三档同值** —— 阴影图分辨率 4× 变化该度量纹丝不动。原因:comparison-sampler
+   PCF linear 把图受限 texel 阶梯软化为**多像素渐变边**,而 corner-ratio 是 0.55 硬
+   阈值掩码的角密度,对边缘软硬一视同仁(渐变边在阈值下同样给出直线边界,角密度
+   趋 0)。该口径度量的是"硬阶梯锯齿",而图受限锯齿在本引擎的呈现形式是软化宽度
+   —— 继续调档(256 及以下)只会让阴影彻底破碎,不会再改变该度量,调档路径已到头。
+2. **分辨率敏感备选口径出数且有效**:delta = |1× 渲染 − 4×SSAA 参考| 测区亮度均值
+   (同机位 1× 腿与 2× 渲染+2×2 box 还原腿页内配对差分,渲染确定性由 5 组采样
+   帧间零漂移佐证)。近景基线 delta 0.0358 = 远景噪声地板(~3.2e-4)的 113×,
+   基线真实存在可测锯齿成分;VSM delta 0.0135 = 基线 **37.8% ≤ 40%(↓62.2%)**
+   —— 门①本意("VSM 的分辨率优势降低锯齿能量")在近景固定档基线下成立。
+   远景两腿 delta 同在噪声地板:远景阴影边缘已被 PCF 软化为渐变,提高屏幕采样
+   密度无法改善,"↓60%"在远景没有可降对象 —— **远景在两口径下都是地板,非 VSM 缺陷**。
+3. **门①最终判定建议**:按 corner-ratio 原口径 = 不可判(近景重合、远景基线不显著,
+   口径机理缺陷,非实现缺陷);按分辨率敏感备选口径 = **近景 PASS(0.378 ≤ 0.40)、
+   远景无可降锯齿(地板)**。建议以备选口径关闭门①(近景达标 + 远景地板如实注记);
+   口径归属由用户最终裁决。
+4. 同族排查:cornerRatio 消费面仅本探针三文件与旧 runner `virtual-shadow-gpu.mjs`,
+   无其他测试/产线代码消费该度量,口径缺陷影响面收敛于本验收链。
+5. 探针改动测试:`lab/virtualShadowProbeScene.test.ts` 7 passed(含"corner-ratio 对
+   SSAA 不敏感"回归锚与 SSAA 亚像素混合证据);deep-engine shadows 全套
+   120 passed / 2 skipped(既有);`tsc --noEmit -p tsconfig.lab.json` 本任务域 0 错
+   (余 `lab/tsrGhostBaselineProbe.ts` 为 TSR 并行域既有,未触碰)。改动文件:
+   `lab/virtualShadowProbeScene.ts`(+`fenceRegionFor`/`downsampleLuma2x`)、
+   `lab/virtualShadowProbeSession.ts`(beginLeg 参数化 + captureEdgeSamples(5 组)+
+   captureStillSsaa + finishLeg 扩展)、`lab/virtualShadowGpuProbe.ts`(导出)、
+   `lab/virtualShadowProbeScene.test.ts`(新)、`scripts/vsm-gate1-fixed-tier.mjs`(新);
+   src/ 与互斥域(postprocess/lighting/gi/rayTracing/pbrShader/pipelines)零改动,
+   dist 无需重建(lab 不入 dist)。
+
 ## 测试与构建证据
 
 - deep-engine shadows 全套 + virtualSampling + shadowSwitch + checksum:

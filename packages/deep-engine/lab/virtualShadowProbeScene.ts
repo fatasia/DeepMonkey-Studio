@@ -229,6 +229,40 @@ export function edgeAliasingEnergy(field: LumaField, region: { x0: number; y0: n
     shadowMean: shadowCount > 0 ? shadow / shadowCount : 0 };
 }
 
+/**
+ * 门①口径裁决测区(与 captureStill 现行栅栏条纹测区逐值同源,抽出共用):
+ * 中央净空地面走廊(避开左右前景设备箱的暗面与远景球墙)。
+ * 按场尺寸比例计算,1× 与 2× SSAA 下采样场直接复用同一口径。
+ */
+export function fenceRegionFor(field: { readonly width: number; readonly height: number }):
+  { x0: number; y0: number; x1: number; y1: number } {
+  return { x0: Math.floor(field.width * 0.34), y0: Math.floor(field.height * 0.52),
+    x1: Math.floor(field.width * 0.66), y1: Math.floor(field.height * 0.97) };
+}
+
+/**
+ * 2×2 box 下采样(4×SSAA 参考场的还原步):2× 渲染场的每 2×2 像素均值合并为 1× 场。
+ * 输入场宽高须为偶数(SSAA 腿渲染尺寸 = 1× 尺寸 × 2,恒偶)。
+ * 纯图像函数,供门①备选"分辨率敏感度量"(1× 边缘能量 vs 4×SSAA 参考)使用。
+ */
+export function downsampleLuma2x(field: LumaField): LumaField {
+  if (field.width % 2 !== 0 || field.height % 2 !== 0) {
+    throw new Error(`downsampleLuma2x requires even dimensions, got ${field.width}x${field.height}.`);
+  }
+  const width = field.width / 2, height = field.height / 2;
+  const luma = new Float32Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const sx = x * 2, sy = y * 2;
+      luma[y * width + x] = (field.luma[sy * field.width + sx]!
+        + field.luma[sy * field.width + sx + 1]!
+        + field.luma[(sy + 1) * field.width + sx]!
+        + field.luma[(sy + 1) * field.width + sx + 1]!) / 4;
+    }
+  }
+  return { width, height, luma };
+}
+
 /** 黑斑/非有限检查:测区内非有限亮度与"局部中值亮而像素近黑"的斑点(零洞合同)。 */
 export function holeCheck(field: LumaField, region: { x0: number; y0: number; x1: number; y1: number }): {
   nonFinite: number; blackSpeckles: number; samples: number } {
