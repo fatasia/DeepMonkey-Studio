@@ -602,6 +602,8 @@ export function App() {
     getActiveScene: appState.getActiveScene, getRoute: appState.getRoute, getScenes: appState.getScenes,
     onFirstSceneSave: sceneHistoryState.adoptFirstSavedScene,
     recordSceneEdit: (label) => sceneHistoryRecordRef.current(label),
+    beginSceneLoadSilence: sceneHistoryState.beginSceneLoadSilence,
+    endSceneLoadSilence: sceneHistoryState.endSceneLoadSilence,
     engine,
     project,
     activeScene,

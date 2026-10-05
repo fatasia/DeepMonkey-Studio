@@ -89,6 +89,8 @@ describe("transaction window guard (T27)", () => {
     const applyScene = vi.fn(async () => undefined);
     const undo = vi.fn(() => structuredClone(server));
     const redo = vi.fn(() => structuredClone(server));
+    const beginSceneLoadSilence = vi.fn();
+    const endSceneLoadSilence = vi.fn();
     const options = {
       state: {
         project: { id: "p" }, activeScene: server, route: { view: "studio", projectId: "p", sceneId: "s" },
@@ -99,11 +101,12 @@ describe("transaction window guard (T27)", () => {
         sceneHistoryApplyingRef: { current: false }, sceneEditTransactionRef: transaction,
         sceneHistoryRef: { current: { revision: 7, record: vi.fn(), undo, redo, acceptRestoredScene: vi.fn() } },
         sceneSnapshotFactoryRef: { current: () => structuredClone(server) }, flushSceneHistoryEdit: vi.fn(),
+        beginSceneLoadSilence, endSceneLoadSilence,
       },
       playModeActive,
       applyScene,
     } as unknown as Parameters<typeof useSceneHistoryActions>[0];
-    return { actions: useSceneHistoryActions(options), applyScene, undo, redo };
+    return { actions: useSceneHistoryActions(options), applyScene, undo, redo, beginSceneLoadSilence, endSceneLoadSilence };
   }
 
   it("refuses undo and redo while an edit transaction is open", async () => {
@@ -131,5 +134,8 @@ describe("transaction window guard (T27)", () => {
     expect(closed.undo).toHaveBeenCalledTimes(1);
     expect(closed.redo).toHaveBeenCalledTimes(1);
     expect(closed.applyScene).toHaveBeenCalledTimes(2);
+    // F4：撤销/重做恢复完成必须立即解除载入静默，且不留 settle 尾巴（settle=0）。
+    expect(closed.beginSceneLoadSilence).toHaveBeenCalledTimes(2);
+    expect(closed.endSceneLoadSilence).toHaveBeenCalledWith(0);
   });
 });

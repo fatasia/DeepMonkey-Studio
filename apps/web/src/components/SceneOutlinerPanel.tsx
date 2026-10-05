@@ -31,6 +31,8 @@ const SmartAssetBindingWorkbench = lazy(() => import("./SmartAssetBindingWorkben
 export interface SceneOutlinerPanelProps {
   locale: AppLocale;
   uploading: boolean;
+  /** F11：播放模式中导入入口禁用——导入产物是临时态，退出播放即被整体恢复冲掉。 */
+  importDisabled?: boolean;
   importOpen: boolean;
   activeWorkflow?: "device-layout" | "smart-binding" | "model-diff" | null;
   rvtConversionMode: RvtConversionMode;
@@ -176,9 +178,9 @@ export function SceneOutlinerPanel(props: SceneOutlinerPanelProps) {
           <button
             className="icon-button"
             aria-label={tr(props.locale, "导入模型", "Import model")}
-            title={tr(props.locale, "导入模型", "Import model")}
+            title={props.importDisabled ? tr(props.locale, "播放中不可导入，请先退出播放模式", "Import is unavailable during Play; exit Play first") : tr(props.locale, "导入模型", "Import model")}
             onClick={() => { setResourceOpen(false); props.onImportModel(); }}
-            disabled={props.uploading}
+            disabled={props.uploading || props.importDisabled}
           >
             {props.uploading ? (
               <LoaderCircle className="spin" size={18} />

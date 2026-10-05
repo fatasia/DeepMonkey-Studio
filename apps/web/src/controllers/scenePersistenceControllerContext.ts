@@ -100,6 +100,9 @@ export interface ScenePersistenceControllerContext {
   sortScenesByTime: (items: SceneSnapshot[]) => SceneSnapshot[];
   showError: (reason: unknown) => void;
   recordSceneEdit: (label: string) => void;
+  /** F4 载入静默期：applyScene 期间吸收引擎回调的编辑记账，防打开场景预置"幽灵撤销"。 */
+  beginSceneLoadSilence?: () => void;
+  endSceneLoadSilence?: (settleMs?: number) => void;
   setActiveScene: Setter<SceneSnapshot | undefined>;
   getActiveScene: () => SceneSnapshot | undefined;
   buildPublicationArtifact: (publication: PublishedSceneRecord, options: SceneArtifactOptions, prepared?: PreparedSceneClientPackage) => Promise<SceneArtifactRunResult>;

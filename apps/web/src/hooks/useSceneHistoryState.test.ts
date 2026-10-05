@@ -15,6 +15,32 @@ vi.mock("react-dom", () => ({ flushSync: (change: () => void) => change() }));
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
+describe("scene load silence (F4 载入静默期防幽灵撤销)", () => {
+  it("absorbs engine callbacks fired during load and the settle window, then restores accounting", () => {
+    const h = harness();
+    h.state.beginSceneLoadSilence();
+    h.rename("载入挂载触发的回调"); h.record("编辑三维对象");
+    vi.advanceTimersByTime(1000);
+    expect(h.history.getState().canUndo).toBe(false);
+    h.state.endSceneLoadSilence(500);
+    h.rename("settle 窗口内的挂载尾巴"); h.record("编辑三维对象");
+    vi.advanceTimersByTime(1000);
+    expect(h.history.getState().canUndo).toBe(false);
+    h.state.endSceneLoadSilence(0);
+    h.rename("用户编辑"); h.record("编辑三维对象");
+    vi.advanceTimersByTime(220);
+    expect(h.history.getState()).toMatchObject({ canUndo: true, undoLabel: "编辑三维对象" });
+  });
+
+  it("drops an already-scheduled debounce edit once the load silence starts", () => {
+    const h = harness();
+    h.rename("载入前排队"); h.record("编辑三维对象");
+    h.state.beginSceneLoadSilence();
+    vi.advanceTimersByTime(500);
+    expect(h.history.getState().canUndo).toBe(false);
+  });
+});
+
 function baseScene(name: string): SceneSnapshot {
   return {
     schemaVersion: 1, id: "scene", projectId: "project", name,

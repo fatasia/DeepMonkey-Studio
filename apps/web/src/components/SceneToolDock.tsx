@@ -48,6 +48,8 @@ interface SceneToolDockProps {
   locale: AppLocale;
   navigationMode: NavigationMode;
   transformMode: TransformMode;
+  /** F11：播放模式中为 true，写场景类工具（创建/放置）禁用并给理由。 */
+  editingDisabled?: boolean;
   /** 没有选中可编辑对象时不显示变换模式，避免工具看似可用但点击无效。 */
   hasSelection: boolean;
   /** 模型爆炸只作用于选中的模型。 */
@@ -227,6 +229,9 @@ export function SceneToolDock(props: SceneToolDockProps) {
               key={kind}
               label={primitiveKindLabel(kind, props.locale)}
               icon={<Box size={14} />}
+              // F11：播放模式禁用创建面——播放产物是临时态，退出即恢复，放置只会造成困惑。
+              disabled={props.editingDisabled}
+              disabledReason={tr(props.locale, "播放中不可放置对象，请先退出播放模式", "Placement is unavailable during Play; exit Play first")}
               onClick={() => run(() => props.onPrimitivePlace(kind))}
             />
           ))}

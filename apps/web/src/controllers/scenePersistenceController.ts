@@ -60,6 +60,8 @@ export function createScenePersistenceController(context: ScenePersistenceContro
     isModelLoadSuperseded,
     sortScenesByTime,
     showError,
+    beginSceneLoadSilence,
+    endSceneLoadSilence,
     setActiveScene,
     setAutoSaveEnabled,
     setAnimationPlaying,
@@ -207,6 +209,9 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       return;
     }
     const applyVersion = ++sceneApplyVersionRef.current;
+    // F4：载入静默期自 applyScene 开始，finally 里转 settle 窗口吸收挂载尾巴的防抖散记，
+    // 打开场景/撤销恢复/播放退出不再预置"幽灵编辑"（撤销按钮首次点击吞刀的根因）。
+    beginSceneLoadSilence?.();
     setBusy(true);
     if (updateRoute) navigate(route.applicationId ? { ...route, view: "studio", sceneId: scene.id } : { view: "studio", sceneId: scene.id });
     try {
@@ -430,6 +435,9 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       showError(reason);
     } finally {
       if (applyVersion === sceneApplyVersionRef.current) setBusy(false);
+      // F4：载入结束后留 500ms settle 窗口（大于 220ms 防抖窗）吸收挂载尾巴；
+      // 撤销/重做路径在其外层 finally 里以 settle=0 立即解除，不影响恢复后的编辑。
+      endSceneLoadSilence?.(500);
     }
   }
 

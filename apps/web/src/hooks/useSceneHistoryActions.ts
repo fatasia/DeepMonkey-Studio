@@ -70,7 +70,7 @@ export function useSceneHistoryActions({ state, history, playModeActive = false,
       showError(reason);
     } finally {
       // F4：立即解除（覆盖 applyScene finally 里的 settle 窗口），保证恢复后的正常编辑不被吸收。
-      endSceneLoadSilence();
+      endSceneLoadSilence(0);
       sceneHistoryApplyingRef.current = false;
     }
   }

@@ -25,6 +25,7 @@ export function SceneSelectionBar({
   onCollision,
   collisionEnabled = false,
   onClear,
+  editingDisabled = false,
 }: {
   locale: AppLocale;
   selectedObjects: readonly SceneSelectionBarObject[];
@@ -40,11 +41,14 @@ export function SceneSelectionBar({
   onCollision?: (enabled: boolean) => void;
   collisionEnabled?: boolean;
   onClear: () => void;
+  /** F11：播放模式禁用全部写操作（隐藏/锁定/编组/隔离/碰撞），改动是临时态。 */
+  editingDisabled?: boolean;
 }) {
   const moreRef = useDismissableDetails<HTMLDetailsElement>();
   const ids = selectedObjects.map((item) => item.id);
   const hasSelection = ids.length > 0;
   if (ids.length < 2 && !(isolationActive && onRestoreIsolation)) return null;
+  const disabledReason = tr(locale, "播放中不可修改，请先退出播放模式", "Unavailable during Play; exit Play first");
   return (
     <div className="scene-tree-selection-bar visible">
       <span className="scene-selection-count">
@@ -53,8 +57,8 @@ export function SceneSelectionBar({
       <button
         type="button"
         aria-label={tr(locale, "编组所选对象", "Group selection")}
-        title={tr(locale, "编组", "Group")}
-        disabled={ids.length < 2}
+        title={editingDisabled ? disabledReason : tr(locale, "编组", "Group")}
+        disabled={ids.length < 2 || editingDisabled}
         onClick={onGroup}
       >
         <Group size={12} />
@@ -62,8 +66,8 @@ export function SceneSelectionBar({
       {onSaveAsPrefab && <button
         type="button"
         aria-label={tr(locale, "存为预制体", "Save as prefab")}
-        title={tr(locale, "存为预制体（多选对象入库，可反复实例化）", "Save as prefab (store selection as a reusable template)")}
-        disabled={ids.length < 1}
+        title={editingDisabled ? disabledReason : tr(locale, "存为预制体（多选对象入库，可反复实例化）", "Save as prefab (store selection as a reusable template)")}
+        disabled={ids.length < 1 || editingDisabled}
         onClick={onSaveAsPrefab}
       >
         <Package size={12} />
@@ -72,7 +76,7 @@ export function SceneSelectionBar({
         type="button"
         aria-label={tr(locale, "隔离所选对象", "Isolate selection")}
         title={tr(locale, "隔离", "Isolate")}
-        disabled={!hasSelection}
+        disabled={!hasSelection || editingDisabled}
         onClick={onIsolate}
       >
         <Focus size={12} />
@@ -82,7 +86,7 @@ export function SceneSelectionBar({
         className={collisionEnabled ? "active" : ""}
         aria-label={collisionEnabled ? tr(locale, "关闭所选对象碰撞", "Disable selection collision") : tr(locale, "开启所选对象碰撞", "Enable selection collision")}
         title={tr(locale, "碰撞", "Collision")}
-        disabled={!hasSelection}
+        disabled={!hasSelection || editingDisabled}
         onClick={() => onCollision(!collisionEnabled)}
       >
         <ScanLine size={12} />
@@ -95,19 +99,19 @@ export function SceneSelectionBar({
           const details = event.currentTarget.parentElement;
           if (details instanceof HTMLDetailsElement) details.open = false;
         }}>
-          <button type="button" disabled={!hasSelection} onClick={() => onShow(true)}>
+          <button type="button" disabled={!hasSelection || editingDisabled} title={editingDisabled ? disabledReason : undefined} onClick={() => onShow(true)}>
             <Eye size={13} /><span>{tr(locale, "显示所选对象", "Show selection")}</span>
           </button>
-          <button type="button" disabled={!hasSelection} onClick={() => onShow(false)}>
+          <button type="button" disabled={!hasSelection || editingDisabled} title={editingDisabled ? disabledReason : undefined} onClick={() => onShow(false)}>
             <EyeOff size={13} /><span>{tr(locale, "隐藏所选对象", "Hide selection")}</span>
           </button>
-          <button type="button" disabled={!hasSelection} onClick={onLock}>
+          <button type="button" disabled={!hasSelection || editingDisabled} title={editingDisabled ? disabledReason : undefined} onClick={onLock}>
             <Lock size={13} /><span>{tr(locale, "锁定所选对象", "Lock selection")}</span>
           </button>
           {onRestoreIsolation && isolationActive && <button type="button" onClick={onRestoreIsolation}>
             <Eye size={13} /><span>{tr(locale, "恢复隔离前状态", "Restore isolation")}</span>
           </button>}
-          {onUnlock && <button type="button" disabled={!hasSelection} onClick={onUnlock}>
+          {onUnlock && <button type="button" disabled={!hasSelection || editingDisabled} title={editingDisabled ? disabledReason : undefined} onClick={onUnlock}>
             <Unlock size={13} /><span>{tr(locale, "解锁所选对象", "Unlock selection")}</span>
           </button>}
         </div>

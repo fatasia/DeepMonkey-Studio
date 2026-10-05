@@ -15,6 +15,8 @@ export interface ModelTreeItemProps {
   locale: AppLocale;
   model: ModelRecord;
   loaded: LoadedSceneModel | undefined;
+  /** F11：播放模式禁用行内写操作（显隐/锁定/移除）——播放产物是临时态。 */
+  editingDisabled?: boolean;
   tree: LayerTreeNode | undefined;
   expanded: boolean;
   modelFloors: readonly SceneFloorState[];
@@ -43,6 +45,7 @@ export function ModelTreeItem({
   locale,
   model,
   loaded,
+  editingDisabled = false,
   tree,
   expanded,
   modelFloors,
@@ -98,8 +101,9 @@ export function ModelTreeItem({
         {loaded && (
           <button
             className="mini-button"
+            disabled={editingDisabled}
             aria-label={loaded.visible ? tr(locale, "隐藏", "Hide") : tr(locale, "显示", "Show")}
-            title={loaded.visible ? tr(locale, "隐藏", "Hide") : tr(locale, "显示", "Show")}
+            title={editingDisabled ? tr(locale, "播放中不可修改，请先退出播放模式", "Unavailable during Play; exit Play first") : loaded.visible ? tr(locale, "隐藏", "Hide") : tr(locale, "显示", "Show")}
             onClick={() => {
               // 批 2 收编:模型级显隐走命令总线(engine 为空时 dispatch 静默跳过,与 engine?. 直调一致)。
               dispatchEngineEditCommand(engine, layerVisibilityCommand(locale, { modelId: model.id }, !loaded.visible));
@@ -111,8 +115,9 @@ export function ModelTreeItem({
         {loaded && (
           <button
             className={`mini-button ${engine?.isModelLocked(model.id) ? "active" : ""}`}
+            disabled={editingDisabled}
             aria-label={engine?.isModelLocked(model.id) ? tr(locale, "解锁模型", "Unlock model") : tr(locale, "锁定模型", "Lock model")}
-            title={engine?.isModelLocked(model.id) ? tr(locale, "解锁模型", "Unlock model") : tr(locale, "锁定模型", "Lock model")}
+            title={editingDisabled ? tr(locale, "播放中不可修改，请先退出播放模式", "Unavailable during Play; exit Play first") : engine?.isModelLocked(model.id) ? tr(locale, "解锁模型", "Unlock model") : tr(locale, "锁定模型", "Lock model")}
             onClick={() => {
               // 批 2 收编:模型级锁定走命令总线;engine 为空时保持直调的短路语义(不发命令)且 onSetRevision 照常执行。
               if (engine) dispatchEngineEditCommand(engine, layerLockCommand(locale, { modelId: model.id }, !engine.isModelLocked(model.id)));
@@ -162,9 +167,9 @@ export function ModelTreeItem({
         <button
           className="danger"
           data-layer-action="delete"
-          disabled={Boolean(loaded && engine?.isModelLocked(model.id))}
-          aria-label={loaded && engine?.isModelLocked(model.id) ? tr(locale, "请先解锁模型", "Unlock the model first") : loaded ? tr(locale, "移除实例", "Remove instance") : tr(locale, "删除素材", "Delete asset")}
-          title={loaded && engine?.isModelLocked(model.id) ? tr(locale, "请先解锁模型", "Unlock the model first") : loaded ? tr(locale, "从场景移除，素材保留；可撤销", "Remove from scene, keep asset; undo available") : tr(locale, "删除未使用的素材", "Delete unused asset")}
+          disabled={editingDisabled || Boolean(loaded && engine?.isModelLocked(model.id))}
+          aria-label={editingDisabled ? tr(locale, "播放中不可移除，请先退出播放模式", "Removal is unavailable during Play; exit Play first") : loaded && engine?.isModelLocked(model.id) ? tr(locale, "请先解锁模型", "Unlock the model first") : loaded ? tr(locale, "移除实例", "Remove instance") : tr(locale, "删除素材", "Delete asset")}
+          title={editingDisabled ? tr(locale, "播放中不可移除，请先退出播放模式", "Removal is unavailable during Play; exit Play first") : loaded && engine?.isModelLocked(model.id) ? tr(locale, "请先解锁模型", "Unlock the model first") : loaded ? tr(locale, "从场景移除，素材保留；可撤销", "Remove from scene, keep asset; undo available") : tr(locale, "删除未使用的素材", "Delete unused asset")}
           onClick={onDeleteModel}
         >
           <Trash2 size={15} /><span>{loaded ? tr(locale, "移除实例", "Remove instance") : tr(locale, "删除素材", "Delete asset")}</span>
