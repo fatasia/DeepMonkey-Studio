@@ -18,7 +18,8 @@ const MAX_REGIONS: usize = 4096;
 // 小缓冲直接上传，避免为几百字节节省多一次提交；碎片过多也退回连续上传。
 const MIN_COPY_BYTES: usize = 16 * 1024;
 const MAX_COPY_COMMANDS: usize = 64;
-const STRIDE: usize = 24;
+/// PathVertex v2 stride in bytes: canvas(2) + color(4) + local(2) + slot(1).
+pub(super) const STRIDE: usize = 36;
 
 pub(super) fn upload(
     device: &wgpu::Device,

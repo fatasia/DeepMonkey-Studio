@@ -2,11 +2,14 @@
 use super::super::painter::PathPrepareFrame;
 use super::super::{Deep2dPainterIssue, PreparedDeep2d};
 use super::keys::{resource_bytes, same_clip_ids, same_resource};
+use super::super::paint_data::Deep2dPaintData;
+use super::super::paint_registry::PaintRegistry;
 use super::{
     Deep2dPathCache, Deep2dPathCacheMissReason, Entry, EntryWitness, PathCommand, PathResource,
 };
 
 impl Deep2dPathCache {
+    #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn prepare(
         &mut self,
         command: &PathCommand,
@@ -14,6 +17,7 @@ impl Deep2dPathCache {
         resource_path: &str,
         path: &str,
         frame: &PathPrepareFrame<'_>,
+        registry: &mut PaintRegistry,
         output: &mut PreparedDeep2d,
     ) -> Result<(), Deep2dPainterIssue> {
         let display_scale = frame.scale_factor;
@@ -53,7 +57,25 @@ impl Deep2dPathCache {
             entry.touched = self.tick;
             self.stats.hits += 1;
             self.order.insert((entry.touched, command.id.clone()));
+            let first = output.vertices.len();
             output.vertices.extend_from_slice(&entry.vertices);
+            // 渐变/圆角顶点引用存储槽:按本帧注册表重登记并回填槽号,
+            // 保证缓存命中在任何 paint 组合下都与现算逐字节一致。
+            if !entry.paints.is_empty() {
+                let slots = registry
+                    .register_all(&entry.paints)
+                    .map_err(|issue| Deep2dPainterIssue {
+                        code: issue.code,
+                        path: format!("{path}.paints"),
+                        message: issue.message,
+                    })?;
+                for vertex in &mut output.vertices[first..] {
+                    let old = vertex[8] as usize;
+                    if old > 0 {
+                        vertex[8] = slots[old - 1] as f32;
+                    }
+                }
+            }
             output.summary.path_segments += entry.segments;
             output.summary.fill_triangles += entry.fill_triangles;
             output.summary.stroke_triangles += entry.stroke_triangles;
@@ -98,6 +120,7 @@ impl Deep2dPathCache {
             // 宿主显式声明的相机必须真正决定细分容差。
             camera.scale,
             paths,
+            registry,
             output,
         )?;
         // 直接收集为拥有所有权的 Vec:临时 Vec<&PathResource> 会在条目构建时再克隆一次。
@@ -108,7 +131,28 @@ impl Deep2dPathCache {
             .iter()
             .map(|id| paths[id.as_str()].1.clone())
             .collect::<Vec<_>>();
-        let bytes = (output.vertices.len() - first) * std::mem::size_of::<[f32; 6]>()
+        // 条目自包含:扫描本条目新顶点引用的全局槽,拷贝内容并重编号为
+        // 条目局部槽(1..n)。跨命令去重可能让顶点引用早于 paints_before 的
+        // 槽,直接快照窗口会漏掉它们——必须以顶点引用为准。
+        // quad 条目的 fill_index 是嵌套引用(顶点不直接引用渐变槽),
+        // 捕获必须跟随,否则暖帧回填后 fill_index 指到错误条目。
+        let mut remap: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+        let mut entry_paints: Vec<Deep2dPaintData> = Vec::new();
+        // 条目顶点存条目局部槽(副本上重映射);输出顶点保持帧槽不变,
+        // 否则本帧渲染就会读到错误的存储条目。
+        let entry_vertices = output.vertices[first..]
+            .iter()
+            .map(|vertex| {
+                let mut copied = *vertex;
+                let slot = copied[8] as u32;
+                if slot != 0 {
+                    copied[8] = capture_paint(registry, slot, &mut remap, &mut entry_paints) as f32;
+                }
+                copied
+            })
+            .collect::<Vec<_>>();
+        let bytes = (output.vertices.len() - first) * std::mem::size_of::<[f32; 9]>()
+            + entry_paints.len() * std::mem::size_of::<Deep2dPaintData>()
             + resource_bytes(resource)
             + clips.iter().map(resource_bytes).sum::<usize>()
             + style.path_id.len()
@@ -128,7 +172,8 @@ impl Deep2dPathCache {
             resource: resource.clone(),
             clips,
             witness: document,
-            vertices: output.vertices[first..].to_vec(),
+            vertices: entry_vertices,
+            paints: entry_paints,
             segments: output.summary.path_segments - before.path_segments,
             fill_triangles: output.summary.fill_triangles - before.fill_triangles,
             stroke_triangles: output.summary.stroke_triangles - before.stroke_triangles,
@@ -138,4 +183,33 @@ impl Deep2dPathCache {
         self.store(command.id.clone(), entry);
         Ok(())
     }
+}
+
+/// Recursively captures a paint slot into the entry-local list, following the
+/// quad `fill_index` chain (quads reference their gradient fill indirectly).
+/// The placeholder insert doubles as a cycle guard; quads never reference
+/// quads, so the chain is at most one level deep.
+fn capture_paint(
+    registry: &super::super::paint_registry::PaintRegistry,
+    slot: u32,
+    remap: &mut std::collections::HashMap<u32, u32>,
+    entry_paints: &mut Vec<Deep2dPaintData>,
+) -> u32 {
+    if slot == 0 {
+        return 0;
+    }
+    if let Some(local) = remap.get(&slot) {
+        return *local;
+    }
+    let paint = *registry
+        .paint_at(slot)
+        .expect("referenced slot is registered");
+    let local = entry_paints.len() as u32 + 1;
+    remap.insert(slot, local);
+    entry_paints.push(paint);
+    if paint.kind == super::super::paint_data::DEEP2D_PAINT_KIND_QUAD && paint.fill_index != 0 {
+        let fill_local = capture_paint(registry, paint.fill_index, remap, entry_paints);
+        entry_paints[(local - 1) as usize].fill_index = fill_local;
+    }
+    local
 }

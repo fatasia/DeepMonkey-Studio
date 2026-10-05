@@ -83,7 +83,7 @@ fn r1_c4_same_id_style_change_misses_exactly_that_cell() {
     let changes: Vec<NamedPathMutation> = vec![
         (
             "fill",
-            Box::new(|c: &mut PathCommand| c.fill = Some([0.0, 0.0, 0.0, 1.0])),
+            Box::new(|c: &mut PathCommand| c.fill = Some([0.0, 0.0, 0.0, 1.0].into())),
         ),
         (
             "dash",

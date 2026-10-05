@@ -64,7 +64,10 @@ fn actual_tooltip_pixels_compose_in_both_themes_without_changing_hit_geometry() 
         let Deep2dCommand::Path(panel) = &list.commands[list.commands.len() - 2] else {
             panic!("panel")
         };
-        assert_eq!(panel.fill, theme.colors.surface1);
+        assert_eq!(
+            panel.fill.as_ref().and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color),
+            theme.colors.surface1
+        );
         assert!(panel.hit_id.is_none());
         assert!(
             list.resources

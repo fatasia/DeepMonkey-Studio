@@ -192,7 +192,7 @@ mod tests {
             panic!()
         };
         if let crate::deep2d::Deep2dCommand::Path(path) = &mut package.display_list.commands[0] {
-            path.fill = Some([0.2, 0.3, 0.4, 0.5]);
+            path.fill = Some([0.2, 0.3, 0.4, 0.5].into());
         }
         assert!(cache.package_atlases(package).is_some());
         assert_eq!(

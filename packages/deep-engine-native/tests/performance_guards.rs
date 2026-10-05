@@ -122,7 +122,7 @@ fn hit_index_build_and_query_stay_subsecond_on_large_lists() {
             clip_rect: None,
             hit_id: Some(format!("hit-{index}")),
             path_id: "probe".into(),
-            fill: Some([1.0, 1.0, 1.0, 1.0]),
+            fill: Some([1.0, 1.0, 1.0, 1.0].into()),
             fill_rule: None,
             stroke: None,
             stroke_width: None,
@@ -131,7 +131,9 @@ fn hit_index_build_and_query_stay_subsecond_on_large_lists() {
             miter_limit: None,
             dash: None,
             dash_offset: None,
-        }));
+            corner_radius: None,
+            shadow: None,
+            }));
     }
     let display_list = Deep2dDisplayList {
         schema_version: 1,

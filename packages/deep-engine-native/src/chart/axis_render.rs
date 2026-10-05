@@ -101,6 +101,8 @@ fn stroke_line(
             miter_limit: None,
             dash: None,
             dash_offset: None,
+            corner_radius: None,
+            shadow: None,
         }));
 }
 
@@ -135,7 +137,7 @@ fn stroke_rect(
             clip_rect: None,
             hit_id: None,
             path_id: id,
-            fill: Some(color),
+            fill: Some(color.into()),
             fill_rule: Some(crate::deep2d::FillRule::Nonzero),
             stroke: None,
             stroke_width: None,
@@ -144,6 +146,8 @@ fn stroke_rect(
             miter_limit: None,
             dash: None,
             dash_offset: None,
+            corner_radius: None,
+            shadow: None,
         }));
 }
 

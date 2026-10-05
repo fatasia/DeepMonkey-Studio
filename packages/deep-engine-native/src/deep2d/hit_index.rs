@@ -26,6 +26,40 @@ pub struct Deep2dHitEntry {
     pub clip_rings: Vec<Vec<Point>>,
     /// Logical-space scissor rectangle; a point only hits when inside.
     pub clip_rect: Option<super::Deep2dRect>,
+    /// Analytic rounded-rect gate (`cornerRadius` commands): the point must
+    /// also sit inside the rounded box, so transparent corners never hit.
+    pub corner: Option<Deep2dCornerShape>,
+}
+
+/// Local-space rounded box tested with the same SDF rule the painter draws.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Deep2dCornerShape {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub corner_radius: f64,
+    pub transform: Deep2dMatrix,
+}
+
+impl Deep2dCornerShape {
+    fn covers(&self, point: Point) -> bool {
+        let local = inverse_transform_point(point, self.transform);
+        let center = [
+            self.x + self.width * 0.5,
+            self.y + self.height * 0.5,
+        ];
+        let half = [self.width * 0.5, self.height * 0.5];
+        let radius = self
+            .corner_radius
+            .clamp(0.0, half[0].min(half[1]).max(0.0));
+        let q = [
+            (local[0] - center[0]).abs() - (half[0] - radius),
+            (local[1] - center[1]).abs() - (half[1] - radius),
+        ];
+        let distance = q[0].max(0.0).hypot(q[1].max(0.0)) + q[0].max(q[1]).min(0.0) - radius;
+        distance <= 0.0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -124,6 +158,26 @@ pub fn build_hit_index(display_list: &Deep2dDisplayList) -> HitResult {
                         polylines.push(points);
                     }
                 }
+                // Rounded-rect gate: resolve the local rect so corner cutouts
+                // reject hits exactly where the SDF quad renders nothing.
+                let corner = command.corner_radius.and_then(|radius| {
+                    linear.subpaths.first().and_then(|subpath| {
+                        super::painter_quad::rect_of_flatten(
+                            &subpath.points,
+                            subpath.closed,
+                            &path,
+                        )
+                        .ok()
+                        .map(|[min, max]| Deep2dCornerShape {
+                            x: min[0],
+                            y: min[1],
+                            width: max[0] - min[0],
+                            height: max[1] - min[1],
+                            corner_radius: radius,
+                            transform: command.transform,
+                        })
+                    })
+                });
                 if has_fill && !rings.is_empty() {
                     entries.push(Deep2dHitEntry {
                         id: command.id.clone(),
@@ -132,6 +186,7 @@ pub fn build_hit_index(display_list: &Deep2dDisplayList) -> HitResult {
                         kind: Deep2dHitKind::Fill { rings },
                         clip_rings: clip_rings.clone(),
                         clip_rect,
+                        corner,
                     });
                 }
                 if let Some(half_width) = stroke_width.map(|width| width * 0.5) {
@@ -145,6 +200,7 @@ pub fn build_hit_index(display_list: &Deep2dDisplayList) -> HitResult {
                         },
                         clip_rings: clip_rings.clone(),
                         clip_rect,
+                        corner,
                     });
                 }
             }
@@ -162,6 +218,7 @@ pub fn build_hit_index(display_list: &Deep2dDisplayList) -> HitResult {
                     },
                     clip_rings: clip_rings.clone(),
                     clip_rect,
+                    corner: None,
                 });
             }
             Deep2dCommand::Image(command) => {
@@ -178,6 +235,7 @@ pub fn build_hit_index(display_list: &Deep2dDisplayList) -> HitResult {
                     },
                     clip_rings: clip_rings.clone(),
                     clip_rect,
+                    corner: None,
                 });
             }
         }
@@ -267,12 +325,17 @@ fn hit_z_order(command: &Deep2dCommand) -> i32 {
 impl Deep2dHitIndex {
     /// Topmost entry whose geometry covers the logical point, or `None`.
     /// Later entries (drawn on top) win; entries are already z-sorted. A
-    /// point only hits when it also passes the entry's clip context.
+    /// point only hits when it also passes the entry's clip context and its
+    /// analytic corner gate (rounded rects never hit in their cut corners).
     pub fn hit(&self, point: Point) -> Option<&Deep2dHitEntry> {
         self.entries
             .iter()
             .rev()
-            .find(|entry| entry.point_in_clips(point) && entry.kind_covers(point))
+            .find(|entry| {
+                entry.point_in_clips(point)
+                    && entry.corner.as_ref().is_none_or(|corner| corner.covers(point))
+                    && entry.kind_covers(point)
+            })
     }
 
     pub fn entries(&self) -> &[Deep2dHitEntry] {
@@ -437,7 +500,7 @@ mod tests {
                     clip_rect: None,
                     hit_id: Some("square-hit".into()),
                     path_id: "hit:square".into(),
-                    fill: Some([1.0, 1.0, 1.0, 1.0]),
+                    fill: Some([1.0, 1.0, 1.0, 1.0].into()),
                     fill_rule: None,
                     stroke: None,
                     stroke_width: None,
@@ -446,6 +509,8 @@ mod tests {
                     miter_limit: None,
                     dash: None,
                     dash_offset: None,
+                    corner_radius: None,
+                    shadow: None,
                 }),
                 Deep2dCommand::Image(ImageCommand {
                     id: "image".into(),
@@ -482,6 +547,8 @@ mod tests {
                     miter_limit: None,
                     dash: None,
                     dash_offset: None,
+                    corner_radius: None,
+                    shadow: None,
                 }),
             ],
             atlases: Vec::new(),

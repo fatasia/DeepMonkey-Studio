@@ -4,6 +4,8 @@ mod painter;
 mod painter_cache;
 pub use painter_cache::{Deep2dPathCache, Deep2dPathCacheStats};
 mod base64_encode;
+mod paint_data;
+mod paint_registry;
 mod painter_atlas;
 mod painter_clip;
 mod painter_dash;
@@ -14,7 +16,9 @@ mod painter_path_intersections;
 mod painter_polygon;
 mod painter_polygon_bridge;
 mod painter_prepare;
+mod painter_quad;
 mod painter_stroke;
+pub mod paint_reference;
 pub mod raster_reference;
 #[allow(clippy::duplicate_mod)] // runtime_package/prefiltered_ibl.rs reuses this via #[path]
 pub(crate) mod runtime_base64;
@@ -30,6 +34,7 @@ mod types;
 mod validate;
 mod validate_commands;
 mod validate_commands_kinds;
+mod validate_paint;
 mod validate_resources;
 mod validate_text;
 
@@ -62,6 +67,10 @@ pub struct Deep2dBudgets {
     pub dash_entries: usize,
     pub text_code_units_per_command: usize,
     pub text_code_units_total: usize,
+    /// Gradient stops per paint (fill); trailing stops fail closed.
+    pub gradient_stops_per_paint: usize,
+    /// Distinct paint entries (gradients + quads) per prepared frame.
+    pub paints: usize,
 }
 
 pub const DEEP_2D_DISPLAY_LIST_BUDGETS: Deep2dBudgets = Deep2dBudgets {
@@ -73,15 +82,23 @@ pub const DEEP_2D_DISPLAY_LIST_BUDGETS: Deep2dBudgets = Deep2dBudgets {
     dash_entries: 64,
     text_code_units_per_command: 1_000_000,
     text_code_units_total: 4_000_000,
+    gradient_stops_per_paint: 16,
+    paints: 4_096,
 };
 pub use command_types::*;
 pub use hit_index::{Deep2dHitEntry, Deep2dHitIndex, Deep2dHitKind, build_hit_index};
+pub use paint_data::{
+    DEEP2D_MAX_GRADIENT_STOPS, DEEP2D_PAINT_KIND_LINEAR, DEEP2D_PAINT_KIND_QUAD,
+    DEEP2D_PAINT_KIND_RADIAL, DEEP2D_PAINT_KIND_SOLID, Deep2dPaintData, Deep2dPaintStop,
+    gradient_stops_color, paint_color, quad_fragment, sd_rounded_box,
+};
 pub use painter::{
-    Deep2dPainterError, Deep2dPainterIssue, Deep2dPainterIssueCode, PreparedDeep2d,
+    Deep2dPainterError, Deep2dPainterIssue, Deep2dPainterIssueCode, PathVertex, PreparedDeep2d,
     PreparedDeep2dGlyph, PreparedDeep2dPathChunk, PreparedDeep2dSummary, prepare_display_list,
     prepare_display_list_cached,
 };
 pub use painter_path::{DEEP2D_CURVE_TOLERANCE, DEEP2D_MAX_FLATTENED_SEGMENTS};
+pub use paint_reference::rasterize_prepared;
 pub use raster_reference::{
     LetterboxMapping, PixelComparison, ReferenceTriangle, compare, rasterize,
 };

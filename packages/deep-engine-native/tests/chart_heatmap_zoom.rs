@@ -58,6 +58,8 @@ fn colors(list: &Deep2dDisplayList) -> Vec<Option<[f64; 4]>> {
                 panic!("path")
             };
             path.fill
+                .as_ref()
+                .and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color)
         })
         .collect()
 }

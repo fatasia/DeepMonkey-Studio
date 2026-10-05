@@ -18,6 +18,8 @@ use crate::deep2d_atlas_gpu::ResidentAtlas;
 pub struct Deep2dCacheStats {
     pub frame_layout_creates: u64,
     pub frame_layout_hits: u64,
+    pub path_paint_layout_creates: u64,
+    pub path_paint_layout_hits: u64,
     pub frame_buffer_creates: u64,
     pub frame_buffer_hits: u64,
     pub path_pipeline_creates: u64,
@@ -93,6 +95,7 @@ pub struct Deep2dGpuAssetCache {
 struct CacheInner {
     stats: Deep2dCacheStats,
     frame_layout: Option<Arc<wgpu::BindGroupLayout>>,
+    path_paint_layout: Option<Arc<wgpu::BindGroupLayout>>,
     /// Frame uniform buffer + bind group keyed by (logical_width,
     /// logical_height) bits; identical canvas size reuses the upload.
     frame_resources: HashMap<u64, Arc<FrameResources>>,
@@ -114,6 +117,7 @@ impl Deep2dGpuAssetCache {
             inner: Mutex::new(CacheInner {
                 stats: Deep2dCacheStats::default(),
                 frame_layout: None,
+                path_paint_layout: None,
                 frame_resources: HashMap::new(),
                 path_pipelines: HashMap::new(),
                 atlas_pipelines: HashMap::new(),
@@ -170,6 +174,23 @@ impl Deep2dGpuAssetCache {
         inner.stats.frame_layout_creates += 1;
         let layout = Arc::new(create());
         inner.frame_layout = Some(Arc::clone(&layout));
+        layout
+    }
+
+    /// Cached path-stage bind group layout (frame uniform + paint storage),
+    /// created once per device epoch like the shared frame layout.
+    pub fn path_paint_layout(
+        &self,
+        create: impl FnOnce() -> wgpu::BindGroupLayout,
+    ) -> Arc<wgpu::BindGroupLayout> {
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(layout) = inner.path_paint_layout.as_ref().map(Arc::clone) {
+            inner.stats.path_paint_layout_hits += 1;
+            return layout;
+        }
+        inner.stats.path_paint_layout_creates += 1;
+        let layout = Arc::new(create());
+        inner.path_paint_layout = Some(Arc::clone(&layout));
         layout
     }
 

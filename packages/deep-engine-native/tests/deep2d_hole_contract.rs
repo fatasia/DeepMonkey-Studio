@@ -60,7 +60,7 @@ fn display_list(fill_rule: Option<FillRule>, hole_winding: f64) -> Deep2dDisplay
             clip_rect: None,
             hit_id: None,
             path_id: "shape".into(),
-            fill: Some([1.0, 1.0, 1.0, 1.0]),
+            fill: Some([1.0, 1.0, 1.0, 1.0].into()),
             fill_rule,
             stroke: None,
             stroke_width: None,
@@ -69,7 +69,9 @@ fn display_list(fill_rule: Option<FillRule>, hole_winding: f64) -> Deep2dDisplay
             miter_limit: None,
             dash: None,
             dash_offset: None,
-        })],
+            corner_radius: None,
+            shadow: None,
+            })],
         atlases: Vec::new(),
     }
 }

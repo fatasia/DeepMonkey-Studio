@@ -249,7 +249,7 @@ fn path_command(id: &str, z: i32) -> Deep2dCommand {
         clip_rect: None,
         hit_id: None,
         path_id: "frame".into(),
-        fill: Some([1.0, 1.0, 1.0, 1.0]),
+        fill: Some([1.0, 1.0, 1.0, 1.0].into()),
         fill_rule: None,
         stroke: None,
         stroke_width: None,
@@ -258,7 +258,9 @@ fn path_command(id: &str, z: i32) -> Deep2dCommand {
         miter_limit: None,
         dash: None,
         dash_offset: None,
-    })
+        corner_radius: None,
+        shadow: None,
+        })
 }
 
 fn path_resource() -> Deep2dResource {

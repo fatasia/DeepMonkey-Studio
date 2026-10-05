@@ -44,7 +44,7 @@ fn content() -> Deep2dRuntimeContent {
             clip_rect: None,
             hit_id: None,
             path_id: "canvas".into(),
-            fill: Some([0.0, 1.0, 0.0, 1.0]),
+            fill: Some([0.0, 1.0, 0.0, 1.0].into()),
             fill_rule: None,
             stroke: None,
             stroke_width: None,
@@ -53,7 +53,9 @@ fn content() -> Deep2dRuntimeContent {
             miter_limit: None,
             dash: None,
             dash_offset: None,
-        })],
+            corner_radius: None,
+            shadow: None,
+            })],
         atlases: vec![],
     })
 }

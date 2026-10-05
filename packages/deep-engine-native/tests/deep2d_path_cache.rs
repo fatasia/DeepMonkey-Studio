@@ -84,7 +84,7 @@ fn scale_transform_and_every_stroke_input_match_uncached_results() {
         Box::new(|list| command(list, 2).line_cap = Some(LineCap::Round)),
         Box::new(|list| command(list, 2).line_join = Some(LineJoin::Round)),
         Box::new(|list| command(list, 2).miter_limit = Some(3.0)),
-        Box::new(|list| command(list, 0).fill = Some([0.5, 0.3, 0.2, 1.0])),
+        Box::new(|list| command(list, 0).fill = Some([0.5, 0.3, 0.2, 1.0].into())),
         Box::new(|list| command(list, 0).fill_rule = Some(FillRule::Evenodd)),
     ];
     for change in changes {

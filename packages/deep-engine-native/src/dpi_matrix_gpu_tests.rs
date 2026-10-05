@@ -46,7 +46,7 @@ fn probe_display_list() -> Deep2dDisplayList {
             }),
             hit_id: None,
             path_id: "probe".into(),
-            fill: Some([1.0, 0.0, 0.0, 1.0]),
+            fill: Some([1.0, 0.0, 0.0, 1.0].into()),
             fill_rule: None,
             stroke: None,
             stroke_width: None,
@@ -55,7 +55,9 @@ fn probe_display_list() -> Deep2dDisplayList {
             miter_limit: None,
             dash: None,
             dash_offset: None,
-        })],
+            corner_radius: None,
+            shadow: None,
+            })],
         atlases: Vec::new(),
     }
 }

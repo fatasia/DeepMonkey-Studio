@@ -31,7 +31,7 @@ fn path_view(command: &Deep2dCommand) -> PathView<'_> {
         id: path.id.as_str(),
         z_order: path.z_order,
         path_id: path.path_id.as_str(),
-        fill: path.fill,
+        fill: path.fill.as_ref().and_then(crate::deep2d::Deep2dPaint::solid_color),
         stroke: path.stroke,
         stroke_width: path.stroke_width,
     }

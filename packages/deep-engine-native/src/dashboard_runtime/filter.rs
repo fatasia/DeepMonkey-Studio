@@ -240,7 +240,7 @@ impl DashboardRuntime {
             crate::deep2d::Deep2dCommand::Path(path)
                 if path.hit_id.as_deref() == Some(&format!("{prefix}0")) =>
             {
-                path.fill
+                path.fill.clone()
             }
             _ => None,
         });
@@ -253,20 +253,23 @@ impl DashboardRuntime {
                     .and_then(|id| id.parse::<usize>().ok())
             {
                 path.fill = if self.selected_filter == Some(index) {
-                    selected_color
+                    selected_color.clone()
                 } else if self.hovered_filter == Some(index) {
-                    selected_color.map(|mut color| {
-                        color[3] *= 0.35;
-                        color
-                    })
+                    selected_color
+                        .as_ref()
+                        .map(|paint| paint.with_alpha_factor(0.35))
                 } else {
-                    Some([0.0; 4])
+                    Some(crate::deep2d::Deep2dPaint::Solid([0.0; 4]))
                 };
                 if self.keyboard_filter_focus && self.selected_filter == Some(index) {
-                    path.stroke = selected_color.map(|mut color| {
-                        color[3] = 1.0;
-                        color
-                    });
+                    path.stroke =
+                        selected_color
+                            .as_ref()
+                            .and_then(crate::deep2d::Deep2dPaint::solid_color)
+                            .map(|mut color| {
+                                color[3] = 1.0;
+                                color
+                            });
                     path.stroke_width = Some(2.0);
                 }
             }

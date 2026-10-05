@@ -47,7 +47,7 @@ fn clipped_fill(
         clip_rect: clip,
         hit_id: None,
         path_id: "canvas".into(),
-        fill: Some(color),
+        fill: Some(deep_engine_native::deep2d::Deep2dPaint::from(color)),
         fill_rule: None,
         stroke: None,
         stroke_width: None,
@@ -56,7 +56,9 @@ fn clipped_fill(
         miter_limit: None,
         dash: None,
         dash_offset: None,
-    })
+        corner_radius: None,
+        shadow: None,
+        })
 }
 
 fn display_list() -> Deep2dDisplayList {

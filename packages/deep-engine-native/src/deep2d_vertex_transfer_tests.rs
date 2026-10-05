@@ -6,7 +6,7 @@ fn prepared(parts: &[(usize, f32)]) -> PreparedDeep2d {
     let mut chunks = Vec::new();
     for (index, (count, value)) in parts.iter().enumerate() {
         let first_vertex = vertices.len() as u32;
-        vertices.extend(vec![[*value; 6]; *count]);
+        vertices.extend(vec![[*value; 9]; *count]);
         chunks.push(PreparedDeep2dPathChunk {
             first_vertex,
             vertex_count: *count as u32,
@@ -20,6 +20,7 @@ fn prepared(parts: &[(usize, f32)]) -> PreparedDeep2d {
         logical_width: 128.0,
         logical_height: 64.0,
         vertices,
+        paints: Vec::new(),
         chunks,
         images: vec![],
         glyphs: vec![],
@@ -81,9 +82,9 @@ fn adjacent_copies_and_uploads_are_coalesced_without_crossing_changes() {
         vec![
             Transfer::Copy {
                 source: 0,
-                target: 0..144
+                target: 0..216
             },
-            Transfer::Upload(144..288)
+            Transfer::Upload(216..432)
         ]
     );
 }
@@ -96,7 +97,7 @@ fn fingerprint_matches_require_exact_byte_equality() {
     snapshot.regions[0].0 = content_key(bytemuck::cast_slice(&next.vertices));
     assert_eq!(
         plan(&next, &snapshot).unwrap(),
-        vec![Transfer::Upload(0..72)]
+        vec![Transfer::Upload(0..108)]
     );
 }
 

@@ -1,5 +1,6 @@
 //! 按命令保存已验证的细分结果；排序、命中 ID 和 scissor 使用当前帧元数据。
-use super::{PathCommand, PathResource};
+use super::{PathCommand, PathResource, painter::PathVertex};
+use super::paint_data::Deep2dPaintData;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 #[path = "painter_cache_capacity.rs"]
@@ -71,7 +72,12 @@ struct Entry {
     resource: PathResource,
     clips: Vec<PathResource>,
     witness: EntryWitness,
-    vertices: Vec<[f32; 6]>,
+    vertices: Vec<PathVertex>,
+    /// Paint entries referenced by the vertices (slot i in the stored vertices
+    /// maps to `paints[i - 1]`; slot 0 is the reserved solid dummy). Re-registered
+    /// and patched into the vertex slot ids on every cache hit so reuse stays
+    /// correct when the frame's paint set changes.
+    paints: Vec<Deep2dPaintData>,
     segments: usize,
     fill_triangles: usize,
     stroke_triangles: usize,

@@ -321,7 +321,7 @@ impl ListBuilder {
                     .map_or_else(|| "series".into(), |index| index.to_string())
             )),
             path_id,
-            fill,
+            fill: fill.map(crate::deep2d::Deep2dPaint::from),
             fill_rule: fill.map(|_| FillRule::Nonzero),
             stroke,
             stroke_width: stroke.map(|_| STROKE_WIDTH),
@@ -330,6 +330,8 @@ impl ListBuilder {
             miter_limit: None,
             dash: None,
             dash_offset: None,
+            corner_radius: None,
+            shadow: None,
         }));
     }
 }

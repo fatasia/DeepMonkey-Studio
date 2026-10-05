@@ -243,7 +243,10 @@ fn bar_series_renders_filled_rects_and_skips_zero_height_bars() {
     let commands = paths(&dl);
     assert_eq!(commands.len(), 2, "zero-height bar skipped");
     for bar in &commands {
-        assert_eq!(bar.fill, Some(BAR_COLOR));
+        assert_eq!(
+            bar.fill.as_ref().and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color),
+            Some(BAR_COLOR)
+        );
         assert_eq!(bar.stroke, None);
         let resource = dl
             .resources
@@ -295,7 +298,10 @@ fn scatter_series_renders_an_octagon_per_point() {
     let commands = paths(&dl);
     assert_eq!(commands.len(), 3, "one marker per point");
     for marker in &commands {
-        assert_eq!(marker.fill, Some(SCATTER_COLOR));
+        assert_eq!(
+            marker.fill.as_ref().and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color),
+            Some(SCATTER_COLOR)
+        );
         let resource = dl
             .resources
             .iter()
@@ -340,7 +346,7 @@ fn pie_series_splits_value_share_clockwise_from_top() {
     assert_eq!(commands.len(), 3, "one wedge per row");
     for (index, wedge) in commands.iter().enumerate() {
         assert_eq!(
-            wedge.fill,
+            wedge.fill.as_ref().and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color),
             Some(PIE_PALETTE[index]),
             "wedge {index} color ring"
         );
@@ -453,7 +459,10 @@ fn heatmap_cells_map_values_onto_blue_red_ramp() {
     assert_within_canvas(&dl, CANVAS.0, CANVAS.1);
     let commands = paths(&dl);
     assert_eq!(commands.len(), 4, "one cell per row");
-    let fills: Vec<[f64; 4]> = commands.iter().filter_map(|c| c.fill).collect();
+    let fills: Vec<[f64; 4]> = commands
+        .iter()
+        .filter_map(|c| c.fill.as_ref().and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color))
+        .collect();
     // 色带端点是浮点插值结果,用近似比较而非精确相等。
     let color_approx =
         |a: [f64; 4], b: [f64; 4]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-9);
@@ -545,7 +554,13 @@ fn gauge_renders_270_degree_band_and_value_needle() {
     assert_within_canvas(&dl, CANVAS.0, CANVAS.1);
     let commands = paths(&dl);
     assert_eq!(commands.len(), 2, "band + needle");
-    assert_eq!(commands[0].fill, Some(GAUGE_COLOR));
+    assert_eq!(
+        commands[0]
+            .fill
+            .as_ref()
+            .and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color),
+        Some(GAUGE_COLOR)
+    );
     // 270° band: outer 18 segments + inner 18 segments, single closed subpath.
     let band = dl
         .resources

@@ -3,12 +3,19 @@ use std::{collections::HashMap, fmt};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Deep2dAtlasQuad, Deep2dCommand, Deep2dDisplayList, Deep2dRect, Deep2dResource,
+    Deep2dAtlasQuad, Deep2dCommand, Deep2dDisplayList, Deep2dPaintData, Deep2dRect, Deep2dResource,
+    paint_registry::PaintRegistry,
     painter_atlas::{prepare_image, prepare_text},
     painter_clip::ClipSets,
     painter_prepare::prepare_path,
     validate_display_list,
 };
+
+/// Path-stage vertex layout v2 (36 bytes): canvas position (logical, drawn
+/// through the letterbox uniform), straight-alpha solid color, LOCAL
+/// pre-transform position (gradient evaluation space) and the paint storage
+/// slot (0 = solid, render from the vertex color; >0 = storage entry).
+pub type PathVertex = [f32; 9];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -93,7 +100,10 @@ pub struct PreparedDeep2dGlyph {
 pub struct PreparedDeep2d {
     pub logical_width: f32,
     pub logical_height: f32,
-    pub vertices: Vec<[f32; 6]>,
+    pub vertices: Vec<PathVertex>,
+    /// Paint storage entries referenced by `vertices` paint slots (slot i =
+    /// `paints[i]`; slot 0 is the reserved solid dummy).
+    pub paints: Vec<Deep2dPaintData>,
     pub chunks: Vec<PreparedDeep2dPathChunk>,
     pub images: Vec<PreparedDeep2dImage>,
     pub glyphs: Vec<PreparedDeep2dGlyph>,
@@ -162,6 +172,7 @@ pub(super) fn prepare_impl(
         logical_width: display_list.logical_width as f32,
         logical_height: display_list.logical_height as f32,
         vertices: Vec::new(),
+        paints: Vec::new(),
         chunks: Vec::new(),
         images: Vec::new(),
         glyphs: Vec::new(),
@@ -177,6 +188,7 @@ pub(super) fn prepare_impl(
         scale_factor,
         paths: &paths,
     };
+    let mut registry = PaintRegistry::default();
     let mut issues = Vec::new();
     for (index, command) in ordered {
         let path = format!("commands[{index}]");
@@ -191,6 +203,7 @@ pub(super) fn prepare_impl(
                         &format!("resources[{resource_index}]"),
                         &path,
                         &frame,
+                        &mut registry,
                         &mut output,
                     )
                 } else {
@@ -201,6 +214,7 @@ pub(super) fn prepare_impl(
                         &path,
                         scale_factor,
                         &paths,
+                        &mut registry,
                         &mut output,
                     )
                 };
@@ -247,6 +261,7 @@ pub(super) fn prepare_impl(
             });
         cache.prune_to_ids(live_ids);
     }
+    output.paints = registry.finish();
     output.summary.vertices = output.vertices.len();
     Ok(output)
 }

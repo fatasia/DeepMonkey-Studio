@@ -32,7 +32,7 @@ fn path_command(clips: &[&str]) -> Deep2dCommand {
         clip_rect: None,
         hit_id: None,
         path_id: "canvas".into(),
-        fill: Some([1.0, 0.0, 0.0, 1.0]),
+        fill: Some([1.0, 0.0, 0.0, 1.0].into()),
         fill_rule: None,
         stroke: None,
         stroke_width: None,
@@ -41,7 +41,9 @@ fn path_command(clips: &[&str]) -> Deep2dCommand {
         miter_limit: None,
         dash: None,
         dash_offset: None,
-    })
+        corner_radius: None,
+        shadow: None,
+        })
 }
 
 fn path_list(clips: Vec<Deep2dResource>, ids: &[&str]) -> Deep2dDisplayList {
@@ -60,7 +62,7 @@ fn path_list(clips: Vec<Deep2dResource>, ids: &[&str]) -> Deep2dDisplayList {
     }
 }
 
-fn area6(vertices: &[[f32; 6]]) -> f32 {
+fn area6(vertices: &[[f32; 9]]) -> f32 {
     vertices
         .chunks_exact(3)
         .map(|triangle| {

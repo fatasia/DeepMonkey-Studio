@@ -38,14 +38,33 @@ impl Validator {
                 "Path command requires fill or stroke.",
             );
         }
-        if let Some(color) = &command.fill {
-            self.color(color, &format!("{path}.fill"));
+        if let Some(paint) = &command.fill {
+            self.paint(paint, &format!("{path}.fill"));
         } else if command.fill_rule.is_some() {
             self.add(
                 Deep2dIssueCode::InvalidStructure,
                 format!("{path}.fillRule"),
                 "Fill rule requires fill paint.",
             );
+        }
+        if let Some(radius) = command.corner_radius {
+            self.corner_radius(radius, &format!("{path}.cornerRadius"));
+            if command.fill_rule.is_some() {
+                self.add(
+                    Deep2dIssueCode::InvalidStructure,
+                    format!("{path}.fillRule"),
+                    "Fill rule does not combine with the analytic rounded-rect quad.",
+                );
+            }
+        } else if command.shadow.is_some() {
+            self.add(
+                Deep2dIssueCode::InvalidStructure,
+                format!("{path}.shadow"),
+                "Box shadows are box-shaped and require cornerRadius.",
+            );
+        }
+        if let Some(shadow) = &command.shadow {
+            self.box_shadow(shadow, &format!("{path}.shadow"));
         }
         if let Some(color) = &command.stroke {
             self.color(color, &format!("{path}.stroke"));

@@ -22,6 +22,8 @@ pub use draw_evidence::DrawEvidence;
 
 struct Deep2dPathGpuResources {
     pipeline: std::sync::Arc<wgpu::RenderPipeline>,
+    /// Path bind group: frame uniform (binding 0) + paint storage (binding 1).
+    bind_group: wgpu::BindGroup,
     vertex_buffer: std::sync::Arc<wgpu::Buffer>,
     snapshot: Option<vertex_transfer::VertexSnapshot>,
     transfer: VertexTransferStats,
@@ -159,12 +161,21 @@ impl Deep2dGpuPainter {
         };
         let prepare_ms = timing.elapsed().as_secs_f64() * 1000.0;
         let frame_layout = cache.frame_layout(|| frame_layout(device));
+        // Frame uniform first: the path bind group composes it with the paint
+        // storage buffer.
+        let frame_bind_group = frame_resources(
+            device,
+            queue,
+            &frame_layout,
+            cache,
+            [prepared.path.logical_width, prepared.path.logical_height],
+        );
         let mut path = (!prepared.path.vertices.is_empty()).then(|| {
             Deep2dPathGpuResources::new(
                 device,
                 queue,
                 format,
-                &frame_layout,
+                &frame_bind_group.buffer,
                 &prepared.path,
                 cache,
                 previous.and_then(|p| p.path.as_ref()),
@@ -176,15 +187,8 @@ impl Deep2dGpuPainter {
             })
             .transpose()?;
         let resources_ms = timing.elapsed().as_secs_f64() * 1000.0 - prepare_ms;
-        let frame_bind_group = frame_resources(
-            device,
-            queue,
-            &frame_layout,
-            cache,
-            [prepared.path.logical_width, prepared.path.logical_height],
-        );
         if let Some(path) = &mut path {
-            let byte_len = prepared.path.vertices.len() * 24;
+            let byte_len = prepared.path.vertices.len() * vertex_transfer::STRIDE;
             path.snapshot = vertex_transfer::VertexSnapshot::capture(&mut prepared.path);
             path.transfer.shadow_bytes = if path.snapshot.is_some() { byte_len } else { 0 };
         }
@@ -355,15 +359,17 @@ impl Deep2dGpuPainter {
                 return;
             };
             pass.set_scissor_rect(scissor[0], scissor[1], scissor[2], scissor[3]);
-            pass.set_bind_group(0, &self.frame_resources.bind_group, &[]);
             match chunk.kind {
                 PreparedDeep2dChunkKind::Path => {
                     let path = self.path.as_ref().expect("prepared path resource");
+                    // Path pipeline binds frame uniform + paint storage.
+                    pass.set_bind_group(0, &path.bind_group, &[]);
                     pass.set_pipeline(&path.pipeline);
                     pass.set_vertex_buffer(0, path.vertex_buffer.slice(..));
                 }
                 PreparedDeep2dChunkKind::Atlas { atlas_index } => {
                     let atlas = self.atlas.as_ref().expect("prepared atlas resource");
+                    pass.set_bind_group(0, &self.frame_resources.bind_group, &[]);
                     pass.set_pipeline(&atlas.pipeline);
                     pass.set_vertex_buffer(0, atlas.vertex_buffer.slice(..));
                     pass.set_bind_group(1, &atlas.atlases[atlas_index].bind_group, &[]);
@@ -465,28 +471,30 @@ fn dashboard_video_slots(
 }
 
 impl Deep2dPathGpuResources {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
-        frame_layout: &wgpu::BindGroupLayout,
+        frame_buffer: &wgpu::Buffer,
         prepared: &PreparedDeep2d,
         cache: &Deep2dGpuAssetCache,
         previous: Option<&Self>,
     ) -> Self {
+        let paints_layout = cache.path_paint_layout(|| path_paint_layout(device));
         let cached = cache.path_pipelines(format, || {
             let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("Deep Engine native Deep2d shader v1"),
+                label: Some("Deep Engine native Deep2d shader v2"),
                 source: wgpu::ShaderSource::Wgsl(SHADER.into()),
             });
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Deep Engine native Deep2d pipeline layout"),
-                bind_group_layouts: &[Some(frame_layout)],
+                bind_group_layouts: &[Some(paints_layout.as_ref())],
                 immediate_size: 0,
             });
-            let attributes = wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4];
+            let attributes = wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4, 2 => Float32x2, 3 => Float32];
             let buffers = [Some(wgpu::VertexBufferLayout {
-                array_stride: 24,
+                array_stride: 36,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &attributes,
             })];
@@ -496,7 +504,7 @@ impl Deep2dPathGpuResources {
                 write_mask: wgpu::ColorWrites::ALL,
             })];
             let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Deep Engine native Deep2d alpha pipeline"),
+                label: Some("Deep Engine native Deep2d alpha pipeline v2"),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
@@ -532,13 +540,66 @@ impl Deep2dPathGpuResources {
         });
         let (vertex_buffer, transfer) =
             vertex_transfer::upload(device, queue, prepared, cache, previous);
+        // Paint storage: slot 0 is always present (reserved solid dummy), so
+        // the buffer is never empty; gradients/quads read it per fragment.
+        let paints_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Deep Engine native Deep2d paints"),
+            contents: bytemuck::cast_slice(&prepared.paints),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Deep Engine native Deep2d paint bindings"),
+            layout: &paints_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: frame_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: paints_buffer.as_entire_binding(),
+                },
+            ],
+        });
         Self {
             pipeline,
+            bind_group,
             vertex_buffer,
             snapshot: None,
             transfer,
         }
     }
+}
+
+/// Path-stage bind group layout: frame uniform (vertex) + paint storage
+/// (fragment). Separate from the shared atlas frame layout so the atlas
+/// pipeline never pays for the storage binding.
+fn path_paint_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Deep Engine native Deep2d paint layout"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
+    })
 }
 
 fn frame_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {

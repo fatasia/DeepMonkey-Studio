@@ -120,7 +120,7 @@ pub(super) fn adapt_svg(input: &SvgInputV1, budget: &super::N1Budget) -> Result<
             clip_rect: None,
             hit_id: None,
             path_id: path.id.clone(),
-            fill: path.fill,
+            fill: path.fill.map(crate::deep2d::Deep2dPaint::from),
             fill_rule: None,
             stroke: path.stroke,
             stroke_width: path.stroke_width,
@@ -130,6 +130,8 @@ pub(super) fn adapt_svg(input: &SvgInputV1, budget: &super::N1Budget) -> Result<
             miter_limit: None,
             dash: None,
             dash_offset: None,
+            corner_radius: None,
+            shadow: None,
         }));
     }
     finish(delta, N1InputKind::Svg, input.paths.len(), budget)

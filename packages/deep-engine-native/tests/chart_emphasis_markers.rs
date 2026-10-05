@@ -64,7 +64,10 @@ fn markers(list: &Deep2dDisplayList) -> Vec<(String, Option<[f64; 4]>)> {
         .iter()
         .filter_map(|command| match command {
             Deep2dCommand::Path(path) if path.id.starts_with("point-") => {
-                Some((path.id.clone(), path.fill))
+                Some((
+                    path.id.clone(),
+                    path.fill.as_ref().and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color),
+                ))
             }
             _ => None,
         })

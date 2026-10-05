@@ -198,7 +198,7 @@ fn swatch(
             clip_rect: None,
             hit_id: None,
             path_id: id,
-            fill: Some(fill),
+            fill: Some(fill.into()),
             fill_rule: Some(FillRule::Nonzero),
             stroke: None,
             stroke_width: None,
@@ -207,6 +207,8 @@ fn swatch(
             miter_limit: None,
             dash: None,
             dash_offset: None,
+            corner_radius: None,
+            shadow: None,
         }),
     )
 }
@@ -281,6 +283,8 @@ fn draw_focus_ring(
             miter_limit: None,
             dash: None,
             dash_offset: None,
+            corner_radius: None,
+            shadow: None,
         }));
     Ok(())
 }

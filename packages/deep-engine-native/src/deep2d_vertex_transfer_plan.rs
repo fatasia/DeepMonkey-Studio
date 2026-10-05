@@ -1,10 +1,10 @@
 //! 有界顶点快照、内容对照及连续传输区域规划。
 use super::{MAX_COPY_COMMANDS, MAX_REGIONS, MAX_SHADOW_BYTES, MIN_COPY_BYTES, STRIDE};
-use deep_engine_native::deep2d::PreparedDeep2d;
+use deep_engine_native::deep2d::{PathVertex, PreparedDeep2d};
 use std::{collections::HashMap, hash::Hasher, ops::Range};
 
 pub(in super::super) struct VertexSnapshot {
-    pub(super) vertices: Vec<[f32; 6]>,
+    pub(super) vertices: Vec<PathVertex>,
     pub(super) regions: Vec<(u64, Range<usize>)>,
 }
 impl VertexSnapshot {

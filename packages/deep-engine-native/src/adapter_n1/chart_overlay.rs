@@ -145,7 +145,7 @@ pub(super) fn adapt_chart_extension(
             clip_rect: None,
             hit_id: None,
             path_id: id,
-            fill: paint.0,
+            fill: paint.0.map(crate::deep2d::Deep2dPaint::from),
             fill_rule: None,
             stroke: paint.1,
             stroke_width: paint.2,
@@ -155,6 +155,8 @@ pub(super) fn adapt_chart_extension(
             miter_limit: None,
             dash: None,
             dash_offset: None,
+            corner_radius: None,
+            shadow: None,
         }));
     }
     finish(

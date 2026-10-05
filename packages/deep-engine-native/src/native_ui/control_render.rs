@@ -98,7 +98,7 @@ impl ControlCanvas {
             clip_rect: None,
             hit_id: None,
             path_id: resource_id,
-            fill: Some(color),
+            fill: Some(color.into()),
             fill_rule: None,
             stroke: None,
             stroke_width: None,
@@ -107,6 +107,8 @@ impl ControlCanvas {
             miter_limit: None,
             dash: None,
             dash_offset: None,
+            corner_radius: None,
+            shadow: None,
         }));
     }
 
@@ -156,6 +158,8 @@ impl ControlCanvas {
             miter_limit: None,
             dash: None,
             dash_offset: None,
+            corner_radius: None,
+            shadow: None,
         }));
     }
 

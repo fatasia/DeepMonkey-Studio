@@ -208,7 +208,7 @@ fn stats_display_and_json_summarize_miss_reasons() {
     let mut list = fixture();
     let mut cache = Deep2dPathCache::default();
     equal(&list, &mut cache);
-    command(&mut list, 0).fill = Some([0.1, 0.2, 0.3, 1.0]);
+    command(&mut list, 0).fill = Some([0.1, 0.2, 0.3, 1.0].into());
     equal(&list, &mut cache);
     let stats = cache.stats();
     assert_eq!(stats.miss_reasons.total(), stats.misses);
