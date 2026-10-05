@@ -139,7 +139,7 @@ describe("virtual texture render wiring", () => {
       environment: { dispose: vi.fn() }, lighting: { dispose: vi.fn() }, localShadows: { dispose: vi.fn() },
       shadowState: { dispose: vi.fn() }, previousHiZ: { dispose: vi.fn() }, transparency: { dispose: vi.fn() },
       postProcess: { dispose: vi.fn() }, packets: { dispose: vi.fn() }, targets: { dispose: vi.fn() },
-      cameraHistory: { reset: vi.fn() }, session: { dispose: vi.fn() },
+      cameraHistory: { reset: vi.fn() }, session: { dispose: vi.fn() }, now: () => 0,
       virtualTextures: f.bridge, virtualTileLookup: f.lookup };
     PbrRenderer.prototype.dispose.call(renderer as never);
     expect(renderer.virtualTextures).toBeUndefined;

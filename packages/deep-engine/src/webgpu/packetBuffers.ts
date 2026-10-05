@@ -84,7 +84,9 @@ export class PacketBuffers {
     this.materials = new MaterialBindingPool(session, materialLayout);
     this.textureArrays = textureArrayLayout ? new PacketTextureArrayConsumer(session, textureArrayLayout) : undefined;
   }
-  private readonly deformationReadiness: Promise<void> | undefined;
+  // A2-刀1:非只读 —— settled promise 会把 resolved 值(变形 Pipelines 图)钉在堆上,
+  // dispose 时显式置空断开该引用链(证据见 dispose 内注释)。
+  private deformationReadiness: Promise<void> | undefined;
 
   /** Monotonic revision of successfully published visibility-affecting author state. */
   get visibilityRevision(): number { return this.sceneRevision; }
@@ -393,7 +395,12 @@ export class PacketBuffers {
     runResourceCleanup("Packet buffer disposal failed.", [() => this.validation.cancel(), () => this.deformation.dispose(),
       () => this.resident.cancel(context), () => { activeResident = this.resident.detachActive();
         this.geometries = new Map(); this.geometryBounds = new Map(); this.batches = new Map();
-        this.motionHistory = new Map(); this.textureLookup = this.textures; this.materialEffects = undefined; },
+        this.motionHistory = new Map(); this.textureLookup = this.textures; this.materialEffects = undefined;
+        // A2-刀1:settled promise 的 resolved 值(延迟注入的变形 Pipelines 图:WGSL 源+
+        // 管线对象+布局)在 promise 可达期间被 V8 持有;packets 实例 dispose 后仍挂在
+        // renderer 上,不清空则整张变形管线图陪葬。dispose 后所有入口先经 beginMutation
+        // 的 disposed 检查抛错,不会再 await 该 promise,断开无行为影响。
+        this.deformationReadiness = undefined; },
       ...geometries.map(value => () => { if (!activeResident) value.mesh.dispose(); }),
       ...batches.flatMap(value => [() => this.session.release(value.buffer),
         () => this.session.release(value.previousBuffer), () => this.materials.release(value.material)]),

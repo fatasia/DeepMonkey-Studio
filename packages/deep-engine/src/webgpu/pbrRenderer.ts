@@ -44,6 +44,7 @@ import { runResourceCleanup } from "./resourceCleanup.js";
 import { PbrOutputBindings, type PbrPresentReceipt } from "./pbrOutputBindings.js";
 import { PbrRendererDiagnostics } from "./pbrRendererDiagnostics.js";
 import { validatePbrRenderView } from "./pbrRenderViewValidation.js";
+import { currentRendererRebuildOrdinal, recordRendererRebuild, rendererRebuildFrameMetrics } from "./pbrRendererRebuildAccounting.js";
 import { beginPbrOpaquePass } from "./pbrOpaquePass.js";
 import { LocalSpotShadowRuntime } from "./localSpotShadowRuntime.js";
 import { pbrDirectDisplayClear } from "./pbrDirectDisplay.js";
@@ -186,12 +187,24 @@ export class PbrRenderer {
   private readonly virtualTileLookup: VirtualTextureTileLookupPass | undefined;
   /** DeviceSession recovery requires replacement of this complete GPU graph. */
   private readonly deviceEpoch: RendererDeviceEpoch;
+  /** A2-刀1:dispose 时显式断开的编译管线图与 release 门引用(证据链见构造器首注)。 */
+  private pipelines: Pipelines | undefined;
+  private releasePipelines: (() => void) | undefined;
+  /** A2-刀2:重建周期账目 —— 本实例序号(构造期领取)与已披露的台账总数。 */
+  private readonly rebuildOrdinal = currentRendererRebuildOrdinal();
+  private publishedRebuildTotal = -1;
   /** 上一已提交渲染帧的相机切换;自动曝光在其后一帧直取目标(剪除瞬态)。 */
   private previousFrameCameraCut = false;
-  private constructor(readonly session: DeviceSession, private readonly pipelines: Pipelines, environment: StudioEnvironment,
+  private constructor(readonly session: DeviceSession, pipelines: Pipelines, environment: StudioEnvironment,
     lighting: ForwardPlusPbrRuntime, localShadows: LocalSpotShadowRuntime, options: PbrRendererOptions, features: PbrRendererFeatures,
-    deformationPipelines?: Pipelines | Promise<Pipelines>, private readonly releasePipelines?: () => void,
+    deformationPipelines?: Pipelines | Promise<Pipelines>, releasePipelines?: () => void,
     msaa: import("./pbrMsaaCapability.js").PbrMsaaCapability = { sampleCount: 1 }) {
+    // A2-刀1:两字段声明为可空并在 dispose 显式断开 —— 它们是整张编译管线图
+    // (WGSL 源+管线对象+bind group 布局,soak 语境 3104 管线事件)仅有的实例级强引用;
+    // releasePipelines 只开 deferred 编译队列门(PbrPipelineSet.release=releaseDeferredQueues),
+    // 不释放图本身。帧宿主经 `as unknown as` 转型,dispose 后帧路径本就非法,提前在此失败。
+    this.pipelines = pipelines;
+    this.releasePipelines = releasePipelines;
     this.deviceEpoch = new RendererDeviceEpoch(session.device);
     this.diagnostics = new PbrRendererDiagnostics(session);
     this.clusterLodEnabled = resolveClusterLodSlotOption(options.clusterLod);
@@ -535,16 +548,38 @@ export class PbrRenderer {
       .catch(() => { /* runtime records its own failed diagnostics; the render loop must survive. */ })
       .finally(() => { this.probeClipmapBusy = false; });
   }
-  render(view: RenderView): FrameMetrics | undefined { this.deviceEpoch?.assertCurrent(this.session.device); return this.environment.runFrame(() => this.renderPreparedFrame(view), previous => this.mainBindings.setEnvironment(previous)); }
+  render(view: RenderView): FrameMetrics | undefined {
+    this.deviceEpoch?.assertCurrent(this.session.device);
+    return this.decorateRebuildAccounting(
+      this.environment.runFrame(() => this.renderPreparedFrame(view), previous => this.mainBindings.setEnvironment(previous)));
+  }
   private renderPreparedFrame(view: RenderView): FrameMetrics | undefined {
     return renderPreparedFrame(this as unknown as PbrRendererFrameHost, view);
   }
   async validateFrame(view: RenderView): Promise<FrameMetrics> {
-    return validateFrame(this as unknown as PbrRendererFrameHost, view);
+    return this.decorateRebuildAccounting(await validateFrame(this as unknown as PbrRendererFrameHost, view));
+  }
+  /**
+   * A2-刀2:重建周期账目披露。每次重建只展开一次(台账 total 变化的那一帧携带
+   * rendererRebuilds),避开逐帧对象拷贝的分配敏感路径;消费方以 total 变化为准。
+   */
+  private decorateRebuildAccounting<T extends FrameMetrics | undefined>(metrics: T): T {
+    if (metrics === undefined) return metrics;
+    const total = rendererRebuildFrameMetrics(this.rebuildOrdinal).total;
+    if (this.publishedRebuildTotal === total) return metrics;
+    this.publishedRebuildTotal = total;
+    return { ...metrics, rendererRebuilds: rendererRebuildFrameMetrics(this.rebuildOrdinal) } as T;
   }
   dispose(): void {
     // 拆除测试以裸 this 调用 dispose;可选调用保持其不依赖新增私有方法。
     this.cancelOutlinePrewarm?.();
+    // A2-刀1:先切断拴住 renderer 实例的在途异步链。
+    // ① driveProbeClipmap 的 `.finally(() => { this.probeClipmapBusy = ... })` 闭包捕获 this,
+    //    probeClipmapAbort 全生命周期从未 abort,在途 beginFrame 结算前整张 renderer 图
+    //    (管线/几何快照/池)被钉在堆上;② stageAdaptiveShadow 的 then/catch/finally 闭包
+    //    同理捕获 this。abort 让两条链在 dispose 边界立即结算,不再拖尾。
+    this.probeClipmapAbort?.abort();
+    this.adaptiveShadowStage?.abort();
     this.probeClipmap?.dispose();
     this.probeRadianceProducer?.dispose();
     this.probeRadianceProducer = undefined;
@@ -561,8 +596,36 @@ export class PbrRenderer {
       ...(this.rtShadows ? [this.rtShadows] : [])];
     // 释放背景排队门：未 release 就销毁的宿主也能让挂起的门禁 promise 结算。
     this.releasePipelines?.();
-    runResourceCleanup("PBR renderer cleanup failed.", [...owners.map(owner => () => owner.dispose()),
-      () => this.cameraHistory.reset(), () => this.session.dispose()]);
+    runResourceCleanup("PBR renderer cleanup failed.", [
+      // A2-刀2:先入账(此刻 session/池/编译清单仍可读),失败随 AggregateError 披露,
+      // 不阻断后续 owner 释放。内联展开:拆除测试以裸 this 调用 dispose(既有调用契约,
+      // 与上方可选调用同族)—— 账目数据源缺失 = 无账可记,跳过且不伪零;
+      // 真实渲染器恒有两源,必记账。
+      () => {
+        const memory: import("./deviceResourceMemory.js").DeviceResourceMemorySnapshot | undefined
+          = this.session.resourceMemory;
+        const transient = this.transientTextures?.stats;
+        if (memory === undefined || transient === undefined) return;
+        const device = this.session.device as GPUDevice | undefined;
+        recordRendererRebuild({ atMs: this.now(), releasedEstimateBytes: memory.estimatedBytes,
+          bufferBytes: memory.bufferBytes, textureBytes: memory.textureBytes,
+          transientAllocatedBytes: transient.allocatedBytes,
+          transientPeakResidentBytes: transient.peakResidentBytes,
+          pipelineCompiles: device === undefined ? 0 : snapshotPipelineCompileRecords(device).length });
+      },
+      ...owners.map(owner => () => owner.dispose()),
+      () => this.cameraHistory.reset(),
+      // A2-刀1:断开编译管线图的两条实例级强引用(this.pipelines 构造参数属性 +
+      // this.releasePipelines 经 bootstrap 闭包持 set/延迟 deformation build),并丢弃
+      // 帧捕获读回 promise(lastFrameReadback 持整帧像素大 typed array)。
+      // 都放在 session.dispose 之前:此后无任何消费方,renderer 实例即便被残余闭包
+      // 短暂钉住,也不再拖住最大头的管线图与读回缓冲。
+      () => {
+        this.pipelines = undefined;
+        this.releasePipelines = undefined;
+        this.lastFrameReadback = undefined;
+      },
+      () => this.session.dispose()]);
   }
   private sceneChanged(): void { this.shadowDirty = true; this.historyDirty = true; }
   /** 帧编排宿主时钟注入(PbrRendererFrameHost.now;本类是 performance 白名单面)。 */

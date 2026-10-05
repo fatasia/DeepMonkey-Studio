@@ -283,4 +283,17 @@ export interface FrameMetrics {
   /** 对象级描边遥测(仅 packet 含 outline 实例的帧出现);skippedBatches>0 表示变形/meshlet 批次未进入掩码。 */
   readonly outline?: { readonly drawCalls: number; readonly skippedBatches: number };
   readonly adaptiveHotspots?: readonly AdaptiveQualityHotspotSummary[];
+  /**
+   * A2 内存专项(刀2)重建周期账目:每次 renderer dispose 落一条「释放估算」入进程级
+   * 有界台账(最近 16 条;total 单调含已逐出)。`ordinal` = 本实例序号(0 起),
+   * `total` = 已完成重建总数,`last` = 最近一次重建账目。逐帧不重复展开 —— 只在
+   * total 变化后的第一帧携带,消费方以 total 变化为准;分配侧看同帧
+   * deviceResourceMemory,两侧相减即单周期净增量。backend 切换风暴(release-soak
+   * 实测 39 次/11min)的每次增量据此可对账,供后续水位门取数。
+   */
+  readonly rendererRebuilds?: {
+    readonly ordinal: number;
+    readonly total: number;
+    readonly last?: import("./pbrRendererRebuildAccounting.js").RendererRebuildAccountingEntry;
+  };
 }
