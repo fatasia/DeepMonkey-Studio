@@ -16,6 +16,13 @@ pollster = "=1.0.1"
 rapier3d = { version = "=0.35.3", default-features = true, features = ["enhanced-determinism"] }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
+# deep2d 刀2 组件布局(flexbox)。开源依赖门槛审计结论:taffy 0.14.0(MIT,crates.io
+# SHA-256 639627c87f43b9181c811f40a6296409e093a17bc761214cba3c15df74f86b99),
+# default-features 关闭后 flexbox+taffy_tree 特性的传递依赖仅 arrayvec ^0.7 /
+# slotmap ^1.0.6,两者已是 Cargo.lock 存量传递依赖(0.7.8 / 1.1.1)——本依赖
+# 不新增任何其他包,grid/parse/serde/block/float 等未启用特性不进依赖树。
+# 确定性:纯 Rust 无 I/O,同输入逐位同输出,黄金用例钉死(见 src/deep2d/layout/)。
+taffy = { version = "=0.14.0", default-features = false, features = ["std", "flexbox", "taffy_tree"] }
 unicode-segmentation = "=1.13.3"
 web-time = "=1.1.0"
 wgpu = { version = "=30.0.1", default-features = false, features = ["std", "parking_lot", "dx12", "metal", "vulkan", "wgsl"] }

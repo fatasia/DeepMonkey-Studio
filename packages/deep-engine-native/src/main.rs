@@ -22,6 +22,8 @@ mod deep2d_gpu_cache;
 mod deep2d_gpu_cache_tests;
 mod deep2d_interleave_probe;
 #[cfg(test)]
+mod deep2d_layout_gpu_tests;
+#[cfg(test)]
 mod deep2d_paint_gpu_tests;
 mod deep2d_path_clip_gpu_tests;
 mod deep2d_scissor;

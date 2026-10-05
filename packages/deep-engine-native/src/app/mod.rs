@@ -32,7 +32,7 @@ mod dashboard_filter_gpu_tests;
 mod dashboard_gpu_tests;
 #[cfg(windows)]
 mod dashboard_video_input;
-mod deep2d_context;
+pub(crate) mod deep2d_context;
 #[cfg(all(test, windows))]
 mod device_loss_probe_tests;
 mod dynamic_playback;

@@ -2,6 +2,8 @@ mod command_types;
 mod hit_index;
 mod painter;
 mod painter_cache;
+// 刀 2 组件布局:flex 树 solve + 绘制命令产出(零新增 Deep2dCommand 变体)。
+pub mod layout;
 pub use painter_cache::{Deep2dPathCache, Deep2dPathCacheStats};
 mod base64_encode;
 mod paint_data;
