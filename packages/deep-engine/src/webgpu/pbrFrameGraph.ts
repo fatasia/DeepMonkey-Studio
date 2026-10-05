@@ -43,9 +43,28 @@ export function buildPbrFrameGraph(options: PbrFrameGraphOptions): RenderGraphBu
     .addPass({ id: "deform", kind: "compute", inputs: ["animation-state"], outputs: ["deformed-vertices"] })
     .addPass({ id: "visibility", kind: "compute", inputs: ["deformed-vertices", "previous-hiz"], outputs: ["visible-draws"] })
     .addPass({ id: "shadows", kind: "render", inputs: ["visible-draws"], outputs: ["shadow-atlas"] })
-    .addPass({ id: "cluster-lights", kind: "compute", inputs: ["lights"], outputs: ["light-grid"] })
+    .addPass({ id: "cluster-lights", kind: "compute", inputs: ["lights"], outputs: ["light-grid"] });
+
+  // Brief-GI GI-FIN(2026-10-05)逐 pass 计时登记:features.sdfGi 开启时帧图声明两个
+  // sdf-gi compute pass(与 PBR_TIMED_PASS_IDS/MAPPED_EXECUTORS 三文件同切片原子 diff;
+  // 关闭 = 拓扑零变化,既有帧 planHash 逐位一致)。资源全部 external:真实分配由
+  // SdfGiProductionRuntime 槽位承担(烘焙域 field buffer / 追踪输出 / 96B 记录行),
+  // 计划层只声明身份与读写面;声明位置与真实 dispatch 位置一致(主 encoder 上
+  // opaque 之前,pbrRendererFrames 的 host.sdfGi.encodeFrame)。records 无图内消费者
+  // (主 pass group3 绑定在图外采样)→ external 保持 pass 存活。
+  if (features.sdfGi) graph
+    .addResource({ id: "sdf-gi-field", descriptor: "sdf-gi-field-buffer-v1", external: true })
+    .addResource({ id: "sdf-gi-visibilities", descriptor: "sdf-gi-visibilities-buffer-v1", external: true })
+    .addResource({ id: "sdf-gi-hit-distances", descriptor: "sdf-gi-hit-distances-buffer-v1", external: true })
+    .addResource({ id: "sdf-gi-records", descriptor: "sdf-gi-records-buffer-v1", external: true })
+    .addPass({ id: "sdf-gi-sky-trace", kind: "compute", inputs: ["sdf-gi-field"],
+      outputs: ["sdf-gi-visibilities", "sdf-gi-hit-distances"] })
+    .addPass({ id: "sdf-gi-probe-update", kind: "compute",
+      inputs: ["sdf-gi-visibilities", "sdf-gi-hit-distances"], outputs: ["sdf-gi-records"] });
+  const opaquePass = graph
     .addPass({ id: "opaque", kind: "render", inputs: ["visible-draws", "shadow-atlas", "light-grid"],
       outputs: geometry ? ["opaque-hdr", "linear-depth", "view-normal", "motion"] : ["opaque-hdr"] });
+  void opaquePass;
 
   if (features.occlusionCulling && geometry) graph
     .addPass({ id: "build-hiz", kind: "compute", inputs: ["linear-depth"], outputs: ["current-hiz"] })

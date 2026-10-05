@@ -72,6 +72,7 @@ export class SdfGiProductionRuntime {
         { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
         { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
         { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+        { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
       ] });
     this.updateLayout = device.createBindGroupLayout({ label: "Deep SDF GI probe update layout",
       entries: [
@@ -80,6 +81,7 @@ export class SdfGiProductionRuntime {
         { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
         { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
         { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+        { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
       ] });
     const traceModule = device.createShaderModule({ label: "Deep SDF GI sky trace WGSL",
       code: DEEP_SDF_SKY_VISIBILITY_TRACE_WGSL });
@@ -135,6 +137,7 @@ export class SdfGiProductionRuntime {
         probeCount: slots.probeCount, directionCount: this.directionCount,
         windowOffset: window.offset, windowCount: window.count,
         alpha: resolveDeepGiTemporalAlpha(this.options.alpha),
+        maxDistance: slots.traceMaxDistance,
         ...(this.options.bounceAlbedo ? { bounceAlbedo: this.options.bounceAlbedo } : {}) }));
       timing?.beginMarker(encoder, "sdf-gi-probe-update");
       const pass = encoder.beginComputePass({ label: "Deep SDF GI probe update" });
@@ -263,6 +266,13 @@ export class SdfGiProductionRuntime {
   readVisibilities(): Promise<Float32Array<ArrayBuffer>> {
     if (!this.slots) throw new Error("SDF GI runtime has no baked scene.");
     return readbackStorageBuffer(this.session, this.slots.visibilities);
+  }
+
+  /** 真机探针/验收读回:天光追踪命中距离快照(probeCount × directionCount,miss = −1;
+   * 与 CPU traceSdfSkyVisibilityWithHits 同口径对拍面,GI-FIN 2026-10-05)。 */
+  readHitDistances(): Promise<Float32Array<ArrayBuffer>> {
+    if (!this.slots) throw new Error("SDF GI runtime has no baked scene.");
+    return readbackStorageBuffer(this.session, this.slots.hitDistances);
   }
 
   /** 真机验收读回:探针场距离场快照(GPU 烘焙帧与 CPU 帧同口径,f32/cell)。 */

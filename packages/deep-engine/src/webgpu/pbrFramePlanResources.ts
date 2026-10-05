@@ -46,6 +46,13 @@ export const PBR_FRAME_RESOURCE_CONTRACTS: readonly PbrFrameResourceContract[] =
   { id: "shadow-atlas", descriptor: "depth32float-array", format: "depth32float", sampleCount: 1,
     usages: ["render-attachment", "texture-binding"], sizeRole: "independent", external: false },
   { id: "light-grid", descriptor: "forward-plus-grid-v1", sampleCount: 1, usages: [], sizeRole: "independent", external: false },
+  // Brief-GI GI-FIN(2026-10-05):sdf-gi 两 pass 的计划层身份声明。资源由
+  // SdfGiProductionRuntime 槽位真实持有(f32 storage buffer,探针数×方向数/96B ABI),
+  // 计划层不参与分配(external)—— descriptor 是身份字符串,采样/读写面见 gi/ 域。
+  { id: "sdf-gi-field", descriptor: "sdf-gi-field-buffer-v1", sampleCount: 1, usages: [], sizeRole: "independent", external: true },
+  { id: "sdf-gi-visibilities", descriptor: "sdf-gi-visibilities-buffer-v1", sampleCount: 1, usages: [], sizeRole: "independent", external: true },
+  { id: "sdf-gi-hit-distances", descriptor: "sdf-gi-hit-distances-buffer-v1", sampleCount: 1, usages: [], sizeRole: "independent", external: true },
+  { id: "sdf-gi-records", descriptor: "sdf-gi-records-buffer-v1", sampleCount: 1, usages: [], sizeRole: "independent", external: true },
   // AA-M1:主帧目标合同全部为单采样 —— 它们是 MSAA 主通路(resolveTarget/深度
   // resolve pass)的 resolve 产物,链上消费方(后处理/输出/读回/次级 pass)只读这一层。
   // MSAA 附件本身是图外实现事实,在 describePbrOpaquePass 的 unplannedAttachments 登记。

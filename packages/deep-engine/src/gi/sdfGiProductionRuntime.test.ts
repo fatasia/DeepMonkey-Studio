@@ -121,8 +121,9 @@ describe("Brief-GI M2 probe update window (ddgiUpdateBudget 同族)", () => {
 
   it("packs the 48B update/trace uniforms in the WGSL struct layout", () => {
     const update = new DataView(packSdfGiProbeUpdateParams({ probeCount: 252, directionCount: 16,
-      windowOffset: 7, windowCount: 64, alpha: 0.1, bounceAlbedo: [0.5, 0.4, 0.3] }));
-    expect(update.byteLength).toBe(48);
+      windowOffset: 7, windowCount: 64, alpha: 0.1, maxDistance: 10, bounceAlbedo: [0.5, 0.4, 0.3] }));
+    // GI-FIN:uniform 扩到 64B(bounceAlbedo vec4 后追加 maxDistance)。
+    expect(update.byteLength).toBe(64);
     expect(update.getUint32(0, true)).toBe(252);
     expect(update.getUint32(4, true)).toBe(16);
     expect(update.getUint32(8, true)).toBe(7);
@@ -136,9 +137,11 @@ describe("Brief-GI M2 probe update window (ddgiUpdateBudget 同族)", () => {
     expect(update.getFloat32(40, true)).toBeCloseTo(0.3);
     // 无 bounce:开关 0,albedo 槽零填充:
     const plain = new DataView(packSdfGiProbeUpdateParams({ probeCount: 1, directionCount: 16,
-      windowOffset: 0, windowCount: 1, alpha: 0.1 }));
+      windowOffset: 0, windowCount: 1, alpha: 0.1, maxDistance: 10 }));
     expect(plain.getUint32(20, true)).toBe(0);
     expect(plain.getFloat32(32, true)).toBe(0);
+        expect(plain.getFloat32(48, true)).toBe(10); // maxDistance(必填,不再是可选槽)
+    expect(plain.getFloat32(44, true)).toBe(0); // albedo.w 对齐保留
 
     const trace = new DataView(packSdfGiSkyTraceParams({ origin: [1, 2, 3], cellSize: 0.25,
       dimensions: [32, 16, 24], steps: 8, coneTan: 0.268, maxDistance: 10,
@@ -182,14 +185,14 @@ describe("Brief-GI M2 probe update window (ddgiUpdateBudget 同族)", () => {
 });
 
 describe("Brief-GI M2 timed-pass registration (原子 diff 暂存) + frame plan", () => {
-  it("reports unregistered until the frame-graph atomic diff lands, with no pass-plan drift", () => {
+  it("reports the GI-FIN timed-pass registration as landed, with no pass-plan drift", () => {
     const registration = sdfGiTimedPassRegistration();
-    // 当前切片:清单未追加 → 未登记(marker 不括夹,零诊断噪音);
-    // 落地切片 = pbrTimedPassIds + 帧图 pass + MAPPED_EXECUTORS 三文件原子 diff。
-    expect(registration.registered).toBe(false);
-    expect(registration.stageAccepted).toBe(false);
+    // GI-FIN:登记落地(pbrTimedPassIds 追加两 pass + 帧图 pass + MAPPED_EXECUTORS
+    // 三文件原子 diff),marker 开始括夹;stage 透传 registered。
+    expect(registration.registered).toBe(true);
+    expect(registration.stageAccepted).toBe(true);
     for (const passId of SDF_GI_TIMED_PASS_IDS) {
-      expect(PBR_TIMED_PASS_IDS).not.toContain(passId);
+      expect(PBR_TIMED_PASS_IDS).toContain(passId);
     }
     // 开关关(默认):帧执行计划与既有逐位一致,无 sdf-gi pass;开关开也不加计划 pass
     // (dispatch 走主 encoder 直编,登记随帧图切片落地)。
@@ -198,10 +201,12 @@ describe("Brief-GI M2 timed-pass registration (原子 diff 暂存) + frame plan"
       { transparency: true, features: resolvePbrRendererFeatures({}) });
     const on = buildPbrFrameExecutionPlan(surface,
       { transparency: true, features: resolvePbrRendererFeatures({ sdfGi: true }) });
-    expect(off.planHash).toBe(on.planHash);
-    expect(off.passOrder).toEqual(on.passOrder);
+    // GI-FIN:帧图分支已登记 —— 开关改变帧图(两 compute pass 进 plan),
+    // planHash 随之不同是正确语义;关=既有帧逐位一致由「off 不含 sdf-gi pass」断言。
+    expect(off.planHash).not.toBe(on.planHash);
+    expect(off.passOrder).not.toEqual(on.passOrder);
+    expect(on.passOrder.filter(id => id.startsWith("sdf-gi-"))).toEqual(["sdf-gi-sky-trace", "sdf-gi-probe-update"]);
     for (const passId of SDF_GI_TIMED_PASS_IDS) {
-      expect(on.passOrder).not.toContain(passId);
       expect(off.passOrder).not.toContain(passId);
     }
   });

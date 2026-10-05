@@ -77,6 +77,9 @@ const MAPPED_EXECUTORS: Readonly<Record<string, string>> = Object.freeze({
   "temporal-upscale": "TemporalUpscalePass.encode",
   "bloom": "BloomPass.encode (AuthorBloomPass shares the plan slot)",
   "present": "PbrOutputBindings.present",
+  // GI-FIN:sdfGi 逐 pass 计时登记(sdfGiPacking 单源;主 encoder 直编执行)。
+  "sdf-gi-sky-trace": "SdfGiProductionRuntime.encodeFrame (sky visibility trace dispatch)",
+  "sdf-gi-probe-update": "SdfGiProductionRuntime.encodeFrame (probe SH update dispatch)",
 });
 
 const UNMAPPED_REASONS: Readonly<Record<string, string>> = Object.freeze({

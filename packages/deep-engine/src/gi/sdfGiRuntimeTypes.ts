@@ -71,6 +71,9 @@ export interface SdfGiGpuSlots {
   readonly probePositions: GPUBuffer;
   readonly directions: GPUBuffer;
   readonly visibilities: GPUBuffer;
+  /** 每 (探针 × 方向) 首个圆锥侵入步心距离,miss = −1(天光追踪核输出;探针更新核
+   * 归约成 vec4[1].xy 真实几何统计,GI-FIN 2026-10-05)。 */
+  readonly hitDistances: GPUBuffer;
   readonly records: GPUBuffer;
   readonly skyRadiance: GPUBuffer;
   readonly traceParams: GPUBuffer;
@@ -79,4 +82,6 @@ export interface SdfGiGpuSlots {
   readonly updateBindGroup: GPUBindGroup;
   readonly probeCount: number;
   readonly cells: number;
+  /** 天光追踪最大行程(全 miss 探针的 meanDistance 语义;探针更新参数下发生成)。 */
+  readonly traceMaxDistance: number;
 }

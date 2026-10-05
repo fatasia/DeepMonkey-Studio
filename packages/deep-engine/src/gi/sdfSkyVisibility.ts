@@ -67,12 +67,27 @@ function clampBound(value: number | undefined, fallback: number, max: number, ou
 }
 
 /**
- * 圆锥追踪(CPU 权威):每 (探针 × 方向) 输出可见度 ∈[0,1],输出长度 =
- * positions.length × directions.length,下标 = probeIndex × directions.length + dirIndex。
- * 域外探针恒 1;同输入逐位同输出。
+ * 天光可见度 + 命中距离联合追踪结果(hitDistances 供探针更新核归约成
+ * vec4[1].xy 真实几何统计;GI-FIN 2026-10-05)。
  */
-export function traceSdfSkyVisibility(grid: SdfGrid, positions: readonly ProbeVector3[],
-  directions: readonly ProbeVector3[], options: SdfSkyVisibilityTraceOptions = {}): Float32Array<ArrayBuffer> {
+export interface SdfSkyVisibilityTraceResult {
+  /** 每 (探针 × 方向) 可见度 ∈[0,1],下标 = probeIndex × directions.length + dirIndex。 */
+  readonly visibilities: Float32Array<ArrayBuffer>;
+  /**
+   * 每 (探针 × 方向) 首个圆锥侵入步的步心距离(米),miss = −1;下标同 visibilities。
+   * 与 wgsl/sdfSkyVisibilityTrace.wgsl 的 hitDistances 输出逐式同源(同 fround 序)。
+   */
+  readonly hitDistances: Float32Array<ArrayBuffer>;
+}
+
+/**
+ * 圆锥追踪(CPU 权威;可见度 + 命中距离双输出):每 (探针 × 方向) 输出可见度 ∈[0,1]
+ * 与首个「圆锥被几何侵入」步的步心距离(miss = −1 哨兵)。域外探针恒 1/−1;同输入
+ * 逐位同输出。确定性:无 RNG,固定步数循环(无 early-break),与 WGSL 同序 fround。
+ */
+export function traceSdfSkyVisibilityWithHits(grid: SdfGrid, positions: readonly ProbeVector3[],
+  directions: readonly ProbeVector3[], options: SdfSkyVisibilityTraceOptions = {}):
+  SdfSkyVisibilityTraceResult {
   if (!positions.length || !directions.length) {
     throw new RangeError("SDF sky visibility trace needs at least one probe and one direction.");
   }
@@ -116,6 +131,7 @@ export function traceSdfSkyVisibility(grid: SdfGrid, positions: readonly ProbeVe
     return fround(y0 + fround(fround(y1 - y0) * fz));
   };
   const out = new Float32Array(positions.length * directions.length);
+  const hits = new Float32Array(positions.length * directions.length);
   const stride = directions.length;
   const stepLength = fround(config.maxDistance / config.steps);
   for (let probe = 0; probe < positions.length; probe++) {
@@ -125,19 +141,38 @@ export function traceSdfSkyVisibility(grid: SdfGrid, positions: readonly ProbeVe
       return q >= 0 && q <= [maxX, maxY, maxZ][axis]!;
     });
     for (let direction = 0; direction < stride; direction++) {
-      if (!inDomain) { out[probe * stride + direction] = 1; continue; }
+      if (!inDomain) {
+        out[probe * stride + direction] = 1;
+        hits[probe * stride + direction] = -1;
+        continue;
+      }
       const [dx, dy, dz] = unit[direction]!;
       let visibility = 1;
+      // 命中距离:首个 contribution < 1 的步心(与 WGSL 同式同序;全程无侵入 = −1)。
+      let hitDistance = -1;
       for (let step = 0; step < config.steps; step++) {
         const t = fround(fround(step + 0.5) * stepLength);
         const sx = sample(fround(position[0]! + fround(dx * t)),
           fround(position[1]! + fround(dy * t)), fround(position[2]! + fround(dz * t)));
         const limit = Math.max(fround(config.coneTan * t), SDF_SKY_VISIBILITY_LIMIT_EPSILON);
         const contribution = Math.min(1, Math.max(0, sx / limit));
+        if (hitDistance < 0 && contribution < 1) hitDistance = t;
         visibility = Math.min(visibility, contribution);
       }
       out[probe * stride + direction] = visibility;
+      hits[probe * stride + direction] = hitDistance;
     }
   }
-  return out;
+  return { visibilities: out, hitDistances: hits };
+}
+
+/**
+ * 圆锥追踪(CPU 权威):每 (探针 × 方向) 输出可见度 ∈[0,1],输出长度 =
+ * positions.length × directions.length,下标 = probeIndex × directions.length + dirIndex。
+ * 域外探针恒 1;同输入逐位同输出。仅要可见度时的薄封装(命中距离见
+ * traceSdfSkyVisibilityWithHits)。
+ */
+export function traceSdfSkyVisibility(grid: SdfGrid, positions: readonly ProbeVector3[],
+  directions: readonly ProbeVector3[], options: SdfSkyVisibilityTraceOptions = {}): Float32Array<ArrayBuffer> {
+  return traceSdfSkyVisibilityWithHits(grid, positions, directions, options).visibilities;
 }

@@ -45,6 +45,10 @@ export function buildSdfGiSlots(input: SdfGiSlotsBuildInput): SdfGiGpuSlots {
     packSdfGiDirectionTable(directionCount), STORAGE_READ);
   const visibilities = createAdmittedBuffer(session, { label: "Deep SDF GI sky visibility",
     size: Math.max(16, probeCount * directionCount * 4), usage: STORAGE_RW });
+  // 逐 (探针 × 方向) 命中距离(天光追踪核输出,miss = −1;探针更新核归约成真实
+  // moments —— vec4[1].xy 字段本为此预留,GI-FIN 2026-10-05)。
+  const hitDistances = createAdmittedBuffer(session, { label: "Deep SDF GI trace hit distances",
+    size: Math.max(16, probeCount * directionCount * 4), usage: STORAGE_RW });
   // 记录行 = 24 float = 96B/探针(SDF_GI_PROBE_RECORD_VEC4_STRIDE=6 vec4 × 16B)。
   const records = createAdmittedBuffer(session, { label: "Deep SDF GI probe records",
     size: Math.max(16, probeCount * SDF_GI_PROBE_RECORD_VEC4_STRIDE * 16), usage: STORAGE_RW });
@@ -54,8 +58,8 @@ export function buildSdfGiSlots(input: SdfGiSlotsBuildInput): SdfGiGpuSlots {
     new Float32Array(SDF_SKY_VISIBILITY_PARAMS_BYTES / 4), USAGE_UNIFORM);
   const updateParams = uploadBuffer(session, "Deep SDF GI update params",
     new Float32Array(SDF_GI_PROBE_UPDATE_PARAMS_BYTES / 4), USAGE_UNIFORM);
-  const created = [field, probePositions, directions, visibilities, records, skyRadiance,
-    traceParams, updateParams];
+  const created = [field, probePositions, directions, visibilities, hitDistances, records,
+    skyRadiance, traceParams, updateParams];
   try {
     session.device.queue.writeBuffer(traceParams, 0, packSdfGiSkyTraceParams({
       origin: grid.origin, cellSize: grid.cellSize, dimensions: grid.dimensions,
@@ -70,6 +74,7 @@ export function buildSdfGiSlots(input: SdfGiSlotsBuildInput): SdfGiGpuSlots {
         { binding: 2, resource: { buffer: probePositions } },
         { binding: 3, resource: { buffer: directions } },
         { binding: 4, resource: { buffer: visibilities } },
+        { binding: 5, resource: { buffer: hitDistances } },
       ] });
     const updateBindGroup = session.device.createBindGroup({
       label: "Deep SDF GI probe update bindings", layout: input.updateLayout, entries: [
@@ -77,10 +82,11 @@ export function buildSdfGiSlots(input: SdfGiSlotsBuildInput): SdfGiGpuSlots {
         { binding: 1, resource: { buffer: visibilities } },
         { binding: 2, resource: { buffer: skyRadiance } },
         { binding: 3, resource: { buffer: records } },
+        { binding: 4, resource: { buffer: hitDistances } },
       ] });
-    return { field, probePositions, directions, visibilities, records, skyRadiance,
+    return { field, probePositions, directions, visibilities, hitDistances, records, skyRadiance,
       traceParams, updateParams, traceBindGroup, updateBindGroup, probeCount,
-      cells: grid.cells };
+      cells: grid.cells, traceMaxDistance: config.maxDistance };
   } catch (error) {
     for (const buffer of created.reverse()) session.release(buffer);
     throw error;
@@ -90,5 +96,5 @@ export function buildSdfGiSlots(input: SdfGiSlotsBuildInput): SdfGiGpuSlots {
 /** 槽位资源清单(释放面;runtime dispose/rebuild 共用单一来源)。 */
 export function sdfGiSlotBuffers(slots: SdfGiGpuSlots): readonly GPUBuffer[] {
   return [slots.field, slots.probePositions, slots.directions, slots.visibilities,
-    slots.records, slots.skyRadiance, slots.traceParams, slots.updateParams];
+    slots.hitDistances, slots.records, slots.skyRadiance, slots.traceParams, slots.updateParams];
 }

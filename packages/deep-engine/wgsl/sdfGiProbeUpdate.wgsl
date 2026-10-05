@@ -5,13 +5,17 @@
 // 融合,差异走容差对拍,A3 布料先例口径)。f32 记录行布局与 probeClipmapSampling 的
 // 96B IrradianceProbeRecord ABI 逐字对齐(vec4[6]/探针):
 //   vec4[0] = (irradiance.rgb, validity)   —— 本核写(vec4[0].rgb 更新,validity 透传)
-//   vec4[1] = (meanDistance, variance, occlusionFloor, 0) —— 本核只写 .z = c0
+//   vec4[1] = (meanDistance, variance, occlusionFloor, 0) —— 本核写 .z = c0;
+//             GI-FIN(2026-10-05)起 .xy = 天光追踪核命中距离统计的真实归约
+//             (mean = 命中方向均值、var = 命中距离总体方差、全 miss = maxDistance,
+//             语义对齐 probeOcclusionRayExtension;采样链 Chebyshev 从此按真实几何
+//             判遮挡,替代烘焙有界初值 maxDistance/2 与 (maxDistance/4)²)
 //   vec4[2] = (positionOffset.rgb, 0)      —— 宿主烘焙时写入,本核不动
 //   vec4[3..5] = F5 words[12..23] RGB L1 SH 方向可见度 —— **本核绝不写**(F5 合同)。
 //
 // 确定性合同(与 sdfSkyVisibilityTrace.wgsl 同族):
-// - 每 lane 只读自己的可见度切片与记录行:无跨 lane 通信、无 workgroup 内存、无原子,
-//   同输入同 dispatch 逐位回放;
+// - 每 lane 只读自己的可见度/命中距离切片与记录行:无跨 lane 通信、无 workgroup 内存、
+//   无原子,同输入同 dispatch 逐位回放;
 // - 方向循环固定步数(params.directionCount,无 early-break),分支与时序无关;
 // - 埋入探针(validity==0)早退 = 记录原样透传(泄露哨兵,与 CPU 域一致:墙内探针
 //   不被天光场复活);可见度由宿主合同保证 ∈[0,1]、天空辐射有限(烘焙/采样合同),
@@ -37,6 +41,8 @@ struct ProbeUpdateParams {
   bounceEnergyLimit: f32,
   /** bounce 均匀反照率(rgb ∈[0,1];w 保留对齐)。 */
   bounceAlbedo: vec4f,
+  /** 天光追踪最大行程(全 miss 探针的 meanDistance 语义;与 SkyTraceParams 同值)。 */
+  maxDistance: f32,
 };
 
 @group(0) @binding(0) var<uniform> params: ProbeUpdateParams;
@@ -47,6 +53,8 @@ struct ProbeUpdateParams {
 @group(0) @binding(2) var<storage, read> skyRadiance: array<vec4f>;
 // 探针记录存储(vec4[6]/探针,96B IrradianceProbeRecord ABI)。
 @group(0) @binding(3) var<storage, read_write> records: array<vec4f>;
+// 每 (探针 × 方向) 首个圆锥侵入步的步心距离,miss = −1(sdfSkyVisibilityTrace.wgsl 输出)。
+@group(0) @binding(4) var<storage, read> hitDistances: array<f32>;
 
 @compute @workgroup_size(64)
 fn sdfGiProbeUpdateMain(@builtin(global_invocation_id) gid: vec3u) {
@@ -64,9 +72,18 @@ fn sdfGiProbeUpdateMain(@builtin(global_invocation_id) gid: vec3u) {
   var g = 0.0;
   var b = 0.0;
   var c0 = 0.0;
+  // 命中距离统计:第一遍累计命中数与和(方向序固定);全 miss = maxDistance(开放
+  // 空间语义,variance 0 → 采样端 clamp 下界 ≈ 0 → 该探针不越权作证遮挡)。
+  var hitSum = 0.0;
+  var hitCount = 0u;
   for (var d = 0u; d < count; d = d + 1u) {
     let v = visibilities[first + d];
     c0 = c0 + v;
+    let hit = hitDistances[first + d];
+    if (hit >= 0.0) {
+      hitSum = hitSum + hit;
+      hitCount = hitCount + 1u;
+    }
     let sky = skyRadiance[d].xyz;
     r = r + v * sky.x;
     g = g + v * sky.y;
@@ -88,7 +105,25 @@ fn sdfGiProbeUpdateMain(@builtin(global_invocation_id) gid: vec3u) {
   // 时域滤波:out = prev + (target − prev)·α(与 CPU 逐式一致)。
   let blended = current.xyz + (finalTarget - current.xyz) * params.alpha;
   records[base] = vec4f(blended, current.w);
+  // 几何统计(总体方差 = Σ(x−mean)²/hitCount,hitCount ≤ 1 恒 0,与 CPU 镜像同式;
+  // 第二遍方向序固定累加,无原子/无跨 lane 通信):
+  var meanDistance = params.maxDistance;
+  var variance = 0.0;
+  if (hitCount > 0u) {
+    meanDistance = hitSum / f32(hitCount);
+    if (hitCount > 1u) {
+      var squared = 0.0;
+      for (var d = 0u; d < count; d = d + 1u) {
+        let hit = hitDistances[first + d];
+        if (hit >= 0.0) {
+          let delta = hit - meanDistance;
+          squared = squared + delta * delta;
+        }
+      }
+      variance = squared / f32(hitCount);
+    }
+  }
   // occlusionFloor = 当前帧可见度均值 c0(未滤波,与 CPU probeSkyVisibilitySh 投影一致);
-  // vec4[1].xy(meanDistance/variance)保持宿主烘焙初值,本核不动。
-  records[base + 1u] = vec4f(records[base + 1u].xy, c0 / n, 0.0);
+  // vec4[1].xy = 真实命中距离统计(GI-FIN;采样链 Chebyshev/enclosed 判据的输入)。
+  records[base + 1u] = vec4f(meanDistance, variance, c0 / n, 0.0);
 }

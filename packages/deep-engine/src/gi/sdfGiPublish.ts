@@ -34,8 +34,18 @@ const USAGE_COPY_DST = 0x8, USAGE_UNIFORM = 0x40; // buffer 表
 const TEXTURE_COPY_SRC = 0x1, TEXTURE_BINDING = 0x4, STORAGE_BINDING = 0x8; // 纹理表
 const PUBLISHED_TEXTURE_USAGE = TEXTURE_BINDING | STORAGE_BINDING | TEXTURE_COPY_SRC;
 
-/** 探针格 → 采样合同 level(主 pass DeepGiTextureLevel 的 CPU 单源;探针格内缩半格
- * 由 sdfGiProductionRuntime 的 lattice 边界承担,此处原样透传格几何)。 */
+/**
+ * 探针格 → 采样合同 level(主 pass DeepGiTextureLevel 的 CPU 单源;探针格内缩半格
+ * 由 sdfGiProductionRuntime 的 lattice 边界承担,此处原样透传格几何)。
+ *
+ * == max 外扩一个 spacing(GI-FIN 归因修复,2026-10-05)==
+ * lattice 的 floor 取整会让末端探针平面到烘焙域边界欠冲最多一个 spacing(实测参考
+ * 房间:x 末端欠冲 0.45m,+x 墙面整体落在 max 之外 → contains 拒绝 → gi.a=0 → 开关
+ * 逐位相同,变化区塌缩成探针域内子域)。max 外扩一个 spacing 后 contains 覆盖全部
+ * 烘焙域;外插段由采样端坐标钳制(`low=min(floor,gridSize−2)` + `fraction` 钳 1)
+ * 天然收敛到末端探针列,插值权重/探针位置仍按 origin+cell×spacing 计算,合同零漂移;
+ * CPU 镜像(sampleIrradianceProbeClipmap)消费同一 level 对象,同口径自动保持。
+ */
 export function sdfGiPublishLevel(origin: readonly [number, number, number], spacing: number,
   dimensions: readonly [number, number, number]): ProbeClipmapLevel {
   if (!(spacing > 0) || !Number.isFinite(spacing)) throw new RangeError("SDF GI publish spacing must be positive finite.");
@@ -43,9 +53,9 @@ export function sdfGiPublishLevel(origin: readonly [number, number, number], spa
     throw new RangeError("SDF GI publish dimensions must be integers >= 2 per axis.");
   }
   const max: [number, number, number] = [
-    origin[0]! + (dimensions[0]! - 1) * spacing,
-    origin[1]! + (dimensions[1]! - 1) * spacing,
-    origin[2]! + (dimensions[2]! - 1) * spacing,
+    origin[0]! + dimensions[0]! * spacing,
+    origin[1]! + dimensions[1]! * spacing,
+    origin[2]! + dimensions[2]! * spacing,
   ];
   return { level: 0, gridSize: [...dimensions], spacing, originCell: [0, 0, 0],
     origin: [...origin], max, probeCount: dimensions[0]! * dimensions[1]! * dimensions[2]! };

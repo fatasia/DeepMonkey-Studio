@@ -58,7 +58,11 @@ describe("SDF sky visibility trace WGSL single-source cross-host gate (TS half)"
     expect(DEEP_SDF_SKY_VISIBILITY_TRACE_WGSL).not.toContain("bitcast");
     // 软阴影口径与除法下限(与 CPU 镜像 sdfSkyVisibility.ts 同字面):
     expect(DEEP_SDF_SKY_VISIBILITY_TRACE_WGSL)
-      .toContain("visibility = min(visibility, clamp(distance / limit, 0.0, 1.0));");
+      // GI-FIN:contribution 提前计算(首个 <1 步记命中距离),min 消费变量。
+      .toContain("let contribution = clamp(distance / limit, 0.0, 1.0);")
+      .toContain("if (hitDistance < 0.0 && contribution < 1.0) { hitDistance = t; }")
+      .toContain("visibility = min(visibility, contribution);")
+      .toContain("hitDistances[lane] = hitDistance;");
     expect(DEEP_SDF_SKY_VISIBILITY_TRACE_WGSL)
       .toContain(`max(params.coneTan * t, ${SDF_SKY_VISIBILITY_LIMIT_EPSILON})`);
     // trilinear 采样序与碰撞查询核同构(x4 → y2 → z1):

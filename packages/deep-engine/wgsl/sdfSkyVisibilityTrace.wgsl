@@ -6,6 +6,16 @@
 // 16/32 方向 Fibonacci 方向表由宿主按 probeOcclusionDirection(CPU 权威)打包,
 // 可见性向量随后投影为 L1 SH(gi/probeSkyVisibilitySh.ts)。
 //
+// GI-FIN(2026-10-05)命中距离统计:同一步进循环里,首个「圆锥被几何侵入」的步
+// (contribution < 1,即 sdf(t_i) < coneTan·t_i)记为本方向的命中距离 t_i;全程无
+// 侵入 = miss,记哨兵 −1。逐 lane 输出到 hitDistances(probeCount × directionCount,
+// 下标与 visibilities 同式),由探针更新核(sdfGiProbeUpdate.wgsl)按探针归约成
+// (meanDistance, distanceVariance) 回写记录 vec4[1].xy —— 采样链 Chebyshev 可见性
+// 的真实几何统计(字段本为此预留;语义对齐 probeOcclusionRayExtension:mean = 命中
+// 距离均值、var = 命中距离总体方差、全 miss 由更新核取 maxDistance)。注意这是
+// 圆锥软阴影口径的步进量化命中(步心),不是精确最近命中;variance 覆盖「不同方向
+// 遮蔽距离的离散度」,正是采样端判遮挡所需的量。
+//
 // 确定性合同(与 sdfCollisionQuery.wgsl 同族):
 // - 每 lane 输出只由本 lane 输入决定:无跨 lane 通信、无 workgroup 内存、无原子,
 //   同输入同 dispatch 逐位回放;步进循环固定步数(无 early-break),分支与时序无关。
@@ -37,6 +47,8 @@ struct SkyTraceParams {
 @group(0) @binding(3) var<storage, read> directions: array<vec4f>;
 // 每 lane 输出:天光可见度 ∈[0,1](1 = 全程直达天空)。
 @group(0) @binding(4) var<storage, read_write> visibilities: array<f32>;
+// 每 lane 输出:首个圆锥侵入步的步心距离(米);miss = −1(与 visibilities 同下标)。
+@group(0) @binding(5) var<storage, read_write> hitDistances: array<f32>;
 
 /** 边界钳制取值(与 sdfCollisionQuery.wgsl 的 at() 同构;域边一圈常值外推)。 */
 fn at(x: i32, y: i32, z: i32) -> f32 {
@@ -91,15 +103,21 @@ fn traceSkyVisibility(@builtin(global_invocation_id) gid: vec3u) {
   if (any(q < vec3f(0.0)) || any(q > maxQ)) {
     // 域外 = 开放天空(fail-open 光照语义,见头部);非安全查询,不产 NaN。
     visibilities[lane] = 1.0;
+    hitDistances[lane] = -1.0;
     return;
   }
   var visibility = 1.0;
+  // 命中距离:首个 contribution < 1 的步心(全程无侵入保持哨兵 −1 = miss)。
+  var hitDistance = -1.0;
   let stepLength = params.maxDistance / f32(params.steps);
   for (var step = 0u; step < params.steps; step = step + 1u) {
     let t = (f32(step) + 0.5) * stepLength;
     let distance = sampleField(probe + direction * t);
     let limit = max(params.coneTan * t, 0.000001);
-    visibility = min(visibility, clamp(distance / limit, 0.0, 1.0));
+    let contribution = clamp(distance / limit, 0.0, 1.0);
+    if (hitDistance < 0.0 && contribution < 1.0) { hitDistance = t; }
+    visibility = min(visibility, contribution);
   }
   visibilities[lane] = visibility;
+  hitDistances[lane] = hitDistance;
 }

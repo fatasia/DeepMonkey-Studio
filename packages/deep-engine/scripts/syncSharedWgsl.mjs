@@ -416,8 +416,8 @@ export const DEEP_GOD_RAYS_ENTRY = "marchVolumetricGodRays";
 
 /** workgroup 尺寸:每 lane 独立处理更新窗口内的一个探针,无跨 lane 通信。 */
 export const SDF_GI_PROBE_UPDATE_WORKGROUP_SIZE = 64;
-/** ProbeUpdateParams uniform 总字节(8 标量 + bounceAlbedo vec4 = 48B)。 */
-export const SDF_GI_PROBE_UPDATE_PARAMS_BYTES = 48;
+/** ProbeUpdateParams uniform 总字节(8 标量 + bounceAlbedo vec4 + maxDistance f32 = 64B)。 */
+export const SDF_GI_PROBE_UPDATE_PARAMS_BYTES = 64;
 /** compute 入口名(运行时与宿主按名取 entry point)。 */
 export const SDF_GI_PROBE_UPDATE_ENTRY = "sdfGiProbeUpdateMain";
 /** 96B 记录 ABI 的 vec4 步长(=6;与 probeClipmapSampling DEEP_GI_PROBE_RECORD_BYTES 互钉)。 */

@@ -20,6 +20,8 @@ export const PBR_TIMED_PASS_IDS = Object.freeze([
   "temporal-aa",
   "temporal-upscale",
   "bloom",
+  "sdf-gi-sky-trace",
+  "sdf-gi-probe-update",
   "present",
 ] as const);
 

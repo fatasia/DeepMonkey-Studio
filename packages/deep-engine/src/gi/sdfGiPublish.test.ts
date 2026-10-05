@@ -101,7 +101,7 @@ describe("Brief-GI M3 GPU 烘焙展平层(CPU 驱动侧)", () => {
 });
 
 describe("Brief-GI M3 探针消费发布(CPU 镜像/打包面)", () => {
-  it("sdfGiPublishLevel 构造与探针格内缩半格合同一致(采样域 = lattice 边界)", () => {
+  it("sdfGiPublishLevel 构造:采样域外扩一个 spacing,contains 覆盖全部烘焙域", () => {
     const instances = [box([0, 0, 0], [6, 2, 4], "room")];
     const bake = bakeSdfSceneGrid(instances, { cellSize: 0.25 });
     const bounds = probeLatticeBounds(bake.grid);
@@ -110,10 +110,17 @@ describe("Brief-GI M3 探针消费发布(CPU 镜像/打包面)", () => {
     expect(level.level).toBe(0);
     expect(level.probeCount).toBe(lattice.dimensions[0]! * lattice.dimensions[1]! * lattice.dimensions[2]!);
     expect(level.probeCount).toBe(lattice.positions.length);
-    // max = origin + (dims−1)×spacing:deriveSdfGiProbeLattice 的最后位置恒达此界。
+    // max = origin + dims×spacing(GI-FIN 归因修复:lattice floor 取整使末端探针平面
+    // 到域界欠冲最多一个 spacing,原 (dims−1) 公式会把域边带留在 contains 之外,
+    // 变化区塌缩成探针域内子域;外扩段由采样端坐标钳制收敛到末端探针列)。
     for (let axis = 0; axis < 3; axis++) {
       expect(level.max[axis]).toBeCloseTo(
-        bounds.min[axis]! + (lattice.dimensions[axis]! - 1) * lattice.spacing, 5);
+        bounds.min[axis]! + lattice.dimensions[axis]! * lattice.spacing, 5);
+    }
+    // 覆盖合同:lattice 域界(烘焙域内缩半格)必须全部落在采样域内。
+    for (let axis = 0; axis < 3; axis++) {
+      expect(level.max[axis]!).toBeGreaterThanOrEqual(bounds.max[axis]!);
+      expect(level.origin[axis]!).toBeLessThanOrEqual(bounds.min[axis]!);
     }
     // metadata 单层打包与 F5 packProbeLevels 同源(单层 64B;发布 buffer 仍分配 256B
     // 的 DeepGiTextureLevelBlock,层 1..3 全零 = originSpacing.w=0 → 采样端不可用)。

@@ -53,7 +53,8 @@ describe("SDF GI probe update WGSL single-source cross-host gate (TS half)", () 
       expect(DEEP_SDF_GI_PROBE_UPDATE_WGSL).toContain(`@binding(${binding})`);
     }
     expect(SDF_GI_PROBE_UPDATE_WORKGROUP_SIZE).toBe(64);
-    expect(SDF_GI_PROBE_UPDATE_PARAMS_BYTES).toBe(48);
+    // GI-FIN:uniform 扩到 64B(bounceAlbedo vec4 + maxDistance f32,命中距离统计回写 vec4[1].xy)。
+    expect(SDF_GI_PROBE_UPDATE_PARAMS_BYTES).toBe(64);
     expect(SDF_GI_PROBE_UPDATE_ENTRY).toBe("sdfGiProbeUpdateMain");
     expect(SDF_GI_PROBE_RECORD_VEC4_STRIDE).toBe(6);
     expect(SDF_GI_PROBE_UPDATE_BOUNCE_ENERGY_LIMIT).toBe(2.01);

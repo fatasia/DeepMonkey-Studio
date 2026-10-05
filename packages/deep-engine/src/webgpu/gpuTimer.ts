@@ -19,8 +19,9 @@ export interface TimedFrame {
   read(): void;
 }
 
-/** 逐 pass 计时槽容量(pass 对数上限);当前帧图最多 12 个 mapped pass,留 4 个余量。 */
-const PER_PASS_MAX_PAIRS = 16;
+/** 逐 pass 计时槽容量(pass 对数上限);GI-FIN 登记后帧图最多 17 个 mapped pass
+ * (15 既有 + sdf-gi-sky-trace/sdf-gi-probe-update),留 7 个余量。 */
+const PER_PASS_MAX_PAIRS = 24;
 /** 逐 pass 独立槽池;与帧级槽互不挤占,忙时跳过测量而不阻塞渲染。 */
 const PER_PASS_MAX_SLOTS = 2;
 

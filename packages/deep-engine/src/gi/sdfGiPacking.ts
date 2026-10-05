@@ -43,9 +43,10 @@ export function planSdfGiProbeWindow(probeCount: number, budget: number,
   return { offset, count: Math.min(stride, probeCount - offset) };
 }
 
-/** ProbeUpdateParams 打包(48B;布局与 wgsl/sdfGiProbeUpdate.wgsl 的 struct 互钉)。 */
+/** ProbeUpdateParams 打包(64B;布局与 wgsl/sdfGiProbeUpdate.wgsl 的 struct 互钉:
+ * 8 标量 + bounceAlbedo vec4@32 + maxDistance f32@48,struct 对齐舍入到 64)。 */
 export function packSdfGiProbeUpdateParams(input: { probeCount: number; directionCount: number;
-  windowOffset: number; windowCount: number; alpha: number;
+  windowOffset: number; windowCount: number; alpha: number; maxDistance: number;
   bounceAlbedo?: readonly [number, number, number] }): ArrayBuffer {
   const buffer = new ArrayBuffer(SDF_GI_PROBE_UPDATE_PARAMS_BYTES);
   const words = new DataView(buffer);
@@ -62,7 +63,44 @@ export function packSdfGiProbeUpdateParams(input: { probeCount: number; directio
   words.setFloat32(36, albedo[1]!, true);
   words.setFloat32(40, albedo[2]!, true);
   words.setFloat32(44, 0, true);
+  words.setFloat32(48, input.maxDistance, true);
   return buffer;
+}
+
+/**
+ * 探针几何统计 CPU 镜像(GI-FIN 2026-10-05):把天光追踪的逐 (探针 × 方向) 命中距离
+ * (traceSdfSkyVisibilityWithHits 输出,miss = −1)按探针归约为
+ * [meanDistance, distanceVariance] —— 与 wgsl/sdfGiProbeUpdate.wgsl 的核内归约同式
+ * 同序(命中数 ≥1:mean = 命中距离均值、var = 命中距离总体方差;命中数 0:
+ * mean = maxDistance、var = 0,开放空间语义)。语义对齐 probeOcclusionRayExtension
+ * 的记录合同;喂给 updateProbeShWithSdfGi 的 geometryStats(CPU/GPU 同口径)。
+ * JS f64 累加 vs GPU f32:FMA 差异走容差对拍(A3 布料先例口径)。
+ */
+export function sdfGiProbeGeometryStats(hitDistances: ArrayLike<number>, directionCount: number,
+  maxDistance: number): readonly (readonly [number, number])[] {
+  if (directionCount <= 0 || hitDistances.length % directionCount !== 0) {
+    throw new RangeError("SDF GI geometry stats require hit distances aligned to the direction count.");
+  }
+  const probeCount = hitDistances.length / directionCount;
+  const stats: (readonly [number, number])[] = [];
+  for (let probe = 0; probe < probeCount; probe++) {
+    const first = probe * directionCount;
+    let sum = 0, count = 0;
+    for (let direction = 0; direction < directionCount; direction++) {
+      const hit = hitDistances[first + direction]!;
+      if (hit >= 0) { sum += hit; count += 1; }
+    }
+    if (count === 0) { stats.push([maxDistance, 0] as const); continue; }
+    const mean = sum / count;
+    if (count === 1) { stats.push([mean, 0] as const); continue; }
+    let squared = 0;
+    for (let direction = 0; direction < directionCount; direction++) {
+      const hit = hitDistances[first + direction]!;
+      if (hit >= 0) { const delta = hit - mean; squared += delta * delta; }
+    }
+    stats.push([mean, squared / count] as const);
+  }
+  return stats;
 }
 
 /** SkyTraceParams 打包(48B;布局与 wgsl/sdfSkyVisibilityTrace.wgsl 的 struct 互钉:
