@@ -18,6 +18,6 @@ describe("calibrateBakeErrorToDisplacement(缺口 2 误差域统一)", () => {
     expect(calibrateBakeErrorToDisplacement([])).toEqual([]);
   });
   it("keeps the calibration constant pinned at the documented median", () => {
-    expect(BAKE_CELL_ERROR_TO_DISPLACEMENT).toBe(0.85);
+    expect(BAKE_CELL_ERROR_TO_DISPLACEMENT).toBe(0.2153);
   });
 });

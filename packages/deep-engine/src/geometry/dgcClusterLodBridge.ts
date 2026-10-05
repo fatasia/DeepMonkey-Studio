@@ -44,9 +44,12 @@ export type DgcClusterLodBridgeResult = ClusterLodBakeResult;
  * bake 误差标定系数 α（缺口 2）：bake error = 聚类 cell 边长（单级、几何包围盒近似，
  * 高估真实位移），统一域 = 累计顶点位移。α = "顶点→cell 质心位移 / cell 边长"在黄金样本
  * 上的实测稳健值（quick_sphere/synthetic50k 双样本中位数，标定与容差证据见
- * dgcClusterLodBridge.test.ts 的标定组）。`.dgc` 侧系数 γ_dgc = 1（error 原生即累计位移）。
+ * dgcClusterLodBridgeParity.test.ts 的双臂对拍组：L1 相对真值带 0.354~0.802、
+ * 末级累计带 0.802~1.053，0.2153 为两样本可行域 [0.183, 0.242] 的中位数；
+ * 旧值 0.85 被双臂对拍证伪为自洽口径，已按实证修正）。
+ * `.dgc` 侧系数 γ_dgc = 1（error 原生即累计位移）。
  */
-export const BAKE_CELL_ERROR_TO_DISPLACEMENT = 0.85;
+export const BAKE_CELL_ERROR_TO_DISPLACEMENT = 0.2153;
 
 /**
  * bake 聚类 cell 边长序列（level k 的 bake error，level0 = 0）→ 统一累计位移域：
