@@ -1,12 +1,24 @@
-//! P4-A: ray-tracing capability probe and degradation contract. wgpu 30
-//! does NOT expose ray-tracing (no acceleration-structure feature, no RT
-//! pipeline), so the honest default is: RT unsupported on every adapter,
-//! feature flag defaults off, and the renderer stays on the existing
-//! raster path with a recorded reason. The contract is adapter-driven and
-//! data-driven on purpose — when a backend gains RT, this probe upgrades
-//! without touching the renderer.
+//! P4-A: ray-tracing capability probe and degradation contract.
+//!
+//! 事实修正(2026-10-06,F2 登记修正批):wgpu 30 **确实暴露**实验性
+//! acceleration-structure/ray-query API(`wgpu::Features::EXPERIMENTAL_RAY_QUERY`,
+//! DX12/Vulkan 后端;创建设备需 `ExperimentalFeatures::enabled()` 显式确认,
+//! 见 gpu_context.rs)。因此本探针不再笼统判 `BackendLacksRtApi`,而是按
+//! **所选适配器的 feature surface** 分类:
+//! - 含该特性位 → Supported(渲染器侧请求该特性并构建 ray-query 管线族,
+//!   失败 error-scope fail-closed 回退栅格);
+//! - 不含 → Unsupported(HardwareLacksRtUnits:API 存在,该适配器/驱动无 RT 单元)。
+//! The contract is adapter-driven and data-driven on purpose — 分类只在本模块
+//! 一处决策,渲染器不自行猜测。
 
 use serde::{Deserialize, Serialize};
+
+/// wgpu 30 起暴露的实验性 ray-query 特性位(与 gpu_context.rs 请求位同一常量)。
+pub const RAY_QUERY_FEATURE: wgpu::Features = wgpu::Features::EXPERIMENTAL_RAY_QUERY;
+
+/// Supported 适配器的加速结构预算默认值(MiB)。诊断矩阵用保守缺省;
+/// 真实上限由 gpu_context 收敛到适配器 actual limits,不在此虚构精确值。
+pub const RT_ACCELERATION_STRUCTURE_BUDGET_MIB: u32 = 256;
 
 pub const RT_CAPABILITY_CONTRACT_VERSION: u32 = 1;
 
@@ -79,35 +91,49 @@ pub enum RtFallback {
     ExistingRasterPath,
 }
 
-/// The probe verdict for ONE live adapter: derived from the wgpu adapter
-/// surface. `wgpu::Adapter` exposes no RT feature today, so the honest
-/// classification is Unsupported(BackendLacksRtApi) — but the decision
-/// lives in this function alone, so a future wgpu upgrade flips it here.
+/// The probe verdict for ONE live adapter, derived from the wgpu adapter
+/// feature surface (`Adapter::features()`). The classification decision
+/// lives in this function alone, so a wgpu upgrade or backend change only
+/// flips it here — the renderer keeps reading the same contract.
 pub fn probe_adapter(
     vendor: RtVendor,
     adapter_name: &str,
     driver_info: &str,
     backend: &str,
+    adapter_features: wgpu::Features,
 ) -> RtAdapterCapability {
-    // wgpu 30 surface area check: no ray-tracing feature flags exist
-    // (Features has no acceleration_structure / ray_query bits) — the API
-    // simply is not exposed yet. Everything else would be speculation.
+    let ray_query = adapter_features.contains(RAY_QUERY_FEATURE);
     RtAdapterCapability {
         vendor,
         adapter_name: adapter_name.to_string(),
         driver_info: driver_info.to_string(),
         backend: backend.to_string(),
-        support: RtSupport::Unsupported,
-        unsupported_reason: Some(RtUnsupportedReason::BackendLacksRtApi),
-        acceleration_structure_budget_mib: 0,
+        support: if ray_query {
+            RtSupport::Supported
+        } else {
+            RtSupport::Unsupported
+        },
+        // wgpu 30 暴露该特性位,适配器缺失即"无 RT 单元"而非"无 API"。
+        unsupported_reason: if ray_query {
+            None
+        } else {
+            Some(RtUnsupportedReason::HardwareLacksRtUnits)
+        },
+        acceleration_structure_budget_mib: if ray_query {
+            RT_ACCELERATION_STRUCTURE_BUDGET_MIB
+        } else {
+            0
+        },
     }
 }
 
 /// Decides the effective flag: RT runs only when the user's setting is on
 /// AND the matrix contains a Supported row. `feature_flag_default` is the
 /// factory default (always false) and gates nothing here — a user who
-/// explicitly enabled RT on a capable adapter must get RT. Absence of
-/// evidence is "off with a reason", never a silent fallback.
+/// explicitly enabled RT on a capable adapter must get RT. Supported 硬件但
+/// 用户关闭 → (false, None);无任何 Supported 行时返回矩阵里第一条记录式
+/// 理由;NotMeasured 行不虚构理由,如实返回 None(渲染器侧 fail-closed 回退
+/// 栅格不受影响)。
 pub fn decide_feature_flag(
     matrix: &RtCapabilityMatrix,
     user_setting: bool,
@@ -131,14 +157,43 @@ pub fn decide_feature_flag(
 }
 
 /// The frozen matrix as shipped: every known vendor recorded honestly.
+/// 出厂态是"未实测"(NotMeasured,无理由),不是猜测性的 Unsupported——
+/// 真实分类发生在 [`probe_adapter`] 读到适配器 feature surface 之后。
 pub fn default_matrix() -> RtCapabilityMatrix {
+    let unprobed = |vendor| RtAdapterCapability {
+        vendor,
+        adapter_name: "unprobed".to_string(),
+        driver_info: "unprobed".to_string(),
+        backend: "vulkan".to_string(),
+        support: RtSupport::NotMeasured,
+        unsupported_reason: None,
+        acceleration_structure_budget_mib: 0,
+    };
     RtCapabilityMatrix {
         contract_version: RT_CAPABILITY_CONTRACT_VERSION,
         adapters: vec![
-            probe_adapter(RtVendor::Nvidia, "unprobed", "unprobed", "vulkan"),
-            probe_adapter(RtVendor::Amd, "unprobed", "unprobed", "vulkan"),
-            probe_adapter(RtVendor::Intel, "unprobed", "unprobed", "vulkan"),
+            unprobed(RtVendor::Nvidia),
+            unprobed(RtVendor::Amd),
+            unprobed(RtVendor::Intel),
         ],
+        feature_flag_default: false,
+        fallback: RtFallback::ExistingRasterPath,
+    }
+}
+
+/// 实测矩阵:用真实适配器的 feature surface 分类(主机启动路径调用)。
+pub fn measured_matrix(
+    probes: impl IntoIterator<Item = (RtVendor, String, String, String, wgpu::Features)>,
+) -> RtCapabilityMatrix {
+    let adapters = probes
+        .into_iter()
+        .map(|(vendor, name, driver, backend, features)| {
+            probe_adapter(vendor, &name, &driver, &backend, features)
+        })
+        .collect();
+    RtCapabilityMatrix {
+        contract_version: RT_CAPABILITY_CONTRACT_VERSION,
+        adapters,
         feature_flag_default: false,
         fallback: RtFallback::ExistingRasterPath,
     }
@@ -149,32 +204,61 @@ mod tests {
     use super::*;
 
     #[test]
-    fn wgpu30_probe_reports_unsupported_with_reason_on_every_vendor() {
+    fn probe_classifies_by_experimental_ray_query_feature_bit() {
+        // 有特性位 → Supported + 预算;无 → Unsupported(HardwareLacksRtUnits)。
+        let rt_adapter = probe_adapter(
+            RtVendor::Nvidia,
+            "RTX 4060 Laptop",
+            "595.79",
+            "vulkan",
+            RAY_QUERY_FEATURE,
+        );
+        assert_eq!(rt_adapter.support, RtSupport::Supported);
+        assert_eq!(rt_adapter.unsupported_reason, None);
+        assert_eq!(
+            rt_adapter.acceleration_structure_budget_mib,
+            RT_ACCELERATION_STRUCTURE_BUDGET_MIB
+        );
+
         for vendor in [RtVendor::Nvidia, RtVendor::Amd, RtVendor::Intel] {
-            let capability = probe_adapter(vendor, "probe", "probe", "vulkan");
-            assert_eq!(capability.support, RtSupport::Unsupported);
+            let plain = probe_adapter(vendor, "probe", "probe", "vulkan", wgpu::Features::empty());
+            assert_eq!(plain.support, RtSupport::Unsupported);
             assert_eq!(
-                capability.unsupported_reason,
-                Some(RtUnsupportedReason::BackendLacksRtApi)
+                plain.unsupported_reason,
+                Some(RtUnsupportedReason::HardwareLacksRtUnits)
             );
-            assert_eq!(capability.acceleration_structure_budget_mib, 0);
+            assert_eq!(plain.acceleration_structure_budget_mib, 0);
         }
     }
 
     #[test]
-    fn flag_stays_off_and_records_reason_until_rt_is_proven() {
+    fn unprobed_matrix_is_not_measured_and_flag_stays_off() {
         let matrix = default_matrix();
         assert!(!matrix.feature_flag_default);
+        assert!(matrix
+            .adapters
+            .iter()
+            .all(|adapter| adapter.support == RtSupport::NotMeasured));
+        // 未实测不虚构理由:返回 None,渲染器依旧 fail-closed 走栅格。
         let (enabled, reason) = decide_feature_flag(&matrix, true);
         assert!(!enabled, "RT must not enable without a Supported adapter");
-        assert_eq!(reason, Some(RtUnsupportedReason::BackendLacksRtApi));
-        // User opt-in alone never flips it.
-        let (enabled_no_matrix_support, _) = decide_feature_flag(&matrix, true);
-        assert!(!enabled_no_matrix_support);
+        assert_eq!(reason, None);
     }
 
     #[test]
-    fn supported_row_plus_opt_in_enables_and_matrix_roundtrips() {
+    fn unsupported_adapter_records_reason_and_opt_in_enables_supported() {
+        // Unsupported 行的理由必须被记录式带回。
+        let unsupported = measured_matrix([(
+            RtVendor::Amd,
+            "software vulkan".into(),
+            "0.0".into(),
+            "vulkan".into(),
+            wgpu::Features::empty(),
+        )]);
+        let (enabled, reason) = decide_feature_flag(&unsupported, true);
+        assert!(!enabled);
+        assert_eq!(reason, Some(RtUnsupportedReason::HardwareLacksRtUnits));
+
         let mut matrix = default_matrix();
         matrix.adapters[0] = RtAdapterCapability {
             vendor: RtVendor::Nvidia,

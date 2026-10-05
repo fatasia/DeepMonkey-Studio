@@ -95,7 +95,7 @@
 | 材质 | material-clearcoat(基材扩展带;注:native **已有** pbr_layered.rs 304B 分层材质+活动层清漆复用 T08 核+layered_*_gpu_tests,清单**无对应能力行**,见 §3.2);material-advanced | 分层材质登记 0.5 人日 + 活动层清漆直射收尾(依 i-c23 文档)2–3 人日;advanced 带全量 8–12 人日 |
 | 几何 | visibility-buffer;cluster-lod;virtual-textures;virtual-geometry(web 侧也仅 harness) | virtual-geometry:native geometry_dag 离线工具链 8–12 人日 + web M3 GPU 接线 5–8 人日(大模型性能主线);其余各 8–15 人日 |
 | 环境 | atmosphere-sky;ground-preview | 大气散射预计算表采样 3–5 人日;内置地面/网格 **0.5–1 人日** |
-| RT | hardware-ray-query(**登记漂移**,native 实际有 F2 硬件 RT,见 §3.1);ray-traced-shadows(native 实际有硬件 RT 方向阴影管线族,与 web compute BVH 为不同实现档) | 登记修正 0.5 人日(纯登记,先行) |
+| RT | hardware-ray-query(已修正:2026-10-06 重登记 native → supported/opt-in-default-off,证据指 gpu_context EXPERIMENTAL_RAY_QUERY + pipeline/rt.rs);ray-traced-shadows(已修正:重登记 native → degraded/reduced-tier,硬件 RT 方向阴影管线族仅静态 opaque/MASK 批次) | ~~登记修正 0.5 人日~~ 已收口(2026-10-06) |
 
 ### 2.4 完全一致机制(非行级)
 
@@ -109,6 +109,16 @@
 ## 3. 审计发现(漂移与机制缺口,本报告核心增量)
 
 ### 3.1 漂移:hardware-ray-query / ray-traced-shadows 的 native 列落后于实际面
+
+> **已修正(2026-10-06,F2 登记修正批)**:双行已按真实状态重登记并重生成金样——
+> `hardware-ray-query` native → **supported/opt-in-default-off**(证据改指
+> `gpu_context.rs:EXPERIMENTAL_RAY_QUERY` + `pipeline/rt.rs` 像素消费管线族);
+> `ray-traced-shadows` native → **degraded/reduced-tier**(证据改指 `pipeline/rt.rs`
+> RtMeshPipelines,静态 opaque/MASK 批次口径如实保留)。`host_capabilities/rt_probe.rs`
+> 同批补实验特性探测:`probe_adapter` 增 `adapter_features` 参数,按
+> `EXPERIMENTAL_RAY_QUERY` 位分类(含位→Supported;缺位→HardwareLacksRtUnits),
+> 出厂矩阵改 NotMeasured(不虚构理由);原"wgpu 30 无 RT 特性"头注释已删除。
+> 以下为 2026-10-05 审计原文,留档。
 
 - 登记表(基线 2026-09-29)写 native `unavailable/api-missing`,证据
   "wgpu 30 无 RT 特性;rt_residency.rs 仅驻留+绑定,**不做像素消费**"。
@@ -142,6 +152,21 @@
 - **建议**:新增 `material-layered-304b` 行(双端 full/opt-in),0.5 人日。
 
 ### 3.3 机制缺口:三方对拍缺 TS↔金样一环
+
+> **已收口(2026-10-06)**:金样逐字节对拍 + 行集一致测试已在
+> `packages/contracts/src/rendererCapabilityManifestGolden.test.ts`(commit d4826193);
+> 三方对拍网在 `scripts/rendererCapabilityManifest.test.mjs`(commit 7ea2d62d 搬迁,
+> 含 TS 自检↔登记表、Rust 文本级同形对拍、金样深等)。本批再补两处:
+> ① contracts 金样测试新增**双向行集 diff**(域内解析 native 自检数组 ↔ TS manifest
+> native 列,双向缺失/漂移即红——原 scripts 网只有 TS→Rust 单向);
+> ② 修复对拍网自 2ede2865 起的红:`material-layered-304b` 行证据路径非 .ts 文件
+> (`materialParameters.ts+packLayeredSurfaceBlock` → 改指真实实现
+> `shader/materialLayeredSurface.ts`)、webFeatureKeys 与 material-clearcoat 重复认领
+> `layeredMaterials`(让位给开关语义行)、web 自检缺该行(补齐,观测值从
+> `LAYERED_SURFACE_*` 常量派生)。另修 deep2d-component-layout 行目录型证据路径
+> (`deep2d/layout/` → `deep2d/layout/solve.rs`)。**遗留**:deep2d 三行(未提交)
+> 仍缺 web 自检行,由 deep2D 刀批补齐。
+> 以下为 2026-10-05 审计原文,留档。
 
 - 清单头注释宣称"双端与金样三方对拍"、自检模块注释宣称"contracts 侧对拍红";
 - 事实:`rendererCapabilitySelfCheck.ts` **无任何消费测试**(全仓 grep 仅 6 个非测试
@@ -204,8 +229,8 @@
 
 | # | 差距 | 建议切片 | 工时级 |
 |---|---|---|---|
-| 1 | F2 RT 登记漂移(§3.1) | 重登记 hardware-ray-query/ray-traced-shadows native 列 + 金样重生成 + rt_probe 补实验特性 | 0.5–1 人日(**先行**) |
-| 2 | TS↔金样对拍测试缺席(§3.3) | contracts 补两个测试(金样逐字节相等 + 自检↔登记表对拍) | 0.5–1 人日(**先行**) |
+| 1 | F2 RT 登记漂移(§3.1)**——已收口(2026-10-06)** | 双行重登记 + 金样重生成 + rt_probe 实验特性探测,见 §3.1 修正注 | ~~0.5–1 人日~~ |
+| 2 | TS↔金样对拍测试缺席(§3.3)**——已收口(d4826193+7ea2d62d+2026-10-06 双向行集 diff)** | 见 §3.3 修正注 | ~~0.5–1 人日~~ |
 | 3 | 分层材质未登记(§3.2) | 新增 material-layered-304b 行 + 活动层清漆直射收尾(依 i-c23 边界) | 2.5–3.5 人日 |
 | 4 | local-shadow-abi-16 降档唯一缺口=对拍缺失 | frame v8 双端逐字节 golden 对拍(SHA-256 fixture,沿 F6 先例) | 1–2 人日 |
 | 5 | native 视觉低成本三件套 | vignette 启用 + FXAA + auto-exposure(直方图 EV 包络移植) | 3–5 人日 |
@@ -246,3 +271,25 @@
 6. native `wasm32` target(`platform_text` 有 wasm 分支、wgpu web 依赖)能力面未盘点。
 7. 盘点基于 2026-10-05 工作树(含当日 GI M3/MegaLights 三个提交 b8d31011/83ebf18e/
    2389efa2 之后的状态);清单行随提交演进,后续以 J4 纪律同步为准。
+
+---
+
+## 8. 修正记录(2026-10-06,F0 地基收口批)
+
+对应六引擎对标 P0 三刀位的前两件(第三件 native 视觉三件套另批):
+
+1. **F2 RT 登记修正(§3.1)**:TS 登记表 `hardware-ray-query` native
+   unavailable/api-missing → **supported/opt-in-default-off**(适配器含
+   `EXPERIMENTAL_RAY_QUERY` 才请求,不足回退软件 BVH/栅格);`ray-traced-shadows`
+   native unavailable/absent → **degraded/reduced-tier**(F2 RT fragment 方向阴影
+   Ray Query 管线族,仅静态 opaque/MASK 批次)。native 自检两行同步,金样重生成
+   (native 分布 40 行快照 11 supported/6 degraded/23 unavailable → 42 行口径
+   12 supported/7 degraded/21 unavailable;api-missing 清零)。`rt_probe.rs` 头注释
+   事实修正 + `probe_adapter` 补 `adapter_features` 参数 + 出厂矩阵改 NotMeasured。
+2. **TS↔金样对拍(§3.3)**:contracts 金样测试新增双向行集 diff(native 自检数组
+   域内解析 ↔ TS manifest native 列,双向);修复对拍网 2ede2865 起的红
+   (material-layered-304b 证据路径/webFeatureKeys 重复认领/web 自检缺行;
+   deep2d-component-layout 目录型证据路径)。
+3. **诚实声明**:§1/§2 的 40 项统计是 2026-10-05 快照,未整表重写;清单行数随
+   deep2D/分层材质等批次演进,以金样 fixtures 与对拍测试为实时权威。deep2d 三行
+   (未提交)缺 web 自检行的红归 deep2D 刀批收口。

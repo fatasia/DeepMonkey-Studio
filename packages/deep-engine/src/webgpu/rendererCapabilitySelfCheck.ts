@@ -36,6 +36,7 @@ import { DEEP_VIRTUAL_GEOMETRY_INDIRECT_COMMAND_BYTES, DEEP_VIRTUAL_GEOMETRY_IND
 import { PROBE_RADIANCE_MOMENT_LANES } from "../rayTracing/probeRadianceKernel.js";
 import { DEEP_PBR_MESH_V1_BYTE_SIZES } from "../shaderAbi/contract.js";
 import { MATERIAL_PARAMETER_KEYS } from "../shader/materialParameters.js";
+import { LAYERED_SURFACE_ABI_VERSION, LAYERED_SURFACE_BLOCK_BYTES, LAYERED_SURFACE_ROW_BYTES } from "../shader/materialLayeredSurface.js";
 import { ADVANCED_PARAMETER_FLOAT_COUNT, MATERIAL_PARAMETER_ADVANCED_FLOATS } from "../shader/materialAdvancedParameters.js";
 import { HDR_DISPLAY_REASON_CODES, HDR_DISPLAY_STRATEGIES, resolveHdrDisplayPolicy } from "./hdrDisplayOutput.js";
 import { classifyDeviceLost, DeviceRecoveryStateMachine } from "./deviceRecovery.js";
@@ -98,6 +99,18 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
       packedBytes: WEB_MATERIAL_PACKED_FLOATS * 4,
       coreBlockBytes: PBR_RENDERER_TS_SURFACE.materialCoreBlockBytes,
       frameBlockBytes: PBR_RENDERER_TS_SURFACE.materialFrameBlockBytes,
+    },
+  },
+  {
+    // 分层材质 304B 层块(TS↔Rust 差距 3 收口行;自检行 2026-10-06 补齐——
+    // 登记行先落而自检缺行,scripts 对拍网红)。观测值全部从实现常量派生;
+    // 键名避开 PbrRendererFeatures.layeredMaterials(该键由 material-clearcoat
+    // 行观测,同键双行会触发覆盖断言 dup)。
+    capabilityId: "material-layered-304b", support: "supported", reason: "opt-in-default-off",
+    observed: {
+      layeredSurfaceBlockBytes: LAYERED_SURFACE_BLOCK_BYTES,
+      layeredSurfaceRowBytes: LAYERED_SURFACE_ROW_BYTES,
+      layeredSurfaceAbiVersion: LAYERED_SURFACE_ABI_VERSION,
     },
   },
   {

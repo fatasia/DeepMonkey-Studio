@@ -216,7 +216,13 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       support: "supported", reason: "opt-in-default-off",
       evidence: "packages/deep-engine/src/rayTracing/shadowRayFrameKernel.ts(两级 TLAS→BLAS 遮挡射线核,GBuffer depth 重建着色点,r32float mask 供直接光采样;场景缓冲持久+增量 TLAS;无 readback;需调用方供给 TlasPackedScene;帧资源管理另见同目录 shadowRayFramePass.ts)",
     },
-    native: { support: "unavailable", reason: "absent", evidence: "packages/deep-engine-native/src/lib.rs(native 无 compute BVH 模块)" },
+    native: {
+      // F2 登记修正(2026-10-06,TS↔Rust 一致盘点差距 1):native 实际有硬件
+      // RT 方向阴影管线族(commit 227958ca,早于本清单基线),原 unavailable/absent
+      // 系探针窄于实际面——按真实状态重登记为 reduced-tier,不虚报 full。
+      support: "degraded", reason: "reduced-tier",
+      evidence: "packages/deep-engine-native/src/pipeline/rt.rs:RtMeshPipelines(F2 RT fragment 方向阴影 Ray Query 管线族:仅静态 opaque/MASK 批次,BLEND 族不在 TLAS 驻留;失败 error-scope fail-closed 回退栅格;renderer/rt_residency.rs 驻留+pixel_pipelines 生产消费;renderer/rt_pixel_gpu_tests.rs、rt_raster_parity_gpu_tests.rs 真机 GPU 门;与 web compute BVH 全帧档为不同实现档)",
+    },
   },
   {
     // B3 光追双通道·reflection 二通道(2026-10-06 生产帧挂载):PbrRendererFeatures
@@ -496,8 +502,11 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine/src/rayTracing/probeRadianceKernel.ts:PROBE_RADIANCE_MAX_DIRECTIONS(硬件 ray query 采集核;适配器 tier 探测见 apps rendererCapabilities)",
     },
     native: {
-      support: "unavailable", reason: "api-missing",
-      evidence: "packages/deep-engine-native/src/host_capabilities/rt_probe.rs:probe_adapter(wgpu 30 无 RT 特性→Unsupported/BackendLacksRtApi;rt_residency.rs 仅驻留+绑定,不做像素消费)",
+      // F2 登记修正(2026-10-06):wgpu 30 实际暴露 EXPERIMENTAL_RAY_QUERY,
+      // native gpu_context 按适配器门控启用并存在像素消费管线族——原
+      // "api-missing" 前提不成立。硬件依赖+默认回退栅格,登记 opt-in-default-off。
+      support: "supported", reason: "opt-in-default-off",
+      evidence: "packages/deep-engine-native/src/gpu_context.rs:EXPERIMENTAL_RAY_QUERY(适配器含该特性才请求;不足保留软件 BVH/栅格路径)+ src/pipeline/rt.rs(enable wgpu_ray_query 像素消费管线族,失败 error-scope fail-closed)+ src/hardware_ray_query.rs(ray_query_device_ready 双面合同)+ host_capabilities/rt_probe.rs(实验特性探测矩阵)",
     },
   },
   {
@@ -516,10 +525,14 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
   {
     id: "material-layered-304b",
     title: "分层材质 304B 层块(TS packLayeredSurfaceBlock ↔ native pbr_layered.rs 逐字节镜像)",
-    webFeatureKeys: ["layeredMaterials"],
+    // 证据纪律修正(2026-10-06):原证据路径 "materialParameters.ts+packLayeredSurfaceBlock"
+    // 非 .ts 仓库路径(对拍网红);真实实现(shader/materialLayeredSurface.ts)才是
+    // packLayeredSurfaceBlock/LAYERED_SURFACE_* 常量所在。webFeatureKeys 让位:
+    // layeredMaterials 用户开关语义归 material-clearcoat 行,本行是布局 ABI 能力。
+    webFeatureKeys: [],
     web: {
       support: "supported", reason: "opt-in-default-off",
-      evidence: "packages/deep-engine/src/shader/materialParameters.ts+packLayeredSurfaceBlock(304B = header 16B + 2×144B 行,16B 对齐 uniform;LAYERED_SURFACE_ABI_VERSION=1 与 native 互钉;活动层清漆复用 T08 核;layered_*_gpu_tests)",
+      evidence: "packages/deep-engine/src/shader/materialLayeredSurface.ts:packLayeredSurfaceBlock(304B = header 16B + 2×144B 行,16B 对齐 uniform;LAYERED_SURFACE_ABI_VERSION=1 与 native 互钉;活动层清漆复用 T08 核;layered_*_gpu_tests)",
     },
     native: {
       support: "supported", reason: "opt-in-default-off",
@@ -658,6 +671,7 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine-native/src/lib.rs(无 MegaLights 模块;native clustered_lighting.rs 为逐灯簇光路径,非 RIS 采样)",
     },
   },
+
 ] as const);
 
 /** 能力 id 单源冻结数组(结构先例:pbrTimedPassIds.PBR_TIMED_PASS_IDS)。 */

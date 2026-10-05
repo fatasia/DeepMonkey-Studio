@@ -184,11 +184,14 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         reason: RendererCapabilityReasonCode::Absent,
         evidence: "无 TAA/TSR 历史链(排查开关仅 web 后处理链路,native 直出无时域 pass)",
     },
+    // F2 登记修正(2026-10-06):pipeline/rt.rs 硬件 RT 方向阴影管线族已就位
+    // 且生产消费;仅静态 opaque/MASK 批次、web compute BVH 全帧档未镜像,
+    // 如实登记 reduced-tier。
     NativeCapabilitySelfCheck {
         capability_id: "ray-traced-shadows",
-        support: RendererCapabilitySupport::Unavailable,
-        reason: RendererCapabilityReasonCode::Absent,
-        evidence: "无 compute BVH/帧内联遮挡射线模块(方向光阴影走 cascaded_shadow;web RT 阴影见 deep-engine rayTracing/shadowRayFrame*)",
+        support: RendererCapabilitySupport::Degraded,
+        reason: RendererCapabilityReasonCode::ReducedTier,
+        evidence: "pipeline/rt.rs RtMeshPipelines F2 RT fragment 方向阴影 Ray Query 管线族(静态 opaque/MASK;BLEND 不在 TLAS 驻留;失败 fail-closed 回退栅格)+ renderer/rt_residency 驻留与生产绘制 + renderer/rt_pixel_gpu_tests、rt_raster_parity_gpu_tests 真机 GPU 门;方向光阴影常规档仍走 cascaded_shadow",
     },
     NativeCapabilitySelfCheck {
         capability_id: "ray-traced-reflections",
@@ -316,11 +319,14 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         reason: RendererCapabilityReasonCode::Absent,
         evidence: "无 FXAA/空间 AA 后处理",
     },
+    // F2 登记修正(2026-10-06):wgpu 30 暴露 EXPERIMENTAL_RAY_QUERY,
+    // gpu_context 按适配器门控启用;不足设备保留软件 BVH/栅格路径,
+    // 故为 opt-in-default-off 而非 api-missing。
     NativeCapabilitySelfCheck {
         capability_id: "hardware-ray-query",
-        support: RendererCapabilitySupport::Unavailable,
-        reason: RendererCapabilityReasonCode::ApiMissing,
-        evidence: "host_capabilities::rt_probe probe_adapter=wgpu 30 无 RT 特性(BackendLacksRtApi);rt_residency 仅驻留+绑定",
+        support: RendererCapabilitySupport::Supported,
+        reason: RendererCapabilityReasonCode::OptInDefaultOff,
+        evidence: "gpu_context.rs 适配器含 EXPERIMENTAL_RAY_QUERY 才请求 + pipeline/rt.rs enable wgpu_ray_query 像素消费管线族(失败 error-scope fail-closed 回退栅格)+ renderer/rt_residency pixel_pipelines 生产消费 + hardware_ray_query::ray_query_device_ready 合同 + host_capabilities/rt_probe 实验特性探测",
     },
     NativeCapabilitySelfCheck {
         capability_id: "ies-lighting",
