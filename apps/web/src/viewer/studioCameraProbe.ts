@@ -1,5 +1,6 @@
-import type * as THREE from "three";
+import * as THREE from "three";
 import type { CameraState } from "@bim-studio/contracts";
+import { visibleObjectBox } from "./sceneObjectUtils";
 import type { LoadedSceneModel } from "./viewerTypes";
 
 /**
@@ -18,7 +19,9 @@ export interface StudioCameraProbeSnapshot {
   readonly capturedAtMs: number;
   /** 作者层场景对象计数(模型根,不含辅助对象);跨后端一致性守卫的输入。 */
   readonly modelCount: number;
-  readonly models: readonly { readonly id: string; readonly kind: string; readonly visible: boolean }[];
+  readonly models: readonly { readonly id: string; readonly kind: string; readonly visible: boolean;
+    /** 世界包围盒(与 fitAll 的 sceneContentBox 同源),跨后端漂移归因用。 */
+    readonly worldBox: { readonly min: readonly [number, number, number]; readonly max: readonly [number, number, number] } }[];
   readonly navigationMode: string;
   readonly camera: {
     readonly position: readonly [number, number, number];
@@ -46,6 +49,12 @@ interface StudioCameraProbeHost {
   getCameraState(): CameraState;
 }
 
+function boxField(box: THREE.Box3): { readonly min: readonly [number, number, number]; readonly max: readonly [number, number, number] } {
+  return box.isEmpty()
+    ? { min: [0, 0, 0], max: [0, 0, 0] }
+    : { min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z] };
+}
+
 type ProbeWindow = { __studioCameraProbe?: () => StudioCameraProbeSnapshot };
 
 function vector3(value: THREE.Vector3): readonly [number, number, number] {
@@ -62,7 +71,8 @@ export function readStudioCameraProbe(host: StudioCameraProbeHost): StudioCamera
     schema: "deep-monkey.studio-camera-probe.v1",
     capturedAtMs: Math.round(performance.timeOrigin + performance.now()),
     modelCount: models.length,
-    models: models.map(model => ({ id: model.id, kind: model.kind, visible: model.visible })),
+    models: models.map(model => ({ id: model.id, kind: model.kind, visible: model.visible,
+      worldBox: boxField(visibleObjectBox(model.object)) })),
     navigationMode: host.getCameraState().mode,
     camera: {
       position: vector3(camera.position),

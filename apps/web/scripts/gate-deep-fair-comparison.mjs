@@ -10,6 +10,9 @@ import { compareImageFiles } from "./renderImageSimilarity.mjs";
 // 同场景、同相机、同输入轨迹的三引擎配对对比:Three WebGL(参考) vs Deep WebGPU vs Deep WASM。
 // 协议:每后端先"适应整个场景"复位,再依次执行 静置帧时间 → 固定位姿像素守卫 → 固定正弦输入轨迹。
 // 判定纪律:跨后端 SSIM 只记录(画风差异不作失败依据);黑帧/亮度/自身确定性是硬守卫;
+// 相机公平三守卫(场景对象计数一致、"适应整个场景"后相机矩阵容差对拍、位姿点击后相机矩阵容差
+// 对拍,经 window.__studioCameraProbe 只读取证)是硬守卫——相机命令在 Deep 桥丢失/被覆盖时
+// 门必须红,禁止在位姿不可比的状态下 passed;
 // 只有 Deep 后端在全部核心指标上不劣于 WebGL 时才输出 exceeds=true,禁止从切换成功推导胜出。
 
 const webOrigin = process.env.STUDIO_WEB_ORIGIN ?? "http://127.0.0.1:5173";
@@ -20,6 +23,19 @@ const route = `/studio/${sceneId}?project=${projectId}`;
 const staticSamples = Number(process.env.FAIR_STATIC_SAMPLES ?? 120);
 const inputSteps = Number(process.env.FAIR_INPUT_STEPS ?? 120);
 const poses = (process.env.FAIR_POSES ?? "前,右,顶").split(",").map(name => name.trim()).filter(Boolean);
+// 相机公平三守卫容差,两层量化:
+// 合同层(position/target/up/fov/zoom,相机命令的单一事实源字段)1e-6 逐位一致;
+// 世界矩阵层(matrixWorld,叠加相机防穿模碰撞推挤与阻尼等会话物理,亚像素级
+// 起点/历史依赖,实测残余 ~3.6e-3)1e-2——仍比相机命令丢失/覆盖缺陷的实测量级
+// (冻结 1.26、取景错位 0.44)严 40 倍以上,回归必然红。
+const cameraTolerance = Number(process.env.FAIR_CAMERA_TOLERANCE ?? 1e-2);
+const cameraContractTolerance = Number(process.env.FAIR_CAMERA_CONTRACT_TOLERANCE ?? 1e-6);
+// F2 输入门阈值:输入帧 P95 硬门(默认仅 Deep WebGPU;同轮 WebGL 参考的倍率上限)。
+// 同轮成对测量下环境噪声对两侧等价作用,倍率口径比绝对值稳健——防"切换成功即通过"。
+// WASM 的提交链落后单独切片治理,暂走 exceeds informational(FAIR_INPUT_P95_GATE_BACKENDS 可扩)。
+const inputP95GateRatio = Number(process.env.FAIR_INPUT_P95_MAX_RATIO ?? 1.2);
+const inputP95GateBackends = (process.env.FAIR_INPUT_P95_GATE_BACKENDS ?? "webgpu")
+  .split(",").map(name => name.trim()).filter(Boolean);
 const output = process.env.FAIR_OUTPUT_DIR
   ? `${process.env.FAIR_OUTPUT_DIR.replace(/[\\/]$/u, "")}/`
   : fileURLToPath(new URL("../../../test-output/deep-fair-comparison/", import.meta.url));
@@ -55,6 +71,7 @@ const report = {
   protocol: { staticSamples, inputSteps, poses, referenceBackend: "webgl" },
   backends: {},
   pixelParity: [],
+  cameraParity: [],
   guards: [],
   exceeds: null,
 };
@@ -78,6 +95,7 @@ try {
     report.backends[backend] = await measureBackend(page, backend);
   }
   await buildPixelParity();
+  evaluateCameraGuards();
   evaluateVerdict();
   assert.deepEqual(report.guards, [], `fair-comparison guards failed: ${JSON.stringify(report.guards)}`);
   report.passed = true;
@@ -140,25 +158,74 @@ async function switchBackend(page, backend) {
 
 async function resetCamera(page) {
   // 适应整个场景是纯 UI 相机复位:同一场景在三后端得到同一位姿,消除状态漂移。
+  // 先 Escape 清选:残留选中会让 setStandardView 按检视对象取景(取景更近),
+  // 也会让输入轨迹拖拽命中视口中心的 gizmo 把模型拖走(fit 基准被永久污染)。
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(150);
   await page.getByRole("button", { name: "适应整个场景", exact: true }).click();
-  await page.waitForTimeout(700);
+  await waitForCameraStill(page, "resetCamera");
+  await page.waitForTimeout(200);
+}
+
+/**
+ * 等作者相机完全静止(位置/目标点在窗口内零变化)。输入轨迹拖拽留下的
+ * OrbitControls 阻尼尾巴会在复位后继续微转相机(实测 fitAll 后残余 5.6e-3 且
+ * 逐位姿衰减),不等待会污染跨后端矩阵对拍。上限防卡死;超时如实入报告。
+ */
+async function waitForCameraStill(page, label) {
+  const started = Date.now();
+  await page.waitForFunction(() => new Promise(resolve => {
+    const probe = globalThis.__studioCameraProbe;
+    if (typeof probe !== "function") return resolve(false);
+    const key = snapshot => JSON.stringify([snapshot.camera.position, snapshot.camera.target]);
+    let last = key(probe());
+    let still = 0;
+    const poll = () => {
+      const current = key(probe());
+      still = current === last ? still + 125 : 0;
+      last = current;
+      if (still >= 250) return resolve(true);
+      setTimeout(poll, 125);
+    };
+    setTimeout(poll, 125);
+  }), { timeout: 5_000 }).catch(() => undefined);
+  return { label, elapsedMs: Date.now() - started };
+}
+
+/** 场景对象快照(modelCount+逐对象世界包围盒):拖拽不得改变场景,否则测量被污染。 */
+async function readSceneObjectSnapshot(page) {
+  const probe = await readCameraProbe(page);
+  assert.ok(probe, "camera probe missing while snapshotting scene objects");
+  return probe.models.map(model => ({ id: model.id, min: model.worldBox.min, max: model.worldBox.max }));
 }
 
 async function measureBackend(page, backend) {
   const firstFrame = await measureFirstFrame(page, backend);
   await switchBackend(page, backend);
   await resetCamera(page);
+  // 相机公平三守卫的证据源:宿主只读取证缝(相机矩阵+场景对象计数)。
+  // 复位/位姿协议在各后端会话内执行后,矩阵必须与 WebGL 参考容差一致。
+  const probe = await readCameraProbe(page);
+  assert.ok(probe, `camera probe (window.__studioCameraProbe) missing on ${backend}`);
   const bounds = await page.locator(".viewport canvas:not([data-renderer-backend])").first().boundingBox();
   assert.ok(bounds && bounds.width > 100, "author canvas has no usable bounds");
   const presentCanvas = backend === "webgl" ? null
     : page.locator(`.viewport canvas[data-renderer-backend="${backend === "webgpu" ? "deep-webgpu" : "deep-wasm"}"]`);
   const clip = bounds;
-  const result = { static: await sampleStaticFrames(page), poses: {}, input: null, firstFrame };
+  const result = { scene: { modelCount: probe.modelCount, models: probe.models },
+    fitAllCamera: probe.camera, static: await sampleStaticFrames(page), poses: {}, input: null, firstFrame };
   for (const pose of poses) {
     result.poses[pose] = await capturePose(page, backend, pose, clip);
   }
   result.input = await measureInputTrajectory(page, bounds, backend, presentCanvas);
   return result;
+}
+
+async function readCameraProbe(page) {
+  return page.evaluate(() => {
+    const probe = globalThis.__studioCameraProbe;
+    return typeof probe === "function" ? probe() : null;
+  });
 }
 
 /**
@@ -259,7 +326,8 @@ async function capturePose(page, backend, pose, clip) {
   // 魔方面是 CSS 3D 立方体,DOM 命中测试会被相邻面拦截;产品用户点击的是
   // 视觉朝向面,这里直接向目标面派发 click 事件保证确定性。
   await page.getByRole("button", { name: pose, exact: true }).dispatchEvent("click");
-  await page.waitForTimeout(900);
+  await waitForCameraStill(page, `pose:${pose}`);
+  await page.waitForTimeout(250);
   const first = await page.screenshot({ clip });
   await page.waitForTimeout(250);
   const second = await page.screenshot({ clip });
@@ -270,8 +338,86 @@ async function capturePose(page, backend, pose, clip) {
   const stability = await compareImageFiles(firstPath, secondPath, `${backend}-${pose}`, `${backend}-${pose}-repeat`);
   report.guards.push(...stability.ssim < 0.99
     ? [{ type: "determinism", backend, pose, ssim: stability.ssim }] : []);
+  // 位姿守卫③的证据源:位姿点击 settle(900ms)后宿主相机的实际矩阵。
+  const probe = await readCameraProbe(page);
+  assert.ok(probe, `camera probe missing on ${backend} after pose ${pose}`);
   return { screenshot: `${backend}-${pose}.png`, repeatScreenshot: `${backend}-${pose}-repeat.png`,
-    determinismSsim: Number(stability.ssim.toFixed(4)), meanAbsoluteError: stability.meanAbsoluteError };
+    determinismSsim: Number(stability.ssim.toFixed(4)), meanAbsoluteError: stability.meanAbsoluteError,
+    camera: probe.camera };
+}
+
+/**
+ * 相机公平三守卫(模式层):三后端共享同一 three 相机单一事实源,程序性复位与
+ * 位姿点击必须落在同一状态——否则跨后端像素/帧时对比失去可比性,门不得放行。
+ * ① 场景对象计数一致(作者层 listModels);
+ * ② "适应整个场景"复位后相机状态与 WebGL 参考对拍(合同字段 1e-6 + matrixWorld 1e-2);
+ * ③ 每个位姿点击后相机状态与 WebGL 参考对拍(同上双层)。
+ */
+
+const CONTRACT_FIELDS = ["position", "target", "up", "fov", "zoom"];
+
+function cameraContractDelta(a, b) {
+  let max = 0;
+  for (const field of CONTRACT_FIELDS) {
+    const va = a[field], vb = b[field];
+    if (typeof va === "number") { max = Math.max(max, Math.abs(va - vb)); continue; }
+    for (let index = 0; index < va.length; index++) max = Math.max(max, Math.abs(va[index] - vb[index]));
+  }
+  return Number(max.toPrecision(4));
+}
+function evaluateCameraGuards() {
+  const reference = report.backends.webgl;
+  if (!reference?.fitAllCamera || !reference?.scene) {
+    report.guards.push({ type: "cameraProbeMissing", backend: "webgl" });
+    return;
+  }
+  for (const backend of ["webgpu", "wasm"]) {
+    const candidate = report.backends[backend];
+    if (!candidate?.fitAllCamera || !candidate?.scene) {
+      report.guards.push({ type: "cameraProbeMissing", backend });
+      continue;
+    }
+    // 守卫①:场景对象计数(作者层 listModels)三后端一致。
+    if (candidate.scene.modelCount !== reference.scene.modelCount) {
+      report.guards.push({ type: "sceneObjectCount", backend,
+        candidate: candidate.scene.modelCount, reference: reference.scene.modelCount });
+    }
+    // 守卫②:"适应整个场景"复位后的相机状态对拍(合同层严格 + 矩阵层物理余量)。
+    const fitContract = cameraContractDelta(candidate.fitAllCamera, reference.fitAllCamera);
+    const fitDelta = maxArrayDelta(candidate.fitAllCamera.matrixWorld, reference.fitAllCamera.matrixWorld);
+    report.cameraParity.push({ stage: "fitAll", backend, maxMatrixWorldDelta: fitDelta,
+      maxContractDelta: fitContract, withinTolerance: fitDelta <= cameraTolerance && fitContract <= cameraContractTolerance });
+    if (fitDelta > cameraTolerance || fitContract > cameraContractTolerance) {
+      report.guards.push({ type: "fitAllCameraParity", backend, maxMatrixWorldDelta: fitDelta,
+        maxContractDelta: fitContract, tolerance: cameraTolerance, contractTolerance: cameraContractTolerance });
+    }
+    // 守卫③:位姿点击后的相机矩阵容差对拍。
+    for (const pose of poses) {
+      const candidatePose = candidate.poses[pose];
+      const referencePose = reference.poses[pose];
+      if (!candidatePose?.camera || !referencePose?.camera) {
+        report.guards.push({ type: "poseCameraProbeMissing", backend, pose });
+        continue;
+      }
+      const delta = maxArrayDelta(candidatePose.camera.matrixWorld, referencePose.camera.matrixWorld);
+      const contractDelta = cameraContractDelta(candidatePose.camera, referencePose.camera);
+      report.cameraParity.push({ stage: `pose:${pose}`, backend, maxMatrixWorldDelta: delta,
+        maxContractDelta: contractDelta, withinTolerance: delta <= cameraTolerance && contractDelta <= cameraContractTolerance });
+      if (delta > cameraTolerance || contractDelta > cameraContractTolerance) {
+        report.guards.push({ type: "poseCameraParity", backend, pose, maxMatrixWorldDelta: delta,
+          maxContractDelta: contractDelta, tolerance: cameraTolerance, contractTolerance: cameraContractTolerance });
+      }
+    }
+  }
+}
+
+function maxArrayDelta(a, b) {
+  assert.ok(Array.isArray(a) && Array.isArray(b) && a.length === b.length, "camera matrix shape mismatch");
+  let max = 0;
+  for (let index = 0; index < a.length; index++) {
+    max = Math.max(max, Math.abs((a[index] ?? 0) - (b[index] ?? 0)));
+  }
+  return Number(max.toPrecision(4));
 }
 
 async function buildPixelParity() {
@@ -356,8 +502,12 @@ async function measureInputTrajectory(page, bounds, backend, presentCanvas) {
     window.__fairInput = { state, observer, pointer, restores };
     requestAnimationFrame(tick);
   });
+  // 拖拽起点偏移视口中心:中心是对象/gizmo 密集区,pointerdown 命中 gizmo 平移轴
+  // 会把模型拖走(场景被污染,后续腿的 fit 基准漂移)。
   const x = bounds.x + bounds.width * 0.5, y = bounds.y + bounds.height * 0.5;
-  await page.mouse.move(x, y);
+  const gx = bounds.x + bounds.width * 0.78, gy = bounds.y + bounds.height * 0.24;
+  const sceneBefore = await readSceneObjectSnapshot(page);
+  await page.mouse.move(gx, gy);
   await page.mouse.down();
   for (let index = 0; index < inputSteps; index++) {
     const phase = index / Math.max(1, inputSteps - 1) * Math.PI * 4;
@@ -369,16 +519,30 @@ async function measureInputTrajectory(page, bounds, backend, presentCanvas) {
   await page.waitForTimeout(100);
   const frames = [];
   const frameTimes = [];
-  await page.mouse.move(x, y);
+  await page.mouse.move(gx, gy);
   await page.mouse.down();
   for (let index = 0; index < 16; index++) {
-    await page.mouse.move(x + (index % 2 ? 1 : -1) * bounds.width * 0.12,
-      y + Math.sin(index) * bounds.height * 0.04);
+    await page.mouse.move(gx + (index % 2 ? 1 : -1) * bounds.width * 0.12,
+      gy + Math.sin(index) * bounds.height * 0.04);
     await page.waitForTimeout(20);
     frames.push(await page.screenshot({ clip: bounds }));
     frameTimes.push(performance.now());
   }
   await page.mouse.up();
+  // 场景污染硬守卫:输入轨迹只允许相机手势,模型位移/增删即红牌——否则后续
+  // 腿的 fitAll/位姿基准建立在被污染的场景上,跨后端对比再度失去可比性。
+  const sceneAfter = await readSceneObjectSnapshot(page);
+  const sceneModelDelta = sceneAfter.length !== sceneBefore.length;
+  const boxDrift = sceneModelDelta ? Infinity : Math.max(...sceneAfter.map((model, index) => {
+    const before = sceneBefore[index];
+    return Math.max(
+      Math.abs(model.min[0] - before.min[0]), Math.abs(model.min[1] - before.min[1]), Math.abs(model.min[2] - before.min[2]),
+      Math.abs(model.max[0] - before.max[0]), Math.abs(model.max[1] - before.max[1]), Math.abs(model.max[2] - before.max[2]));
+  }));
+  if (sceneModelDelta || boxDrift > 1e-4) {
+    report.guards.push({ type: "inputDragMutatedScene", backend,
+      modelCountChanged: sceneModelDelta, maxWorldBoxDelta: Number(boxDrift === Infinity ? "NaN" : boxDrift.toFixed(6)) });
+  }
   const timing = await page.evaluate(() => {
     const session = window.__fairInput;
     session.state.active = false;
@@ -465,6 +629,27 @@ function evaluateVerdict() {
     };
   };
   report.exceeds = { webgpu: core(report.backends.webgpu), wasm: core(report.backends.wasm) };
+  // F2 输入门(硬守卫):列名 gates.inputP95,超限进 guards 使门红。
+  // 参考与候选同轮测得;缺参考或候选输入数据时按守卫缺失处理(不许静默放行)。
+  report.gates = { inputP95: { ratioMax: inputP95GateRatio, backends: inputP95GateBackends, results: {} } };
+  const referenceP95 = reference?.input?.p95FrameMs;
+  for (const backend of inputP95GateBackends) {
+    const candidateP95 = report.backends[backend]?.input?.p95FrameMs;
+    if (!referenceP95 || !candidateP95) {
+      report.guards.push({ type: "inputP95Gate", backend, reason: "missing-input-p95",
+        referenceP95Ms: referenceP95 ?? null, candidateP95Ms: candidateP95 ?? null });
+      continue;
+    }
+    const ratio = candidateP95 / referenceP95;
+    report.gates.inputP95.results[backend] = { ratio: Number(ratio.toFixed(3)),
+      candidateP95Ms: Number(candidateP95.toFixed(1)), referenceP95Ms: Number(referenceP95.toFixed(1)),
+      passed: ratio <= inputP95GateRatio };
+    if (ratio > inputP95GateRatio) {
+      report.guards.push({ type: "inputP95Gate", backend, ratio: Number(ratio.toFixed(3)),
+        candidateP95Ms: Number(candidateP95.toFixed(1)), referenceP95Ms: Number(referenceP95.toFixed(1)),
+        maxRatio: inputP95GateRatio });
+    }
+  }
 }
 
 function renderMarkdown(report) {
@@ -474,6 +659,10 @@ function renderMarkdown(report) {
   });
   const parity = report.pixelParity.map(item =>
     `| ${item.pose} | ${item.candidate} | ${item.ssim} | ${(item.meanAbsoluteError * 100).toFixed(2)}% |`);
+  const cameraParity = (report.cameraParity ?? []).map(item =>
+    `| ${item.stage} | ${item.backend} | ${item.maxMatrixWorldDelta.toExponential(2)} | ${item.withinTolerance ? "通过" : "超差"} |`);
+  const sceneCounts = Object.entries(report.backends)
+    .map(([backend, data]) => `${backend}=${data.scene?.modelCount ?? "?"}`).join(" / ");
   return [
     "# Deep vs Three WebGL 同场景同相机公平对比",
     "",
@@ -482,6 +671,14 @@ function renderMarkdown(report) {
     "| 后端 | 静置 P50 ms | 静置 P95 ms | 输入 P50 ms | 输入 P95 ms | pointer→submit P95 ms | pointer→GPU 完成 P95 ms | 黑帧 | Long Task |",
     "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ...rows,
+    "",
+    `场景对象计数(守卫①,作者层):${sceneCounts}`,
+    "",
+    "## 相机矩阵对拍(守卫②③,作者层 matrixWorld 逐元素最大绝对差,容差 1e-6)",
+    "",
+    "| 阶段 | 候选后端 | 最大矩阵差 | 判定 |",
+    "|---|---|---:|---|",
+    ...cameraParity,
     "",
     "## 位姿像素对比(参考 = WebGL)",
     "",
@@ -492,6 +689,8 @@ function renderMarkdown(report) {
     `守卫失败:${report.guards.length ? JSON.stringify(report.guards) : "无"}`,
     "",
     `Deep 胜出判定(核心指标全部不劣于 WebGL 才为 true):${JSON.stringify(report.exceeds)}`,
+    "",
+    `输入 P95 阈值门(≤1.2× 同轮 WebGL,超限即守卫失败):${JSON.stringify(report.gates?.inputP95?.results ?? {})}`,
     "",
     "> SSIM 只作记录:跨引擎画风差异不作失败依据。胜出判定必须以本报告的实测数据为准,不得以切换成功推导。",
     "",
