@@ -250,12 +250,17 @@ describe("first-frame critical pipeline subset", () => {
     expect(build.pipelines.main).toBeDefined();
     expect(f.descriptors.filter(descriptor => descriptor.label?.startsWith("Deep forward"))).toHaveLength(2);
     expect(build.pipelines.shadowPipelines.size).toBe(9);
+    // 分级重上前置②:subset 路径(外部 release 承诺)release 前页管线零创建,
+    // validate 提前不再与 pending 创建形成 popErrorScope 并发窗口。
+    expect(build.pipelines.pageShadowPipelines.size).toBe(0);
     await build.criticalReady;
     build.releaseDeferredQueues();
     await build.ready;
     // AA-M2:MSAA4 档 depth ×a2c → 27 条 main。
     expect(build.pipelines.mainPipelines.size).toBe(27);
     expect(build.pipelines.mainPipelines.get("material/blend/ccw")).toBeDefined();
+    // release 后非虚拟档页管线(clear+solid×3)补齐。
+    expect(build.pipelines.pageShadowPipelines.size).toBe(4);
   });
 
   it("keeps the full critical path when no subset is requested", async () => {

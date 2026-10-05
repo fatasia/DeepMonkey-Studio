@@ -397,9 +397,21 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   // 恒 1x(页池非 MSAA 附件),不入首帧关键集(虚拟档 opt-in)。
   const pageShadowPipelines = new Map<string, GPURenderPipeline>();
   const pendingPageShadow: Array<Promise<GPURenderPipeline>> = [];
+  // 分级重上前置②(2026-10-06):非虚拟档的 4 条页管线创建推迟到 release 后(backgroundQueue
+  // 同队列)——此前构造期即发起 createRenderPipelineAsync,validate 提前时与其 pending 形成
+  // 并发窗口,popErrorScope 合法等待(scoped operations 未结算)曾致首帧卡死(见
+  // validatePbrFrame 超时守卫注释)。虚拟档(virtualShadowPages)页物化是核心路径,保持立即。
+  const deferredPageShadowFactories: Array<{ readonly key: string; readonly create: () => Promise<GPURenderPipeline> }> = [];
+  // 与 main 分级同开关:仅 subset 路径(外部承诺 release)推迟;直调路径保持立即创建,
+  // 否则无人放水死锁(deferredMainReady 等 releaseGate,release 只由 backend 成功后调)。
+  const pageShadowDeferred = !virtualShadowPages && firstFrameKeys !== undefined;
+  const enqueuePageShadow = (key: string, create: () => Promise<GPURenderPipeline>) => {
+    if (pageShadowDeferred) { deferredPageShadowFactories.push({ key, create }); return; }
+    pendingPageShadow.push(track(pageShadowPipelines, key, create()));
+  };
   // 页矩形清屏管线(虚拟阴影专用;loadOp load 下每页重绘前把页矩形归位 far=1.0;
   // 零绑定布局 —— draw 不设任何 bind group)。
-  pendingPageShadow.push(track(pageShadowPipelines, "clear", device.createRenderPipelineAsync({
+  enqueuePageShadow("clear", () => device.createRenderPipelineAsync({
     label: "Deep virtual shadow page clear",
     layout: device.createPipelineLayout({ label: "Deep virtual shadow page clear layout",
       bindGroupLayouts: [] }),
@@ -408,12 +420,12 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     primitive: { topology: "triangle-strip" },
     depthStencil: { format: "depth32float", depthWriteEnabled: false, depthCompare: "always" },
     multisample: { count: 1 },
-  })));
+  }));
   // 页管线仅 solid 档 × 3 raster + clear:masked 材质经 packetDraw 的 solid 回退按实心
   // 投影(documented 简化,见 pbrShader.ts 页物化注释)。
   for (const raster of ["ccw", "cw", "double"] as const) {
     const key = shadowPipelineKey("solid", raster), doubleSided = raster === "double";
-    pendingPageShadow.push(track(pageShadowPipelines, key, device.createRenderPipelineAsync({
+    enqueuePageShadow(key, () => device.createRenderPipelineAsync({
       label: `Deep virtual shadow page ${key}`,
       layout: shadowPlainLayout,
       vertex: { module, entryPoint: deformation ? "shadowDeformed" : "shadowMain", buffers: shadowBuffers },
@@ -421,7 +433,7 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
       primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : "back", frontFace: raster === "cw" ? "cw" : "ccw" },
       depthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less", depthBias: 1, depthBiasSlopeScale: 1 },
       multisample: { count: 1 },
-    })));
+    }));
   }
   const output = sharedOutput.renderPipeline();
   markPipeline(`queued-main${mainFactories.length}-display${pendingDisplay.length}-directional${pendingDirectional.length}-shadow${pendingShadow.length}-pageShadow${pendingPageShadow.length}-output1`);
@@ -455,7 +467,12 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
         label: descriptor.label ?? key, priority: "background", create,
       })));
     backgroundQueue.resume();
-    const value = await Promise.all(pending);
+    // 分级重上前置②:非虚拟档页管线(release 前零启动)在此补齐——不走预热队列
+    // (仅 4 条,无排序需求),release 后并发创建即可。
+    const pendingPages = deferredPageShadowFactories.map(({ key, create }) =>
+      track(pageShadowPipelines, key, create()));
+    const value = (await Promise.all(pending)).length;
+    await Promise.all(pendingPages);
     markPipeline("main-ready");
     // C26 跨会话预热计划回写:本次实测编译样本入 localStorage(fail-open;
     // 缓存命中/失败样本经 pipelineWarmupEntriesFromLedger 排除,浏览器外静默跳过)。
@@ -466,7 +483,7 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     } catch { /* fail-open */ }
     return value;
   });
-  if (deferredMains.length === 0) releaseDeferredQueues?.();
+  if (deferredMains.length === 0 && deferredPageShadowFactories.length === 0) releaseDeferredQueues?.();
   // B1 Brief-VSM:页物化管线失败同样让 ready 拒绝(不静默;虚拟档 opt-in 构造即需可用)。
   const ready = Promise.all([deferredMainReady, displayReady, directionalReady, shadowReady, pageShadowReady, outputPipelineReady])
     .then(() => { markPipeline("ready"); });
