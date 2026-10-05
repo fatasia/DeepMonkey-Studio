@@ -21,12 +21,20 @@ const login = await fetch(`${apiOrigin}/api/auth/login`, {
   body: JSON.stringify({ username: "admin", password: "admin" }),
 });
 const { token } = await login.json();
-const browser = await playwright.chromium.launch({
+const launchOptions = {
   executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe",
-  headless: true,
+  // HEADLESS=0 走有头模式:Dawn shader disk cache 在 headless 被禁——首帧 500 定标
+  // (冷启动二会话命中率)必须在有头真实用户条件下测。
+  headless: process.env.HEADLESS !== "0",
   args: ["--enable-unsafe-webgpu", "--enable-features=Vulkan,UseSkiaRenderer", "--no-sandbox"],
-});
-const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+};
+// PROBE_PROFILE 持久化用户目录:跨浏览器进程保住 Dawn shader disk cache——
+// 冷启动二会话命中率(首帧 500 关键路径)必须用它测,缺省临时目录=每次全冷。
+// playwright 约束:userDataDir 只能走 launchPersistentContext。
+const browser = process.env.PROBE_PROFILE
+  ? await playwright.chromium.launchPersistentContext(process.env.PROBE_PROFILE, launchOptions)
+  : await playwright.chromium.launch(launchOptions);
+const context = process.env.PROBE_PROFILE ? browser : await browser.newContext({ viewport: { width: 1280, height: 800 } });
 await context.addInitScript(({ token }) => {
   localStorage.setItem("bim-studio-auth-token", token);
   localStorage.setItem("bim-studio.renderer-backend", "webgl");
