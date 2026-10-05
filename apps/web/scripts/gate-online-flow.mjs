@@ -215,6 +215,9 @@ try {
   const application = await readJsonResponse(sceneResponse, 201);
   const scene = application.scenes?.find((candidate) => candidate.name === "产线在线验收场景") ?? application.scenes?.[0];
   if (!scene?.id || !application.metadata?.id) throw new Error("创建场景后未返回有效应用与场景标识");
+  // P2-2(6d575687)后“创建并进入”强制落三维编辑器；先等三维视口就绪，再切“二维”进入看板工作台。
+  await page.locator(".app-shell .viewport").waitFor({ state: "visible", timeout: 30_000 });
+  await page.getByRole("button", { name: "二维", exact: true }).click();
   await page.locator(".dashboard-workspace").waitFor({ state: "visible" });
   await page.getByText("正在载入场景数据").waitFor({ state: "hidden", timeout: 30_000 });
   recordStep(report, "create-scene-and-open-dashboard", page.url());

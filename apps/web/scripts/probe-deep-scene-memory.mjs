@@ -48,7 +48,8 @@ try {
     await page.getByLabel("更多场景工具", { exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "渲染引擎设置", exact: true });
     await page.getByRole("button", { name: "渲染引擎设置", exact: true }).click();
-    await dialog.getByRole("button", { name: "启用 Deep WebGPU Beta", exact: true }).click();
+    // 134a07fd 移除 Beta 标记后按钮名为“启用 Deep WebGPU”;正则向后兼容。
+    await dialog.getByRole("button", { name: /启用 Deep WebGPU/ }).click();
     await page.waitForFunction(() => {
       const canvas = document.querySelector('.viewport canvas[data-renderer-backend="deep-webgpu"]');
       return canvas && getComputedStyle(canvas).opacity === "1";
