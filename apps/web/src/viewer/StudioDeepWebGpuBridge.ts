@@ -29,7 +29,7 @@ import { DeepGizmoInteraction } from "./deepGizmoInteraction";
 import { createDeepCanvas, prepareAuthorInputCanvas, captureAuthorStyle, restoreAuthorStyle,
   type AuthorCanvasStyle } from "./studioDeepPresentationCanvas";
 import { collectDeepOverlayPrimitives } from "./deepOverlayPrimitiveSource";
-import { isAlphaToCoverageRejection, isDeepAdvancedMaterialsRejection, packetUsesAlphaToCoverage, sceneUsesAlphaToCoverage,
+import { resolveAlphaToCoverageCreateModes, isAlphaToCoverageRejection, isDeepAdvancedMaterialsRejection, sceneUsesAlphaToCoverage,
   packetUsesDeepAdvancedMaterials, sceneUsesDeepAdvancedMaterials } from "./studioDeepAdvancedMaterials";
 import type { FrameCaptureSession, RenderPacket } from "@bim-studio/deep-engine";
 import { createRequestedStudioFrameCaptureSession, createStudioFrameReadbackListener } from "./studioFrameCaptureDiagnostics";
@@ -263,21 +263,10 @@ export class StudioDeepWebGpuBridge {
           // 仅当场景含激活的 clearcoat/sheen/iridescence/transmission lobe 时才启用 advancedMaterials 着色变体(按需编译,零开销默认)。
           const advancedMaterials = this.advancedMaterialsRequested || (authorRenderPacket
             ? packetUsesDeepAdvancedMaterials(authorRenderPacket) : sceneUsesDeepAdvancedMaterials(this.viewer.scene));
-          // AA-M2 alpha-to-coverage 能力门(缺省 false=现行为逐位不变):仅当场景(投影路径)
-          // 或作者包(独立包路径)存在 material.alphaToCoverage 请求时才透传。声明能力的同时
-          // 显式钉 MSAA4 主 pass——a2c 管线变体只在多采样档构建,1x 渲染器绘制 a2c 批次在
-          // packetDraw 显式报错(fail-closed,不静默降级);引擎缺省本就是 4,显式传递把
-          // "a2c ⇒ MSAA4" 的依赖钉死在创建契约上,不受缺省值未来变动影响。晚到材质的
-          // 投影拒绝走受控重建(与 advancedMaterials 同族,见 failRuntime)。
-          // A2C-P1 运行时降级(maskFallback,渲染器探针判掩码未生效后的粘性档):不再
-          // 声明 a2c 能力门(材质投影因此失去 a2c 管线语义),改投 alphaToCoverageMaskFallback
-          // —— a2c 材质投影为 MASK@A2C_MASK_FALLBACK_ALPHA_CUTOFF(0.4),纯 a2c 的阶梯
-          // 覆盖退化为硬切,但消除全画实心板。重建一次性:a2cMaskFallbackActive 落定后
-          // 不再重触发。
-          const a2cWanted = this.alphaToCoverageRequested || (authorRenderPacket
-            ? packetUsesAlphaToCoverage(authorRenderPacket) : sceneUsesAlphaToCoverage(this.viewer.scene));
-          const alphaToCoverage = a2cWanted && !this.a2cMaskFallbackRequested;
-          const a2cMaskFallback = a2cWanted && this.a2cMaskFallbackRequested;
+          // a2c 双模式判定与合同注释见 studioDeepAdvancedMaterials.resolveAlphaToCoverageCreateModes。
+          const { alphaToCoverage, a2cMaskFallback } = resolveAlphaToCoverageCreateModes({
+            requested: this.alphaToCoverageRequested, authorRenderPacket,
+            scene: this.viewer.scene, maskFallbackActive: this.a2cMaskFallbackRequested });
           this.projectionBridge = authorRenderPacket ? undefined : new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(),
             capabilities: { authorDeformation: true, authorLod: true, ...(advancedMaterials ? { advancedMaterials: true } : {}),
               ...(alphaToCoverage ? { alphaToCoverage: true } : {}),

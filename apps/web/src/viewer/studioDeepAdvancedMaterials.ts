@@ -67,3 +67,22 @@ export function isAlphaToCoverageRejection(reason: unknown): boolean {
   const message = reason instanceof Error ? reason.message : String(reason);
   return message.includes("Three projection does not support material alphaToCoverage.");
 }
+
+/**
+ * 后端创建时的 a2c 双模式判定(体量门拆分,逻辑与合同注释自桥内迁此):
+ * requested=粘性请求(晚到材质拒绝重建),maskFallbackActive=A2C-P1 探针判
+ * 掩码未生效后的粘性降级档(不再声明 a2c 能力门,改投 alphaToCoverageMaskFallback
+ * —— a2c 材质投影为 MASK@A2C_MASK_FALLBACK_ALPHA_CUTOFF(0.4),纯 a2c 的阶梯
+ * 覆盖退化为硬切,但消除全画实心板;重建一次性,落定后不再重触发)。
+ * 声明能力的同时显式钉 MSAA4 主 pass——a2c 管线变体只在多采样档构建(见桥)。
+ */
+export function resolveAlphaToCoverageCreateModes(input: {
+  readonly requested: boolean;
+  readonly authorRenderPacket: { readonly materials: ReadonlyArray<{ readonly alphaToCoverage?: unknown }> } | undefined;
+  readonly scene: THREE.Object3D | undefined;
+  readonly maskFallbackActive: boolean;
+}): { readonly alphaToCoverage: boolean; readonly a2cMaskFallback: boolean } {
+  const wanted = input.requested || (input.authorRenderPacket
+    ? packetUsesAlphaToCoverage(input.authorRenderPacket) : sceneUsesAlphaToCoverage(input.scene!));
+  return { alphaToCoverage: wanted && !input.maskFallbackActive, a2cMaskFallback: wanted && input.maskFallbackActive };
+}
