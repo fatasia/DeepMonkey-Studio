@@ -62,7 +62,9 @@ export function AiAssistantMessages({ locale, conversation, busy, error, stopped
         {item.execution && <AiExecutionDetails locale={locale} execution={item.execution} />}
         {item.scope && <small className="ai-message-scope" title={item.scope}>{item.scope}</small>}
         <p>{item.answer}</p>
-        {item.status && item.status !== "completed" && <small role="status">{({ streaming: t("保存的生成中片段", "Saved in-progress text"), stopped: t("已停止", "Stopped"), failed: t("未完成", "Failed"), interrupted: t("服务中断", "Interrupted") })[item.status]}{item.status === "failed" && item.error ? ` · ${item.error}` : ""}</small>}
+        {/* P1-3 修复:恢复态整批被 init 转 interrupted(客户端崩溃/刷新,非服务端故障)——
+            中性"未完成"标注,不再误示"服务中断";证据栏 L70 已有恢复态中性说明。 */}
+        {item.status && item.status !== "completed" && <small role="status">{({ streaming: t("保存的生成中片段", "Saved in-progress text"), stopped: t("已停止", "Stopped"), failed: t("未完成", "Incomplete"), interrupted: t("未完成", "Incomplete") })[item.status]}{item.status === "failed" && item.error ? ` · ${item.error}` : ""}</small>}
         {item.verdict && <AiHypothesisVerdictCard locale={locale} envelope={item.verdict} {...(projectId ? { projectId } : {}) } />}
         {item.denial && <AiHarnessDenialCard locale={locale} denial={item.denial} />}
         {item.clarification && <AiClarificationCard locale={locale} clarification={item.clarification}

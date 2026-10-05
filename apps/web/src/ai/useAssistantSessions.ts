@@ -49,15 +49,18 @@ export function useAssistantSessions(projectId: string | undefined, scopeKey: st
     const expected = key, version = ++generation.current;
     setLoading(true); setError(""); setConflict(false); setExternalSessionId(undefined);
     try {
-      let after: string | undefined; const messages: AssistantConversationItem[] = [];
+      let after: string | undefined; const byId = new Map<string, AssistantConversationItem>();
       do {
         const page = await api.getAssistantSessionMessages(projectId, id, after);
         if (!current(expected, version)) return;
-        messages.push(...page.messages.map(message => ({ id: message.id, mode: message.mode, question: message.question,
+        // P1-3 修复:历史恢复按消息 id 去重(同 id 后写覆盖)——防御历史数据堆积/游标
+        // 交叠造成的同条目重复渲染(报告观测 ×2~×6);新写入侧本就按 id 幂等。
+        for (const message of page.messages) byId.set(message.id, { id: message.id, mode: message.mode, question: message.question,
           answer: message.answer, status: message.status, ...(message.model ? { model: message.model } : {}), ...(message.execution ? { execution: message.execution } : {}),
-          ...(message.scope ? { scope: message.scope } : {}), ...(message.reliability ? { reliability: message.reliability } : {}) })));
+          ...(message.scope ? { scope: message.scope } : {}), ...(message.reliability ? { reliability: message.reliability } : {}) });
         after = page.nextCursor;
       } while (after);
+      const messages = [...byId.values()];
       activeId.current = id; setSessionId(id); setConversation(messages);
     } catch (reason) { if (current(expected, version)) setError(String(reason)); }
     finally { if (current(expected, version)) setLoading(false); }
