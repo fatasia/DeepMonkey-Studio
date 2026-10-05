@@ -99,7 +99,7 @@ describe("per-pass GPU timing (F1)", () => {
     expect(unsupported.timer.beginPasses(1, ids)).toBeUndefined();
     expect(unsupported.resources).toHaveLength(0);
     const overflow = fixture(); overflow.timer.enabled = true; overflow.timer.passTimingEnabled = true;
-    expect(overflow.timer.beginPasses(1, Array.from({ length: 17 }, (_, index) => `p${index}`))).toBeUndefined();
+    expect(overflow.timer.beginPasses(1, Array.from({ length: 25 }, (_, index) => `p${index}`))).toBeUndefined(); // GI-FIN:上限 16→24,溢出样本同步 25。
     expect(overflow.timer.beginPasses(1, ["opaque", "opaque"])).toBeUndefined();
     expect(overflow.timer.beginPasses(1, [])).toBeUndefined();
     expect(overflow.resources).toHaveLength(0);
@@ -108,7 +108,7 @@ describe("per-pass GPU timing (F1)", () => {
   it("brackets plan passes with empty compute markers and resolves exactly one query pair per pass", () => {
     const f = fixture(); f.timer.enabled = true; f.timer.passTimingEnabled = true;
     const scope = f.timer.beginPasses(9, ["opaque", "present"])!;
-    expect(f.device.createQuerySet).toHaveBeenCalledWith(expect.objectContaining({ count: 32 }));
+    expect(f.device.createQuerySet).toHaveBeenCalledWith(expect.objectContaining({ count: 48 })); // GI-FIN:上限 24×2 查询。
     const encoder = encoderSpy();
     scope.beginMarker(encoder as unknown as GPUCommandEncoder, "opaque");
     scope.endMarker(encoder as unknown as GPUCommandEncoder, "opaque");
