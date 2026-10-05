@@ -133,6 +133,35 @@ describe("cluster LOD render slot (G1-S1)", () => {
     expect(f.bundleEncoder.drawIndexedIndirect).toHaveBeenCalledTimes(metrics.draws);
   });
 
+  it("pixel threshold moves the frontier end-to-end: fine threshold fans out, coarse collapses (golden)", async () => {
+    // G1-S1 端到端黄金用例(2026-10-05):同一 DAG 同一相机,仅 pixelThreshold 不同 ——
+    // 1px(Nanite 式默认)→ 叶层 4 cluster 全细化(4 draw,全 level 0);64px → 前沿
+    // 收敛到 level 1 根(1 draw)。三角形覆盖恒定 64(LOD 换细节不丢几何)。数值钉死:
+    // 选层数学(clusterLodSelection 投影误差)、plan 前沿闭合、executor 命令数任一漂移即红。
+    const fine = fixture(staging());
+    fine.slot.updateCamera(camera);
+    fine.slot.encodeFrame(frameEncoder());
+    queueGpuWords(fine, staging().dag, camera);
+    await fine.slot.ingest();
+    expect(fine.slot.metrics()).toMatchObject({ draws: 4, triangles: 64, frontierMaxLevel: 0,
+      warming: false });
+
+    const coarseStage = { ...staging(), pixelThreshold: 64 };
+    const coarse = fixture(coarseStage);
+    coarse.slot.updateCamera(deriveClusterLodCamera({ eye: [4, 6, 10], target: [4, 0, 2] }, 64,
+      Math.PI / 4, 64));
+    coarse.slot.encodeFrame(frameEncoder());
+    queueGpuWords(coarse, coarseStage.dag, deriveClusterLodCamera({ eye: [4, 6, 10], target: [4, 0, 2] },
+      64, Math.PI / 4, 64));
+    await coarse.slot.ingest();
+    expect(coarse.slot.metrics()).toMatchObject({ draws: 1, triangles: 64, frontierMaxLevel: 1,
+      warming: false });
+    // 单调不变式:阈值变粗 ⇒ 前沿上移(frontierMaxLevel 增)、draw 收敛(4→1)、覆盖不变。
+    expect(coarse.slot.metrics().frontierMaxLevel).toBeGreaterThan(fine.slot.metrics().frontierMaxLevel);
+    expect(coarse.slot.metrics().draws).toBeLessThan(fine.slot.metrics().draws);
+    expect(coarse.slot.metrics().triangles).toBe(fine.slot.metrics().triangles);
+  });
+
   it("an all-empty frontier degrades to no-op draw slots instead of failing", async () => {
     const bounds = { boundsMin: [0, 0, 0] as const, boundsMax: [1, 1, 1] as const };
     const children = ["l0-c0", "l0-c1", "l0-c2", "l0-c3"];
