@@ -23,7 +23,8 @@ interface ViewerQaState {
   picking?: ReturnType<ViewerEngine["getPickingAccelerationDiagnostics"]>;
   sceneCycle?: number;
   deviceLossRecovery?: { message: string; recoveredBackend: RendererBackend; primitiveCount: number };
-  rendererLifecycle?: { recycleCount: number; lastRecycledCycle?: number; lastRecycleDurationMs?: number };
+  rendererLifecycle?: { recycleCount: number; lastRecycledCycle?: number; lastRecycleDurationMs?: number;
+    lastRecycleBreakdown?: { recreateMs: number; warmupMs: number; settleMs: number } };
 }
 
 interface ViewerQaControl {
@@ -95,6 +96,7 @@ export default function ViewerVisualQa() {
     let recycleCount = 0;
     let lastRecycledCycle: number | undefined;
     let lastRecycleDurationMs: number | undefined;
+    let lastRecycleBreakdown: { recreateMs: number; warmupMs: number; settleMs: number } | undefined;
     const primitiveRefs: Array<{ cycle: number; kind: PrimitiveKind; reference: WeakRef<THREE.Object3D> }> = [];
     let trackedPrimitiveCount = 0;
     const trackPrimitive = (cycle: number, object: THREE.Object3D, kind: PrimitiveKind) => {
@@ -120,6 +122,7 @@ export default function ViewerVisualQa() {
           recycleCount,
           ...(lastRecycledCycle === undefined ? {} : { lastRecycledCycle }),
           ...(lastRecycleDurationMs === undefined ? {} : { lastRecycleDurationMs }),
+          ...(lastRecycleBreakdown === undefined ? {} : { lastRecycleBreakdown }),
         },
         ...(deviceLossRecovery ? { deviceLossRecovery } : {})
       };
@@ -176,17 +179,23 @@ export default function ViewerVisualQa() {
             engine = undefined;
             previous.dispose();
             const replacement = await ViewerEngine.create(host, requestedBackend);
+            const recreateMs = performance.now() - recycleStartedAt;
             if (disposed) {
               replacement.dispose();
               throw new Error("Viewer QA 已结束");
             }
             configureEngine(replacement, cycle);
+            const warmupStartedAt = performance.now();
             await waitForPipelineWarmup(replacement);
+            const warmupMs = performance.now() - warmupStartedAt;
             replacement.resetPerformanceSamples();
             await waitForFrames(8);
             recycleCount += 1;
             lastRecycledCycle = cycle;
             lastRecycleDurationMs = performance.now() - recycleStartedAt;
+            // 拆段口径:recreate(设备重建+首编译)/warmup(预热等待)/settle(复位后画面回稳 8 帧)。
+            // 冷回收的管线编译成本计入 recreate,不属"画面未恢复";守卫对 settle 判 3s。
+            lastRecycleBreakdown = { recreateMs, warmupMs, settleMs: performance.now() - recycleStartedAt - recreateMs - warmupMs };
           } else {
             engine?.clearSceneModels();
             if (engine) {

@@ -29,7 +29,7 @@ describe("studioCameraProbe", () => {
       renderer: { domElement: { tagName: "CANVAS" } as unknown as HTMLCanvasElement, getPixelRatio: () => 2 },
       container: { clientWidth: 1280, clientHeight: 800 } as HTMLElement,
       listModels: () => models,
-      getCameraState: () => ({ position: { x: 3, y: 4, z: 5 }, target: { x: 1, y: 0, z: -2 }, mode: "orbit" }),
+      getCameraState: () => ({ position: { x: 3, y: 4, z: 5 }, target: { x: 1, y: 0, z: -2 }, mode: "orbit" as const }),
       ...overrides,
     };
   }
@@ -50,7 +50,7 @@ describe("studioCameraProbe", () => {
   });
 
   it("installs the window collector and uninstalls only its own mount", () => {
-    const target = globalThis as unknown as { __studioCameraProbe?: unknown };
+    const target = globalThis as unknown as { __studioCameraProbe?: () => unknown };
     const first = installStudioCameraProbe(host());
     expect(typeof target.__studioCameraProbe).toBe("function");
     expect(target.__studioCameraProbe?.()).toMatchObject({ camera: { position: [3, 4, 5] } });

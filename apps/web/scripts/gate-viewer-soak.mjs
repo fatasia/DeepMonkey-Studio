@@ -126,6 +126,9 @@ async function collectSample(browserPage, cdp, index) {
       rendererRecycleDurationMs: state?.rendererLifecycle?.lastRecycledCycle === cycle
         ? state.rendererLifecycle.lastRecycleDurationMs
         : undefined,
+      rendererRecycleBreakdown: state?.rendererLifecycle?.lastRecycledCycle === cycle
+        ? state.rendererLifecycle.lastRecycleBreakdown
+        : undefined,
       usedJsHeapBytes: memory?.usedJSHeapSize,
     };
   }, index);
@@ -145,6 +148,10 @@ async function collectSample(browserPage, cdp, index) {
     rendererCaches: postGc.rendererCaches,
     gcSupported: true
   };
+}
+
+function fmtMs(value) {
+  return Number.isFinite(value) ? `${Math.round(value)}ms` : "n/a";
 }
 
 function assessSoak(current) {
@@ -176,8 +183,14 @@ function assessSoak(current) {
   if (baseline && final && final.geometries > baseline.geometries + 2) failures.push(`几何资源从 ${baseline.geometries} 增长到 ${final.geometries}`);
   if (baseline && final && final.textures > baseline.textures + 2) failures.push(`纹理资源从 ${baseline.textures} 增长到 ${final.textures}`);
   if (stable.some((sample) => Number.isFinite(sample.p95FrameMs) && sample.p95FrameMs > 33.3)) failures.push("至少一个长稳样本 P95 帧时间超过 33.3ms");
-  if (stable.some((sample) => sample.rendererRecycled && (!Number.isFinite(sample.rendererRecycleDurationMs) || sample.rendererRecycleDurationMs > 3_000))) {
-    failures.push("WebGPU 自动资源回收未在 3 秒内恢复稳定画面");
+  // 回收守卫口径(2026-10-06 修正):settle 段(复位后画面回稳)判 3s;recreate(设备重建+冷首编译)
+  // 是管线编译成本不是"画面未恢复",只记录。失败信息必须带数值,禁止静态文案。
+  for (const sample of stable.filter((item) => item.rendererRecycled)) {
+    const breakdown = sample.rendererRecycleBreakdown;
+    const settleMs = Number.isFinite(breakdown?.settleMs) ? breakdown.settleMs : sample.rendererRecycleDurationMs;
+    if (!Number.isFinite(settleMs) || settleMs > 3_000) {
+      failures.push(`第 ${sample.index} 个样本 WebGPU 回收后画面未在 3 秒内回稳(settle=${fmtMs(settleMs)} recreate=${fmtMs(breakdown?.recreateMs)} warmup=${fmtMs(breakdown?.warmupMs)} 总时长=${fmtMs(sample.rendererRecycleDurationMs)} 累计回收=${sample.rendererRecycleCount})`);
+    }
   }
   if (stable.some((sample) => sample.pipelineWarmupStatus === "failed")) failures.push("长稳期间渲染管线预热失败");
   if ((stable.at(-1)?.pipelineWarmupRuns ?? 0) < 1) failures.push("长稳期间渲染管线未完成自动预热");

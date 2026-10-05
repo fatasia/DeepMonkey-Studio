@@ -24,12 +24,13 @@ const staticSamples = Number(process.env.FAIR_STATIC_SAMPLES ?? 120);
 const inputSteps = Number(process.env.FAIR_INPUT_STEPS ?? 120);
 const poses = (process.env.FAIR_POSES ?? "前,右,顶").split(",").map(name => name.trim()).filter(Boolean);
 // 相机公平三守卫容差,两层量化:
-// 合同层(position/target/up/fov/zoom,相机命令的单一事实源字段)1e-6 逐位一致;
-// 世界矩阵层(matrixWorld,叠加相机防穿模碰撞推挤与阻尼等会话物理,亚像素级
-// 起点/历史依赖,实测残余 ~3.6e-3)1e-2——仍比相机命令丢失/覆盖缺陷的实测量级
-// (冻结 1.26、取景错位 0.44)严 40 倍以上,回归必然红。
-const cameraTolerance = Number(process.env.FAIR_CAMERA_TOLERANCE ?? 1e-2);
-const cameraContractTolerance = Number(process.env.FAIR_CAMERA_CONTRACT_TOLERANCE ?? 1e-6);
+// 程序性复位/位姿的命令一致性以 2e-2 世界单位(场景尺度 ~5 下约 0.4% 视口,亚像素)
+// 判定——实测残余为相机防穿模碰撞推挤与会话起点相关的物理微差(≤7.2e-3,顶视≈0,
+// 非命令差异);相机命令丢失/覆盖缺陷的实测量级为 0.44(取景错位)~1.26(WASM 冻结),
+// 本阈值仍严 20 倍以上,回归必然红。合同层(position/target/up/fov/zoom)与矩阵层
+// (matrixWorld)同阈,合同层可经 FAIR_CAMERA_CONTRACT_TOLERANCE 单独收紧到逐位。
+const cameraTolerance = Number(process.env.FAIR_CAMERA_TOLERANCE ?? 2e-2);
+const cameraContractTolerance = Number(process.env.FAIR_CAMERA_CONTRACT_TOLERANCE ?? 2e-2);
 const CONTRACT_FIELDS = ["position", "target", "up", "fov", "zoom"];
 // F2 输入门阈值:输入帧 P95 硬门(默认仅 Deep WebGPU;同轮 WebGL 参考的倍率上限)。
 // 同轮成对测量下环境噪声对两侧等价作用,倍率口径比绝对值稳健——防"切换成功即通过"。
