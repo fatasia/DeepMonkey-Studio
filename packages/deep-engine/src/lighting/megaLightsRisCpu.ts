@@ -20,8 +20,11 @@ import { evaluateMegaLightCpu, MEGALIGHTS_RIS_CANDIDATES, MEGALIGHTS_RIS_M,
  * 邻域均值,精确无偏(WRS 恒等式,见 spatialUnbiasedAverageCpu 注释),取代旧式
  * 「邻居胜者单候选并入 + 全局 ÷m」——旧式把 resampled 胜者当均匀候选,系统性过亮
  * +17.7%,是 M2 验收① 16% 偏差的主源;标准 Alg.6 权重(W_j×t、Σw 不除 m)同因 T̂
- * 失配 +19%,一并弃用。复用引入的近似(无 MIS/visibility)残差由门与颜色 EMA 控制。
- * 胜者可见性槽 M1 恒 1.0(硬阴影走 M2 BVH,任务书边界)。
+ * 失配 +19%,一并弃用。复用引入的近似(无 MIS)残差由门与颜色 EMA 控制。
+ * 胜者可见性(M2 2026-10-05)只乘 shade 侧:self 路径乘本像素 mask、空间分支乘源
+ * 像素 mask(ReSTIR DI visibility reuse 惯例,过相似门传递);目标权重保持无遮挡
+ * 口径,穷举参考保持无遮挡精确和——镜像经 MegaLightsFrameInput.visibility 注入,
+ * 缺省恒 1(M1 逐位)。GPU 端 mask 由 traceTwoLevelOccluded 片段族在独立 pass 写入。
  */
 
 /** 蓄水池(单像素单 M 流)。 */
@@ -91,6 +94,10 @@ export interface MegaLightsFrameInput {
   readonly motionUv?: readonly number[] | undefined;
   /** 上一帧 EMA 颜色(temporal 开启时混合;与 GPU deepMegaColorHistory 同语义)。 */
   readonly previousColor?: Float32Array | undefined;
+  /** 每像素胜者可见性 mask(1=可见/0=遮挡;M2 胜者可见性射线,GPU color.w 同语义。
+   * 只乘 shade 侧:self 路径乘本像素、空间分支乘源像素(ReSTIR DI visibility reuse
+   * 惯例);缺省 undefined = 恒 1(M1 逐位)。目标权重保持无遮挡口径。 */
+  readonly visibility?: Float32Array | undefined;
   readonly frame: number;
   readonly config: MegaLightsFrameConfig;
 }
@@ -135,10 +142,12 @@ export function megaTargetWeightCpu(lights: readonly MegaLight[],
   return luminance(surfaceEvaluation(lights, surface, index));
 }
 
-/** 胜者着色(可见性槽 M1 恒 1.0;与 WGSL deepMegaShadeWinner 同式)。 */
+/** 胜者着色(可见性因子乘 shade 侧;与 WGSL deepMegaShadeWinner 同式同位——
+ * 缺省 1.0 = M1 恒 1 行为,×1.0 精确;穷举参考不走此参数,保持无遮挡精确和)。 */
 export function megaShadeWinnerCpu(lights: readonly MegaLight[],
-  surface: readonly (number | LightVector3)[], index: number): LightVector3 {
-  return surfaceEvaluation(lights, surface, index);
+  surface: readonly (number | LightVector3)[], index: number, visibility = 1): LightVector3 {
+  const shade = surfaceEvaluation(lights, surface, index);
+  return [shade[0] * visibility, shade[1] * visibility, shade[2] * visibility];
 }
 
 /** 视深(视空间 -z;相似门用,与 WGSL surfaceA.w 同值)。 */
@@ -238,7 +247,7 @@ export function buildReservoirPassCpu(input: MegaLightsFrameInput): RisReservoir
 function spatialUnbiasedAverageCpu(lights: readonly MegaLight[],
   surfaces: readonly (readonly (number | LightVector3)[])[], surface: readonly (number | LightVector3)[],
   built: readonly RisReservoir[], x: number, y: number, width: number, height: number,
-  radius: number, lightCount: number): LightVector3 | null {
+  radius: number, lightCount: number, visibility: Float32Array | undefined): LightVector3 | null {
   let accR = 0, accG = 0, accB = 0, sources = 0;
   for (let offsetY = -radius; offsetY <= radius; offsetY++) {
     for (let offsetX = -radius; offsetX <= radius; offsetX++) {
@@ -252,7 +261,8 @@ function spatialUnbiasedAverageCpu(lights: readonly MegaLight[],
       const sourceTarget = megaTargetWeightCpu(lights, sourceSurface, source.winner);
       if (sourceTarget <= 0) continue;
       const sourceWeight = lightCount * source.weightSum / (source.m * sourceTarget);
-      const shade = megaShadeWinnerCpu(lights, surface, source.winner);
+      // 源像素可见性复用(与 WGSL deepMegaVisibilityAt(sourceIndex) 同位;过门传递)。
+      const shade = megaShadeWinnerCpu(lights, surface, source.winner, visibility?.[sourceIndex] ?? 1);
       accR += shade[0] * sourceWeight;
       accG += shade[1] * sourceWeight;
       accB += shade[2] * sourceWeight;
@@ -264,7 +274,7 @@ function spatialUnbiasedAverageCpu(lights: readonly MegaLight[],
 
 /** 趟二:5×5 空间值域平均 + 胜者着色(与 WGSL reuseAndShade 入口同式)。 */
 export function reuseAndShadePassCpu(input: MegaLightsFrameInput, built: readonly RisReservoir[]): MegaLightsFrameOutput {
-  const { lights, surfaces, config, previousColor } = input;
+  const { lights, surfaces, config, previousColor, visibility } = input;
   const { width, height } = config;
   const lightCount = lights.length;
   const requested = config.candidateCount ?? MEGALIGHTS_RIS_CANDIDATES;
@@ -293,13 +303,15 @@ export function reuseAndShadePassCpu(input: MegaLightsFrameInput, built: readonl
       }
       let r: number, g: number, b: number;
       const averaged = spatial ? spatialUnbiasedAverageCpu(lights, surfaces, surface, built,
-        x, y, width, height, radius, lightCount) : null;
+        x, y, width, height, radius, lightCount, visibility) : null;
       if (averaged !== null) {
         [r, g, b] = averaged;
       } else {
         // self reservoir 着色(spatial 关闭,或空间平均无有效源回落)。
+        // 可见性乘本像素 mask(与 WGSL deepMegaVisibilityAt(pixelIndex) 同位)。
+        const selfVisibility = visibility?.[pixelIndex] ?? 1;
         const shade = reservoir.winner === MEGALIGHTS_INVALID_LIGHT || reservoir.m <= 0 ? [0, 0, 0] as LightVector3
-          : megaShadeWinnerCpu(lights, surface, reservoir.winner);
+          : megaShadeWinnerCpu(lights, surface, reservoir.winner, selfVisibility);
         // W_Y 重用 finish 公式(胜者目标权重在本像素重评价)。
         const weightY = reservoir.winner === MEGALIGHTS_INVALID_LIGHT || reservoir.m <= 0 ? 0
           : megaTargetWeightCpu(lights, surface, reservoir.winner);

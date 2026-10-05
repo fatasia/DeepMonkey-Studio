@@ -13,7 +13,8 @@ import { build } from "esbuild";
 //   ① perf:5000 动态点光(10% 移动)@1080p p95 ≤20ms;
 //   ③ flicker:静态 + 固定种子逐帧差 p99 ≤2/255;
 //   ④ area:64 面积光 LTC 交付核 GPU↔CPU RMS ≤1%;
-//   ⑤ parity:8 灯穷举退化一致性(GPU↔CPU)+ RIS 无偏性烟雾。
+//   ⑤ parity:8 灯穷举退化一致性(GPU↔CPU)+ RIS 无偏性烟雾;
+//   ⑥ visibility:M2 胜者可见性射线(阴影区抑制 ≥98%/亮区相对差 ≤2%/哨兵零/帧时披露)。
 // 证据:test-output/ue-class-b2/megalights-m1/evidence.json(含 adapter/legs/sha256)。
 
 const packageRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -63,6 +64,7 @@ async function runInBrowser(origin, goldenColor) {
     const perfFlicker = await evaluateProbe("runPerfFlicker");
     const areaLtc = await evaluateProbe("runAreaLtc");
     const parity = await evaluateProbe("runParity");
+    const visibility = await evaluateProbe("runWinnerVisibility");
     // ⑤ 门:GPU 穷举数组 ↔ 黄金真值(node,f64 逐通道;相对 RMS ≤ 0.2%)。
     let parityGolden = null;
     if (parity?.ok && Array.isArray(parity.result?.gpuExhaustive)) {
@@ -92,7 +94,7 @@ async function runInBrowser(origin, goldenColor) {
       parityGolden = { rms, relativeRms, gate: 0.002, pass: relativeRms <= 0.002, samples,
         risSmokeRms: Math.sqrt(risSquares / (pixels * 3)), goldenSha256: sha256(Buffer.from(goldenRgb)) };
     }
-    return { adapter, pageErrors, consoleErrors, perfFlicker, areaLtc, parity, parityGolden };
+    return { adapter, pageErrors, consoleErrors, perfFlicker, areaLtc, parity, parityGolden, visibility };
   } finally { await browser.close(); }
 }
 
@@ -124,15 +126,18 @@ async function main() {
     console.error(JSON.stringify(probe));
     throw new Error("MegaLights GPU probe failed: " + String(probe.error ?? "unknown"));
   }
-  const legs = [probe.perfFlicker, probe.areaLtc, probe.parity];
+  const legs = [probe.perfFlicker, probe.areaLtc, probe.parity, probe.visibility];
   const ok = probe.pageErrors.length === 0 && legs.every(leg => leg?.ok && leg.result?.perfPass !== false
     && leg.result?.flicker?.pass !== false && leg.result?.pass !== false)
     && probe.perfFlicker?.result?.perfPass !== false
-    && probe.parityGolden?.pass === true && probe.areaLtc?.result?.pass === true;
+    && probe.parityGolden?.pass === true && probe.areaLtc?.result?.pass === true
+    && probe.visibility?.result?.pass === true;
   const evidence = { action: "megalights-m1-gpu-acceptance", date: new Date().toISOString(),
     adapter: probe.adapter, pageErrors: probe.pageErrors, consoleErrors: probe.consoleErrors,
     perfFlicker: probe.perfFlicker, areaLtc: probe.areaLtc, parity: probe.parity, parityGolden: probe.parityGolden,
-    gates: { perfP95Ms: 20, flickerP99: 2 / 255, areaRmse: 0.01, parityRelativeRms: 0.002 },
+    visibility: probe.visibility,
+    gates: { perfP95Ms: 20, flickerP99: 2 / 255, areaRmse: 0.01, parityRelativeRms: 0.002,
+      visibilitySuppression: 0.02, visibilityLitRelativeDiff: 0.02, visibilityOverflowSentinel: 0 },
     success: ok };
   await mkdir(outputDirectory, { recursive: true });
   const json = JSON.stringify(evidence, null, 2);
@@ -143,6 +148,7 @@ async function main() {
   console.log(`perf/flicker: ${JSON.stringify(probe.perfFlicker?.result ?? probe.perfFlicker)}`);
   console.log(`areaLtc: ${JSON.stringify(probe.areaLtc?.result ?? probe.areaLtc)}`);
   console.log(`parityGolden: ${JSON.stringify(probe.parityGolden)}`);
+  console.log(`visibility: ${JSON.stringify(probe.visibility?.result ?? probe.visibility)}`);
   if (!ok) { console.error("MegaLights GPU acceptance FAILED"); process.exitCode = 1; }
 }
 

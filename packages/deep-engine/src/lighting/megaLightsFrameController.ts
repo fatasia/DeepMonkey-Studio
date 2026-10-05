@@ -205,7 +205,7 @@ export class MegaLightsFrameController {
     rebuildPass.dispatchWorkgroups(groupsX, groupsY);
     rebuildPass.end();
     // 段二/三:RIS 两趟(读重建表面;M1 单源核;pass 边界内存序规范强保证)。
-    this.runtime.encode(encoder, { width, height, lightCount });
+    this.runtime.encode(encoder, { width, height, lightCount, visibilityEnabled: false });
     // 段四:加性合成(render pass,one+one 混合;loadOp load 保留既有 HDR 内容,
     // alpha 加 0;附件视图由调用方供给——主帧 1x HDR)。
     device.queue.writeBuffer(allocation.compositeParams, 0, this.packCompositeParams(width, height).buffer as ArrayBuffer);

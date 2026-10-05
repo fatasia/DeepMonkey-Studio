@@ -152,3 +152,39 @@ describe("MegaLights RIS CPU mirror math gates", () => {
     expect(weight).toBeGreaterThan(0);
   });
 });
+
+describe("MegaLights M2 winner-visibility CPU mirror gates", () => {
+  it("visibility=undefined reproduces the M1 frame bit-identically", () => {
+    const { lights, surfaces } = buildScene(8);
+    const base = megaLightsFrameCpu({ lights, surfaces, frame: 5, config: { width: 6, height: 6 } });
+    const withUndefined = megaLightsFrameCpu({ lights, surfaces, frame: 5, config: { width: 6, height: 6 },
+      visibility: undefined });
+    expect(Array.from(withUndefined.color)).toEqual(Array.from(base.color));
+  });
+
+  it("all-occluded mask zeroes RIS output while exhaustive reference keeps the exact sum", () => {
+    const { lights, surfaces } = buildScene(8);
+    const mask = new Float32Array(36).fill(0);
+    const occluded = megaLightsFrameCpu({ lights, surfaces, frame: 5, config: { width: 6, height: 6 }, visibility: mask });
+    expect(Array.from(occluded.color)).toEqual(new Array(108).fill(0));
+    // 穷举精确参考不走可见性(与 WGSL exhaustive 分支同口径:无遮挡精确和)。
+    const exact = megaLightsExhaustiveReferenceCpu(lights, surfaces, 6, 6);
+    expect(exact.some(value => value > 0)).toBe(true);
+  });
+
+  it("per-source mask multiplies the spatial average at the source pixel (visibility reuse)", () => {
+    const { lights, surfaces } = buildScene(8);
+    const half = new Float32Array(36).fill(1);
+    for (let pixel = 30; pixel < 36; pixel++) half[pixel] = 0;
+    const masked = megaLightsFrameCpu({ lights, surfaces, frame: 5, config: { width: 6, height: 6 }, visibility: half });
+    const full = megaLightsFrameCpu({ lights, surfaces, frame: 5, config: { width: 6, height: 6 } });
+    // 半径 2 邻域触不到 mask 0 行的像素(行 0-1,索引 0-11)与无 mask 帧逐位一致;
+    // 邻域含 mask 0 源的像素(行 2-3)被拉暗。
+    for (let pixel = 0; pixel < 12; pixel++) {
+      expect(masked.color[pixel * 3]!).toBe(full.color[pixel * 3]!);
+    }
+    const dimmed = Array.from({ length: 12 }, (_, index) => index + 12)
+      .filter(pixel => full.color[pixel * 3]! > 0 && masked.color[pixel * 3]! < full.color[pixel * 3]!);
+    expect(dimmed.length).toBeGreaterThan(0);
+  });
+});

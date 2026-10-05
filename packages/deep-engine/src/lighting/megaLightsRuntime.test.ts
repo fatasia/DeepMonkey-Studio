@@ -51,7 +51,8 @@ describe("MegaLights runtime composed shader template", () => {
 
   it("pins the params uniform word budget and pipeline key", () => {
     expect(MEGA_LIGHTS_PARAMS_BYTES).toBe(64);
-    expect(MEGA_LIGHTS_PIPELINE_KEY).toBe("deep.megalights-ris.v1.k32");
+    // v2(2026-10-05):M2 胜者可见性射线档;legacy 打包与 v1 逐位一致(visibilityEnabled=0)。
+    expect(MEGA_LIGHTS_PIPELINE_KEY).toBe("deep.megalights-ris.v2.k32");
     expect(MEGA_LIGHTS_ENTRY_BUILD).toBe("deepMegaBuildReservoirsFrame");
     expect(MEGA_LIGHTS_ENTRY_SHADE).toBe("deepMegaReuseAndShadeFrame");
   });

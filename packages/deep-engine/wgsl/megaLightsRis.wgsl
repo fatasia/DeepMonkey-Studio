@@ -8,7 +8,15 @@
 //        胜者着色 color = shade(y) × N × w_sum/(M_total × t_y)(spatial 关闭/无有效源
 //        回落路径;spatial 开启走值域平均 acc/sources)——归一化目标 pdf 代入
 //        Bitterli 2022 Alg.4 后 T 相消的无偏式;K≥N 遍历全灯时输出恒等于精确和
-//        (验收⑤退化一致性的数学基础)。胜者可见性槽 M1 恒 1.0(M2 接 BVH 光线)。
+//        (验收⑤退化一致性的数学基础)。
+//   胜者可见性(UE MegaLights 同口径的 winner shadow ray):着色时按
+//        deepMegaVisibilityAt(像素) 乘可见性因子——宿主注入函数(同 deepSpotIesFactor
+//        家族):可见性档关闭恒返 1.0(M1 逐位行为),开启返该像素胜者遮挡射线的
+//        mask(1=可见/0=遮挡/溢出 fail-closed 0,由模板内 traceTwoLevelOccluded 片段
+//        族在 build→shade 之间的独立 pass 写入 color.w)。空间分支按**源像素** mask
+//        复用(同门相似像素的可见性传递,ReSTIR DI visibility reuse 惯例;门控残差
+//        由既有法线/深度门与颜色 EMA 吸收,与"无 visibility"状态的登记同口径)。
+//        目标权重 t 保持无遮挡口径——可见性只乘在 shade 侧,CPU 镜像同式同位。
 //
 // 确定性:种子 = hash(像素 × 帧种子 × 流序)(deepMegaPixelSeed);同输入逐位回放。
 // 常量与 TS 打包端(megaLights.ts/megaLightsAbi.ts)逐字互钉,漂移由
@@ -54,6 +62,8 @@ fn deepMegaLoad(index: u32) -> DeepMegaLightRecord {
 }
 
 // 帧参数(uniform;宿主模板声明绑定,布局见 megaLightsAbi.ts 的字级语义表)。
+// visibilityEnabled 由 reserved 首槽转正(2026-10-05,M2 胜者可见性射线;字偏移与
+// struct 尺寸不变,legacy 打包该字为 0 → 模板注入的 deepMegaVisibilityAt 恒 1.0)。
 struct DeepMegaParams {
   viewport: vec2u,
   lightCount: u32,
@@ -63,7 +73,8 @@ struct DeepMegaParams {
   exhaustive: u32,
   visibilitySlot: f32,
   alphaBlend: f32,
-  reserved: vec3u,
+  visibilityEnabled: u32,
+  reserved: vec2u,
 };
 
 // ---- 随机(确定性;megaLightsRisCpu.megaHashU32/megaRandomNext/megaPixelSeed 同式) ----
@@ -171,9 +182,10 @@ fn deepMegaContribution(record: DeepMegaLightRecord, positionView: vec3f, normal
 }
 
 fn deepMegaShadeWinner(record: DeepMegaLightRecord, positionView: vec3f, normalView: vec3f,
-  view: vec3f, baseColor: vec3f, metallic: f32, roughness: f32) -> vec3f {
-  // 胜者可见性槽:M1 恒 1.0(params.visibilitySlot 预留);M2 接 BVH 可见性光线。
-  return deepMegaContribution(record, positionView, normalView, view, baseColor, metallic, roughness) * vec3f(1.0);
+  view: vec3f, baseColor: vec3f, metallic: f32, roughness: f32, visibility: f32) -> vec3f {
+  // 胜者可见性槽:visibility 由调用方传入(宿主注入 deepMegaVisibilityAt;
+  // 可见性档关闭恒 1.0 → ×1.0 精确,M1 逐位行为)。
+  return deepMegaContribution(record, positionView, normalView, view, baseColor, metallic, roughness) * vec3f(visibility);
 }
 
 fn deepMegaLuminance(color: vec3f) -> f32 {
@@ -313,9 +325,11 @@ fn deepMegaReuseAndShade(params: DeepMegaParams, pixelIndex: u32, surfaceA: vec4
           sourceSurfaceC.xyz, sourceSurfaceA.w, sourceSurfaceB.w));
         if (sourceTarget <= 0.0) { continue; }
         let sourceWeight = f32(lightCount) * source.weightSum / (f32(source.m) * sourceTarget);
-        // 本像素着色(源胜者灯 × 本像素几何;deepMegaShadeWinner 的可见性槽恒 1.0)。
+        // 本像素着色(源胜者灯 × 本像素几何;可见性按**源像素** mask 复用——
+        // 源已过法线/深度相似门,同门像素的胜者射线遮挡状态传递是 ReSTIR DI
+        // visibility reuse 惯例,残差由门与颜色 EMA 吸收)。
         let sourceShade = deepMegaShadeWinner(record, positionView, normalView, view,
-          surfaceC.xyz, surfaceA.w, surfaceB.w);
+          surfaceC.xyz, surfaceA.w, surfaceB.w, deepMegaVisibilityAt(sourceIndex));
         acc = acc + sourceShade * vec3f(sourceWeight);
         sources = sources + 1u;
       }
@@ -325,7 +339,8 @@ fn deepMegaReuseAndShade(params: DeepMegaParams, pixelIndex: u32, surfaceA: vec4
   }
   if (reservoir.winner == DEEP_MEGA_INVALID || reservoir.m == 0u || reservoir.weightSum <= 0.0) { return vec3f(0.0); }
   let winner = deepMegaLoad(reservoir.winner);
-  let shade = deepMegaShadeWinner(winner, positionView, normalView, view, surfaceC.xyz, surfaceA.w, surfaceB.w);
+  let shade = deepMegaShadeWinner(winner, positionView, normalView, view, surfaceC.xyz, surfaceA.w, surfaceB.w,
+    deepMegaVisibilityAt(pixelIndex));
   let winnerWeight = deepMegaLuminance(deepMegaContribution(winner, positionView, normalView, view,
     surfaceC.xyz, surfaceA.w, surfaceB.w));
   if (winnerWeight <= 0.0) { return vec3f(0.0); }
