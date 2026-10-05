@@ -133,7 +133,11 @@ function shadowPipeline(pipelines: Pipelines, batch: PreparedBatch, authorShadow
     // material mask variant; preserve their solid-depth fallback.
     ?? (batch.alphaMode === "BLEND"
       ? pipelines.shadowPipelines.get(shadowPipelineKey("solid", rasterMode(batch.mirrored, batch.doubleSided)))
-      : undefined);
+      : undefined)
+    // 首帧 500 攻坚(2026-10-06):mask/authored 变体转背景排队,就绪前 mask batch
+    // 经 solid 回退按实心投影(与页物化同 documented 简化,见 pipelines.ts 页注释);
+    // 就绪后按 key 命中恢复逐像素掩码。authored 前置键同理回退非 authored solid。
+    ?? pipelines.shadowPipelines.get(shadowPipelineKey("solid", rasterMode(batch.mirrored, batch.doubleSided)));
   if (!pipeline) throw new Error(`Missing shadow pipeline: ${key}`);
   return pipeline;
 }
