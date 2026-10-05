@@ -194,13 +194,15 @@ describe("sdf gi scratch diag", () => {
   });
 });
 
-function sub3(a: readonly number[], b: readonly number[]): [number, number, number] {
+function sub3(a: readonly [number, number, number],
+  b: readonly [number, number, number]): [number, number, number] {
   return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 }
-function cross3(a: readonly number[], b: readonly number[]): [number, number, number] {
+function cross3(a: readonly [number, number, number],
+  b: readonly [number, number, number]): [number, number, number] {
   return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[1], a[0] * b[1] - a[1] * b[0]];
 }
-function normalize3(value: readonly number[]): [number, number, number] {
+function normalize3(value: readonly [number, number, number]): [number, number, number] {
   const length = Math.hypot(value[0], value[1], value[2]);
   return length > 1e-8 ? [value[0] / length, value[1] / length, value[2] / length] : [0, 1, 0];
 }

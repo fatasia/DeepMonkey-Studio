@@ -25,9 +25,9 @@
 // 证据:test-output/megaLights-render-20261005/(runner 落盘 acceptance.json + PNG)。
 import { PbrRenderer } from "../src/webgpu/pbrRenderer.js";
 import type { FrameMetrics, PbrRendererOptions, RenderView } from "../src/webgpu/pbrRendererTypes.js";
-import { isPbrFrameReadbackSnapshot } from "../src/webgpu/pbrFrameCaptureReadback.js";
+import { isPbrFrameReadbackSnapshot, type PbrFrameReadbackResult } from "../src/webgpu/pbrFrameCaptureReadback.js";
 import { FrameCaptureSession } from "../src/r12/frameCapture.js";
-import type { RenderPacket } from "../src/renderPacket.js";
+import type { PbrMaterial, RenderPacket } from "../src/renderPacket.js";
 import { MAX_MEGA_LIGHTS, resolveDirectLightingPath } from "../src/lighting/megaLights.js";
 import { MegaLightsFrameController } from "../src/lighting/megaLightsFrameController.js";
 import type { WorldClusteredLights, WorldPointLight } from "../src/lighting/worldLights.js";
@@ -45,14 +45,14 @@ const PERF_TIMED_FRAMES = 120;
 
 /** 场景几何:一个房间(地面/三墙)+ 中隔墙(把左右半场分开,像素腿的亮暗对照)+ 两个箱体。 */
 function roomPacket(): RenderPacket {
-  const box = (min: readonly number[], max: readonly number[]): {
+  const box = (min: readonly [number, number, number], max: readonly [number, number, number]): {
     vertices: Float32Array<ArrayBuffer>; indices: Uint32Array<ArrayBuffer> } => {
     const [x0, y0, z0] = min, [x1, y1, z1] = max;
     const corners: readonly (readonly number[])[] = [
       [x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0],
       [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]];
     // 六面,每面 4 顶点(位置 + 显式面法线),两三角。
-    const faces: readonly (readonly (readonly number[])[])[] = [
+    const faces: readonly (readonly [readonly [number, number, number, number], readonly [number, number, number]])[] = [
       [[4, 5, 6, 7], [0, 0, 1]], [[1, 0, 3, 2], [0, 0, -1]], [[5, 1, 2, 6], [1, 0, 0]],
       [[0, 4, 7, 3], [-1, 0, 0]], [[7, 6, 2, 3], [0, 1, 0]], [[0, 1, 5, 4], [0, -1, 0]]];
     const vertices: number[] = [];
@@ -60,7 +60,7 @@ function roomPacket(): RenderPacket {
     for (const [cornerIds, normal] of faces) {
       const base = vertices.length / 6;
       for (const id of cornerIds) {
-        vertices.push(corners[id]![0]!, corners[id]![1]!, corners[id]![2]!, normal[0]!, normal[1]!, normal[2]!);
+        vertices.push(corners[id]![0]!, corners[id]![1]!, corners[id]![2]!, normal[0], normal[1], normal[2]);
       }
       indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
     }
@@ -74,7 +74,7 @@ function roomPacket(): RenderPacket {
   const crateLeft = box([-4.6, 0, -1.6], [-3.4, 1.1, -0.4]);
   const crateRight = box([3.4, 0, -1.6], [4.6, 1.1, -0.4]);
   const meshes = [floor, backWall, leftWall, rightWall, divider, crateLeft, crateRight];
-  const materials = [
+  const materials: readonly Omit<PbrMaterial, "id">[] = [
     { baseColor: [0.52, 0.52, 0.5], metallic: 0, roughness: 0.65 },
     { baseColor: [0.42, 0.42, 0.44], metallic: 0, roughness: 0.7 },
     { baseColor: [0.4, 0.4, 0.42], metallic: 0, roughness: 0.7 },
@@ -137,7 +137,7 @@ interface LegSession {
   readonly renderer: PbrRenderer;
   readonly errors: string[];
   /** 每帧 present-color 读回 promise(render 后压入;frameReadbackResults 指向本帧)。 */
-  readonly readbacks: Promise<readonly (PbrReadback | { readonly reason: string })[] | undefined>[];
+  readonly readbacks: Promise<readonly PbrFrameReadbackResult[] | undefined>[];
   dispose(): void;
 }
 
@@ -242,7 +242,8 @@ function decodeReadback(readback: PbrReadback): DecodedFrame {
   return { width: readback.width, height: readback.height, rgba };
 }
 
-function regionMeanLuminance(image: DecodedFrame, region: readonly number[]): number {
+function regionMeanLuminance(image: DecodedFrame,
+  region: readonly [number, number, number, number]): number {
   const [x0, x1, y0, y1] = region;
   let total = 0, count = 0;
   for (let y = Math.floor(y0 * image.height); y < Math.floor(y1 * image.height); y++) {
@@ -278,7 +279,7 @@ async function pngFromLinear(image: DecodedFrame, gain = 1): Promise<string> {
 async function latestPresentColor(leg: LegSession): Promise<PbrReadback> {
   const results = await leg.readbacks[leg.readbacks.length - 1];
   if (!results) throw new Error("frame readback results were not produced (capture not open?).");
-  const snapshot = results.find(isPbrFrameReadbackSnapshot) as PbrReadback | undefined;
+  const snapshot = results.find(isPbrFrameReadbackSnapshot);
   if (!snapshot) {
     const unavailable = results.find(result => !isPbrFrameReadbackSnapshot(result)) as
       { reason?: string } | undefined;
@@ -399,7 +400,7 @@ async function collectPresentBytes(megaLights: boolean, frames: number): Promise
     const bytes: Uint8Array[] = [];
     for (const pending of leg.readbacks) {
       const results = await pending;
-      const snapshot = results?.find(isPbrFrameReadbackSnapshot) as PbrReadback | undefined;
+      const snapshot = results?.find(isPbrFrameReadbackSnapshot);
       if (!snapshot) throw new Error("bitwise leg missing present-color snapshot.");
       bytes.push(new Uint8Array(snapshot.bytes));
     }
@@ -502,7 +503,7 @@ async function poolFailClosedLeg(): Promise<Record<string, unknown>> {
         format: "rgba16float", usage: GPUTextureUsage.RENDER_ATTACHMENT });
       const points = Array.from({ length: MAX_MEGA_LIGHTS + 1 }, (_, index) => ({
         positionView: [Math.cos(index * 0.01), 0.5, -2 - (index % 7)] as LightVector3,
-        range: 0, color: [1, 1, 1], intensity: 1, decay: 2,
+        range: 0, color: [1, 1, 1] as LightVector3, intensity: 1, decay: 2,
       }));
       let threw: Error | undefined;
       try {
