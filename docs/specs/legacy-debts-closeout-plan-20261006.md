@@ -13,7 +13,7 @@
 ## B. 能力轴(UE 级补全)
 
 - **B1 TS↔Rust 差距 5-10**:native 视觉三件套/SSAO/sdf-gi native/megalights native/virtual-geometry/物理版本分轨(盘点在 docs/specs/ts-rust-parity-audit-20261005.md)。
-- **B2 TS↔Rust 差距 1/4**:F2 RT evidence 补 rt.rs 就位事实/frame v8 双端 golden 对拍。
+- **B2 TS↔Rust 差距 1/4**:F2 RT evidence 补 rt.rs 就位事实(P0 地基路在跑)/frame v8 双端 golden 对拍。**派单要点(2026-10-06 主线程侦察)**:TS 端=packages/deep-engine/src/webgpu/pbrFrameUniforms.ts `updatePbrFrameUniforms`(输入 view/lights/features/rayTracedShadowRoute→Float32Array 96 字);native 端=packages/deep-engine-native/src/frame_bindings.rs `FrameLayouts`+frame_layout_gate.rs。对拍形式:确定性输入(固定相机/单灯/features 全组合至少 3 组)→两端各自产出 bytes→SHA-256 fixture 互拍(Rust 测试落 fixture JSON,TS 测试读并对拍自己的打包结果;沿 F6 golden 先例);special 注意 background.w 保留槽/rtShadowRoute 开关位 word89/castShadow word71 的借位台账(frameAbi/frameUniformSlotTable.ts 为单源真值)。
 - **B3 UE 完整度缺口**:光追双通道/Lumen 式三层混合/簇级虚拟几何消费端/ReSTIR-DI(61 项口径 85.2%→100%)。
 - **B4 a2c 设备探针 frames 接线**(框架已入,host 供给侧)。
 - **B5 GI 变化区后续**:验证已收(门内遮蔽 0→280),剩余口径收尾。
