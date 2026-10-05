@@ -10,6 +10,7 @@ import { focusViewerTargetWhenReady } from "../studio/workspaceTargetNavigation"
 import { deleteWorkspaceRecoveryDraft, readWorkspaceRecoveryDraft, type WorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
 import type { createScenePersistenceController } from "../controllers/scenePersistenceController";
 import { recoverSceneRouteRead } from "./sceneRouteRecovery";
+import { createSceneWorkspaceLoadGate } from "./sceneWorkspaceLoadGate";
 
 type PersistenceController = ReturnType<typeof createScenePersistenceController>;
 
@@ -49,6 +50,7 @@ export function useAppSceneSyncEffects({ state, playModeActive = false, recovery
     setTopologyDataProducts,
     setTopologyRuntimeStates,
     setViewerLoadState,
+    setBusy,
     showError,
     topologyDataProducts,
   } = state;
@@ -195,6 +197,11 @@ export function useAppSceneSyncEffects({ state, playModeActive = false, recovery
     if (!currentUser) return;
     if (sceneWorkspaceLoadRef.current === workspaceKey) return;
     sceneWorkspaceLoadRef.current = workspaceKey;
+    // P2-5：二维↔三维切换的 10–20s 死等根因窗口 = 场景拉取 + applyScene（此前无任何
+    // 进度态）。载入进度门超 500ms 接通 busy（视口 loading-overlay + 写入口守卫），
+    // apply 完成 / 失败 / effect 清理三路幂等释放。
+    const loadGate = createSceneWorkspaceLoadGate(setBusy);
+    loadGate.engage();
     const cancelRead = recoverSceneRouteRead({
       read: () => Promise.all([
           api.getSceneForBrowse(sceneId),
@@ -202,18 +209,29 @@ export function useAppSceneSyncEffects({ state, playModeActive = false, recovery
         ]),
       apply: async ([result, application]) => {
         // An earlier route read can settle after Play began; never apply its saved scene over the temporary session.
-        if (playModeActiveRef.current) return;
+        if (playModeActiveRef.current) {
+          loadGate.release();
+          return;
+        }
         setProject(result.project);
         setProjects((items) =>
           items.some((item) => item.id === result.project.id) ? items.map((item) => (item.id === result.project.id ? result.project : item)) : [...items, result.project],
         );
         if (application) applicationSessionRef.current.openDocument(application);
-        await applyScene(result.scene, false, result.project, false, false, true);
+        try {
+          await applyScene(result.scene, false, result.project, false, false, true);
+        } finally {
+          loadGate.release();
+        }
       },
-      onError: showError,
+      onError: (reason) => {
+        loadGate.release();
+        showError(reason);
+      },
     });
     return () => {
       cancelRead();
+      loadGate.release();
       if (sceneWorkspaceLoadRef.current === workspaceKey) sceneWorkspaceLoadRef.current = undefined;
     };
   }, [route.view, route.projectId, route.applicationId, route.sceneId, engine, activeScene?.id, currentUser?.id, showError, playModeActive]);

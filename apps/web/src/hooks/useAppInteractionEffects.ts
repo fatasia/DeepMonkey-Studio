@@ -54,6 +54,11 @@ export function useAppInteractionEffects({
           }),
         );
       } else if (action.type === "dashboard" && action.dashboardPageId && activeApplication) {
+        // P2-5（2026-10-06 对抗测试第二轮）：二维页跳转只在二维上下文（dashboard 视图）
+        // 或由三维对象显式联动（source.kind === "object"）时才允许回写路由。看板侧会话
+        // 经 window 交互总线泄漏/迟到的 widget 效果（数据刷新定时器、卸载尾巴）不得把
+        // 三维工作台自动拽回二维——URL 是路由唯一真源（报告 §4.2 自动回跳根因）。
+        if (route.view !== "dashboard" && source?.kind !== "object") return;
         const page = activeApplication.pages.find((candidate) => candidate.id === action.dashboardPageId);
         if (!page) return showError(new Error("目标二维页面不存在"));
         navigate({

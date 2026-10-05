@@ -105,15 +105,44 @@ describe("application interaction effect lifecycle", () => {
     expect(app.navigate).not.toHaveBeenCalled();
   });
 
-  it("navigates only to pages owned by the application", () => {
+  it("navigates only to pages owned by the application (object-sourced 3D linkage)", () => {
+    const app = mount({ activeApplication: {
+      metadata: { id: "app", projectId: "project" }, pages: [{ id: "page" }], scenes: [],
+    } as unknown as ApplicationDocument });
+    emit({ type: "dashboard", dashboardPageId: "page" }, { kind: "object", sceneId: "current", modelId: "model" });
+    expect(app.navigate).toHaveBeenCalledWith(expect.objectContaining({ view: "dashboard", applicationId: "app", projectId: "project", pageId: "page" }));
+    emit({ type: "dashboard", dashboardPageId: "missing" }, { kind: "object", sceneId: "current", modelId: "model" });
+    expect(app.navigate).toHaveBeenCalledOnce();
+    expect(app.showError).toHaveBeenCalledOnce();
+  });
+
+  // P2-5（2026-10-06 对抗测试第二轮 §4.2）：二维↔三维自动回跳根因——看板侧会话经
+  // window 交互总线泄漏/迟到的 widget「跳二维页」效果会把三维工作台拽回二维（无任何
+  // 点击）。URL 是路由唯一真源：仅二维上下文（dashboard 视图）或三维对象显式联动放行。
+  it("drops widget-sourced 2D page jumps while authoring in 3D (auto-bounce-back guard)", () => {
     const app = mount({ activeApplication: {
       metadata: { id: "app", projectId: "project" }, pages: [{ id: "page" }], scenes: [],
     } as unknown as ApplicationDocument });
     emit({ type: "dashboard", dashboardPageId: "page" });
-    expect(app.navigate).toHaveBeenCalledWith(expect.objectContaining({ view: "dashboard", applicationId: "app", projectId: "project", pageId: "page" }));
-    emit({ type: "dashboard", dashboardPageId: "missing" });
-    expect(app.navigate).toHaveBeenCalledOnce();
-    expect(app.showError).toHaveBeenCalledOnce();
+    expect(app.navigate).not.toHaveBeenCalled();
+    expect(app.showError).not.toHaveBeenCalled();
+  });
+
+  it("drops legacy-bus 2D page jumps without an explicit source while in 3D", () => {
+    const app = mount({ activeApplication: {
+      metadata: { id: "app", projectId: "project" }, pages: [{ id: "page" }], scenes: [],
+    } as unknown as ApplicationDocument });
+    target.dispatchEvent(new CustomEvent("bim-studio:interaction-action", { detail: { type: "dashboard", dashboardPageId: "page" } }));
+    expect(app.navigate).not.toHaveBeenCalled();
+  });
+
+  it("keeps widget-sourced 2D page jumps working inside the 2D dashboard context", () => {
+    const app = mount({ route: { view: "dashboard", projectId: "project", applicationId: "app", pageId: "current" } as Options["route"],
+      activeApplication: {
+        metadata: { id: "app", projectId: "project" }, pages: [{ id: "page" }], scenes: [],
+      } as unknown as ApplicationDocument });
+    emit({ type: "dashboard", dashboardPageId: "page" });
+    expect(app.navigate).toHaveBeenCalledWith(expect.objectContaining({ view: "dashboard", pageId: "page" }));
   });
 
   it("keeps Unity widget identity and falsy payloads", () => {

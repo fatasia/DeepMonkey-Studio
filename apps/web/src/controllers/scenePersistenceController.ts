@@ -37,6 +37,15 @@ import { makeSceneSnapshot } from "./sceneSnapshotFactory";
 import { createSceneWorkspaceNavigationActions } from "./sceneWorkspaceNavigationActions";
 import { createSceneSimulationController, mergeSavedSimulationScene } from "./sceneSimulationController";
 
+/**
+ * 离开三维工作台的预捕获保存件（P2-5「返回二维立即生效」）：作者快照与视口缩略图
+ * 在引擎存活时同步取好，导航立即生效，持久化经 saveScene(carry) 转后台执行。
+ */
+export interface SceneSaveCarry {
+  scene: SceneSnapshot;
+  thumbnail?: string;
+}
+
 /** 统一场景快照、保存、发布、导入导出事务，保证各入口使用同一套一致性规则。 */
 export function createScenePersistenceController(context: ScenePersistenceControllerContext) {
   const {
@@ -141,13 +150,27 @@ export function createScenePersistenceController(context: ScenePersistenceContro
     return makeSceneSnapshot(context);
   }
 
-  async function saveScene(automatic = false): Promise<SceneSnapshot | undefined> {
-    if (!engine?.isSceneSnapshotReady(activeScene?.id)) {
+  /**
+   * P2-5（2026-10-06 对抗测试第二轮 §4.2）：离开三维工作台的预捕获保存件。
+   * 作者快照与视口缩略图在引擎存活时同步取好；导航随即生效，持久化转后台
+   * （saveScene(carry) 消费），"返回二维"不再被大场景的网络保存阻塞十几秒。
+   */
+  function captureSceneSaveCarry(): SceneSaveCarry | undefined {
+    const snapshot = makeSnapshot();
+    if (!snapshot) return undefined;
+    const thumbnail = captureSceneThumbnail(engine);
+    return thumbnail ? { scene: snapshot, thumbnail } : { scene: snapshot };
+  }
+
+  async function saveScene(automatic = false, carry?: SceneSaveCarry): Promise<SceneSnapshot | undefined> {
+    // 预捕获路径跳过引擎就绪门：画布事实已在导航前取好，落盘阶段引擎可能已随视图
+    // 卸载，不得让保存被引擎状态否决（非 carry 路径守卫逐字保留）。
+    if (!carry && !engine?.isSceneSnapshotReady(activeScene?.id)) {
       if (!automatic) showError(new Error("场景尚未完整载入或渲染器正在恢复，请待载入完成后保存"));
       return;
     }
     const applicationBaseline = applicationSessionRef.current.getDocument();
-    const snapshot = makeSnapshot();
+    const snapshot = carry?.scene ?? makeSnapshot();
     if (!snapshot || !project) return;
     const projectId = project.id;
     const applyVersion = sceneApplyVersionRef.current;
@@ -155,21 +178,22 @@ export function createScenePersistenceController(context: ScenePersistenceContro
     if (!automatic) setBusy(true);
     try {
       // 保存时抓取当前视口作为场景缩略图（U1-9d：卡片默认展示最后保存的画面）；失败不阻断保存。
-      const sceneThumbnail = captureSceneThumbnail(engine);
+      const sceneThumbnail = carry ? carry.thumbnail : captureSceneThumbnail(engine);
       if (sceneThumbnail) snapshot.thumbnail = sceneThumbnail;
       // 引擎快照可比 React 闭包中的应用更新；送出前 Store 是并发编辑合并的唯一基线。
       const applicationDraft = route.applicationId && applicationBaseline?.metadata.id === route.applicationId
         && applicationBaseline.metadata.projectId === projectId ? syncSceneIntoApplication(applicationBaseline, snapshot) : undefined;
       // 网络请求发出前先保存轻量恢复副本；IndexedDB 不可用时仍继续正式保存。
       await writeWorkspaceRecoveryDraft(createWorkspaceRecoveryDraft(projectId, applicationDraft, snapshot));
-      if (!engine.isSceneSnapshotReady(activeScene?.id) || sceneApplyVersionRef.current !== applyVersion
-        || context.getActiveScene()?.id !== activeScene?.id) throw new Error("场景已切换或正在重新载入，本次保存已取消");
+      // carry 路径不读引擎：快照是导航前事实，引擎/代际门只保护"引擎读回"型保存。
+      if (!carry && (!engine?.isSceneSnapshotReady(activeScene?.id) || sceneApplyVersionRef.current !== applyVersion
+        || context.getActiveScene()?.id !== activeScene?.id)) throw new Error("场景已切换或正在重新载入，本次保存已取消");
       const workspace = applicationDraft ? await api.saveApplicationWorkspace(applicationDraft, snapshot) : undefined;
       const saved = workspace?.scene ?? (await api.saveScene(snapshot));
-      if (!engine.isSceneSnapshotReady(activeScene?.id) || sceneApplyVersionRef.current !== applyVersion || context.getActiveScene()?.id !== activeScene?.id) return saved;
+      if (!carry && (!engine?.isSceneSnapshotReady(activeScene?.id) || sceneApplyVersionRef.current !== applyVersion || context.getActiveScene()?.id !== activeScene?.id)) return saved;
       if (workspace) applicationSessionRef.current.acknowledgeSave(workspace.application, applicationBaseline);
       if (!activeScene) context.onFirstSceneSave?.(saved);
-      engine.bindSavedSceneSnapshot(saved.id);
+      engine?.bindSavedSceneSnapshot(saved.id);
       setActiveScene((current) => mergeSavedSimulationScene(current, activeScene, saved));
       // 只激活已保存身份，不重载引擎或重开应用，保留当前选择、未提交编辑与撤销栈。
       if (!activeScene && route.view === "studio") navigate({ ...route, projectId, sceneId: saved.id }, true);
@@ -473,6 +497,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
   return {
     makeSnapshot,
     saveScene,
+    captureSceneSaveCarry,
     commitSceneName,
     applyScene,
     createScene,

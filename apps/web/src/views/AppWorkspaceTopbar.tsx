@@ -98,6 +98,16 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
         if (current.state.route !== route) return;
         if (current.state.activeScene) {
           if (!current.state.sceneName.trim()) { await current.scenePersistence.commitSceneName(); return; }
+          // P2-5（2026-10-06 对抗测试第二轮 §4.2）："返回二维"曾被大场景的同步网络保存
+          // 阻塞十几秒才生效。修复 = 画布事实（作者快照+缩略图）在引擎存活时同步预捕获，
+          // 导航立即生效，持久化转后台执行；预捕获不可用（引擎未就绪/已释放）时退回
+          // "保存成功才离开"的旧契约，不为速度牺牲数据安全。
+          const carry = current.scenePersistence.captureSceneSaveCarry?.();
+          if (carry) {
+            if (latestBindings.current.state.route === route) await current.applicationRuntime.returnFromSceneEditor(destination);
+            await current.scenePersistence.saveScene(false, carry);
+            return;
+          }
           if (!(await current.scenePersistence.saveScene())) return;
         } else if (current.state.activeApplication && !(await current.applicationRuntime.saveActiveApplication())) return;
         if (latestBindings.current.state.route === route) await current.applicationRuntime.returnFromSceneEditor(destination);
