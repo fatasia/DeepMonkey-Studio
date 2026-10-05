@@ -24,6 +24,10 @@ pub mod fog;
 pub mod frame_layout_generated;
 #[cfg(test)]
 mod frame_layout_gate;
+#[cfg(test)]
+/// B2 frame v8 双端逐字节 golden 对拍 native 侧(fixture 单源:
+/// deep-engine/fixtures/frame-abi,TS twin 见 frameAbi/frameV8GoldenParity.test.ts)。
+mod frame_v8_golden_parity_tests;
 pub mod half_decode;
 pub mod hardware_ray_query;
 pub mod host_capabilities;
