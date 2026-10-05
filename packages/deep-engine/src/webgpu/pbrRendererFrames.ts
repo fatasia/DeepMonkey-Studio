@@ -82,6 +82,8 @@ import { PbrAutoExposureRuntime } from "./pbrAutoExposure.js";
 import { createVirtualTextureFrameBridge, type VirtualTextureFrameBridge } from "./virtualTextureFrameBridge.js";
 import { VirtualTextureTileLookupPass } from "./virtualTextureSampling.js";
 import { resolveRtShadowRoute, tickRtShadowScheduling, rtShadowRouteMetrics } from "./rtShadowScheduling.js";
+import { invertColumnMajor4x4 } from "./rtShadowFrame.js";
+import { RayTraceClosestFramePass } from "../rayTracing/rayTraceClosestFramePass.js";
 
 import { driveVirtualTextures, validateFrame, collectVirtualShadowObjects, resolutionScaleMetrics,
   passTimingsMetrics, sampleAdaptiveQuality, captureForFrame, allocationPlanFor, executedCapturePassIds } from "./pbrRendererFrameSupport.js";
@@ -114,6 +116,13 @@ export interface PbrRendererFrameHost {
    * 决策 ≤64 本地灯走既有簇光快路径,零 dispatch。
    */
   megaLights: MegaLightsFrameController | undefined;
+  /**
+   * B3 RT 反射 closest-hit 帧通道(opt-in features.rayTracedReflections):帧编排内
+   * 懒构造(场景复用 rtShadows.packedScene——独立场景供给通道属下一切片);默认
+   * undefined = 既有帧逐位零变化。当前切片为开关+管线挂载+帧计时披露,命中记录的
+   * 生产消费(SSR 屏外合成)未接线,如实登记。
+   */
+  rtReflections: import("../rayTracing/rayTraceClosestFramePass.js").RayTraceClosestFramePass | undefined;
   readonly deviceEpoch: RendererDeviceEpoch;
   readonly depthResolve: PbrDepthResolvePass | undefined;
   readonly diagnostics: PbrRendererDiagnostics;
@@ -191,6 +200,15 @@ export interface PbrRendererFrameHost {
 
 /** a2c 设备探针每帧只跑一次的帧号去重(模块级;进程生命周期语义)。 */
 const a2cDeviceProbeSettled = new Set<number>();
+
+/** RT 反射通道的 depth 采样视图缓存(纹理身份 → 2d 单层;同 megaLights 控制器惯例)。 */
+const rtReflectionsDepthViews = new WeakMap<GPUTexture, GPUTextureView>();
+
+function rtReflectionsDepthViewFor(texture: GPUTexture): GPUTextureView {
+  let view = rtReflectionsDepthViews.get(texture);
+  if (!view) rtReflectionsDepthViews.set(texture, view = texture.createView({ dimension: "2d", mipLevelCount: 1, arrayLayerCount: 1 }));
+  return view;
+}
 
 export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView): FrameMetrics | undefined {
     const begin = host.now();
@@ -323,6 +341,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     const device = host.session.device;
     let submitAttempted = false;
     let particleReactive: PbrTransientTextureHandle | undefined;
+    let rtReflectionsHit: PbrTransientTextureHandle | undefined;
     let captureOpen = false;
     try {
       const frameNumber = host.frame + 1;
@@ -571,6 +590,64 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
         worldToView: frameState.worldToView,
         lights: transformWorldLightsToView(sceneLighting.clustered, frameState.worldToView) });
     }
+    // B3 RT 反射 closest-hit 帧通道(opt-in features.rayTracedReflections,默认关 =
+    // 运行时不存在,帧逐位零变化):主帧 1x depth(本帧,depth resolve 之后)重建着色点,
+    // 沿镜面反射方向两级 TLAS→BLAS closest-hit,rgba32float [t,normal.xyz] 命中记录
+    // 写瞬态纹理。场景复用 RT 阴影 staging 通道(未 staging = 不挂载,fail-closed 不
+    // 静默假开);命中记录的生产消费(SSR 屏外合成/环境采样族)属下一切片——当前
+    // 只挂载管线 + passTiming 标记 + FrameMetrics.rtReflections 披露,画面零变化,
+    // 视觉验收如实声明未接线。
+    let rtReflectionsMetrics: FrameMetrics["rtReflections"] | undefined;
+    if (host.features.rayTracedReflections && !directClear) {
+      const packedScene = host.rtShadows?.packedScene;
+      if (packedScene !== undefined) {
+        try {
+          host.rtReflections ??= new RayTraceClosestFramePass(host.session.device, packedScene);
+        } catch (error) {
+          // fail-closed:f16 缺 feature / WGSL 校验失败 / 超 maxInstances——禁用本帧
+          // 通道并如实披露,不静默假开,不抛穿渲染循环(同 rtShadows staging 语义)。
+          host.rtReflections = undefined;
+          rtReflectionsMetrics = { dispatched: false, reason: `staging: ${(error as Error).message}` };
+        }
+        if (host.rtReflections !== undefined) {
+          if (host.rtReflections.packed !== packedScene) {
+            if (host.rtReflections.packed.blasNodeCount === packedScene.blasNodeCount
+              && host.rtReflections.packed.triangleCount === packedScene.triangleCount) {
+              host.rtReflections.updateTlasRegion(packedScene);
+            } else {
+              // BLAS 段变化:整体重建 pass(同 shadow 家族 staging 合同;构造失败回
+              // 上一档 disabled 披露)。
+              host.rtReflections.destroy();
+              host.rtReflections = new RayTraceClosestFramePass(host.session.device, packedScene);
+            }
+          }
+          rtReflectionsHit = host.transientTextures.acquire({ resourceId: "rt-reflection-closest",
+            format: "rgba32float", width: size.width, height: size.height, sampleCount: 1,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
+          const invVp = invertColumnMajor4x4(frameState.depthViewProjection);
+          const frameEye = view.cameraWorldPosition === undefined ? view.eye
+            : [view.eye[0] - view.cameraWorldPosition[0], view.eye[1] - view.cameraWorldPosition[1],
+              view.eye[2] - view.cameraWorldPosition[2]] as const;
+          // 帧时披露口径:encode 沿 shadow 家族合同异步(await validated),GPU 逐 pass
+          // 计时待本通道进入帧执行计划(F1 图节点)后接 passTiming;当前开关帧时差经
+          // 既有帧级三段计时(T25)对比,FrameMetrics.rtReflections 披露 dispatch 形状。
+          void host.rtReflections.encode(encoder, {
+            depthView: rtReflectionsDepthViewFor(host.targets.depthTexture),
+            hitView: rtReflectionsHit.view,
+            width: size.width, height: size.height,
+            invViewProjection: [invVp[0]!, invVp[1]!, invVp[2]!, invVp[3]!, invVp[4]!, invVp[5]!,
+              invVp[6]!, invVp[7]!, invVp[8]!, invVp[9]!, invVp[10]!, invVp[11]!, invVp[12]!,
+              invVp[13]!, invVp[14]!, invVp[15]!],
+            eye: frameEye, tMax: view.extent * 8, bias: Math.max(1e-4, view.extent * 1e-3),
+            rayMask: 0xffffffff,
+          });
+          rtReflectionsMetrics = { dispatched: true, width: size.width, height: size.height,
+            dispatchX: Math.ceil(size.width / 8), dispatchY: Math.ceil(size.height / 8) };
+        }
+      } else {
+        rtReflectionsMetrics = { dispatched: false, reason: "scene-not-staged" };
+      }
+    }
     // Particle simulation commits asynchronously; consume the latest committed binding here.
     // A one-frame simulation-to-render latency avoids queue stalls and keeps particle count
     // fully GPU-driven (drawIndirect never reads instance count back to JS).
@@ -742,6 +819,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     if (clusterLod && clusterLodSupported) void clusterLod.ingest().catch(error => clusterLod.noteIngestFailure(error));
     // TAA 已在 submit 前读取响应掩码；队列有序保证提交后释放可安全回池复用。
     if (particleReactive) { host.transientTextures.release(particleReactive); particleReactive = undefined; }
+    if (rtReflectionsHit) { host.transientTextures.release(rtReflectionsHit); rtReflectionsHit = undefined; }
     host.targets.commitFrame();
     if (host.frameCapture && captureOpen) host.lastFrameReadback = host.frameCapture.collectReadbacksAfterSubmit();
     // A2C-P1 探针:submit 已落队,读回异步结算后冻结判定(下一帧起经 FrameMetrics 披露)。
@@ -803,7 +881,8 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       ...(virtualTexturesMetrics ? { virtualTextures: virtualTexturesMetrics } : {}),
       ...(host.contactShadows ? host.contactShadows.metrics : {}),
       ...(host.sdfGi ? host.sdfGi.metrics : {}),
-      ...(host.megaLights ? { megaLights: host.megaLights.metrics } : {}) };
+      ...(host.megaLights ? { megaLights: host.megaLights.metrics } : {}),
+      ...(rtReflectionsMetrics ? { rtReflections: rtReflectionsMetrics } : {}) };
     sampleAdaptiveQuality(host, metrics);
     if (!host.adaptiveQuality) return metrics;
     const hotspots = host.adaptiveQuality.hotspotSummary();
@@ -814,6 +893,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       host.postProcess.cancelFrame(history.revision);
       host.transparency.cancelFrame();
       if (particleReactive) { host.transientTextures.release(particleReactive); particleReactive = undefined; }
+    if (rtReflectionsHit) { host.transientTextures.release(rtReflectionsHit); rtReflectionsHit = undefined; }
       host.targets.failFrame();
       host.a2cProbe?.cancelFrame();
       host.packets.cancelDeformationFrame();

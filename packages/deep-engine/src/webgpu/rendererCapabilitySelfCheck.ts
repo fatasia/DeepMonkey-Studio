@@ -170,10 +170,12 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
   },
   {
     // B3 反射 closest-hit 帧通道(2026-10-05):内核/执行器+真机对拍门就位
-    // (scripts/reflectionRayGpuTest.mjs PASSED);生产帧消费接线(SSR 屏外合成族)
-    // 属下一切片,如实 harness-only,不加 PbrRendererFeatures 键。
-    capabilityId: "ray-traced-reflections", support: "supported", reason: "harness-only",
-    observed: {},
+    // (scripts/reflectionRayGpuTest.mjs PASSED)。2026-10-06 生产帧挂载:features
+    // rayTracedReflections 键 + pbrRendererFrames 帧内懒构造(场景复用 RT 阴影 staging);
+    // 命中记录的生产消费(SSR 屏外合成族)未接线,画面零变化,如实 opt-in-default-off;
+    // URL 开关待桥 features 字面量单行接线(桥文件本批禁碰)。
+    capabilityId: "ray-traced-reflections", support: "supported", reason: "opt-in-default-off",
+    observed: { rayTracedReflections: FEATURE_DEFAULTS.rayTracedReflections },
   },
   {
     capabilityId: "virtual-textures", support: "supported", reason: "opt-in-default-off",

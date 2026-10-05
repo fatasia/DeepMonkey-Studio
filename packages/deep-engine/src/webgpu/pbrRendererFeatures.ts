@@ -56,6 +56,14 @@ export interface PbrRendererFeatureOptions {
    * 快路径(逐位既有路径)。关闭时控制器不构建,帧逐位零变化。
    */
   readonly megaLights?: boolean;
+  /**
+   * B3 RT 反射 closest-hit 帧通道(opt-in,默认关):主帧 depth 重建着色点沿镜面
+   * 反射方向发射两级 BVH closest-hit,rgba32float 命中记录写入瞬态纹理。帧编排内
+   * 懒构造,场景复用 RT 阴影 staging 通道(rtShadows.packedScene);关闭时运行时
+   * 不构建,既有帧逐位零变化。命中记录的生产消费(SSR 屏外合成/环境采样族)属
+   * 下一切片——开启本键当前只挂载管线与帧计时,不改变画面。
+   */
+  readonly rayTracedReflections?: boolean;
 }
 
 export interface PbrRendererFeatures {
@@ -82,6 +90,7 @@ export interface PbrRendererFeatures {
   readonly rayTracedShadows: boolean;
   readonly sdfGi: boolean;
   readonly megaLights: boolean;
+  readonly rayTracedReflections: boolean;
 }
 
 export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze({
@@ -95,6 +104,7 @@ export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze(
   rayTracedShadows: false,
   sdfGi: false,
   megaLights: false,
+  rayTracedReflections: false,
 });
 
 export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = {}): PbrRendererFeatures {
@@ -127,5 +137,6 @@ export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = 
     debugForceFullRender: boolean("debugForceFullRender"),
     rayTracedShadows: boolean("rayTracedShadows"),
     sdfGi: boolean("sdfGi"),
-    megaLights: boolean("megaLights") });
+    megaLights: boolean("megaLights"),
+    rayTracedReflections: boolean("rayTracedReflections") });
 }

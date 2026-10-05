@@ -262,6 +262,13 @@ export interface FrameMetrics {
    * (≤64 灯帧 reason=within-cluster-budget 且零 dispatch)。
    */
   readonly megaLights?: import("../lighting/megaLightsFrameController.js").MegaLightsFrameMetrics;
+  /**
+   * B3 RT 反射 closest-hit 帧通道遥测(features.rayTracedReflections 开启时出现):
+   * dispatched=false 携带 reason(场景未 staging/构造失败,如实披露);dispatched=true
+   * 为本帧 dispatch 形状。命中记录的生产消费未接线,画面零变化(下一切片)。
+   */
+  readonly rtReflections?: { dispatched: boolean; reason?: string;
+    width?: number; height?: number; dispatchX?: number; dispatchY?: number };
   readonly postProcessPasses: number; readonly weightedOit: boolean;
   readonly hiZMipLevels: number; readonly occlusionCulling: boolean;
   readonly frustumCulledBatches: number; readonly hiZOccludedBatches: number; readonly lodSelectionBatches: number; readonly lodIndirectDraws: number;

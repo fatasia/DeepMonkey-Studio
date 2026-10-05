@@ -116,6 +116,8 @@ export class RtShadowFrameController {
 
   get maskView(): GPUTextureView { return this.maskView_!; }
   get sceneStaged(): boolean { return this.sceneCommitted; }
+  /** 当前已staging的 TLAS 打包场景(RT 反射通道场景复用;未 staging 为 undefined)。 */
+  get packedScene(): import("../rayTracing/tlasLayout.js").TlasPackedScene | undefined { return this.pass?.packed; }
 
   /** 调用方供给 TLAS 打包场景(BLAS 段计数变化整体重建 pass,否则增量 TLAS)。 */
   stageScene(packed: TlasPackedScene): void {
