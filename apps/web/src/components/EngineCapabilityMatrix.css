@@ -1,0 +1,255 @@
+/* 六引擎对标 P2:公开引擎能力矩阵(文档中心内嵌活动组件)。
+   一切颜色取 base.css 令牌派生(color-mix 不新造色),深浅主题自动跟随 DocsCenter。 */
+.engine-capability-matrix {
+  display: grid;
+  gap: 18px;
+  margin-top: 14px;
+}
+
+.capm-note {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.capm-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.capm-legend-title {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.capm-legend-item {
+  display: inline-flex;
+}
+
+.capm-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text-strong);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.capm-pill.ok {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 38%, transparent);
+  background: color-mix(in srgb, var(--success) 9%, transparent);
+}
+
+.capm-pill.optin {
+  color: var(--info);
+  border-color: color-mix(in srgb, var(--info) 38%, transparent);
+  background: color-mix(in srgb, var(--info) 9%, transparent);
+}
+
+.capm-pill.warn {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 38%, transparent);
+  background: color-mix(in srgb, var(--warning) 9%, transparent);
+}
+
+.capm-pill.planned {
+  color: var(--text-muted);
+  border-color: color-mix(in srgb, var(--text-muted) 40%, transparent);
+}
+
+.capm-pill.blocked {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 38%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.capm-section {
+  display: grid;
+  gap: 10px;
+}
+
+.capm-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.capm-section-head h3 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 16px;
+}
+
+.capm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.capm-chip {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  border: 1px solid var(--line-strong);
+  color: var(--text-strong);
+  background: var(--surface-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.capm-chip.ok {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 38%, transparent);
+}
+
+.capm-chip.warn {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 38%, transparent);
+}
+
+.capm-chip.planned {
+  color: var(--text-muted);
+}
+
+.capm-domain {
+  display: grid;
+  gap: 6px;
+}
+
+.capm-domain h4 {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text-strong);
+  font-size: 13.5px;
+}
+
+.capm-domain h4 small {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+
+.capm-table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  scrollbar-gutter: stable;
+}
+
+.capm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.capm-table th {
+  position: sticky;
+  top: 0;
+  padding: 8px 10px;
+  text-align: left;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+
+.capm-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  color: var(--text);
+}
+
+.capm-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.capm-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--surface-3) 55%, transparent);
+}
+
+.capm-table td strong {
+  display: block;
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.capm-table td small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.capm-table code {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.capm-evidence-cell {
+  max-width: 260px;
+}
+
+.capm-evidence-cell code {
+  cursor: default;
+}
+
+.capm-evidence-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 3px;
+}
+
+.capm-evidence-empty {
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.capm-empty {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.capm-footnote {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+  color: var(--text-faint);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.capm-footnote svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--success);
+}

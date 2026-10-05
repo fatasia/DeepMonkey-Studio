@@ -36,6 +36,7 @@ describe("local documentation catalog", () => {
       "deep-engine-sdk",
       "engine-design-influences",
       "engine-benchmarks",
+      "engine-capability-matrix",
       "contributing",
       "community",
       "open-source-assets",

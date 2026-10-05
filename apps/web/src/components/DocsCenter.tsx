@@ -4,6 +4,7 @@ import { resolveDocsDestination, searchDocs, type MarkdownBlock, type MarkdownIn
 import { DOCS_VERSION, docsCategories, docsDocuments } from "../docs/docsCatalog";
 import { DocsCenterCodeBlock } from "./DocsCenterCodeBlock";
 import { DocsSdkExamples, type DocsSdkExamplesProps } from "./DocsSdkExamples";
+import { EngineCapabilityMatrix } from "./EngineCapabilityMatrix";
 import "./DocsCenter.css";
 
 export interface DocsCenterProps {
@@ -158,6 +159,8 @@ export function DocsCenter({ documentId, systemName, onNavigate, onClose, sdkExa
                 {renderBlock(block, index, activeDocument.id, navigateTo)}
                 {activeDocument.id === "sdk-examples" && index === 1 && <DocsSdkExamples {...(sdkExampleContext ? { context: sdkExampleContext } : {})} {...(onInsertSdkExample ? { onInsert: onInsertSdkExample } : {})} />}
               </Fragment>)}
+              {/* 六引擎对标 P2:能力矩阵页=导语文档+活动组件(数据单源=contracts 登记表,运行时生成)。 */}
+              {activeDocument.id === "engine-capability-matrix" && <EngineCapabilityMatrix />}
             </div>
             <footer className="docs-article-footer">
               <div><span>本文档随客户端离线提供</span><span>版本 {activeDocument.version}</span></div>
