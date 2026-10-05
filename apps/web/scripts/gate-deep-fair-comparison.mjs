@@ -211,14 +211,27 @@ async function sampleStaticFrames(page) {
   const result = await page.evaluate(samples => new Promise(resolve => {
     const intervals = [];
     let last = performance.now();
+    // F8 GPU 显存通道:Deep 链经 __deepQualityTelemetry.latestMemory.estimatedBytes
+    // (引擎 DeviceResourceMemory 字节级估计);WebGL 无该通道,如实 null。
+    const gpuMemorySamples = [];
+    const readGpuMemory = () => {
+      const tel = globalThis.__deepQualityTelemetry;
+      const bytes = tel?.latestMemory?.estimatedBytes;
+      if (typeof bytes === "number" && Number.isFinite(bytes) && bytes > 0) {
+        gpuMemorySamples.push(bytes / (1024 * 1024));
+      }
+    };
     const tick = now => {
       intervals.push(now - last);
       last = now;
+      readGpuMemory();
       if (intervals.length >= samples) {
         const sorted = intervals.slice(1).sort((a, b) => a - b);
         const at = ratio => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * ratio))] ?? 0;
+        const gpuMedian = gpuMemorySamples.length > 0
+          ? gpuMemorySamples.slice().sort((a, b) => a - b)[Math.floor(gpuMemorySamples.length / 2)] : null;
         resolve({ sampledFrames: sorted.length, p50Ms: at(0.5), p95Ms: at(0.95), p99Ms: at(0.99),
-          maxMs: sorted[sorted.length - 1] ?? 0 });
+          maxMs: sorted[sorted.length - 1] ?? 0, gpuMemoryMbMedian: gpuMedian });
         return;
       }
       requestAnimationFrame(tick);
