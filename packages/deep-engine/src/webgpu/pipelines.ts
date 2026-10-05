@@ -1,7 +1,9 @@
 import type { AlphaMode } from "../renderPacket.js";
 export { authoredShadowPipelines } from "./authoredShadowPipelines.js";
-import { sceneShader, sceneShaderRayTracedShadows, outputShader } from "./pbrShader.js";
-import { deformedSceneShader, deformedSceneShaderRayTracedShadows } from "./pbrDeformationShader.js";
+import { sceneShader, sceneShaderRayTracedShadows, sceneShaderVirtualShadows,
+  sceneShaderVirtualShadowsRayTracedShadows, outputShader } from "./pbrShader.js";
+import { deformedSceneShader, deformedSceneShaderRayTracedShadows,
+  deformedSceneShaderVirtualShadows, deformedSceneShaderVirtualShadowsRayTracedShadows } from "./pbrDeformationShader.js";
 import type { MaterialLayouts } from "./materialBindings.js";
 import { PBR_DEPTH_FORMAT, PBR_HDR_FORMAT, resolvePbrMsaaSampleCount, PBR_OPAQUE_ATTACHMENT_FORMATS } from "./renderTargets.js";
 import { weightedOitColorTargets } from "./weightedOit.js";
@@ -109,6 +111,14 @@ export interface PipelinesBuildOptions {
    *  追加 binding(3) r32float mask 槽。默认关 —— 与默认构建逐管线逐字节一致。 */
   readonly rayTracedShadows?: boolean;
   /**
+   * B1 Brief-VSM 虚拟阴影档(opt-in,shadowMode="virtual" 构建期推导):主 shader 保留
+   * 虚拟阴影采样库与 params2.x 门行(sceneShaderVirtualShadows 家族)。缺省关 = 默认档
+   * 剥离该库(级联档 params2.x 恒 0 时整库不可达;首帧 critical main 编译墙实测大头
+   * 之一,剥离斜率 fragmentMaterial -341ms / fragmentMain -93ms)。绑定面(group 0
+   * binding 12..14)在两档 bind group layout 中恒存在,装配路径零变化。
+   */
+  readonly virtualShadowPages?: boolean;
+  /**
    * AA-M1 主 pass 采样数(能力解析后的生效值,1 或 4):只作用于 HDR 主 opaque 管线
    * (mainPipelines)与主 pass 内绘制的全景背景/簇级 bundle;直出 display 管线渲染进
    * 1x swapchain,恒 1;阴影图集管线恒 1。缺省 = 请求常量(4),由调用方(bootstrap
@@ -160,6 +170,8 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   // M2 方向光 RT 阴影(opt-in):主 shader 走 RT 变体(deepPrimaryShadow 的 mask 采样
   // 分支 + group(2) binding(3));默认关时 moduleCode 与历史逐字节一致。
   const rayTracedShadows = options.rayTracedShadows === true;
+  // B1 Brief-VSM 虚拟阴影档(opt-in):shadowMode="virtual" 构建期推导,保留虚拟采样库。
+  const virtualShadowPages = options.virtualShadowPages === true;
   // AA-M1:主 pass 采样数在构建期定死(渲染器构造期已按设备能力解析),undefined = 请求常量。
   const mainSampleCount = resolvePbrMsaaSampleCount(options.mainSampleCount);
   if (advancedMaterials && (layeredMaterials || textureArrays)) throw new Error("Advanced materials cannot combine with layered or texture-array pipelines.");
@@ -185,8 +197,12 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     binding, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage", minBindingSize: 48 },
   })) : [];
   const source = deformation
-    ? (rayTracedShadows ? deformedSceneShaderRayTracedShadows : deformedSceneShader)
-    : (rayTracedShadows ? sceneShaderRayTracedShadows : sceneShader);
+    ? (virtualShadowPages
+      ? (rayTracedShadows ? deformedSceneShaderVirtualShadowsRayTracedShadows : deformedSceneShaderVirtualShadows)
+      : (rayTracedShadows ? deformedSceneShaderRayTracedShadows : deformedSceneShader))
+    : (virtualShadowPages
+      ? (rayTracedShadows ? sceneShaderVirtualShadowsRayTracedShadows : sceneShaderVirtualShadows)
+      : (rayTracedShadows ? sceneShaderRayTracedShadows : sceneShader));
   const moduleCode = textureArrays ? composeTextureArraySceneShader(source)
     : layeredMaterials ? composeLayeredMaterialSceneShader(source)
       : advancedMaterials ? composeAdvancedMaterialSceneShader(source) : source;

@@ -1,4 +1,4 @@
-import { sceneShader, sceneShaderRayTracedShadows } from "./pbrShader.js";
+import { sceneShader, sceneShaderRayTracedShadows, sceneShaderVirtualShadows, sceneShaderVirtualShadowsRayTracedShadows } from "./pbrShader.js";
 
 /** 48-byte current/previous streams share material group 1 without adding vertex attributes. */
 export const PBR_DEFORMATION_VERTEX_WGSL = /* wgsl */ `
@@ -56,3 +56,11 @@ export const deformedSceneShader = `${sceneShader}\n${PBR_DEFORMATION_VERTEX_WGS
 /** M2 光追阴影变形变体(features.rayTracedShadows):mask 采样分支随 RT 主 shader 注入,
  *  顶点位流与默认变形变体逐字节一致。 */
 export const deformedSceneShaderRayTracedShadows = `${sceneShaderRayTracedShadows}\n${PBR_DEFORMATION_VERTEX_WGSL}`;
+
+/** B1 Brief-VSM 虚拟档变形变体(shadowMode="virtual" 构建档):主 shader 保留虚拟
+ *  采样库与门行(同 sceneShaderVirtualShadows 的选择语义),变形顶点位流零变化。 */
+export const deformedSceneShaderVirtualShadows = `${sceneShaderVirtualShadows}\n${PBR_DEFORMATION_VERTEX_WGSL}`;
+
+/** 虚拟阴影 × RT 阴影组合变形档(shadowMode="virtual" + features.rayTracedShadows)。 */
+export const deformedSceneShaderVirtualShadowsRayTracedShadows =
+  `${sceneShaderVirtualShadowsRayTracedShadows}\n${PBR_DEFORMATION_VERTEX_WGSL}`;

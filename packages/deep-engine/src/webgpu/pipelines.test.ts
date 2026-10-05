@@ -266,4 +266,23 @@ describe("first-frame critical pipeline subset", () => {
     expect(build.pipelines.mainPipelines.size).toBe(27);
     expect(build.pipelines.shadowPipelines.size).toBe(9);
   });
+
+  it("keeps the virtual shadow library out of the default module and in the virtualShadowPages module (B1 variant)", async () => {
+    const f = fixture();
+    await createPipelines(f.device, "bgra8unorm", {} as GPUBindGroupLayout);
+    const moduleCode = vi.mocked(f.device.createShaderModule).mock.calls
+      .find(([descriptor]) => descriptor.label === "Deep PBR")![0].code as string;
+    // 默认(级联)档:VSM 采样库 + params2.x 门行剥离(首帧编译墙第二刀)。
+    expect(moduleCode).not.toContain("deepVirtualShadow");
+    expect(moduleCode).not.toContain("deepVsmMeta");
+    // 虚拟档:库与门行保留(与变体化前历史全量文本同族)。
+    const v = fixture();
+    await createPipelines(v.device, "bgra8unorm", {} as GPUBindGroupLayout, true, false, false,
+      { virtualShadowPages: true });
+    const virtualCode = vi.mocked(v.device.createShaderModule).mock.calls
+      .find(([descriptor]) => descriptor.label === "Deep PBR")![0].code as string;
+    expect(virtualCode).toContain("deepVirtualShadow");
+    expect(virtualCode).toContain("@group(0) @binding(12) var<storage, read> deepVsmMeta : array<vec4u>;");
+    expect(virtualCode.length).toBeGreaterThan(moduleCode.length);
+  });
 });

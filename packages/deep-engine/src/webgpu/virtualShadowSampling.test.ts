@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { packVirtualShadowPageTable, packVirtualShadowSlot, VIRTUAL_SHADOW_WGSL } from "./virtualShadowSampling.js";
 import { packVirtualShadowUniform, VIRTUAL_SHADOW_PAGE_FRAME_SLOTS } from "./virtualShadowResources.js";
 import { planVirtualShadowClipmap } from "../shadows/virtualShadowClipmap.js";
-import { sceneShader } from "./pbrShader.js";
+import { sceneShader, sceneShaderVirtualShadows, sceneShaderVirtualShadowsRayTracedShadows,
+  VIRTUAL_SHADOW_GATE_LINE } from "./pbrShader.js";
 
 describe("virtual shadow page table packing", () => {
   it("packs slots losslessly in layer·256 + tileY·16 + tileX order", () => {
@@ -62,9 +63,13 @@ describe("virtual shadow uniform ABI", () => {
 });
 
 describe("virtual shadow WGSL composition", () => {
+  // B1 Brief-VSM 变体化(首帧编译墙第二刀,2026-10-05):虚拟库与门行改为构建期档
+  // (shadowMode="virtual" → sceneShaderVirtualShadows 家族),默认(级联)档剥离。
+  // 剥离的代码在级联档 params2.x=0 下不可达,视觉输出逐字节不变;本组断言把两档
+  // 的组合合同分别钉死。
   it("branches the primary shadow before cascades only in virtual mode and declares group-2 page bindings", () => {
-    const gate = sceneShader.slice(sceneShader.indexOf("fn deepPrimaryShadow("),
-      sceneShader.indexOf("struct DirectDisplayVertex"));
+    const gate = sceneShaderVirtualShadows.slice(sceneShaderVirtualShadows.indexOf("fn deepPrimaryShadow("),
+      sceneShaderVirtualShadows.indexOf("struct DirectDisplayVertex"));
     expect(gate).toContain("if (frame.background.w <= 0.0 || flag(flags, 16u)) { return 1.0; }");
     // 虚拟分支位于级联采样之前,且由 params2.x 门控(级联档恒 0,行为逐字节保持)。
     // 环梯度在函数顶部一致流预取(fwidth ×3,任何分支之前),7 参合同传入。
@@ -72,9 +77,31 @@ describe("virtual shadow WGSL composition", () => {
     expect(gate.match(/fwidth\(/g)?.length).toBe(3);
     expect(gate.indexOf("fwidth(")).toBeLessThan(gate.indexOf("if (frame.background.w"));
     expect(gate.indexOf("deepCascade.params2.x")).toBeLessThan(gate.indexOf("deepCascadedShadow("));
-    expect(sceneShader).toContain("@group(0) @binding(12) var<storage, read> deepVsmMeta : array<vec4u>;");
-    expect(sceneShader).toContain("@group(0) @binding(13) var<storage, read> deepVsmLayers : array<i32>;");
-    expect(sceneShader).toContain("@group(0) @binding(14) var deepVsmAtlas : texture_2d_array<f32>;");
+    expect(sceneShaderVirtualShadows).toContain("@group(0) @binding(12) var<storage, read> deepVsmMeta : array<vec4u>;");
+    expect(sceneShaderVirtualShadows).toContain("@group(0) @binding(13) var<storage, read> deepVsmLayers : array<i32>;");
+    expect(sceneShaderVirtualShadows).toContain("@group(0) @binding(14) var deepVsmAtlas : texture_2d_array<f32>;");
+  });
+  it("keeps the virtual library and gate out of the default (cascaded) composition", () => {
+    // 默认档负断言:整库 + 门行全部缺席(编译墙剥离的机器证明;uniform ABI 的
+    // params2 struct 字段与级联库注释保留 —— 宿主打包布局稳定)。
+    expect(sceneShader).not.toContain("deepVirtualShadow");
+    expect(sceneShader).not.toContain("deepVsmMeta");
+    expect(sceneShader).not.toContain("deepVsmLayers");
+    expect(sceneShader).not.toContain("deepVsmAtlas");
+    expect(sceneShader).not.toContain("deepCascade.params2.x");
+    // RT 变体同档剥离;组合档(虚拟×RT)两者兼备。
+    expect(sceneShaderVirtualShadowsRayTracedShadows).toContain("deepVirtualShadow");
+    expect(sceneShaderVirtualShadowsRayTracedShadows).toContain("deepRayTracedShadowMask");
+    // strip 锚与真源行逐字节互钉(锚漂移 → pbrShader 组合在模块加载期抛错)。
+    expect(sceneShaderVirtualShadows).toContain(VIRTUAL_SHADOW_GATE_LINE);
+  });
+  it("derives the default composition from the virtual one by exactly removing the library and gate line", () => {
+    // 组合数学锁死:默认档 ≡ 虚拟档 −(VSM 库段 + 门行)。该等式保证剥离不引入任何
+    // 额外文本改写(视觉输出逐字节不变的构造性证明;像素级守卫由 gate 对拍承担)。
+    expect(sceneShader)
+      .toBe(sceneShaderVirtualShadows
+        .replace(`${VIRTUAL_SHADOW_WGSL}\n`, "\n")
+        .replace(VIRTUAL_SHADOW_GATE_LINE, ""));
   });
 
   it("keeps the zero-hole fallback chain and page-local clamped PCSS taps in the library", () => {

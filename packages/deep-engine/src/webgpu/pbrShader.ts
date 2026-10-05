@@ -44,6 +44,37 @@ function stripRtShadowBranch(body: string): string {
     "directDisplay.wgsl RT shadow branch block drifted; run `pnpm --filter @bim-studio/deep-engine wgsl:sync`.");
   return stripped;
 }
+/** B1 Brief-VSM 虚拟档门行(directDisplay.wgsl 真源中的单行,strip 锚)。
+ *  默认(级联)档剥离该行 —— params2.x 在级联档恒 0,该行不可达,视觉输出逐字节不变;
+ *  虚拟档(sceneShaderVirtualShadows)保留原行。缺失即抛(同 RT_SHADOW_BRANCH_BLOCK 先例,
+ *  WGSL 无宏,replace 锚不命中会静默跳过 —— 必须显式失败)。单一真源,禁止测试侧重抄。 */
+export const VIRTUAL_SHADOW_GATE_LINE =
+  "  if (deepCascade.params2.x > 0.5) { return deepVirtualShadow(world, normal, nDotL, pixel, grad0, grad1, grad2); }\n";
+function stripVirtualShadowGate(body: string): string {
+  const stripped = body.replace(VIRTUAL_SHADOW_GATE_LINE, "");
+  if (stripped === body) throw new Error(
+    "directDisplay.wgsl virtual-shadow gate line drifted; run `pnpm --filter @bim-studio/deep-engine wgsl:sync`.");
+  return stripped;
+}
+interface SceneShaderVariantOptions {
+  /** 保留 B1 虚拟阴影采样库与门行(shadowMode="virtual" 构建档)。缺省剥离:库 6.2KB
+   *  是首帧 critical main 管线编译墙的实测大头之一(斜率 -341ms@fragmentMaterial),
+   *  级联档参数门 params2.x=0 时整库不可达。 */
+  readonly virtualShadows?: boolean;
+  /** 保留 M2 RT 阴影分支与 mask 绑定声明(features.rayTracedShadows 构建档)。 */
+  readonly rayTracedShadows?: boolean;
+}
+const buildSceneShader = (directDisplay: string, options: SceneShaderVariantOptions = {}): string => {
+  const core = buildSceneShaderCore(options.rayTracedShadows === true
+    ? directDisplay : stripRtShadowBranch(directDisplay));
+  const scene = options.virtualShadows === true ? core : stripVirtualShadowGate(core);
+  const composed = composeForwardPlusPbrShader(
+    `${CASCADED_SHADOW_WGSL}\n${options.virtualShadows === true ? VIRTUAL_SHADOW_WGSL : ""}\n${scene}`,
+    "direct-multiscattering");
+  // RT mask 声明必须在 Forward+ 组合之后尾部追加(变体差集合同:pbrShaderRtVariant.test
+  // 的字节级还原等式以此为锚;放进 compose 内部会改变与 group(3) 库的相对顺序)。
+  return options.rayTracedShadows === true ? `${composed}\n${DEEP_RAY_TRACED_SHADOW_MASK_WGSL}` : composed;
+};
 const buildSceneShaderCore = (directDisplay: string): string => /* wgsl */ `
 ${WEIGHTED_OIT_FRAGMENT_WGSL}
 ${PBR_DISPLAY_COLOR_WGSL}
@@ -392,25 +423,34 @@ fn extendedShade(v: Vertex, normal: vec3f, geometryNormal: vec3f, surface: Surfa
   return deepWeightedOit(color, alpha, depth);
 }
 `;
-// 默认档:剥离 RT 分支块(与历史 sceneShader 逐字节一致 —— 改动前 baseline 的字节等价
-// 由 outputFamilyWgslChecksum.test.ts 的 strip 恒等断言机器证明)。
-export const sceneShaderCore = buildSceneShaderCore(stripRtShadowBranch(PBR_DIRECT_DISPLAY_WGSL));
+// 默认档:剥离 RT 分支块与虚拟阴影门行(级联档两块均不可达,视觉输出逐字节不变)。
+// 改动前 baseline 的字节等价由 outputFamilyWgslChecksum.test.ts 的 strip 恒等断言机器证明。
+export const sceneShaderCore = stripVirtualShadowGate(buildSceneShaderCore(stripRtShadowBranch(PBR_DIRECT_DISPLAY_WGSL)));
 
 /** Ready-to-compile default module with the fixed Forward+ group-3 library.
- *  B1 Brief-VSM:虚拟阴影采样库紧随级联库注入(params2.x=0 时虚拟分支全部不进入,
- *  级联档 WGSL 行为逐字节等价;stock WGSL 变更 diff 见交付报告)。
- *  M2 光追阴影:默认档剥离 RT 分支块,本导出与历史文本逐字节一致(零变化证明见
- *  outputFamilyWgslChecksum.test.ts 的 strip 恒等断言)。 */
-export const sceneShader = composeForwardPlusPbrShader(
-  `${CASCADED_SHADOW_WGSL}\n${VIRTUAL_SHADOW_WGSL}\n${sceneShaderCore}`, "direct-multiscattering");
+ *  M2 光追阴影:默认档剥离 RT 分支块。B1 Brief-VSM 变体化(首帧编译墙第二刀,
+ *  2026-10-05):默认档同时剥离虚拟阴影采样库(VIRTUAL_SHADOW_WGSL,6.2KB)与
+ *  deepPrimaryShadow 的 params2.x 门行 —— 级联档 params2.x 恒 0,整库不可达,视觉
+ *  输出逐字节不变;真实编译斜率实测 fragmentMaterial -341ms / fragmentMain -93ms
+ *  (test-output/shader-simplify/cuts-probe.json)。虚拟档导出见 sceneShaderVirtualShadows,
+ *  布局面(group 0 binding 12..14)在两档 bind group layout 中恒存在,显式布局允许
+ *  WGSL 不消费 —— 绑定装配与占位填充路径零变化。 */
+export const sceneShader = buildSceneShader(PBR_DIRECT_DISPLAY_WGSL);
 
 /** M2 方向光 RT 阴影变体(2026-10-04,opt-in,features.rayTracedShadows=true):
  *  deepPrimaryShadow 保留 frame.output.bloom 开关的 mask 采样分支 + 追加
  *  group(2) binding(3) mask 纹理声明。开关位=0 时分支不进入,与默认档行为一致
  *  (运行时 fail-closed 回退通道:mask 供给异常的帧清 0 位即回级联,无需重建管线)。
- *  分支放在 author/虚拟档之后、级联 return 之前 —— RT 只替代级联档,author/VSM 语义不变。 */
-export const sceneShaderRayTracedShadows = composeForwardPlusPbrShader(
-  `${CASCADED_SHADOW_WGSL}\n${VIRTUAL_SHADOW_WGSL}\n${buildSceneShaderCore(PBR_DIRECT_DISPLAY_WGSL)}\n${DEEP_RAY_TRACED_SHADOW_MASK_WGSL}`,
-  "direct-multiscattering");
+ *  分支放在 author/虚拟档之后、级联 return 之前 —— RT 只替代级联档。 */
+export const sceneShaderRayTracedShadows = buildSceneShader(PBR_DIRECT_DISPLAY_WGSL, { rayTracedShadows: true });
+
+/** B1 Brief-VSM 虚拟阴影档(shadowMode="virtual" 构建档):保留虚拟采样库与门行,
+ *  文本与本刀之前的历史全量组合逐字节一致(级联/VSM 运行时门语义不变;唯一变化是
+ *  该档改由 shadowMode 推导的构建选项选择,不再由所有渲染器无条件编译)。 */
+export const sceneShaderVirtualShadows = buildSceneShader(PBR_DIRECT_DISPLAY_WGSL, { virtualShadows: true });
+
+/** 虚拟阴影 × RT 阴影组合档(shadowMode="virtual" + features.rayTracedShadows 同时构建)。 */
+export const sceneShaderVirtualShadowsRayTracedShadows =
+  buildSceneShader(PBR_DIRECT_DISPLAY_WGSL, { virtualShadows: true, rayTracedShadows: true });
 
 export { currentToPreviousUvMotion } from "./pbrMotionCpu.js";

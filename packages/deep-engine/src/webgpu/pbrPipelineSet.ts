@@ -56,12 +56,16 @@ export async function createPbrPipelineSet(session: DeviceSession, lightingLayou
   if (!byVariant) { byVariant = new Map(); byLayout.set(lightingLayout, byVariant); }
   const key = [PIPELINE_SET_SCHEMA, session.format, writeGeometry ? 1 : 0, directDisplay ? 1 : 0,
     oneCascade ? 1 : 0, options.deformation === true ? 1 : 0, features.textureArrays ? 1 : 0, features.layeredMaterials ? 1 : 0,
-    options.advancedMaterials === true ? 1 : 0, mainSampleCount, features.rayTracedShadows ? 1 : 0].join("/");
+    options.advancedMaterials === true ? 1 : 0, mainSampleCount, features.rayTracedShadows ? 1 : 0,
+    // B1 Brief-VSM 变体化(2026-10-05):shadowMode 进集合身份 —— 主 shader 保留虚拟
+    // 采样库(sceneShaderVirtualShadows 家族)与否是模块文本/管线指纹的分野,两档不得共享。
+    options.shadowMode === "virtual" ? 1 : 0].join("/");
+  const virtualShadowPages = options.shadowMode === "virtual";
   const existing = byVariant.get(key);
   if (existing) return existing;
   const created = buildPbrPipelineSet(session, lightingLayout, options, writeGeometry, directDisplay,
     oneCascade, features.textureArrays, features.layeredMaterials, options.advancedMaterials === true, mainSampleCount,
-    features.rayTracedShadows);
+    features.rayTracedShadows, virtualShadowPages);
   byVariant.set(key, created);
   void created.catch(() => { if (byVariant!.get(key) === created) byVariant!.delete(key); });
   return created;
@@ -70,17 +74,21 @@ export async function createPbrPipelineSet(session: DeviceSession, lightingLayou
 async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBindGroupLayout,
   options: PbrRendererOptions, writeGeometry: boolean, directDisplay: boolean, oneCascade: boolean,
   textureArrays: boolean, layeredMaterials: boolean, advancedMaterials = false,
-  mainSampleCount: 1 | 4 = 1, rayTracedShadowFeature = false) {
+  mainSampleCount: 1 | 4 = 1, rayTracedShadowFeature = false, virtualShadowPages = false) {
   const firstFrameMainKeys = options.pipelines?.firstFrameMainKeys;
   // AA-M1:mainSampleCount 必须无条件下发 —— pipelines.ts 对 undefined 的默认已从 1
   // 改为请求常量 4,省略会把 1x 回退渲染器静默升回 4x 管线(与 1x 目标失配)。
   // M2 光追阴影:RT 是管线集合身份的一部分(主 shader 变体 + group(2) 第 4 条 layout);
   // 静态与 deformation 变体同帧共存,全部下发。
+  // B1 Brief-VSM 变体化:virtualShadowPages 由 shadowMode 推导(构建期一次性),
+  // 静态与 deformation 变体同帧共存,全部同档下发。
   const rayTracedShadows = rayTracedShadowFeature;
+  const virtualShadowOption = virtualShadowPages ? { virtualShadowPages: true } : {};
   const buildOptions = (firstFrameMainKeys === undefined && !layeredMaterials && !advancedMaterials)
-    ? { mainSampleCount, ...(rayTracedShadows ? { rayTracedShadows: true } : {}) }
+    ? { mainSampleCount, ...virtualShadowOption, ...(rayTracedShadows ? { rayTracedShadows: true } : {}) }
     : { ...(firstFrameMainKeys === undefined ? {} : { firstFrameMainKeys }),
       ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}),
+      ...virtualShadowOption,
       ...(rayTracedShadows ? { rayTracedShadows: true } : {}),
       mainSampleCount };
   const wantsDeformation = options.deformation === true;
@@ -122,9 +130,11 @@ async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBi
     const [deformationFallbackBuild, deformationArrayBuild] = await Promise.all([
       createPipelinesBuild(session.device, session.format, lightingLayout, true, false, oneCascade,
         { deformation: true, ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}),
+          ...virtualShadowOption,
           ...(rayTracedShadows ? { rayTracedShadows: true } : {}), mainSampleCount }),
       wantsDeformation && textureArrays ? createPipelinesBuild(session.device, session.format, lightingLayout,
         true, false, oneCascade, { deformation: true, textureArrays: true,
+        ...virtualShadowOption,
         ...(rayTracedShadows ? { rayTracedShadows: true } : {}), mainSampleCount }) : undefined,
     ]);
     const deformation = deformationPipelines(deformationArrayBuild, deformationFallbackBuild)!;
@@ -153,9 +163,11 @@ async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBi
           const [deformationFallbackBuild, deformationArrayBuild] = await Promise.all([
             createPipelinesBuild(session.device, session.format, lightingLayout, true, false, oneCascade,
               { deformation: true, ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}),
+                ...virtualShadowOption,
                 ...(rayTracedShadows ? { rayTracedShadows: true } : {}), mainSampleCount }),
             textureArrays ? createPipelinesBuild(session.device, session.format, lightingLayout,
               true, false, oneCascade, { deformation: true, textureArrays: true,
+              ...virtualShadowOption,
               ...(rayTracedShadows ? { rayTracedShadows: true } : {}), mainSampleCount }) : undefined,
           ]);
           const merged = await deformationPipelines(deformationArrayBuild, deformationFallbackBuild)!;
