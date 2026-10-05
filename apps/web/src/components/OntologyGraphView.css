@@ -40,6 +40,7 @@
 
 .ontology-graph-statusbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0; padding: 6px 10px; font-size: 11px; color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--line-subtle); border-radius: 6px; }
 .ontology-graph-statusbar .is-truncated { display: inline-flex; align-items: center; gap: 4px; color: var(--warning); }
+.ontology-graph-statusbar .is-cluster { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-variant-numeric: tabular-nums; }
 .ontology-graph-statusbar button { min-height: 22px; padding: 1px 8px; font-size: 11px; }
 .ontology-graph-loading { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; color: var(--text-muted); }
 .ontology-graph-error { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent); border-radius: 6px; background: color-mix(in srgb, var(--danger) 8%, transparent); color: var(--danger); }
@@ -62,25 +63,57 @@
 .ontology-graph-node.is-action { border-left-color: var(--success); }
 .ontology-graph-node.is-event { border-left-color: var(--danger); }
 .ontology-graph-node.is-highlighted { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-.ontology-graph-node.is-dimmed { opacity: .35; }
+.ontology-graph-node.is-secondary { border-color: color-mix(in srgb, var(--accent) 40%, var(--line-strong)); }
+.ontology-graph-node.is-dimmed { opacity: .3; }
 .ontology-graph-node header { display: flex; align-items: center; gap: 5px; color: var(--text-strong); font-weight: 600; }
 .ontology-graph-node header span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ontology-graph-node small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 10.5px; }
 .ontology-graph-node footer { display: flex; }
-.ontology-graph-node-status { font-size: 10px; color: var(--text-muted); }
+
+/* 治理态形+色双编码:published=圆 / review=菱 / draft=方 / retired=虚线圆(渐隐)。
+   形由 CSS 几何承载,色走语义令牌——与文字构成三重编码(西门子纪律)。 */
+.ontology-graph-node-status { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--text-muted); }
+.ontology-graph-node-status .ontology-graph-node-shape { display: inline-block; width: 7px; height: 7px; flex: none; background: currentcolor; }
 .ontology-graph-node-status.is-published { color: var(--success); }
+.ontology-graph-node-status.is-published .ontology-graph-node-shape { border-radius: 50%; }
 .ontology-graph-node-status.is-review { color: var(--warning); }
+.ontology-graph-node-status.is-review .ontology-graph-node-shape { transform: rotate(45deg); scale: .82; }
+.ontology-graph-node-status.is-draft { color: var(--text-muted); }
+.ontology-graph-node-status.is-draft .ontology-graph-node-shape { border-radius: 1px; }
 .ontology-graph-node-status.is-retired { color: var(--text-faint); }
+.ontology-graph-node-status.is-retired .ontology-graph-node-shape { border-radius: 50%; background: none; border: 1.5px dashed currentcolor; }
+.ontology-graph-node-statusmix { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+/* LOD 簇卡:成员数徽标(accent 派生),与普通节点同族样式。 */
+.ontology-graph-node-cluster { min-width: 17px; height: 15px; padding: 0 4px; display: inline-grid; place-items: center; color: var(--on-accent); background: var(--accent); border-radius: 7px; font-size: 9.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
 .ontology-graph-node .react-flow__handle { width: 5px; height: 5px; min-height: 0; min-width: 0; border: none; background: var(--line-strong); opacity: 0; }
 .ontology-graph-node:hover .react-flow__handle { opacity: 1; }
 
+/* 边语义:关系=accent / 行动=success / 事件=danger / 数据=info;箭头随边色。 */
 .ontology-graph .react-flow__edge path { stroke: var(--line-strong); }
+.ontology-graph .react-flow__edge.is-kind-relation path { stroke: color-mix(in srgb, var(--accent) 62%, var(--line-strong)); }
+.ontology-graph .react-flow__edge.is-kind-action path { stroke: color-mix(in srgb, var(--success) 55%, var(--line-strong)); }
+.ontology-graph .react-flow__edge.is-kind-event path { stroke: color-mix(in srgb, var(--danger) 55%, var(--line-strong)); }
+.ontology-graph .react-flow__edge.is-kind-data path { stroke: color-mix(in srgb, var(--info) 55%, var(--line-strong)); }
+.ontology-graph .react-flow__edge.is-kind-relation .react-flow__edge-marker path,
+.ontology-graph .react-flow__edge.is-kind-action .react-flow__edge-marker path,
+.ontology-graph .react-flow__edge.is-kind-event .react-flow__edge-marker path,
+.ontology-graph .react-flow__edge.is-kind-data .react-flow__edge-marker path { stroke: none; }
+.ontology-graph .react-flow__edge.is-secondary path { stroke-opacity: .45; }
 .ontology-graph .react-flow__edge.is-highlight path { stroke: var(--accent); stroke-width: 2; }
 .ontology-graph .react-flow__edge.is-dim { opacity: .25; }
 .ontology-graph .react-flow__edge.is-highlight .react-flow__edge-text { fill: var(--accent); }
 .ontology-graph .react-flow__edge-text { font-size: 10px; fill: var(--text-muted); }
 .ontology-graph .react-flow__edge-textbg { fill: var(--panel); }
 .ontology-graph .react-flow__edge.selected path { stroke: var(--accent); }
+.ontology-graph .react-flow__edge:hover .react-flow__edge-path { filter: drop-shadow(0 0 2px color-mix(in srgb, var(--accent) 55%, transparent)); }
+
+/* 边悬停 tooltip:fixed 跟随鼠标(z-index 低于下拉/模态层)。 */
+.ontology-graph-edge-tip { position: fixed; z-index: 40; display: grid; gap: 1px; max-width: 300px; padding: 6px 9px; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line-strong); border-radius: 6px; box-shadow: var(--shadow-float); backdrop-filter: blur(6px); pointer-events: none; }
+.ontology-graph-edge-tip strong { font-size: 11px; color: var(--text-strong); }
+.ontology-graph-edge-tip small { color: var(--text-muted); font-size: 10.5px; line-height: 1.4; overflow-wrap: anywhere; }
+
 .ontology-graph .react-flow__controls { box-shadow: none; }
 .ontology-graph .react-flow__controls button { min-height: 24px; padding: 0; background: var(--panel); border-bottom: 1px solid var(--line); color: var(--text); }
 .ontology-graph .react-flow__controls button:hover { background: var(--surface-3); }
@@ -99,6 +132,18 @@
 .ontology-graph-evidence li { display: grid; gap: 0; padding: 5px 7px; background: var(--surface-2); border-radius: 5px; }
 .ontology-graph-evidence strong { font-size: 11.5px; color: var(--text-strong); }
 .ontology-graph-evidence small { color: var(--text-muted); }
+/* 关系清单基数徽章(accent 派生胶囊)与属性类型徽章(语义色分类)。 */
+.ontology-graph-card-chip { padding: 0 5px; color: var(--accent); background: var(--accent-soft); border-radius: 6px; font-size: 10px; font-variant-numeric: tabular-nums; }
+.ontology-graph-prop-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.ontology-graph-prop-table th { padding: 3px 6px; text-align: left; color: var(--text-faint); font-weight: 500; border-bottom: 1px solid var(--line); }
+.ontology-graph-prop-table td { padding: 3px 6px; color: var(--text-strong); border-bottom: 1px solid var(--line-subtle); }
+.ontology-graph-prop-table td:first-child { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ontology-graph-prop-table .is-confirmed { color: var(--success); }
+.ontology-graph-prop-table .is-pending { color: var(--warning); }
+.ontology-graph-type { font-size: 10px; }
+.ontology-graph-type.is-number, .ontology-graph-type.is-boolean { color: var(--info); background: color-mix(in srgb, var(--info) 12%, transparent); }
+.ontology-graph-type.is-datetime { color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.ontology-graph-type.is-string, .ontology-graph-type.is-enum, .ontology-graph-type.is-json { color: var(--text-muted); background: var(--surface-2); }
 .ontology-graph-risk { font-weight: 600; }
 .ontology-graph-risk.is-high { color: var(--danger); }
 .ontology-graph-risk.is-medium { color: var(--warning); }

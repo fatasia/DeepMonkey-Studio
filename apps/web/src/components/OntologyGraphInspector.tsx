@@ -5,11 +5,13 @@ import { translate as tr, type AppLocale } from "../i18n";
 import { StatusBadge } from "./OntologyWorkspace";
 import { actionRiskPresentation, GRAPH_NODE_KIND_META } from "./ontologyGraphLogic";
 import type { OntologyActionPlanInput, OntologyActionPreview } from "@bim-studio/contracts";
+import OntologyDecisionChainPanel from "./OntologyDecisionChainPanel";
 import { useEffect, useState } from "react";
 
 /**
  * 图谱检查器：点击节点/边后的属性/来源/版本/权限/证据明细（方案 §4.3）。
  * 数据源是包全量（OntologyPackage），图谱节点只带摘要——明细永远可追溯到契约原文。
+ * Semantica 会合点：对象/行动卡内嵌「AI 决策链」折叠面板（provenance 三只读端点）。
  */
 export type GraphSelection = { kind: "node"; id: string } | { kind: "edge"; id: string } | undefined;
 
@@ -126,8 +128,9 @@ function ActionMeta({ action, locale }: { action: OntologyActionType; locale: Ap
   );
 }
 
-function NodeDetail({ pkg, node, locale, onFocusRoot, onCollapse, previewAction }: {
+function NodeDetail({ pkg, projectId, node, locale, onFocusRoot, onCollapse, previewAction }: {
   pkg: OntologyPackage | undefined;
+  projectId: string;
   node: OntologyGraphNode;
   locale: AppLocale;
   onFocusRoot: (node: OntologyGraphNode) => void;
@@ -153,16 +156,24 @@ function NodeDetail({ pkg, node, locale, onFocusRoot, onCollapse, previewAction 
           <dt>{tr(locale, "别名", "Aliases")}</dt><dd>{object?.aliases.join(", ") || "—"}</dd>
         </dl>
         <section>
-          <h4>{tr(locale, `属性 (${object?.properties.length ?? 0})`, `Properties (${object?.properties.length ?? 0})`)}</h4>
+          <h4>{tr(locale, `属性表 (${object?.properties.length ?? 0})`, `Properties (${object?.properties.length ?? 0})`)}</h4>
           {(object?.properties ?? []).length === 0 && <small>{tr(locale, "未声明属性", "No properties")}</small>}
-          <ul className="ontology-graph-evidence">
-            {(object?.properties ?? []).map((property) => (
-              <li key={property.key}>
-                <strong>{property.key}</strong>
-                <small>{property.label} · {property.type}{property.confirmed ? "" : tr(locale, " · 待确认", " · pending")}</small>
-              </li>
-            ))}
-          </ul>
+          {(object?.properties ?? []).length > 0 && (
+            <table className="ontology-graph-prop-table">
+              <thead>
+                <tr><th>{tr(locale, "属性", "Key")}</th><th>{tr(locale, "类型", "Type")}</th><th>{tr(locale, "确认", "Confirmed")}</th></tr>
+              </thead>
+              <tbody>
+                {(object?.properties ?? []).map((property) => (
+                  <tr key={property.key}>
+                    <td title={property.label || property.key}>{property.key}</td>
+                    <td><code className={`ontology-graph-type is-${property.type}`}>{property.type}</code></td>
+                    <td><span className={property.confirmed ? "is-confirmed" : "is-pending"}>{property.confirmed ? tr(locale, "已确认", "Yes") : tr(locale, "待确认", "Pending")}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </section>
         <section>
           <h4>{tr(locale, "来源绑定", "Source bindings")}</h4>
@@ -180,7 +191,13 @@ function NodeDetail({ pkg, node, locale, onFocusRoot, onCollapse, previewAction 
           <h4>{tr(locale, `关系 (出 ${outbound.length} / 入 ${inbound.length})`, `Relations (out ${outbound.length} / in ${inbound.length})`)}</h4>
           <ul className="ontology-graph-evidence">
             {[...outbound, ...inbound].map((relation) => (
-              <li key={relation.id}><strong>{relation.key}</strong><small>{relation.sourceObject} → {relation.targetObject} · {relation.cardinality}</small></li>
+              <li key={relation.id}>
+                <strong>{relation.key}</strong>
+                <small>
+                  {relation.sourceObject} → {relation.targetObject} · <span className="ontology-graph-card-chip">{relation.cardinality}</span>
+                  {relation.direction === "directed" ? ` · ${tr(locale, "有向", "directed")}` : ""}
+                </small>
+              </li>
             ))}
             {outbound.length + inbound.length === 0 && <li><small>{tr(locale, "无关系", "None")}</small></li>}
           </ul>
@@ -194,6 +211,7 @@ function NodeDetail({ pkg, node, locale, onFocusRoot, onCollapse, previewAction 
             {actions.length === 0 && <li><small>{tr(locale, "无行动绑定", "None")}</small></li>}
           </ul>
         </section>
+        <OntologyDecisionChainPanel projectId={projectId} pkg={pkg} objectKey={node.key} locale={locale} />
         <section>
           <h4>{tr(locale, `事件 (${events.length})`, `Events (${events.length})`)}</h4>
           <ul className="ontology-graph-evidence">
@@ -221,6 +239,7 @@ function NodeDetail({ pkg, node, locale, onFocusRoot, onCollapse, previewAction 
         {action && previewAction && pkg && (
           <ActionPreviewPanel pkgId={pkg.id} action={action} locale={locale} previewAction={previewAction} />
         )}
+        {action && <OntologyDecisionChainPanel projectId={projectId} pkg={pkg} objectKey={action.boundObject} actionKey={action.key} locale={locale} />}
         <div className="ontology-graph-inspector-actions">
           <button type="button" onClick={() => onFocusRoot(node)}><Focus size={12} />{tr(locale, "以此为根展开", "Expand from here")}</button>
           <button type="button" onClick={() => onCollapse(node)}><Minimize2 size={12} />{tr(locale, "折叠邻居", "Collapse neighbors")}</button>
@@ -326,8 +345,9 @@ function EdgeDetail({ pkg, edge, locale }: { pkg: OntologyPackage | undefined; e
 }
 
 /** 检查器外壳：节点/边统一入口；无选中时给操作引导。 */
-export default function OntologyGraphInspector({ pkg, selection, node, edge, locale, onFocusRoot, onCollapse, onReset, previewAction }: {
+export default function OntologyGraphInspector({ pkg, projectId, selection, node, edge, locale, onFocusRoot, onCollapse, onReset, previewAction }: {
   pkg: OntologyPackage | undefined;
+  projectId: string;
   selection: GraphSelection;
   node: OntologyGraphNode | undefined;
   edge: OntologyGraphEdge | undefined;
@@ -349,7 +369,7 @@ export default function OntologyGraphInspector({ pkg, selection, node, edge, loc
       )}
       {selection?.kind === "node" && (
         node
-          ? <NodeDetail pkg={pkg} node={node} locale={locale} onFocusRoot={onFocusRoot} onCollapse={onCollapse} {...(previewAction ? { previewAction } : {})} />
+          ? <NodeDetail pkg={pkg} projectId={projectId} node={node} locale={locale} onFocusRoot={onFocusRoot} onCollapse={onCollapse} {...(previewAction ? { previewAction } : {})} />
           : <p className="ontology-graph-hint">{tr(locale, "节点不在当前子图内。", "Node is not in the current subgraph.")}</p>
       )}
       {selection?.kind === "edge" && (

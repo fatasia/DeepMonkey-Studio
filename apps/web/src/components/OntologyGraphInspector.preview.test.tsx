@@ -20,7 +20,7 @@ const actionNode: OntologyGraphNode = {
 };
 
 function renderInspector(previewAction?: (input: { actionKey: string; target: { objectKey: string; canonicalId: string } }) => Promise<unknown>) {
-  return renderToStaticMarkup(<OntologyGraphInspector pkg={fixturePackage()} selection={{ kind: "node", id: "action:diagnose_device" }}
+  return renderToStaticMarkup(<OntologyGraphInspector pkg={fixturePackage()} projectId="p1" selection={{ kind: "node", id: "action:diagnose_device" }}
     node={actionNode} edge={undefined} locale="zh-CN" onFocusRoot={() => undefined} onCollapse={() => undefined}
     onReset={() => undefined} {...(previewAction ? { previewAction: previewAction as never } : {})} />);
 }
@@ -41,7 +41,7 @@ describe("行动节点「行动预览」面板（H-C4-P3 用户面）", () => {
   it("行动未绑定对象时面板可见但预览按钮禁用（不猜测 canonicalId）", () => {
     const pkg = fixturePackage() as OntologyPackage & { actions: Array<Record<string, unknown>> };
     (pkg.actions[0] as Record<string, unknown>).boundObject = undefined;
-    const html = renderToStaticMarkup(<OntologyGraphInspector pkg={pkg} selection={{ kind: "node", id: "action:diagnose_device" }}
+    const html = renderToStaticMarkup(<OntologyGraphInspector pkg={pkg} projectId="p1" selection={{ kind: "node", id: "action:diagnose_device" }}
       node={actionNode} edge={undefined} locale="zh-CN" onFocusRoot={() => undefined} onCollapse={() => undefined}
       onReset={() => undefined} previewAction={vi.fn().mockResolvedValue({}) as never} />);
     expect(html).toContain("行动未绑定对象");

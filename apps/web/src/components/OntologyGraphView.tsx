@@ -13,7 +13,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { AlertTriangle, Bell, Boxes, Database, LoaderCircle, RefreshCw, Search, Zap } from "lucide-react";
-import type { OntologyGraphNode, OntologyGraphNodeKind, OntologyStatus } from "@bim-studio/contracts";
+import type { OntologyGraphEdge, OntologyGraphNode, OntologyGraphNodeKind, OntologyStatus } from "@bim-studio/contracts";
 import { ontologyGraphNodeId } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import OntologyGraphInspector, { type GraphSelection } from "./OntologyGraphInspector";
@@ -21,14 +21,19 @@ import {
   applyGraphFilters,
   buildGraphListCards,
   collapseNeighborhood,
-  computeIncidentEdges,
+  computeGraphClusters,
+  computeNeighborhoodHighlight,
   computePathBetween,
   findGraphTargets,
   forceLayout,
+  GRAPH_CLUSTER_THRESHOLD,
   GRAPH_COMPACT_BREAKPOINT,
   GRAPH_NODE_KIND_META,
   GRAPH_NODE_KIND_ORDER,
+  GRAPH_STATUS_META,
+  projectClusteredGraph,
   shouldUseCompactGraph,
+  type ClusteredGraphProjection,
   type GraphFilters,
   type GraphPathHighlight,
 } from "./ontologyGraphLogic";
@@ -53,11 +58,15 @@ const CANVAS_WIDTH = 960;
 const CANVAS_HEIGHT = 560;
 const ALL_STATUSES: readonly OntologyStatus[] = ["draft", "review", "published", "retired"];
 
-/** MiniMap 缩略配色（展示口径常量，与 CSS 侧节点分色保持同值，参照 BehaviorGraphView 先例）。 */
+/** 展示边 = 契约边 + LOD 聚合计数（contracts 不可扩展，本地视图型）。 */
+type DisplayGraphEdge = OntologyGraphEdge & { aggregatedCount?: number };
+
+/** MiniMap 缩略配色（展示口径常量，与 CSS 侧节点分色保持同值，参照 BehaviorGraphView 先例）。
+ *  同族对齐：取值 = base.css 的 --accent/--info/--success/--danger（一处漂移即修）。 */
 const MINIMAP_KIND_COLORS: Record<OntologyGraphNodeKind, string> = {
   object: "#d6aa4d",
   dataset: "#65aee8",
-  action: "#62d493",
+  action: "#59c58d",
   event: "#e27478",
 };
 
@@ -75,7 +84,12 @@ interface OntologyNodeData extends Record<string, unknown> {
   statusText: string;
   status: OntologyStatus;
   highlighted: boolean;
+  /** 2 跳次级关联（弱高亮，不描边）。 */
+  secondary: boolean;
   dimmed: boolean;
+  /** 簇伪节点：显示成员数徽标（LOD 聚合态）。 */
+  clusterCount?: number;
+  statusCounts?: Array<{ status: OntologyStatus; count: number }>;
 }
 
 type OntologyFlowNode = Node<OntologyNodeData, "ontology">;
@@ -83,16 +97,25 @@ type OntologyFlowNode = Node<OntologyNodeData, "ontology">;
 function OntologyNodeCard({ data }: NodeProps<OntologyFlowNode>) {
   const Icon = KIND_ICONS[data.kind];
   return (
-    <div className={["ontology-graph-node", GRAPH_NODE_KIND_META[data.kind].css, data.highlighted ? "is-highlighted" : "", data.dimmed ? "is-dimmed" : ""].filter(Boolean).join(" ")}>
+    <div className={["ontology-graph-node", GRAPH_NODE_KIND_META[data.kind].css, data.highlighted ? "is-highlighted" : "", data.secondary ? "is-secondary" : "", data.dimmed ? "is-dimmed" : ""].filter(Boolean).join(" ")}>
       <Handle type="target" position={Position.Top} isConnectable={false} />
       <header>
         <Icon size={13} />
         <span>{data.label}</span>
+        {data.clusterCount !== undefined && <b className="ontology-graph-node-cluster">{data.clusterCount}</b>}
       </header>
       <small>{data.sub}</small>
       <footer>
-        {/* 状态三重编码：色点 + 文字（不靠颜色单独表达） */}
-        <span className={`ontology-graph-node-status is-${data.status}`}>{data.statusText}</span>
+        {/* 状态三重编码：形（CSS 几何形）+ 色（语义令牌）+ 文字，不只靠颜色 */}
+        <span className={`ontology-graph-node-status ${GRAPH_STATUS_META[data.status].css}`}>
+          <i className="ontology-graph-node-shape" aria-hidden="true" />
+          {data.statusText}
+          {data.statusCounts && data.statusCounts.length > 1 && (
+            <small className="ontology-graph-node-statusmix" title={data.statusCounts.map((item) => `${item.status}×${item.count}`).join(" / ")}>
+              {` +${data.statusCounts.length - 1}`}
+            </small>
+          )}
+        </span>
       </footer>
       <Handle type="source" position={Position.Bottom} isConnectable={false} />
     </div>
@@ -129,6 +152,29 @@ function nodeSubline(locale: AppLocale, node: OntologyGraphNode): string {
   }
   if (node.kind === "dataset") return tr(locale, `${node.sourceCount ?? 0} 个对象消费`, `${node.sourceCount ?? 0} consumers`);
   return node.key;
+}
+
+const EDGE_KIND_WORDS: Record<OntologyGraphEdge["kind"], { zh: string; en: string }> = {
+  relation: { zh: "关系", en: "Relation" },
+  action: { zh: "行动绑定", en: "Action binding" },
+  event: { zh: "事件触发", en: "Event trigger" },
+  data: { zh: "数据来源", en: "Data source" },
+};
+
+function edgeTipLabel(edge: DisplayGraphEdge, locale: AppLocale): string {
+  return `${edge.label} · ${tr(locale, EDGE_KIND_WORDS[edge.kind].zh, EDGE_KIND_WORDS[edge.kind].en)}`;
+}
+
+/** 悬停 tooltip 摘要：基数/方向/证据数/治理态（一处看全边语义，不点开检查器）。 */
+function edgeTipSummary(edge: DisplayGraphEdge, locale: AppLocale): string {
+  const parts: string[] = [
+    edge.cardinality ?? "",
+    edge.direction === "directed" ? tr(locale, "有向", "directed") : tr(locale, "无向", "undirected"),
+    tr(locale, `${edge.evidenceCount} 证据`, `${edge.evidenceCount} evidence`),
+    statusWord(locale, edge.status),
+  ];
+  if (edge.note) parts.push(edge.note);
+  return parts.filter(Boolean).join(" · ");
 }
 
 function ErrorBox({ errors, locale, onRetry }: { errors: string[]; locale: AppLocale; onRetry: () => void }) {
@@ -197,6 +243,8 @@ export default function OntologyGraphView({ projectId, locale, onOpenWorkspace }
   const [highlight, setHighlight] = useState<GraphPathHighlight>();
   const [visibleIds, setVisibleIds] = useState<Set<string>>();
   const [statusFilter, setStatusFilter] = useState<ReadonlySet<string>>(new Set<string>(ALL_STATUSES));
+  /** 边悬停 tooltip（关系名/基数/证据/状态），fixed 定位跟随鼠标。 */
+  const [edgeTip, setEdgeTip] = useState<{ edgeId: string; x: number; y: number }>();
 
   // 查询结果变化（包/深度/方向/重查）后清派生视图状态，避免旧高亮/旧折叠串图。
   useEffect(() => {
@@ -227,56 +275,99 @@ export default function OntologyGraphView({ projectId, locale, onOpenWorkspace }
     };
   }, [filters, state.graph, visibleIds]);
 
-  const positions = useMemo(
-    () => (filtered ? forceLayout(filtered.nodes.map((node) => node.id), filtered.edges, { width: CANVAS_WIDTH, height: CANVAS_HEIGHT }) : undefined),
-    [filtered],
-  );
-
   const rootId = state.graph ? ontologyGraphNodeId(state.graph.root.type, state.graph.root.id) : undefined;
-  const incidentHighlight = useMemo(
-    () => (selection?.kind === "node" && filtered ? computeIncidentEdges(filtered.edges, selection.id) : undefined),
+  // 关联链路高亮：选中 → 1 跳强高亮 + 2 跳弱高亮（其余压暗），而非只亮直接邻边。
+  const neighborhood = useMemo(
+    () => (selection?.kind === "node" && filtered ? computeNeighborhoodHighlight(filtered.edges, selection.id) : undefined),
     [filtered, selection],
   );
 
+  // 大图 LOD：> 阈值自动聚簇（对象按业务域，其余按类型）；簇可展开/收起。
+  const clusters = useMemo(
+    () => (filtered ? computeGraphClusters(filtered.nodes) : undefined),
+    [filtered],
+  );
+  const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set());
+  useEffect(() => { setExpandedClusters(new Set()); }, [state.graph]);
+  const projection = useMemo<ClusteredGraphProjection | undefined>(() => {
+    if (!filtered || !clusters) return undefined;
+    return projectClusteredGraph(filtered.nodes, filtered.edges, clusters, expandedClusters);
+  }, [clusters, expandedClusters, filtered]);
+  const displayGraph = projection ?? filtered;
+  const clustered = Boolean(projection);
+  /** 展示边（含聚合计数）；tooltip 数据面：id → 展示边。 */
+  const displayEdges = useMemo<DisplayGraphEdge[]>(
+    () => (projection ? projection.edges : filtered?.edges ?? []),
+    [filtered, projection],
+  );
+  const edgeMetaById = useMemo(() => new Map(displayEdges.map((edge) => [edge.id, edge])), [displayEdges]);
+
+  const positions = useMemo(
+    () => (displayGraph ? forceLayout(displayGraph.nodes.map((node) => node.id), displayGraph.edges, { width: CANVAS_WIDTH, height: CANVAS_HEIGHT }) : undefined),
+    [displayGraph],
+  );
+
   const flowNodes = useMemo<OntologyFlowNode[]>(() => {
-    if (!filtered || !positions) return [];
-    return filtered.nodes.map((node) => {
-      const inPath = (highlight?.nodes.has(node.id) ?? false) || (incidentHighlight !== undefined && incidentHighlight.size > 0 && node.id === selection?.id);
-      const dimmed = Boolean(highlight) && !(highlight?.nodes.has(node.id) ?? false);
+    if (!displayGraph || !positions) return [];
+    return displayGraph.nodes.map((node) => {
+      const isCluster = node.id.startsWith("cluster:");
+      const secondary = neighborhood?.secondary.has(node.id) ?? false;
+      const strong = neighborhood !== undefined && !secondary && neighborhood.nodes.has(node.id);
+      const inPath = (highlight?.nodes.has(node.id) ?? false) || strong;
+      const dimmed = (Boolean(highlight) && !(highlight?.nodes.has(node.id) ?? false))
+        || (neighborhood !== undefined && !inPath && !secondary);
+      const cluster = clusters?.find((item) => item.id === node.id);
       return {
         id: node.id,
         type: "ontology" as const,
         position: positions.get(node.id) ?? { x: 0, y: 0 },
+        // MiniMap 依赖节点声明尺寸(measure 完成前),不声明则缩略图恒空(RF12 nodeHasDimensions)
+        initialWidth: 158,
+        initialHeight: 64,
         data: {
           label: node.label,
-          sub: nodeSubline(locale, node),
+          ...(isCluster
+            ? {
+                sub: tr(locale, `${cluster?.memberIds.length ?? 0} 成员 · 点击${expandedClusters.has(node.id) ? "收起" : "展开"}`, `${cluster?.memberIds.length ?? 0} members · click to ${expandedClusters.has(node.id) ? "collapse" : "expand"}`),
+                statusText: tr(locale, "聚簇", "Cluster"),
+                clusterCount: cluster?.memberIds.length ?? 0,
+                ...(cluster && cluster.statusCounts.length > 0 ? { statusCounts: cluster.statusCounts } : {}),
+              }
+            : { sub: nodeSubline(locale, node), statusText: statusWord(locale, node.status) }),
           kind: node.kind,
           status: node.status,
-          statusText: statusWord(locale, node.status),
           highlighted: inPath,
+          secondary,
           dimmed,
         },
       };
     });
-  }, [filtered, highlight, incidentHighlight, locale, positions, selection]);
+  }, [clusters, displayGraph, expandedClusters, highlight, locale, neighborhood, positions]);
 
   const flowEdges = useMemo<Edge[]>(() => {
-    if (!filtered) return [];
-    return filtered.edges.map((edge) => {
-      const inPath = highlight?.edges.has(edge.id) ?? (incidentHighlight?.has(edge.id) ?? false);
+    if (!displayEdges.length) return [];
+    return displayEdges.map((edge) => {
+      const inPath = highlight?.edges.has(edge.id) ?? (neighborhood?.edges.has(edge.id) ?? false);
+      const secondary = !inPath && (neighborhood?.secondary.size ?? 0) > 0;
       const dimmed = Boolean(highlight) && !inPath;
-      const className = [inPath ? "is-highlight" : "", dimmed ? "is-dim" : ""].filter(Boolean).join(" ");
+      const className = [
+        `is-kind-${edge.kind}`,
+        inPath ? "is-highlight" : "",
+        secondary ? "is-secondary" : "",
+        dimmed ? "is-dim" : "",
+      ].filter(Boolean).join(" ");
+      const label = edge.aggregatedCount && edge.aggregatedCount > 1 ? `${edge.label} ×${edge.aggregatedCount}` : edge.label;
       return {
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        label: edge.label,
+        label,
         animated: inPath,
         ...(className ? { className } : {}),
         ...(edge.direction === "directed" ? { markerEnd: { type: MarkerType.ArrowClosed } } : {}),
       };
     });
-  }, [filtered, highlight, incidentHighlight]);
+  }, [displayEdges, highlight, neighborhood]);
 
   const searchTargets = useMemo(() => (state.graph ? findGraphTargets(state.graph, searchTerm) : []), [searchTerm, state.graph]);
 
@@ -297,6 +388,17 @@ export default function OntologyGraphView({ projectId, locale, onOpenWorkspace }
     setHighlight(undefined);
     setSelection(undefined);
     setSearchTerm("");
+    setExpandedClusters(new Set());
+    setEdgeTip(undefined);
+  };
+
+  const toggleCluster = (clusterId: string) => {
+    setExpandedClusters((current) => {
+      const next = new Set(current);
+      if (next.has(clusterId)) next.delete(clusterId);
+      else next.add(clusterId);
+      return next;
+    });
   };
 
   const toggleStatus = (status: OntologyStatus) => {
@@ -320,7 +422,11 @@ export default function OntologyGraphView({ projectId, locale, onOpenWorkspace }
         <div className="ontology-graph-toolbar-row">
           <label>
             <span>{tr(locale, "本体包", "Package")}</span>
-            <select value={state.selectedPackageId ?? ""} onChange={(event) => state.selectPackage(event.target.value || undefined)}>
+            <select value={state.selectedPackageId ?? ""} onChange={(event) => {
+              // 同值守卫：重复选择当前包不得清空图谱(selectPackage 会清图,重查依赖身份不变时不会自动补跑)
+              const next = event.target.value || undefined;
+              if (next !== state.selectedPackageId) state.selectPackage(next);
+            }}>
               <option value="">{tr(locale, "(选择本体包)", "(select a package)")}</option>
               {state.packages.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
@@ -417,8 +523,13 @@ export default function OntologyGraphView({ projectId, locale, onOpenWorkspace }
       {state.graph && (
         <p className="ontology-graph-statusbar" role="status">
           {tr(locale, `节点 ${filtered?.nodes.length ?? 0}/${state.graph.nodes.length} · 关系边 ${filtered?.edges.length ?? 0}/${state.graph.edges.length} · 查询耗时 ${state.graph.elapsedMs.toFixed(1)} ms · 数据时间 ${new Date(state.graph.packageUpdatedAt).toLocaleString()}`, `Nodes ${filtered?.nodes.length ?? 0}/${state.graph.nodes.length} · Edges ${filtered?.edges.length ?? 0}/${state.graph.edges.length} · Query ${state.graph.elapsedMs.toFixed(1)} ms · Data time ${new Date(state.graph.packageUpdatedAt).toLocaleString()}`)}
+          {clusters && (
+            <strong className="is-cluster">
+              {tr(locale, `大图已聚合 ${clusters.length} 簇（阈值 ${GRAPH_CLUSTER_THRESHOLD} 节点）；点击簇卡展开成员。`, `Aggregated into ${clusters.length} clusters (threshold ${GRAPH_CLUSTER_THRESHOLD}); click a cluster card to expand.`)}
+            </strong>
+          )}
           {state.graph.truncated && <strong className="is-truncated">{tr(locale, "结果已按上限截断：请缩小展开深度或增加筛选。", "Truncated at limit: reduce depth or add filters.")}</strong>}
-          {(visibleIds !== undefined || highlight) && (
+          {(visibleIds !== undefined || highlight || expandedClusters.size > 0) && (
             <button type="button" onClick={resetView}>{tr(locale, "重置视图", "Reset view")}</button>
           )}
         </p>
@@ -463,6 +574,7 @@ export default function OntologyGraphView({ projectId, locale, onOpenWorkspace }
             {selection && (
               <OntologyGraphInspector
                 pkg={state.selectedPackage}
+                projectId={projectId}
                 selection={selection}
                 node={selectedNode}
                 edge={selectedEdge}
@@ -493,17 +605,31 @@ export default function OntologyGraphView({ projectId, locale, onOpenWorkspace }
                 selectionOnDrag={true}
                 onlyRenderVisibleElements
                 defaultEdgeOptions={{ type: "bezier" }}
-                onNodeClick={(_, node) => setSelection({ kind: "node", id: node.id })}
+                onNodeClick={(_, node) => {
+                  // LOD 簇卡：点击 = 展开/收起成员，不进入检查器
+                  if (node.id.startsWith("cluster:")) toggleCluster(node.id);
+                  else setSelection({ kind: "node", id: node.id });
+                }}
                 onEdgeClick={(_, edge) => setSelection({ kind: "edge", id: edge.id })}
-                onPaneClick={() => setSelection(undefined)}
+                onPaneClick={() => { setSelection(undefined); setEdgeTip(undefined); }}
+                onEdgeMouseEnter={(event, edge) => setEdgeTip({ edgeId: edge.id, x: event.clientX, y: event.clientY })}
+                onEdgeMouseMove={(event, edge) => setEdgeTip({ edgeId: edge.id, x: event.clientX, y: event.clientY })}
+                onEdgeMouseLeave={() => setEdgeTip(undefined)}
               >
                 <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#233036" />
                 <MiniMap pannable zoomable className="ontology-graph-minimap" nodeColor={(node) => MINIMAP_KIND_COLORS[(node.data as OntologyNodeData).kind]} nodeStrokeWidth={2} />
                 <Controls showInteractive={false} position="bottom-right" />
               </ReactFlow>
+              {edgeTip && edgeMetaById.get(edgeTip.edgeId) && (
+                <div className="ontology-graph-edge-tip" role="tooltip" style={{ left: edgeTip.x + 14, top: edgeTip.y + 12 }}>
+                  <strong>{edgeTipLabel(edgeMetaById.get(edgeTip.edgeId)!, locale)}</strong>
+                  <small>{edgeTipSummary(edgeMetaById.get(edgeTip.edgeId)!, locale)}</small>
+                </div>
+              )}
             </div>
             <OntologyGraphInspector
               pkg={state.selectedPackage}
+              projectId={projectId}
               selection={selection}
               node={selectedNode}
               edge={selectedEdge}

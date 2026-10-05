@@ -119,15 +119,15 @@ describe("GraphListMode（480px 紧凑模式）", () => {
 
 describe("OntologyGraphInspector（检查器）", () => {
   it("未选中：操作引导而非空白", () => {
-    const html = renderToStaticMarkup(<OntologyGraphInspector pkg={fixturePackage()} selection={undefined} node={undefined} edge={undefined} locale="zh-CN" onFocusRoot={() => undefined} onCollapse={() => undefined} onReset={() => undefined} />);
+    const html = renderToStaticMarkup(<OntologyGraphInspector pkg={fixturePackage()} projectId="p1" selection={undefined} node={undefined} edge={undefined} locale="zh-CN" onFocusRoot={() => undefined} onCollapse={() => undefined} onReset={() => undefined} />);
     expect(html).toContain("点击节点或边");
     expect(html).toContain("重置视图");
   });
 
   it("对象节点：属性/来源/关系/可用行动/事件/证据逐节可见；待确认属性标注", () => {
     const node = fixtureResult().nodes.find((item) => item.id === "object:Device")!;
-    const html = renderToStaticMarkup(<OntologyGraphInspector pkg={fixturePackage()} selection={{ kind: "node", id: "object:Device" }} node={node} edge={undefined} locale="zh-CN" onFocusRoot={() => undefined} onCollapse={() => undefined} onReset={() => undefined} />);
-    expect(html).toContain("属性 (2)");
+    const html = renderToStaticMarkup(<OntologyGraphInspector pkg={fixturePackage()} projectId="p1" selection={{ kind: "node", id: "object:Device" }} node={node} edge={undefined} locale="zh-CN" onFocusRoot={() => undefined} onCollapse={() => undefined} onReset={() => undefined} />);
+    expect(html).toContain("属性表 (2)");
     expect(html).toContain("待确认");
     expect(html).toContain("来源绑定");
     expect(html).toContain("ds-devices");
@@ -140,7 +140,7 @@ describe("OntologyGraphInspector（检查器）", () => {
 
   it("行动节点：效果/风险/审批/能力绑定三重编码 + Harness 接入说明（不做假按钮）", () => {
     const node = fixtureResult().nodes.find((item) => item.id === "action:diagnose_device")!;
-    const html = renderToStaticMarkup(<OntologyGraphInspector pkg={fixturePackage()} selection={{ kind: "node", id: "action:diagnose_device" }} node={node} edge={undefined} locale="zh-CN" onFocusRoot={() => undefined} onCollapse={() => undefined} onReset={() => undefined} />);
+    const html = renderToStaticMarkup(<OntologyGraphInspector pkg={fixturePackage()} projectId="p1" selection={{ kind: "node", id: "action:diagnose_device" }} node={node} edge={undefined} locale="zh-CN" onFocusRoot={() => undefined} onCollapse={() => undefined} onReset={() => undefined} />);
     expect(html).toContain("效果");
     expect(html).toContain("风险");
     expect(html).toContain("cap.diagnosis");
@@ -149,7 +149,7 @@ describe("OntologyGraphInspector（检查器）", () => {
 
   it("关系边：定义/方向/基数/键映射/来源理由/有效时间/证据全量展示", () => {
     const edge = fixtureResult().edges.find((item) => item.id === "rel:r1")!;
-    const html = renderToStaticMarkup(<OntologyGraphInspector pkg={fixturePackage()} selection={{ kind: "edge", id: "rel:r1" }} node={undefined} edge={edge} locale="zh-CN" onFocusRoot={() => undefined} onCollapse={() => undefined} onReset={() => undefined} />);
+    const html = renderToStaticMarkup(<OntologyGraphInspector pkg={fixturePackage()} projectId="p1" selection={{ kind: "edge", id: "rel:r1" }} node={undefined} edge={edge} locale="zh-CN" onFocusRoot={() => undefined} onCollapse={() => undefined} onReset={() => undefined} />);
     expect(html).toContain("关系定义");
     expect(html).toContain("one-to-many");
     expect(html).toContain("device_id → event_id");
@@ -160,7 +160,7 @@ describe("OntologyGraphInspector（检查器）", () => {
 
   it("dataset 节点：反查消费对象与绑定类型", () => {
     const node = { id: "dataset:ds-devices", kind: "dataset" as const, key: "ds-devices", label: "ds-devices", status: "published" as const, version: 2 };
-    const html = renderToStaticMarkup(<OntologyGraphInspector pkg={fixturePackage()} selection={{ kind: "node", id: "dataset:ds-devices" }} node={node} edge={undefined} locale="zh-CN" onFocusRoot={() => undefined} onCollapse={() => undefined} onReset={() => undefined} />);
+    const html = renderToStaticMarkup(<OntologyGraphInspector pkg={fixturePackage()} projectId="p1" selection={{ kind: "node", id: "dataset:ds-devices" }} node={node} edge={undefined} locale="zh-CN" onFocusRoot={() => undefined} onCollapse={() => undefined} onReset={() => undefined} />);
     expect(html).toContain("消费对象 (1)");
     expect(html).toContain("设备");
   });

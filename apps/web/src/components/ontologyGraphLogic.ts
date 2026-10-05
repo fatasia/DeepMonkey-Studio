@@ -300,3 +300,172 @@ export function buildGraphListCards(nodes: ReadonlyArray<OntologyGraphNode>, edg
 export function graphStatusText(status: OntologyStatus): string {
   return { draft: "草稿", review: "待评审", published: "已发布", retired: "已退役" }[status];
 }
+
+// ---------------------------------------------------------------------------
+// Semantica UI 刀1①：治理态 形+色 双编码（色=语义令牌类，形=CSS ::before 几何形）。
+// 三重编码纪律：形 + 色 + 文字，色弱用户仍可辨；映射与 OntologyWorkspace/状态徽标一致。
+// ---------------------------------------------------------------------------
+
+export type GraphStatusShape = "circle" | "square" | "diamond" | "ghost";
+
+export const GRAPH_STATUS_META: Record<OntologyStatus, { shape: GraphStatusShape; css: string; zh: string; en: string }> = {
+  published: { shape: "circle", css: "is-published", zh: "已发布", en: "Published" },
+  review: { shape: "diamond", css: "is-review", zh: "待评审", en: "In review" },
+  draft: { shape: "square", css: "is-draft", zh: "草稿", en: "Draft" },
+  retired: { shape: "ghost", css: "is-retired", zh: "已退役", en: "Retired" },
+};
+
+// ---------------------------------------------------------------------------
+// Semantica UI 刀1②：关联链路高亮——选中节点亮起 1 跳强链 + 2 跳弱链，其余压暗。
+// ---------------------------------------------------------------------------
+
+export interface GraphNeighborhoodHighlight {
+  /** 1 跳邻居（强高亮，含关联边）。 */
+  nodes: Set<string>;
+  /** 1 跳关联边 id。 */
+  edges: Set<string>;
+  /** 2 跳次级节点（弱高亮，只提亮不描边）。 */
+  secondary: Set<string>;
+}
+
+/** 从 nodeId 出发按当前子图边做 1—2 跳 BFS（同层按边序稳定，确定性）。 */
+export function computeNeighborhoodHighlight(edges: ReadonlyArray<OntologyGraphEdge>, nodeId: string, maxHops: 1 | 2 = 2): GraphNeighborhoodHighlight {
+  const incident = new Map<string, Array<{ edge: OntologyGraphEdge; other: string }>>();
+  for (const edge of edges) {
+    for (const [self, other] of [[edge.source, edge.target], [edge.target, edge.source]] as const) {
+      (incident.get(self) ?? incident.set(self, []).get(self)!).push({ edge, other });
+    }
+  }
+  const nodes = new Set<string>([nodeId]);
+  const nodeEdges = new Set<string>();
+  for (const { edge, other } of incident.get(nodeId) ?? []) {
+    nodes.add(other);
+    nodeEdges.add(edge.id);
+  }
+  const secondary = new Set<string>();
+  if (maxHops >= 2) {
+    for (const first of nodes) {
+      if (first === nodeId) continue;
+      for (const { edge, other } of incident.get(first) ?? []) {
+        if (!nodes.has(other)) secondary.add(other);
+        nodeEdges.add(edge.id);
+      }
+    }
+    for (const id of secondary) nodes.add(id);
+  }
+  return { nodes, edges: nodeEdges, secondary };
+}
+
+// ---------------------------------------------------------------------------
+// Semantica UI 刀1③：大图 LOD——>阈值自动聚簇（对象按业务域、其余按类型聚合），
+// 簇可展开/收起；纯投影，不改契约数据。
+// ---------------------------------------------------------------------------
+
+export const GRAPH_CLUSTER_THRESHOLD = 500;
+
+export interface GraphCluster {
+  /** 簇伪节点 id（与真实节点 id 空间隔离：`cluster:` 前缀）。 */
+  id: string;
+  kind: OntologyGraphNodeKind;
+  key: string;
+  label: string;
+  memberIds: string[];
+  /** 成员治理态分布（簇卡透出，聚合不掩盖状态事实）。 */
+  statusCounts: Array<{ status: OntologyStatus; count: number }>;
+}
+
+/** 簇键：对象按 domain（缺省归"未分域"），数据/行动/事件按类型。确定性排序。 */
+export function graphClusterKeyOf(node: OntologyGraphNode): { kind: OntologyGraphNodeKind; key: string } {
+  if (node.kind === "object") return { kind: "object", key: node.domain?.trim() || "unfiled" };
+  return { kind: node.kind, key: node.kind };
+}
+
+export function computeGraphClusters(
+  nodes: ReadonlyArray<OntologyGraphNode>,
+  threshold: number = GRAPH_CLUSTER_THRESHOLD,
+): GraphCluster[] | undefined {
+  if (nodes.length <= threshold) return undefined;
+  const buckets = new Map<string, GraphCluster>();
+  for (const node of nodes) {
+    const { kind, key } = graphClusterKeyOf(node);
+    const id = `cluster:${kind}:${key}`;
+    const cluster = buckets.get(id) ?? {
+      id, kind, key,
+      label: kind === "object" ? (key === "unfiled" ? "未分域对象" : key) : GRAPH_NODE_KIND_META[kind].zh,
+      memberIds: [],
+      statusCounts: [],
+    };
+    cluster.memberIds.push(node.id);
+    const slot = cluster.statusCounts.find((item) => item.status === node.status);
+    if (slot) slot.count += 1;
+    else cluster.statusCounts.push({ status: node.status, count: 1 });
+    buckets.set(id, cluster);
+  }
+  return [...buckets.values()]
+    .map((cluster) => ({ ...cluster, statusCounts: cluster.statusCounts.sort((a, b) => b.count - a.count || a.status.localeCompare(b.status)) }))
+    .sort((a, b) => b.memberIds.length - a.memberIds.length || a.id.localeCompare(b.id));
+}
+
+export interface ClusteredGraphProjection {
+  /** 展示节点：收起簇 → 簇伪节点；展开簇 → 成员原节点。 */
+  nodes: OntologyGraphNode[];
+  /** 展示边：端点重映射到簇伪节点，重映射后去重聚合计数（contracts 不可扩展，本地视图型）。 */
+  edges: Array<OntologyGraphEdge & { aggregatedCount?: number }>;
+  /** 成员节点 id → 簇 id（收起成员不可见时用）。 */
+  clusterOf: Map<string, string>;
+  clusters: GraphCluster[];
+}
+
+/** 簇伪节点：label 带成员数，version 取 0（展示口径），status 取成员主态。 */
+function clusterNodeOf(cluster: GraphCluster): OntologyGraphNode {
+  const dominant = cluster.statusCounts[0]?.status ?? "draft";
+  return {
+    id: cluster.id,
+    kind: cluster.kind,
+    key: cluster.id,
+    label: `${cluster.label} · ${cluster.memberIds.length}`,
+    status: dominant,
+    version: 0,
+    propertyCount: cluster.memberIds.length,
+  };
+}
+
+export function projectClusteredGraph(
+  nodes: ReadonlyArray<OntologyGraphNode>,
+  edges: ReadonlyArray<OntologyGraphEdge>,
+  clusters: ReadonlyArray<GraphCluster>,
+  expandedClusterIds: ReadonlySet<string>,
+): ClusteredGraphProjection {
+  const clusterOf = new Map<string, string>();
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const displayNodes: OntologyGraphNode[] = [];
+  for (const cluster of clusters) {
+    const expanded = expandedClusterIds.has(cluster.id);
+    for (const memberId of cluster.memberIds) clusterOf.set(memberId, cluster.id);
+    if (expanded) {
+      for (const memberId of cluster.memberIds) {
+        const member = byId.get(memberId);
+        if (member) displayNodes.push(member);
+      }
+    } else {
+      displayNodes.push(clusterNodeOf(cluster));
+    }
+  }
+  // 边端点重映射：可见成员保持原 id，收起成员指向其簇；再去重聚合计数。
+  const visible = new Set(displayNodes.map((node) => node.id));
+  const remap = (endpoint: string): string => (visible.has(endpoint) ? endpoint : clusterOf.get(endpoint) ?? endpoint);
+  const merged = new Map<string, OntologyGraphEdge & { aggregatedCount?: number }>();
+  for (const edge of edges) {
+    const source = remap(edge.source);
+    const target = remap(edge.target);
+    if (source === target) continue; // 簇内边在收起态不占画布
+    const key = `${source}->${target}|${edge.kind}|${edge.label}`;
+    const existing = merged.get(key);
+    if (existing) {
+      merged.set(key, { ...existing, evidenceCount: (existing.evidenceCount ?? 0) + (edge.evidenceCount ?? 0), aggregatedCount: (existing.aggregatedCount ?? 1) + 1 });
+    } else {
+      merged.set(key, { ...edge, source, target, aggregatedCount: 1 });
+    }
+  }
+  return { nodes: displayNodes, edges: [...merged.values()], clusterOf, clusters: [...clusters] };
+}

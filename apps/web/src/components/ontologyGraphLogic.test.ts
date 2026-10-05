@@ -10,9 +10,15 @@ import {
   computePathBetween,
   findGraphTargets,
   forceLayout,
+  computeGraphClusters,
+  computeNeighborhoodHighlight,
+  graphClusterKeyOf,
+  GRAPH_CLUSTER_THRESHOLD,
   GRAPH_COMPACT_BREAKPOINT,
   GRAPH_NODE_KIND_META,
   GRAPH_NODE_KIND_ORDER,
+  GRAPH_STATUS_META,
+  projectClusteredGraph,
   shouldUseCompactGraph,
 } from "./ontologyGraphLogic";
 
@@ -176,5 +182,104 @@ describe("ontology graph logic", () => {
     expect(site.neighbors.map((item) => item.node.id)).toEqual(["object:Device"]);
     // 类型序：object 在前，dataset 靠后
     expect(cards[0]!.node.kind).toBe("object");
+  });
+});
+
+describe("Semantica 刀1:治理态形+色双编码元数据", () => {
+  it("四态各自具备形状与语义类,且互不重复", () => {
+    const shapes = Object.values(GRAPH_STATUS_META).map((meta) => meta.shape);
+    expect(new Set(shapes).size).toBe(4);
+    expect(GRAPH_STATUS_META.published.shape).toBe("circle");
+    expect(GRAPH_STATUS_META.review.shape).toBe("diamond");
+    expect(GRAPH_STATUS_META.draft.shape).toBe("square");
+    expect(GRAPH_STATUS_META.retired.shape).toBe("ghost");
+    expect(GRAPH_STATUS_META.published.css).toBe("is-published");
+  });
+});
+
+describe("Semantica 刀1:关联链路高亮(1 跳强 + 2 跳弱)", () => {
+  const edges = [
+    edge("e1", "object:A", "object:B"),
+    edge("e2", "object:B", "object:C"),
+    edge("e3", "object:C", "object:D"),
+    edge("e4", "object:X", "object:Y"),
+  ];
+  it("1 跳邻居与关联边强高亮,2 跳进次级集,孤立边不受影响", () => {
+    const highlight = computeNeighborhoodHighlight(edges, "object:B");
+    expect(highlight.nodes.has("object:A")).toBe(true);
+    expect(highlight.nodes.has("object:C")).toBe(true);
+    expect(highlight.edges.has("e1")).toBe(true);
+    expect(highlight.edges.has("e2")).toBe(true);
+    expect(highlight.secondary.has("object:D")).toBe(true);
+    expect(highlight.edges.has("e3")).toBe(true);
+    expect(highlight.nodes.has("object:X")).toBe(false);
+    expect(highlight.edges.has("e4")).toBe(false);
+  });
+  it("maxHops=1 时次级集为空;未关联节点只含自身", () => {
+    const one = computeNeighborhoodHighlight(edges, "object:A", 1);
+    expect(one.secondary.size).toBe(0);
+    expect(one.nodes.has("object:B")).toBe(true);
+    const lone = computeNeighborhoodHighlight(edges, "object:X");
+    expect(lone.nodes.has("object:Y")).toBe(true);
+    expect(lone.secondary.size).toBe(0);
+  });
+});
+
+describe("Semantica 刀1:大图 LOD 聚簇", () => {
+  const many = [
+    node("object", "A", "对象A"),
+    node("object", "B", "对象B"),
+    node("dataset", "ds1", "数据源"),
+    node("action", "act1", "行动"),
+  ].map((item, index) => ({ ...item, status: (index % 2 === 0 ? "published" : "draft") as OntologyGraphNode["status"] }));
+  many[0] = { ...many[0]!, domain: "manufacturing" };
+  many[1] = { ...many[1]!, domain: "manufacturing" };
+  const clusterEdges = [edge("c1", "object:A", "object:B"), edge("c2", "object:A", "dataset:ds1"), edge("c3", "dataset:ds1", "action:act1")];
+
+  it("阈值内不聚合;超阈值按对象域/类型聚簇并带治理态分布", () => {
+    expect(computeGraphClusters(many, 10)).toBeUndefined();
+    expect(GRAPH_CLUSTER_THRESHOLD).toBe(500);
+    const clusters = computeGraphClusters(many, 3)!;
+    expect(clusters).toHaveLength(3); // 对象(manufacturing) + 数据 + 行动
+    const objectCluster = clusters.find((item) => item.key === "manufacturing")!;
+    expect(objectCluster.kind).toBe("object");
+    expect(objectCluster.memberIds.sort()).toEqual(["object:A", "object:B"]);
+    expect(objectCluster.statusCounts.map((item) => item.status).sort()).toEqual(["draft", "published"]);
+  });
+  it("graphClusterKeyOf:对象按域(缺省未分域),其余按类型", () => {
+    expect(graphClusterKeyOf(node("object", "C"))).toEqual({ kind: "object", key: "unfiled" });
+    expect(graphClusterKeyOf(node("event", "e1"))).toEqual({ kind: "event", key: "event" });
+  });
+  it("收起投影:成员替换为簇伪节点,跨簇边重映射并去重聚合,簇内边消失", () => {
+    const clusters = computeGraphClusters(many, 3)!;
+    const projection = projectClusteredGraph(many, clusterEdges, clusters, new Set());
+    const ids = projection.nodes.map((item) => item.id);
+    expect(ids).toContain("cluster:object:manufacturing");
+    expect(ids).not.toContain("object:A");
+    expect(projection.clusterOf.get("object:A")).toBe("cluster:object:manufacturing");
+    const ids2 = projection.edges.map((item) => item.id);
+    expect(ids2).not.toContain("c1"); // 簇内边不占画布
+    const cross = projection.edges.find((item) => item.source === "cluster:object:manufacturing");
+    expect(cross).toBeDefined();
+    // 多条同向同标签边聚合出 ×N 计数
+    const duplicated = projectClusteredGraph(
+      many,
+      [edge("d1", "object:A", "dataset:ds1", "relation", "same"), edge("d2", "object:B", "dataset:ds1", "relation", "same")],
+      clusters,
+      new Set(),
+    );
+    const merged = duplicated.edges.find((item) => item.target === "cluster:dataset:dataset");
+    expect(merged?.aggregatedCount).toBe(2);
+  });
+  it("展开投影:被展开簇还原成员原节点,其余簇保持聚合", () => {
+    const clusters = computeGraphClusters(many, 3)!;
+    const objectCluster = clusters.find((item) => item.key === "manufacturing")!;
+    const projection = projectClusteredGraph(many, clusterEdges, clusters, new Set([objectCluster.id]));
+    const ids = projection.nodes.map((item) => item.id);
+    expect(ids).toContain("object:A");
+    expect(ids).toContain("object:B");
+    expect(ids).toContain("cluster:dataset:dataset");
+    const cross = projection.edges.find((item) => item.id === "c2");
+    expect(cross?.target).toBe("cluster:dataset:dataset");
   });
 });
