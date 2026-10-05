@@ -77,6 +77,13 @@ export function buildAppViewBindings(deps: AppViewBindingsDeps): AppViewBindings
           deps.appState.showError(new Error("场景名称尚未保存，请待名称提交后再播放"));
           return;
         }
+        // P1-2（2026-10-06 对抗测试第二轮）：撤销/重做恢复在途时画布是中间态（清栈风暴
+        // 后立即播放即整页错误边界的复现窗口）——播放入口必须明确拒绝并提示，而非在
+        // 中间态上建 Play 会话。控制器层同口径守卫（isHistorySettled）兜底全部入口。
+        if (deps.sceneHistoryState.sceneHistoryApplyingRef.current) {
+          deps.appState.showError(new Error("撤销/重做恢复尚未完成，请待场景恢复结束后再进入播放"));
+          return;
+        }
         if (deps.appState.animationPlaying || deps.appState.engine?.getPhysicsState().playing) {
           deps.appState.showError(new Error("动画或物理正在运行，请先暂停再进入播放模式"));
           return;
@@ -123,6 +130,7 @@ export function buildAppViewBindings(deps: AppViewBindingsDeps): AppViewBindings
           }
           void restricted.stop();
           if (result.reason === "scene-not-ready") deps.appState.showError(new Error("场景尚未完整载入，请稍后重试进入播放"));
+          else if (result.reason === "history-restore-in-flight") deps.appState.showError(new Error("撤销/重做恢复尚未完成，请待场景恢复结束后再进入播放"));
           else if (result.reason === "engine-missing") deps.appState.showError(new Error("三维引擎尚未就绪，请稍后重试进入播放"));
         }
       },

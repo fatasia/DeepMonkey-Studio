@@ -118,6 +118,33 @@ describe("transaction window guard (T27)", () => {
     expect(open.applyScene).not.toHaveBeenCalled();
   });
 
+  // P1-2（2026-10-06 对抗测试第二轮）：清撤销栈风暴的守卫前提——上一笔恢复仍在途时，
+  // 撤销/重做必须整体拒绝（不弹栈、不二次恢复、不推进 expectedRevision），
+  // 否则"放置在途+清栈+播放"序列会在恢复与播放驱动之间撕出中间态。
+  it("refuses undo and redo while a previous restore is still in flight", async () => {
+    const options = {
+      state: {
+        project: { id: "p" }, activeScene: server, route: { view: "studio", projectId: "p", sceneId: "s" },
+        revision: 7, lastAutoSavedSceneRevisionRef: { current: 6 }, setAutoSaveEnabled: vi.fn(), showError: vi.fn(), setMessage: vi.fn(),
+      },
+      history: {
+        recoveryDraft: undefined, recoveryDecisionRef: { current: undefined }, setRecoveryDraft: vi.fn(), setRecoveryBusy: vi.fn(),
+        sceneHistoryApplyingRef: { current: true }, sceneEditTransactionRef: { current: undefined },
+        sceneHistoryRef: { current: { revision: 7, record: vi.fn(), undo: vi.fn(() => structuredClone(server)), redo: vi.fn(() => structuredClone(server)), acceptRestoredScene: vi.fn() } },
+        sceneSnapshotFactoryRef: { current: () => structuredClone(server) }, flushSceneHistoryEdit: vi.fn(),
+        beginSceneLoadSilence: vi.fn(), endSceneLoadSilence: vi.fn(),
+      },
+      applyScene: vi.fn(async () => undefined),
+    } as unknown as Parameters<typeof useSceneHistoryActions>[0];
+    const actions = useSceneHistoryActions(options);
+    await actions.undoSceneEdit();
+    await actions.redoSceneEdit();
+    const stack = (options.history.sceneHistoryRef.current as unknown as { undo: ReturnType<typeof vi.fn>; redo: ReturnType<typeof vi.fn> });
+    expect(stack.undo).not.toHaveBeenCalled();
+    expect(stack.redo).not.toHaveBeenCalled();
+    expect(options.applyScene).not.toHaveBeenCalled();
+  });
+
   it("refuses both toolbar and keyboard history actions during Play", async () => {
     const playing = guardWorkspace({ current: undefined }, true);
     await playing.actions.undoSceneEdit();

@@ -313,6 +313,9 @@ export function App() {
     engine,
     capture: () => sceneHistoryState.sceneSnapshotFactoryRef.current?.(),
     flush: () => sceneHistoryState.flushSceneHistoryEdit(),
+    // P1-2（对抗测试第二轮）：撤销/重做恢复（applySceneHistorySnapshot）在途时画布是
+    // 中间态，Play 会话必须拒绝建立在它之上（清栈风暴→立即播放→整页错误边界的根因窗口）。
+    isHistorySettled: () => !sceneHistoryState.sceneHistoryApplyingRef.current,
     applyScene: async (snapshot) => {
       await playSessionRestoreRef.current!.restore(snapshot);
     },

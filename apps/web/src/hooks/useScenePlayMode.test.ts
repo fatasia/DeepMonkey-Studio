@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ScenePhysicsState, SceneSnapshot } from "@bim-studio/contracts";
 import * as React from "react";
 import { useSceneHistoryState } from "./useSceneHistoryState";
+import { SceneAuthoringHistory } from "../studio/sceneAuthoringHistory";
 import { createScenePlayModeController, useScenePlayMode, formatPlayEntryNotice, formatPlayExitNotice, type ScenePlayModeHost } from "./useScenePlayMode";
 
 vi.mock("react", () => {
@@ -547,5 +548,143 @@ describe("play draft & discard notices (S2b)", () => {
   it("exit notice reports the discarded transient edit count only when it is positive", () => {
     expect(formatPlayExitNotice(0)).toBe("已退出播放模式，场景恢复为进入前状态");
     expect(formatPlayExitNotice(7)).toBe("已退出播放模式；播放期间的 7 项临时状态变更已丢弃，场景已恢复为进入前状态");
+  });
+});
+
+/**
+ * P1-2（2026-10-06 对抗测试第二轮）复现与防线：清撤销栈风暴 → 立即播放。
+ *
+ * 复现序列（报告 §4.1）：快速放置 5 球体 → 连续撤销清栈（100ms 间隔）→ 点击播放 → 整页
+ * STUDIO_RENDER_FAILED。竞态窗口 = 撤销恢复（applyScene 整体恢复 + acceptRestoredScene）
+ * 在途时画布是中间态，旧代码的播放入口不设防：进入前快照拍到半程事实，恢复完成路径与
+ * 播放驱动交错。修复 = Play 状态机入口新增 isHistorySettled 守卫（明确拒绝）+ 进入前
+ * 快照克隆 fail-safe。本块在 hook 层复刻"放置在途+清栈+播放"序列并断言新契约。
+ */
+describe("clear-stack storm → play (P1-2 adversarial repro)", () => {
+  /** 复刻 useSceneHistoryActions.undoSceneEdit/applySceneHistorySnapshot 的在途恢复语义（可受控挂起）。 */
+  function stormFixture() {
+    vi.useFakeTimers();
+    const history = new SceneAuthoringHistory();
+    let live = baseScene("真实模型与引擎演示");
+    live = structuredClone(live);
+    history.reset(structuredClone(live));
+    const applyingRef = { current: false };
+    let releaseApply: (() => void) | undefined;
+    let holdApply = false;
+    let debounceTimer: number | undefined;
+
+    const placeSphere = (index: number) => {
+      // 画布事实立即变更（引擎同步放置），防抖窗口后才构成一条撤销条目（onPrimitivePlaced 同构）；
+      // 连续放置合并为一个防抖窗口（scheduleSceneHistoryEdit 先清前窗）。
+      live = { ...live, primitives: [...live.primitives, { modelId: `sphere-${index}`, name: `球体 ${index}`, kind: "sphere", color: "#4d9fff" } as SceneSnapshot["primitives"][number]] };
+      if (debounceTimer !== undefined) window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(() => {
+        debounceTimer = undefined;
+        history.record(structuredClone(live), "放置基础元素");
+      }, 220);
+    };
+
+    const undoRestore = async (): Promise<"restored" | "empty" | "refused"> => {
+      if (applyingRef.current) return "refused"; // 在途恢复未 settle：撤销整体拒绝
+      const snapshot = history.undo();
+      if (!snapshot) return "empty";
+      applyingRef.current = true;
+      const expectedRevision = history.revision;
+      try {
+        if (holdApply) await new Promise<void>((resolve) => { releaseApply = resolve; });
+        live = structuredClone(snapshot); // 画布事实整体回到快照
+        history.acceptRestoredScene(structuredClone(live), expectedRevision);
+      } finally {
+        applyingRef.current = false;
+      }
+      return "restored";
+    };
+
+    return {
+      history,
+      applyingRef,
+      placeSphere,
+      undoRestore,
+      get live() {
+        return live;
+      },
+      set live(scene: SceneSnapshot) {
+        live = scene;
+      },
+      holdNextRestore() {
+        holdApply = true;
+      },
+      releaseRestore() {
+        releaseApply?.();
+      },
+    };
+  }
+
+  it("refuses Play while a clear-stack restore is still in flight, then admits it once settled", async () => {
+    const storm = stormFixture();
+    const engine = fakeEngine(DEFAULT_PHYSICS);
+    const controller = createScenePlayModeController(
+      () => ({
+        engine,
+        capture: () => structuredClone(storm.live),
+        flush: () => undefined,
+        applyScene: async (scene) => {
+          storm.live = structuredClone(scene);
+        },
+        readAnimationPlayhead: () => 0,
+        reportError: () => undefined,
+        // 生产接线：App.tsx 以 !sceneHistoryApplyingRef.current 提供。
+        isHistorySettled: () => !storm.applyingRef.current,
+      }),
+      () => undefined,
+    );
+
+    // 快速放置 5 球体：防抖窗口收束为撤销栈条目（与生产 scheduleSceneHistoryEdit 同窗口）。
+    for (let index = 0; index < 5; index += 1) storm.placeSphere(index);
+    await vi.advanceTimersByTimeAsync(220); // fake timers：先 flush 微任务再推进（防抖落栈）
+    expect(storm.history.getState()).toMatchObject({ canUndo: true, undoLabel: "放置基础元素" });
+
+    // 连续撤销清栈：第一笔恢复挂在途（模型重载异步窗口），后续点击整体拒绝。
+    storm.holdNextRestore();
+    const first = storm.undoRestore();
+    const stormResults = ["refused", "refused", "refused", "refused", "refused", "refused", "refused", "refused", "refused"];
+    expect(await Promise.all(stormResults.map(() => storm.undoRestore()))).toEqual(stormResults);
+    expect(storm.applyingRef.current).toBe(true);
+
+    // 竞态窗口：恢复在途 + 立即播放 → 旧代码无守卫（崩溃窗口），新契约必须明确拒绝。
+    expect(controller.enterPlay()).toEqual({ ok: false, reason: "history-restore-in-flight" });
+    expect(engine.calls).toEqual([]); // 驱动一个都没启动：拒绝绝不产生半启动会话
+    expect(controller.active).toBe(false);
+
+    // 恢复 settle 后同一入口放行：进入前快照 = 恢复完成的画布事实（零球体）。
+    storm.releaseRestore();
+    expect(await first).toBe("restored");
+    expect(storm.applyingRef.current).toBe(false);
+    expect(storm.live.primitives).toHaveLength(0);
+    expect(storm.history.getState()).toEqual({ canUndo: false, canRedo: true, redoLabel: "放置基础元素" });
+
+    expect(controller.enterPlay()).toEqual({ ok: true });
+    expect(engine.calls).toEqual(["physics(true,true)", "play"]);
+    expect(controller.active).toBe(true);
+    expect(await controller.exitPlay()).toEqual({ ok: true });
+  });
+
+  it("treats an uncloneable entry snapshot as scene-not-ready instead of crashing", () => {
+    const engine = fakeEngine(DEFAULT_PHYSICS);
+    const controller = createScenePlayModeController(
+      () => ({
+        engine,
+        capture: () => ({ ...baseScene("含运行时对象的中间态"), thumbnail: () => "opaque" }) as unknown as SceneSnapshot,
+        flush: () => undefined,
+        applyScene: async () => undefined,
+        readAnimationPlayhead: () => 0,
+        reportError: () => undefined,
+      }),
+      () => undefined,
+    );
+    // structuredClone 对函数抛 DataCloneError：进入前快照不可深拷贝 = 中间态，按未就绪拒绝。
+    expect(controller.enterPlay()).toEqual({ ok: false, reason: "scene-not-ready" });
+    expect(engine.calls).toEqual([]);
+    expect(controller.active).toBe(false);
   });
 });

@@ -36,6 +36,13 @@ export interface ScenePlayModeHost {
   readAnimationPlayhead(): number;
   /** 异常如实上报（生产 = showError）；恢复失败必须可见，不得静默吞掉。 */
   reportError(error: unknown): void;
+  /**
+   * P1-2（2026-10-06 对抗测试第二轮）：撤销/重做恢复是否已 settle。
+   * false = 有一笔恢复仍在途——此时画布处于中间态（模型卸载/重载中），进入 Play 的
+   * "进入前快照"会拍到半程事实，且恢复完成路径（acceptRestoredScene/回滚补偿）会与
+   * 播放驱动交错。必须明确拒绝而不是拍到中间态。缺省视为已 settle（测试夹具零接线）。
+   */
+  isHistorySettled?(): boolean;
 }
 
 export type ScenePlayModeResult =
@@ -47,6 +54,7 @@ export type ScenePlayModeResult =
         | "not-playing"
         | "engine-missing"
         | "scene-not-ready" // 快照工厂拒绝（渲染器恢复中/模型未载完）
+        | "history-restore-in-flight" // P1-2：撤销/重做恢复在途，画布处于中间态，拒绝进入
         | "engine-lost" // 退出时引擎已被替换或释放
         | "restore-failed"
         | "start-failed";
@@ -131,12 +139,24 @@ export function createScenePlayModeController(
   function enterPlay(): ScenePlayModeResult {
     if (active) return { ok: false, reason: "already-playing" };
     const host = getHost();
+    // P1-2（对抗测试第二轮）：撤销/重做恢复在途时画布是中间态——进入前快照会拍到半程
+    // 事实，恢复完成路径还会与播放驱动交错（报告复现序列：清撤销栈→立即播放→整页错误
+    // 边界）。明确拒绝并提示等待，绝不让 Play 建立在中间态上。
+    if (host.isHistorySettled?.() === false) return { ok: false, reason: "history-restore-in-flight" };
     // 先收束未提交编辑：防抖窗口内的编辑先落撤销栈，再捕获进入前快照。
     host.flush();
     if (!host.engine) return { ok: false, reason: "engine-missing" };
     const snapshot = host.capture();
     if (!snapshot) return { ok: false, reason: "scene-not-ready" };
-    session = { snapshot: structuredClone(snapshot), playhead: host.readAnimationPlayhead() };
+    // P1-2 fail-safe：进入前快照必须可深拷贝（Play 会话全程依赖结构化克隆隔离）。
+    // 不可克隆 = 快照工厂拍到了含运行时对象的中间态，按"场景未就绪"拒绝而非崩溃。
+    let sessionSnapshot: SceneSnapshot;
+    try {
+      sessionSnapshot = structuredClone(snapshot);
+    } catch {
+      return { ok: false, reason: "scene-not-ready" };
+    }
+    session = { snapshot: sessionSnapshot, playhead: host.readAnimationPlayhead() };
     sessionEngine = host.engine;
     enteredAt = new Date().toISOString();
     active = true;
