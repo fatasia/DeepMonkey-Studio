@@ -379,15 +379,17 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   const shadowMaterialLayout = device.createPipelineLayout({ label: "Deep shadow material layout",
     bindGroupLayouts: [shadowFrameLayout, material] });
   const shadowPipelines = new Map<string, GPURenderPipeline>(), pendingShadow: Array<Promise<GPURenderPipeline>> = [], pendingShadowKeys: string[] = [];
-  // 分级重上(2026-10-06,双前置已清):subset 路径 critical 只保 shadow solid×3 raster
-  // (首帧投影必需),mask 两档与 authored 变体 release 后同流补齐——就绪前 mask batch 经
-  // packetDraw 的 solid 回退按实心投影(与页物化同 documented 简化)。此前真机卡死根因
+  // 分级重上(2026-10-06,双前置已清):subset 路径 critical 保全部 solid shadow
+  // (plain+authored ×3 raster = 6 条,首帧投影必需),mask 两档(12 条)release 后
+  // 同流补齐——就绪前 mask batch 经 packetDraw 的 mask-skip 跳过 batch 阴影(与页物化
+  // 同 documented 简化)。authored solid 不可 defer:作者阴影帧的 validate 编码经
+  // authoredShadowPipelines 取变体,solid 缺失在 packetDraw fail-closed 断链
+  // (2026-10-06 归因:首版只保 !authored solid,authored 阴影场景 backend-create
+  // 链路静默断裂即此;详见 authoredShadowPipelines.ts)。此前真机卡死根因
   // (validate 与构造期 pending 创建的 popErrorScope 并发窗口)已由超时守卫(e0d9788b)+
   // pageShadow 错峰(6987f0d8)消除。直调路径(无 firstFrameKeys)保持全量旧语义。
-  // 分级挂起(2026-10-06 三上三下):收益已实证(critical -36%)但 subset 路径 backend-create 链路
-  // 在 criticalReady 提前时断裂(scene-uploaded 消失,BISECT-1 一行实锤),根因待归因专项。
-  // 前置资产全部保留:popErrorScope 超时守卫/pageShadow 错峰/mask-skip 语义/探针 console 捕获。
-  const shadowDeferred = false;
+  // 收益口径:18→6(critical shadow -67%),重上实测以探针复测为准。
+  const shadowDeferred = firstFrameKeys !== undefined;
   const deferredShadowFactories: Array<{ readonly key: string; readonly create: () => Promise<GPURenderPipeline> }> = [];
   for (const authored of directDisplayOneCascade ? [false, true] : [false]) for (const mode of ["solid", "maskPlain", "maskMaterial"] as const) for (const raster of ["ccw", "cw", "double"] as const) {
     const key = (authored ? "author/" : "") + shadowPipelineKey(mode, raster), doubleSided = raster === "double";
@@ -400,7 +402,7 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
       primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : authored ? "front" : "back", frontFace: raster === "cw" ? "cw" : "ccw" },
       depthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less", depthBias: authored ? 0 : 1, depthBiasSlopeScale: authored ? 0 : 1 },
     };
-    if (!shadowDeferred || (mode === "solid" && !authored)) {
+    if (!shadowDeferred || mode === "solid") {
       pendingShadowKeys.push(key);
       pendingShadow.push(track(shadowPipelines, key, createCriticalPipeline(descriptor)));
     } else {

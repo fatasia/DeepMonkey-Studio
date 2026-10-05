@@ -249,9 +249,9 @@ describe("first-frame critical pipeline subset", () => {
     expect(build.pipelines.mainPipelines.size).toBe(2);
     expect(build.pipelines.main).toBeDefined();
     expect(f.descriptors.filter(descriptor => descriptor.label?.startsWith("Deep forward"))).toHaveLength(2);
-    // 分级挂起态(2026-10-06 三上三下,挂起开关 shadowDeferred=false):shadow 全量 9 条
-    // 照旧 critical;挂起原因与重上前置见 pipelines.ts shadowDeferred 注释。
-    expect(build.pipelines.shadowPipelines.size).toBe(9);
+    // 分级(2026-10-06 断链归因修复后重上):subset 路径 critical 保全部 solid shadow
+    // (无 authored 场景 → solid×3);authored 契约测试见 authoredShadowPipelines.subset.test.ts。
+    expect(build.pipelines.shadowPipelines.size).toBe(3);
     // 分级重上前置②:subset 路径(外部 release 承诺)release 前页管线零创建,
     // validate 提前不再与 pending 创建形成 popErrorScope 并发窗口。
     expect(build.pipelines.pageShadowPipelines.size).toBe(0);
