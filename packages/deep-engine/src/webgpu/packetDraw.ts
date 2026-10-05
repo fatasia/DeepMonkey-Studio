@@ -45,13 +45,14 @@ export function drawPacketBatches(
       ? pipelines.textureArrayFallback ?? pipelines : pipelines);
     const pipeline = phase === "shadow" ? shadowPipeline(selected, cached.source, authorShadow)
       : mainPipeline(selected, cached.source, phase === "display", directionalOnly);
+    if (pipeline === undefined) return undefined; // mask 变体未就绪:该 batch 本帧跳过阴影(见 shadowPipeline 注释)。
     const cullingPhase = phase === "shadow" ? "shadow" : "opaque";
     const dynamicCuller = dynamic && useIndirect && cached.source.count >= GPU_CULLING_MIN_INSTANCES
       ? deformation?.dynamicCulling?.(cached.source, cullingPhase, shadowCascade) : undefined;
     if (dynamicCuller && !culling.isDynamicPhase(dynamicCuller, cached.source, cullingPhase, shadowCascade))
       throw new Error("Deformation indirect draw requires current owner-verified dynamic bounds.");
     return { cached, dynamic, pipeline, dynamicCuller };
-  });
+  }).filter(draws => draws !== undefined);
   let drawCalls = 0, triangles = 0;
   let activePipeline: GPURenderPipeline | undefined;
   let activeMaterialGroup: GPUBindGroup | undefined;
@@ -117,7 +118,7 @@ function requiredGeometry(geometries: ReadonlyMap<string, CachedPacketGeometry>,
   return geometry;
 }
 
-function shadowPipeline(pipelines: Pipelines, batch: PreparedBatch, authorShadow: boolean): GPURenderPipeline {
+function shadowPipeline(pipelines: Pipelines, batch: PreparedBatch, authorShadow: boolean): GPURenderPipeline | undefined {
   // Three 的透明材质在 alphaTest=0 时仍写完整阴影深度；opacity 不是裁切阈值。
   // BLEND batches do not carry the material cutoff in this draw contract;
   // keep their historical solid-depth caster route. Explicit MASK batches
@@ -133,13 +134,15 @@ function shadowPipeline(pipelines: Pipelines, batch: PreparedBatch, authorShadow
     // material mask variant; preserve their solid-depth fallback.
     ?? (batch.alphaMode === "BLEND"
       ? pipelines.shadowPipelines.get(shadowPipelineKey("solid", rasterMode(batch.mirrored, batch.doubleSided)))
-      : undefined)
-    // 分级重上(2026-10-06):mask/authored 变体 release 后才创建,就绪前经 solid 回退
-    // 按实心投影(与页物化同 documented 简化,见 pipelines.ts 页物化注释);就绪后
-    // 按 key 命中恢复逐像素掩码。author/ 前缀变体同样回退非 authored solid。
-    ?? pipelines.shadowPipelines.get(shadowPipelineKey("solid", rasterMode(batch.mirrored, batch.doubleSided)));
-  if (!pipeline) throw new Error(`Missing shadow pipeline: ${key}`);
-  return pipeline;
+      : undefined);
+  if (pipeline) return pipeline;
+  if (mode === "solid") throw new Error(`Missing shadow pipeline: ${key}`);
+  // 分级重上(2026-10-06):mask/authored 变体 release 后才创建。authored 变体回退普通
+  // solid(同布局同 buffers,仅 cull/bias 不同,安全);**mask 变体不可回退**——
+  // mask 管线吃 shadowMaskBuffers 布局,solid 管线吃 shadowBuffers,换管线不换顶点流
+  // 会产生 device validation error 并触发首帧 fail-closed(真机实证)。缺失=该 batch
+  // 本帧跳过阴影(变体就绪后自动恢复逐像素掩码投影)。
+  return undefined;
 }
 
 function mainPipeline(pipelines: Pipelines, batch: PreparedBatch, directDisplay: boolean,

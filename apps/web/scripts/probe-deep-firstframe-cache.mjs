@@ -43,6 +43,10 @@ const page = await context.newPage();
 await page.goto(`${webOrigin}${route}`, { waitUntil: "domcontentloaded", timeout: 60_000 });
 await page.locator(".viewport canvas:not([data-renderer-backend])").first().waitFor({ state: "visible", timeout: 60_000 });
 
+const consoleErrors = [];
+page.on("console", message => { consoleErrors.push(`[${message.type()}] ${message.text().slice(0, 400)}`); });
+page.on("pageerror", error => consoleErrors.push(`pageerror: ${String(error).slice(0, 500)}`));
+
 async function marks() {
   return page.evaluate(() => performance.getEntriesByType("mark")
     .filter(entry => entry.name.startsWith("deep-webgpu:"))
@@ -105,6 +109,7 @@ const sceneFirst = first.stages.find(s => s.to === "scene-uploaded")?.deltaMs;
 const sceneSecond = second.stages.find(s => s.to === "scene-uploaded")?.deltaMs;
 const summary = { firstSwitch: first, secondSwitch: second,
   sceneUploadFirstMs: sceneFirst, sceneUploadSecondMs: sceneSecond,
+  consoleErrors: consoleErrors.slice(0, 10),
   cacheEffective: sceneFirst !== undefined && sceneSecond !== undefined ? sceneSecond < sceneFirst * 0.5 : null };
 await writeFile(`${output}report.json`, JSON.stringify(summary, null, 2));
 console.log(JSON.stringify(summary, null, 2));

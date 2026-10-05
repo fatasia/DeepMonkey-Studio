@@ -384,7 +384,10 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   // packetDraw 的 solid 回退按实心投影(与页物化同 documented 简化)。此前真机卡死根因
   // (validate 与构造期 pending 创建的 popErrorScope 并发窗口)已由超时守卫(e0d9788b)+
   // pageShadow 错峰(6987f0d8)消除。直调路径(无 firstFrameKeys)保持全量旧语义。
-  const shadowDeferred = firstFrameKeys !== undefined;
+  // 分级挂起(2026-10-06 三上三下):收益已实证(critical -36%)但 subset 路径 backend-create 链路
+  // 在 criticalReady 提前时断裂(scene-uploaded 消失,BISECT-1 一行实锤),根因待归因专项。
+  // 前置资产全部保留:popErrorScope 超时守卫/pageShadow 错峰/mask-skip 语义/探针 console 捕获。
+  const shadowDeferred = false;
   const deferredShadowFactories: Array<{ readonly key: string; readonly create: () => Promise<GPURenderPipeline> }> = [];
   for (const authored of directDisplayOneCascade ? [false, true] : [false]) for (const mode of ["solid", "maskPlain", "maskMaterial"] as const) for (const raster of ["ccw", "cw", "double"] as const) {
     const key = (authored ? "author/" : "") + shadowPipelineKey(mode, raster), doubleSided = raster === "double";
