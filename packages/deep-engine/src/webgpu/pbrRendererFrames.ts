@@ -137,6 +137,8 @@ export interface PbrRendererFrameHost {
   /** a2c 设备级自证探针(a2cDeviceProbe,场景无关判定):host 供 GPUDevice 时
    * 一次性前置判定;与场景探针互补——设备探针拦驱动层缺陷,场景探针拦使用侧。 */
   readonly a2cDeviceProbe: ((device: GPUDevice) => Promise<import("./a2cDeviceProbe.js").A2cDeviceProbeVerdict>) | undefined;
+  /** a2c 设备探针 verdict 回调(桥作降级决策;渲染器只转发)。 */
+  readonly onA2cDeviceProbeVerdict?: (frame: number, verdict: import("./a2cDeviceProbe.js").A2cDeviceProbeVerdict) => void;
   readonly localShadows: LocalSpotShadowRuntime;
   readonly mainBindings: PbrMainBindings;
   readonly outputs: PbrOutputBindings;
@@ -183,6 +185,9 @@ export interface PbrRendererFrameHost {
 }
 
 /** 原类私有帧编排(体逐字未改;this → host)。 */
+
+/** a2c 设备探针每帧只跑一次的帧号去重(模块级;进程生命周期语义)。 */
+const a2cDeviceProbeSettled = new Set<number>();
 
 export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView): FrameMetrics | undefined {
     const begin = host.now();
@@ -691,6 +696,15 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     // target0 的 MSAA resolve(opaque-hdr,COPY_SRC 为既有 usage)读回,按 handoff 判据
     // (alpha 非 opaque 存在 && edgePixels ≤ 8·W ⇒ 无效)结算。直出 display 帧无 MSAA
     // 主通路(a2c 批次物理回退普通管线),不探测。渲染器只披露不决策。
+    // a2c 设备级前置探针(一次性,场景无关):host 供自证函数且尚未出 verdict 时,
+    // 用独立 64² 色图判定驱动层掩码是否生成——ineffective 时后续帧由宿主侧降级
+    // (maskFallback),场景探针不再触发(有效/不确定则场景探针照常)。
+    if (host.a2cDeviceProbe && !a2cDeviceProbeSettled.has(frameNumber)) {
+      a2cDeviceProbeSettled.add(frameNumber);
+      void host.a2cDeviceProbe(device).then(verdict => {
+        host.onA2cDeviceProbeVerdict?.(frameNumber, verdict);
+      }).catch(() => { /* fail-open:判定失败不影响渲染循环 */ });
+    }
     const a2cProbePending = host.a2cProbe?.wantsProbe(drawProfile.hasAlphaToCoverage) === true && !directClear;
     if (a2cProbePending) host.a2cProbe!.beginFrame(frameNumber, device, encoder, host.targets.hdrTexture);
     timing?.resolve(encoder);
