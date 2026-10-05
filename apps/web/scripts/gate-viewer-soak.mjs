@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import playwright from "../../cloud-render-worker/node_modules/playwright-core/index.js";
 import { buildVisualQaArtifact, createStaticServer } from "./productBrowserSupport.mjs";
 import { analyzeRenderFrame, isBlankRenderFrame } from "./viewerSoakVisualHealth.mjs";
+import { assessHeapWatermark, DEFAULT_HEAP_WATERMARK_MIB } from "./viewerSoakHeapWatermark.mjs";
 
 const { chromium } = playwright;
 const webRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -20,6 +21,10 @@ const shadowsEnabled = process.env.BIM_STUDIO_SOAK_SHADOWS !== "off";
 const effectVariant = process.env.BIM_STUDIO_SOAK_EFFECT_VARIANT ?? "all";
 const repeatEffects = process.env.BIM_STUDIO_SOAK_REPEAT_EFFECTS === "1";
 const heapSamplingEnabled = process.env.BIM_STUDIO_SOAK_HEAP_SAMPLING === "1";
+// A2-刀3:堆水位线(headless 保守线,默认 800 MiB;release-soak-20261005 生产模式
+// 实测 31 MiB 起步、峰 1458 MiB)。可用 BIM_STUDIO_SOAK_HEAP_WATERMARK_MIB 覆盖,
+// 待非 headless 复跑定标后收紧默认值。
+const heapWatermarkMib = finiteEnvironment("BIM_STUDIO_SOAK_HEAP_WATERMARK_MIB", DEFAULT_HEAP_WATERMARK_MIB, 64, 65_536);
 const requiredSamples = Math.max(3, Math.ceil(durationMinutes * 60 / sampleSeconds));
 const reportPath = resolve(outputRoot, `report-${rendererBackend}.json`);
 
@@ -42,6 +47,7 @@ const report = {
   sceneObjectCount,
   sampleSeconds,
   requiredSamples,
+  heapWatermarkMib,
   completedSamples: 0,
   samples: [],
   visualSamples: [],
@@ -90,6 +96,9 @@ try {
     report.allocationHotspots = summarizeAllocationProfile(profile);
   }
   report.failures.push(...assessSoak(report));
+  // A2-刀3:堆水位门(峰值硬线 + 「增长率+回落特征」逃生通道),账目入报告供水位跟踪。
+  report.heapWatermark = assessHeapWatermark(report.samples, { watermarkMib: heapWatermarkMib });
+  if (report.heapWatermark.failure) report.failures.push(report.heapWatermark.failure);
 } catch (error) {
   report.failures.push(error instanceof Error ? error.message : String(error));
 } finally {
