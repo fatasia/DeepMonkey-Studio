@@ -27,6 +27,8 @@ interface DrawResources {
   readonly previous: GPUBuffer; readonly indirect: GPUBuffer; readonly uniform: GPUBuffer;
   readonly levelPrefix: GPUBuffer; readonly levelBlocks: GPUBuffer;
   group: GPUBindGroup; bindings: readonly GPUBuffer[];
+  /** draw 参数 uniform 的场景修订号;内容静态,同修订不重写(同步批量化,2026-10-07)。 */
+  uniformRevision: number | undefined;
 }
 interface PendingFrame { readonly result: GpuLodResult; readonly scene: SceneBuffers; readonly previous: SceneBuffers | undefined }
 /** Bridges packet LOD metadata to selection, stable global budgets, compaction, and indirect draws. */
@@ -40,6 +42,8 @@ export class ScreenSpacePacketLodResources {
   private selector: GpuLodSelector | undefined;
   private scene: SceneBuffers | undefined;
   private pending: PendingFrame | undefined;
+  private budgetScratch: ArrayBuffer | undefined;
+  private drawScratch: ArrayBuffer | undefined;
   private disposed = false;
 
   private readonly inputs: PacketLodSceneCache;
@@ -90,7 +94,11 @@ export class ScreenSpacePacketLodResources {
       let indirectDraws = 0;
       for (const mapping of staged.mappings) {
         const resources = this.ensureDrawResources(mapping, staged);
-        this.writeUniform(resources.uniform, mapping);
+        // draw 参数(offset/count/capacity/levels)只随场景修订变化;同修订帧零重写。
+        if (resources.uniformRevision !== revision) {
+          this.writeUniform(resources.uniform, mapping);
+          resources.uniformRevision = revision;
+        }
         const pass = encoder.beginComputePass({ label: `Deep packet LOD ${mapping.batch.source.key}` });
         pass.setBindGroup(0, resources.group);
         const batchWorkgroups = Math.ceil(mapping.batch.source.count / PACKET_LOD_WORKGROUP_SIZE);
@@ -225,7 +233,7 @@ export class ScreenSpacePacketLodResources {
         GPUBufferUsage.STORAGE | GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_SRC);
       const uniform = make("Deep packet LOD draw parameters", PACKET_LOD_DRAW_UNIFORM_SIZE, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
       return { capacity, levelCount, compacted, previous, indirect, uniform, levelPrefix, levelBlocks,
-        group: undefined as unknown as GPUBindGroup, bindings: [] };
+        group: undefined as unknown as GPUBindGroup, bindings: [], uniformRevision: undefined };
     } catch (error) { failWithResourceCleanup(error, "Packet LOD draw allocation failed.",
       created.map(value => () => this.session.release(value))); }
   }
@@ -240,18 +248,22 @@ export class ScreenSpacePacketLodResources {
   }
 
   private writeBudget(scene: SceneBuffers, workgroups: number, view: PacketLodView): void {
-    const data = new ArrayBuffer(PACKET_LOD_BUDGET_UNIFORM_SIZE), uints = new Uint32Array(data), floats = new Float32Array(data);
+    // scratch 复用:帧路径禁止每帧分配(同步批量化;内容逐帧变,写入本身保留)。
+    this.budgetScratch ??= new ArrayBuffer(PACKET_LOD_BUDGET_UNIFORM_SIZE);
+    const uints = new Uint32Array(this.budgetScratch), floats = new Float32Array(this.budgetScratch);
     uints.set([scene.count, workgroups, budgetValue(view.budget?.maxObjects, scene.count, "object"),
       budgetValue(view.budget?.maxTriangles, MAX_U32, "triangle")]);
     floats.set(new Float32Array(packFrustum(view.frustum)), 4);
-    this.session.device.queue.writeBuffer(scene.budgetUniform, 0, data);
+    this.session.device.queue.writeBuffer(scene.budgetUniform, 0, this.budgetScratch);
   }
 
   private writeUniform(buffer: GPUBuffer, mapping: BatchMapping): void {
-    const data = new ArrayBuffer(PACKET_LOD_DRAW_UNIFORM_SIZE), uints = new Uint32Array(data);
+    this.drawScratch ??= new ArrayBuffer(PACKET_LOD_DRAW_UNIFORM_SIZE);
+    const uints = new Uint32Array(this.drawScratch);
+    uints.fill(0);
     uints.set([mapping.offset, mapping.batch.source.count, this.drawsByBatch.get(mapping.batch.source.key)!.capacity, mapping.profile.levels.length]);
     mapping.profile.levels.forEach((level, index) => uints.set([level.triangles * 3, 0, 0, 0], 4 + index * 4));
-    this.session.device.queue.writeBuffer(buffer, 0, data);
+    this.session.device.queue.writeBuffer(buffer, 0, this.drawScratch);
   }
 
   private clearScene(): void {
