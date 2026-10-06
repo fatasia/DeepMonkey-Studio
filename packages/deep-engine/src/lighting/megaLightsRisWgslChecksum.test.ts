@@ -96,7 +96,13 @@ describe("MegaLights RIS WGSL single-source gate (TS half)", () => {
     expect(MEGA_LIGHTS_RIS_WGSL).toContain(
       "let sourceWeight = f32(lightCount) * source.weightSum / (f32(source.m) * sourceTarget);");
     expect(MEGA_LIGHTS_RIS_WGSL).toContain("if (sources > 0u) { return acc / f32(sources); }");
-    expect(MEGA_LIGHTS_RIS_WGSL).toContain("if (nx < 0 || ny < 0 || nx >= i32(params.viewport.x) || ny >= i32(params.viewport.y)) { continue; }");
+    // naga→SPIR-V 规避(2026-10-07):spatial 块的 continue 全部改写为嵌套 if(逐位等价),
+    // 防回归钉 = 越界守卫字面量必须保持结构化 if 形态,且 spatial 块内不得再现 continue。
+    expect(MEGA_LIGHTS_RIS_WGSL).toContain("if (nx >= 0 && ny >= 0 && nx < i32(params.viewport.x) && ny < i32(params.viewport.y)) {");
+    const spatialBlock = MEGA_LIGHTS_RIS_WGSL.slice(
+      MEGA_LIGHTS_RIS_WGSL.indexOf("for (var offsetX"),
+      MEGA_LIGHTS_RIS_WGSL.indexOf("if (sources > 0u)"));
+    expect(spatialBlock).not.toContain("continue;");
     // 穷举模式 = 逐灯求和(与簇光逐灯路径同式;⑤ 对拍腿;可见性不进入穷举)。
     expect(MEGA_LIGHTS_RIS_WGSL).toContain("var total = vec3f(0.0);");
     // 颜色 EMA 参数词入 params(宿主模板做 mix,见 megaLightsRuntime 组合门)。

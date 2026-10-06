@@ -306,32 +306,40 @@ fn deepMegaReuseAndShade(params: DeepMegaParams, pixelIndex: u32, surfaceA: vec4
     let pixelYi = i32(pixelIndex / params.viewport.x);
     for (var offsetY = -i32(DEEP_MEGA_RIS_SPATIAL_RADIUS); offsetY <= i32(DEEP_MEGA_RIS_SPATIAL_RADIUS); offsetY = offsetY + 1) {
       for (var offsetX = -i32(DEEP_MEGA_RIS_SPATIAL_RADIUS); offsetX <= i32(DEEP_MEGA_RIS_SPATIAL_RADIUS); offsetX = offsetX + 1) {
+        // naga→SPIR-V 规避(2026-10-07):嵌套循环携带状态(accumulators)+continue 是
+        // naga 结构化控制流误编译的已知家族,真机 Vulkan 腿设备重置疑似同因。此处的
+        // continue 全部改写为嵌套 if(德摩根取反,求值顺序与运算逐位不变,纯控制流
+        // 等价);DX12/HLSL 与 Dawn/tint 两路同源消费,行为不变。
         let nx = pixelXi + offsetX;
         let ny = pixelYi + offsetY;
-        if (nx < 0 || ny < 0 || nx >= i32(params.viewport.x) || ny >= i32(params.viewport.y)) { continue; }
-        let sourceIndex = u32(ny) * params.viewport.x + u32(nx);
-        let source = deepMegaReservoirUnpack(deepMegaReservoirsA[sourceIndex]);
-        if (source.winner == DEEP_MEGA_INVALID || source.m == 0u) { continue; }
-        let sourceSurfaceA = deepMegaSurfaces[sourceIndex * DEEP_MEGA_SURFACE_STRIDE];
-        let sourceSurfaceB = deepMegaSurfaces[sourceIndex * DEEP_MEGA_SURFACE_STRIDE + 1u];
-        let sourceSurfaceC = deepMegaSurfaces[sourceIndex * DEEP_MEGA_SURFACE_STRIDE + 2u];
-        let normalDot = dot(normalView, sourceSurfaceB.xyz);
-        if (normalDot < DEEP_MEGA_SPATIAL_NORMAL_GATE
-          || !deepMegaDepthGate(surfaceA.w, sourceSurfaceA.w)) { continue; }
-        let record = deepMegaLoad(source.winner);
-        // 源像素目标权重(W 公式的分母;无偏恒等式要求在**源像素**评价)。
-        let sourceTarget = deepMegaLuminance(deepMegaContribution(record, sourceSurfaceA.xyz,
-          sourceSurfaceB.xyz, deepMegaSafeNormalize(-sourceSurfaceA.xyz, vec3f(0.0, 0.0, 1.0)),
-          sourceSurfaceC.xyz, sourceSurfaceA.w, sourceSurfaceB.w));
-        if (sourceTarget <= 0.0) { continue; }
-        let sourceWeight = f32(lightCount) * source.weightSum / (f32(source.m) * sourceTarget);
-        // 本像素着色(源胜者灯 × 本像素几何;可见性按**源像素** mask 复用——
-        // 源已过法线/深度相似门,同门像素的胜者射线遮挡状态传递是 ReSTIR DI
-        // visibility reuse 惯例,残差由门与颜色 EMA 吸收)。
-        let sourceShade = deepMegaShadeWinner(record, positionView, normalView, view,
-          surfaceC.xyz, surfaceA.w, surfaceB.w, deepMegaVisibilityAt(sourceIndex));
-        acc = acc + sourceShade * vec3f(sourceWeight);
-        sources = sources + 1u;
+        if (nx >= 0 && ny >= 0 && nx < i32(params.viewport.x) && ny < i32(params.viewport.y)) {
+          let sourceIndex = u32(ny) * params.viewport.x + u32(nx);
+          let source = deepMegaReservoirUnpack(deepMegaReservoirsA[sourceIndex]);
+          if (source.winner != DEEP_MEGA_INVALID && source.m != 0u) {
+            let sourceSurfaceA = deepMegaSurfaces[sourceIndex * DEEP_MEGA_SURFACE_STRIDE];
+            let sourceSurfaceB = deepMegaSurfaces[sourceIndex * DEEP_MEGA_SURFACE_STRIDE + 1u];
+            let sourceSurfaceC = deepMegaSurfaces[sourceIndex * DEEP_MEGA_SURFACE_STRIDE + 2u];
+            let normalDot = dot(normalView, sourceSurfaceB.xyz);
+            if (normalDot >= DEEP_MEGA_SPATIAL_NORMAL_GATE
+              && deepMegaDepthGate(surfaceA.w, sourceSurfaceA.w)) {
+              let record = deepMegaLoad(source.winner);
+              // 源像素目标权重(W 公式的分母;无偏恒等式要求在**源像素**评价)。
+              let sourceTarget = deepMegaLuminance(deepMegaContribution(record, sourceSurfaceA.xyz,
+                sourceSurfaceB.xyz, deepMegaSafeNormalize(-sourceSurfaceA.xyz, vec3f(0.0, 0.0, 1.0)),
+                sourceSurfaceC.xyz, sourceSurfaceA.w, sourceSurfaceB.w));
+              if (sourceTarget > 0.0) {
+                let sourceWeight = f32(lightCount) * source.weightSum / (f32(source.m) * sourceTarget);
+                // 本像素着色(源胜者灯 × 本像素几何;可见性按**源像素** mask 复用——
+                // 源已过法线/深度相似门,同门像素的胜者射线遮挡状态传递是 ReSTIR DI
+                // visibility reuse 惯例,残差由门与颜色 EMA 吸收)。
+                let sourceShade = deepMegaShadeWinner(record, positionView, normalView, view,
+                  surfaceC.xyz, surfaceA.w, surfaceB.w, deepMegaVisibilityAt(sourceIndex));
+                acc = acc + sourceShade * vec3f(sourceWeight);
+                sources = sources + 1u;
+              }
+            }
+          }
+        }
       }
     }
     if (sources > 0u) { return acc / f32(sources); }

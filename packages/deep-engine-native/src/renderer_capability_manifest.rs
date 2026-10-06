@@ -410,7 +410,9 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
     },
     // P1 质量主线(六引擎对标刀位 2,2026-10-05):native MegaLights RIS 链入库——
     // CPU 权威镜像与生产 WGSL 单源齐备,双端 fixture 对拍过;真机 GPU leg 受 wgpu 30
-    // naga 编译路径限制(见 megalights_gpu_probe_tests 已知限制),生产 renderer 帧循环
+    // naga 编译路径限制(见 megalights_gpu_probe_tests 已知限制;2026-10-07 预备刀:RIS 核
+// spatial 块 continue→嵌套 if 逐位等价改写已落地——嵌套循环携带状态+continue 是 naga
+// SPIR-V 结构化控制流误编译已知家族,两半校验和/parity 31 测试绿,真机复验待 GPU 串行窗口),生产 renderer 帧循环
     // 接线为后继切片——如实 harness-only(与 sdf-gi/auto-exposure 同款登记)。
     NativeCapabilitySelfCheck {
         capability_id: "megalights",
