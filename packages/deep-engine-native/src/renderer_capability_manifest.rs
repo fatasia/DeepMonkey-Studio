@@ -398,11 +398,15 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         reason: RendererCapabilityReasonCode::Full,
         evidence: "outline_pass.rs OutlinePass + native_outline_composite_v1.wgsl 掩码/合成(实例 outline 字段共用 surface flag bit 256)",
     },
+    // P1 质量主线(六引擎对标刀位 2,2026-10-05):native MegaLights RIS 链入库——
+    // CPU 权威镜像与生产 WGSL 单源齐备,双端 fixture 对拍过;真机 GPU leg 受 wgpu 30
+    // naga 编译路径限制(见 megalights_gpu_probe_tests 已知限制),生产 renderer 帧循环
+    // 接线为后继切片——如实 harness-only(与 sdf-gi/auto-exposure 同款登记)。
     NativeCapabilitySelfCheck {
         capability_id: "megalights",
-        support: RendererCapabilitySupport::Unavailable,
-        reason: RendererCapabilityReasonCode::Absent,
-        evidence: "无 MegaLights 模块(native clustered_lighting 为逐灯簇光路径,非 RIS 采样;web M1 compute 通路见 deep-engine lighting/megaLights*)",
+        support: RendererCapabilitySupport::Supported,
+        reason: RendererCapabilityReasonCode::HarnessOnly,
+        evidence: "src/megalights_ris.rs(P1 质量主线刀位 2:统一灯池 64B/灯打包 ABI + RIS K=32 WRS 蓄水池 + 时域合并(单候选/深度门 0.1) + 5×5 空间值域无偏平均(源像素评价 W_src/法线门 0.9) + 胜者可见性 mask 只乘 shade 侧(self 本像素/空间源像素) + 穷举参考与穷举模式 + 直射通路选择(≤64 簇光快路径=clustered_lighting 组合,超预算 RIS);TS megaLights.ts/megaLightsRisCpu.ts 逐式同构,f64 中间量) + src/megalights_wgsl.rs(wgsl/megaLightsRis.wgsl 单源 include_str + .sha256 校验和 Rust 半,TS 半 megaLightsRisWgslChecksum.test.ts 同夹具,两半同绿=双端逐字节) + 对拍 src/megalights_parity_tests.rs 与 TS 权威 fixture(fixtures/megalights-native-parity-v1.json,生成器 packages/deep-engine/scripts/generateMegaLightsNativeParity.mts,黄金场景 8×6×12 灯×5 帧覆盖矩阵:空间值域平均/时域合并/EMA/self 回落/穷举/可见性/门分支;RNG 全流与蓄水池结构 winner/m 位级,weightSum f64 ≤1e-9 相对,f32 color 词 ≤2 ulp,唯跨 libm hypot/pow/exp2 哨兵如实) + 真机 src/megalights_gpu_probe_tests.rs(#[ignore];harness/设备对照核全过,但 RIS 核 dispatch 在 wgpu 30 naga 双后端执行期故障=编译路径已知限制,TS 生产 Dawn 同源正常,如实不虚报);如实 harness-only:生产 renderer 帧循环接线后继切片,IES 因子注入与可见性射线档(traceTwoLevelOccluded 家族)缺位",
     },
     NativeCapabilitySelfCheck {
         capability_id: "projected-textures",

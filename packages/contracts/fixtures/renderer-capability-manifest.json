@@ -711,9 +711,9 @@
         "evidence": "packages/deep-engine/src/lighting/megaLights.ts:MEGA_LIGHT_STRIDE_BYTES(64B/灯 union 灯池;DEEP_AREA_LIGHT_MAX 8→64 同批扩容)+megaLightsRuntime.ts(M1 RIS compute 运行时;M2 加 surfacesBuffer 供给面)+megaLightsFrameController.ts(M2 帧控制器:路径决策+depth 重建表面+RIS dispatch+加性合成;懒构造于 pbrRendererFrames)+megaLightsFrameWgsl.ts(重建/合成宿主私有核)+wgsl/megaLightsRis.wgsl(K=32→M=1 RIS 核,checksum 门);真机证据 packages/deep-engine/lab/megaLightsGpuProbe.ts + scripts/megaLightsGpuTest.mjs"
       },
       "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/lib.rs(无 MegaLights 模块;native clustered_lighting.rs 为逐灯簇光路径,非 RIS 采样)"
+        "support": "supported",
+        "reason": "harness-only",
+        "evidence": "packages/deep-engine-native/src/megalights_ris.rs(P1 刀位 2:统一灯池 64B/灯打包 ABI + RIS K=32 WRS 蓄水池 + 时域合并(单候选/深度门 0.1) + 5×5 空间值域无偏平均(源像素评价 W_src/法线门 0.9) + 胜者可见性 mask 只乘 shade 侧 + 穷举参考与穷举模式 + 直射通路选择(≤64 簇光快路径=clustered_lighting 组合,超预算 RIS);TS megaLights.ts/megaLightsRisCpu.ts 逐式同构,f64 中间量) + packages/deep-engine-native/src/megalights_wgsl.rs(wgsl/megaLightsRis.wgsl 单源 include_str + .sha256 校验和 Rust 半;TS 半 megaLightsRisWgslChecksum.test.ts 同夹具) + 对拍 packages/deep-engine-native/src/megalights_parity_tests.rs 与 TS 权威 fixture(fixtures/megalights-native-parity-v1.json,生成器 packages/deep-engine/scripts/generateMegaLightsNativeParity.mts,8×6×12 灯×5 帧覆盖矩阵;RNG 全流与蓄水池 winner/m 位级,weightSum f64 ≤1e-9 相对,f32 color 词 ≤2 ulp,唯跨 libm hypot/pow/exp2 哨兵如实) + 真机 packages/deep-engine-native/src/megalights_gpu_probe_tests.rs(#[ignore];harness/设备对照核全过,RIS 核 dispatch 在 wgpu 30 naga 双后端执行期故障=编译路径已知限制,TS 生产 Dawn 同源正常,如实);如实 harness-only:生产 renderer 帧循环接线后继切片,IES 因子注入与可见性射线档缺位"
       }
     },
     {
