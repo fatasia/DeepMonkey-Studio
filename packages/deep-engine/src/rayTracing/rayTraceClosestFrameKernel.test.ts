@@ -4,7 +4,7 @@ import { emitRayTraceClosestFrameKernelWgsl, packRayTraceClosestFrameUniform,
   RAY_TRACE_CLOSEST_FRAME_BINDINGS, RAY_TRACE_CLOSEST_FRAME_ILLUMINATION_BINDINGS,
   RAY_TRACE_CLOSEST_FRAME_ENTRY_POINT, RAY_TRACE_CLOSEST_FRAME_ILLUMINATION_PARAMS_BYTES,
   RAY_TRACE_CLOSEST_FRAME_MISS_T, RAY_TRACE_CLOSEST_FRAME_PARAMS_BYTES } from "./rayTraceClosestFrameKernel.js";
-import { BVH_BLAS_CLOSEST_WGSL, BVH_BLAS_OCCLUDED_WGSL, BVH_INTERSECT_NORMAL_WGSL, BVH_INTERSECT_WGSL,
+import { BVH_BLAS_CLOSEST_WGSL, BVH_BLAS_OCCLUDED_WGSL, BVH_INTERSECT_NORMAL_WGSL,
   BVH_SLAB_WGSL, bvhTraverseCoreWgsl } from "./bvhTraverseWgsl.js";
 import { TLAS_CLOSEST_WGSL, TLAS_OCCLUDED_WGSL } from "./bvhTraverseTlasWgsl.js";
 
@@ -18,8 +18,8 @@ import { TLAS_CLOSEST_WGSL, TLAS_OCCLUDED_WGSL } from "./bvhTraverseTlasWgsl.js"
  */
 const RAY_TRACE_CLOSEST_FRAME_F32_SHA256 = "5c2939d4917d73f5ef88ebf173c405c053c8deddb36386eacdae4e7bcb9cdf36";
 const RAY_TRACE_CLOSEST_FRAME_F16_SHA256 = "ad13deff97ba89145e194fbfb0dbb265bf803cc14ade5ac17dac8e37ece7ec29";
-const RAY_TRACE_CLOSEST_FRAME_ILLUM_F32_SHA256 = "3b32685cce7927048166a605ce54f45d6f8cd2e64fa764dbefacbb5e0d304bfe";
-const RAY_TRACE_CLOSEST_FRAME_ILLUM_F16_SHA256 = "8dbb5df7e781d3ff9e2c289612aa455ad99d3646908ddd15dce2399fe5052b69";
+const RAY_TRACE_CLOSEST_FRAME_ILLUM_F32_SHA256 = "85f3de87b1bca70c67825b5004a818dea174647d3ba1038abb3842ed05999e28";
+const RAY_TRACE_CLOSEST_FRAME_ILLUM_F16_SHA256 = "589c69900949646d21c12f9f33c8ffb57999eefa0006dc35b3bb972caa418b76";
 
 describe("reflection closest-hit frame kernel generation contract", () => {
   const wgsl = emitRayTraceClosestFrameKernelWgsl();
@@ -150,7 +150,12 @@ describe("reflection closest-hit frame kernel illumination variant (occlusion + 
     expect(wgsl).toContain("fn traceTwoLevelOccluded(");
     expect(wgsl).toContain(BVH_BLAS_OCCLUDED_WGSL.slice(0, 40));
     expect(wgsl).toContain(TLAS_OCCLUDED_WGSL.slice(0, 40));
-    expect(wgsl).toContain(BVH_INTERSECT_WGSL.slice(0, 40));
+    // 遮蔽腿 triangle-intersect 经适配器复用 closest 族 intersectTriangleNormal
+    // (两族片段 fetchVertex 撞名,禁止直接拼装 BVH_INTERSECT_WGSL —— 真机 Dawn
+    // parse error 实证;adapter + 无重复 fetchVertex 双断言钉死)。
+    expect(wgsl).toContain("fn intersectTriangle(origin: vec3f, dir: vec3f, prim: u32) -> f32 {");
+    expect(wgsl).toContain("return intersectTriangleNormal(origin, dir, prim, &occlusionNormal);");
+    expect(wgsl.match(/fn fetchVertex/gu)?.length).toBe(1);
   });
 
   it("binds the shading record and instance albedo table on top of the shared 9 slots", () => {

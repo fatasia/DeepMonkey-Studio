@@ -33,7 +33,7 @@
  */
 
 import { bvhTraverseCoreWgsl, BVH_BLAS_CLOSEST_WGSL, BVH_BLAS_OCCLUDED_WGSL, BVH_INTERSECT_NORMAL_WGSL,
-  BVH_INTERSECT_WGSL, BVH_SLAB_WGSL } from "./bvhTraverseWgsl.js";
+  BVH_SLAB_WGSL } from "./bvhTraverseWgsl.js";
 import { TLAS_INSTANCE_STRUCT_WGSL, TLAS_LOCAL_RAY_WGSL, TLAS_CLOSEST_WGSL,
   TLAS_OCCLUDED_WGSL } from "./bvhTraverseTlasWgsl.js";
 
@@ -121,6 +121,16 @@ export function packRayTraceClosestFrameUniform(params: RayTraceClosestFramePara
 /** miss 记录常量(t=-1 语义;与内核 miss 路径逐位一致,CPU 侧同样用它判 miss)。 */
 export const RAY_TRACE_CLOSEST_FRAME_MISS_T = -1;
 
+/** 光照遮蔽档 triangle-intersect 适配器:两族片段的 fetchVertex 撞名(BVH_INTERSECT_WGSL
+ * 与 BVH_INTERSECT_NORMAL_WGSL 各带私有 fetchVertex,2026-10-06 真机 Dawn parse error
+ * 实证),遮蔽腿复用 closest 族的 intersectTriangleNormal 派生 blasOccluded 所需的
+ * intersectTriangle(t 语义逐值一致:-1 = 拒绝)。 */
+const RAY_TRACE_ILLUMINATION_INTERSECT_ADAPTER_WGSL = /* wgsl */ `fn intersectTriangle(origin: vec3f, dir: vec3f, prim: u32) -> f32 {
+  var occlusionNormal: vec3f;
+  return intersectTriangleNormal(origin, dir, prim, &occlusionNormal);
+}
+`;
+
 /** 发射帧循环反射 closest-hit 内核源码;f32/f16 两档各自确定性(sha256 合同见本测试)。 */
 export function emitRayTraceClosestFrameKernelWgsl(options: RayTraceClosestFrameKernelOptions = {}): string {
   // 基线档(illumination 缺省)逐字节与 2026-10-05 B3 基线一致(f32/f16 sha 钉值不变);
@@ -145,7 +155,7 @@ export function emitRayTraceClosestFrameKernelWgsl(options: RayTraceClosestFrame
 @group(0) @binding(10) var<storage, read> instanceAlbedos: array<vec4f>;`
     : "";
   const illumFragments = illumination
-    ? `${BVH_INTERSECT_WGSL}${BVH_BLAS_OCCLUDED_WGSL}${TLAS_OCCLUDED_WGSL}`
+    ? `${RAY_TRACE_ILLUMINATION_INTERSECT_ADAPTER_WGSL}${BVH_BLAS_OCCLUDED_WGSL}${TLAS_OCCLUDED_WGSL}`
     : "";
   const frameStoreMiss = illumination
     ? `fn frameStoreMiss(px: vec2u) {

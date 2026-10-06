@@ -502,6 +502,10 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
       device.queue.submit([encoder.finish()]);
     }
     // closest-hit 命中记录 + 遮蔽记录(真机帧通道,illumination 档)。
+    // 教训登记(2026-10-06):createShaderModule 解析错误不走 validation error scope,
+    // 只进 uncapturederror/compilationInfo;管线无效时 dispatch 静默 no-op —— 探针
+    // 依赖 uncapturederror 监听 + runner 打印 probe.errors 兜底,closest.encode 必须
+    // await(见 closestEncode 注)。
     const closest = new RayTraceClosestFramePass(device, scene.tlas.packed, { illumination: true });
     const hitTexture = device.createTexture({ size: [RES, RES], format: "rgba32float",
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC });
@@ -542,8 +546,10 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
     const fillPass = new RtSpecularFillPass(device);
     // 帧编码:on = closest(illumination)→ indirection → fill;计时取 warmup 后最小值链
     // (evidence-only)。遮蔽记录由 closest 每帧重写(单缓冲,同 encoder 内读写有序)。
-    const closestEncode = (encoder: GPUCommandEncoder): void => {
-      void closest.encode(encoder, { depthView: depthTexture.createView(), hitView: hitTexture.createView(),
+    // closest.encode 必须 await:WGSL 校验 promise 拒绝必须上抛进 probe.errors —— void
+    // 吞掉 = 命中纹理不写 + 零命中假绿(2026-10-06 遮蔽档首跑实证,登记教训)。
+    const closestEncode = async (encoder: GPUCommandEncoder): Promise<void> => {
+      await closest.encode(encoder, { depthView: depthTexture.createView(), hitView: hitTexture.createView(),
         bounceShadingView: bounceShadingTexture.createView(),
         lightDirectionWorld: RT_SPECULAR_PROBE_LIGHT.surfaceToLightWorld,
         instanceAlbedos: RT_SPECULAR_PROBE_INSTANCE_ALBEDOS,
@@ -566,8 +572,7 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
     const encodeFrame = async (indirection: GPUTexture, fill: GPUTexture,
       dispatchIndirection: boolean): Promise<void> => {
       const encoder = device.createCommandEncoder();
-      closestEncode(encoder);
-      // 特性关 = 无 indirection dispatch(零纹理保持零;fill 双 miss 逐位透传)。
+      await closestEncode(encoder);
       if (dispatchIndirection) indirectionEncode(encoder, indirection);
       fillPass.encode(encoder, { ssrOutputView: ssrOutputTexture.createView(),
         ssrTraceView: traceTexture.createView(), indirectionView: indirection.createView(),
@@ -592,14 +597,14 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
     await encodeFrame(indirectionOff, fillOff, false);
     const wallIndirection = await timed(async () => {
       const encoder = device.createCommandEncoder();
-      closestEncode(encoder);
+      await closestEncode(encoder);
       indirectionEncode(encoder, indirectionOn);
       device.queue.submit([encoder.finish()]);
     }, 3, 20);
     const wallFillOn = await timed(() => encodeFrame(indirectionOn, fillOn, true), 3, 20);
     const wallSsrOnly = await timed(async () => {
       const encoder = device.createCommandEncoder();
-      closestEncode(encoder);
+      await closestEncode(encoder);
       device.queue.submit([encoder.finish()]);
     }, 3, 20);
     const [hitRecords, linearDepth, bounceShadingReadback, indirectionReadback, fillOnReadback, fillOffReadback]
@@ -608,9 +613,15 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
       readbackF32(device, bounceShadingTexture, 16),
       readbackF32(device, indirectionOn, 8), readbackF32(device, fillOn, 8), readbackF32(device, fillOff, 8)]);
     const hitF32 = new Float32Array(hitRecords), linearF32 = new Float32Array(linearDepth);
-    let hitCount = 0, positiveLinear = 0, depthMin = Infinity, depthMax = -Infinity;
+    let hitCount = 0, positiveLinear = 0, missWritten = 0, neverWritten = 0, shadingNonZero = 0;
+    let depthMin = Infinity, depthMax = -Infinity;
     for (let p = 0; p < RES * RES; p++) {
       if (hitF32[p * 4]! > 0) hitCount++;
+      else if (hitF32[p * 4]! < 0) missWritten++;
+      else neverWritten++;
+      const sBase = p * 4;
+      const shading = new Float32Array(bounceShadingReadback);
+      if (shading[sBase] !== 0 || shading[sBase + 3] !== 0) shadingNonZero++;
       if (linearF32[p]! > 0) positiveLinear++;
     }
     for (let p = 0; p < RES * RES; p++) {
@@ -618,7 +629,8 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
       if (d < depthMin) depthMin = d;
       if (d > depthMax) depthMax = d;
     }
-    const diagnostics = { hitRecords: hitCount, positiveLinear, depthMin, depthMax };
+    const diagnostics = { hitRecords: hitCount, missWritten, neverWritten, shadingNonZero,
+      positiveLinear, depthMin, depthMax };
     const sentinel = new Uint32Array(4);
     const sentinelStaging = device.createBuffer({ size: 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
     const readEncoder = device.createCommandEncoder();
