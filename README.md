@@ -228,7 +228,7 @@ Deep Native 列在基准程序 P3.1(原生帧时输出小改,约 1-1.5 天)完�
 - GPU 缓冲子分配、资源驻留、瞬态纹理池、管线/Shader/文字缓存、资源预热和按需流送减少重复分配与上传；Worker 和可取消任务承接模型处理、烘焙及重型计算。
 - 帧时间、上传字节、缓存命中、可见对象、显存预算、质量档、设备丢失恢复和后端能力均有显式诊断；性能验证关注整帧 P95/P99、内存和画质一致性，不支持项会阻止发布或给出降级原因。工具坞的「性能与诊断」统一面板(帧时/场景/资源/管线四分区,F9 可开关)以泳道展示逐 pass GPU 计时、跨帧时序与渲染器重建标记,默认关、面板关闭时不采样。
 - 原生执行器补齐视觉后处理三件：vignette 暗角随色彩分级合约可选启用（双端同一 wire 合同，opt-in 默认关）；FXAA 与自动曝光按同一算法移植，经 CPU 逐位 golden 与真机 GPU readback（RTX 4060，≤2/255）对拍，当前为“验收通路”级——生产帧循环接线属后续切片，文档中心能力矩阵如实标注。
-- SDF 遮蔽 GI 与虚拟几何按“验收通路”纪律双端入库：SDF 体积烘焙、天光圆锥追踪与探针 SH 更新链的原生实现与 web 侧逐位对拍（位级 f32 词加 SHA-256，真机 RTX 4060 关键路径零误差），web 侧可经 `sdfGi` 开关启用；虚拟几何 meshlet DAG 有离线编译工具链（贪心簇划分→层级聚类简化→`.dgc` 流式格式，CLI build/info/verify），序列化字节黄金钉版与消费合同门常开，web 侧页调度/驻留/indirect 计划与簇 LOD 消费链已闭环，GPU 主 pass 接线属后续切片。
+- SDF 遮蔽 GI 与虚拟几何按“验收通路”纪律双端入库：SDF 体积烘焙、天光圆锥追踪与探针 SH 更新链的原生实现与 web 侧逐位对拍（位级 f32 词加 SHA-256，真机 RTX 4060 关键路径零误差），web 侧可经 `sdfGi` 开关启用；虚拟几何 meshlet DAG 有离线编译工具链（贪心簇划分→层级聚类简化→`.dgc` 流式格式，CLI build/info/verify），序列化字节黄金钉版与消费合同门常开，web 侧页调度/驻留/indirect 计划与簇 LOD 消费链已闭环；场景包→`.dgc` 驻留摄入链已接通——几何上传即按 (geometry, material) 分节生产编码(与 Rust 权威写端逐位对拍)、材质实例绑定在节、native 逐节 from_dgc 驻留预检、损坏节 CRC 咬人回退不毒化，GPU 主 pass 逐节 draw 调用点属后续切片。
 - SDK 提供 `/app`、`/webgpu`、`/scene`、`/gltf`、`/geometry`、`/textures`、`/streaming`、`/hlod`、`/shadows`、`/lighting`、`/postprocess`、`/particles`、`/physics`、`/shader*`、`/runtime-package`、`/three-bridge` 和 `/host` 等子路径入口。
 
 ### 发布、多端客户端与存储
