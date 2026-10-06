@@ -464,10 +464,15 @@ fn rasterize_backdrop_chunk(
     let rect_y0 = f64::from(chunk.rect[1]) * scale + mapping.offset[1];
     let rect_x1 = (f64::from(chunk.rect[0]) + f64::from(chunk.rect[2])) * scale + mapping.offset[0];
     let rect_y1 = (f64::from(chunk.rect[1]) + f64::from(chunk.rect[3])) * scale + mapping.offset[1];
-    let min_x = (rect_x0.floor().max(0.0) as u32).min(width.saturating_sub(1));
-    let min_y = (rect_y0.floor().max(0.0) as u32).min(height.saturating_sub(1));
-    let max_x = (rect_x1.ceil().min(f64::from(width - 1)).max(0.0)) as u32;
-    let max_y = (rect_y1.ceil().min(f64::from(height - 1)).max(0.0)) as u32;
+    // SDF 羽化(sdf_coverage 在 d=+0.5 logical 归零)在物理空间可达矩形外
+    // 0.5*scale 像素:评估边界对称外扩同样的量,与 GPU 底色 quad 的
+    // ±0.5 logical 外扩逐像素对齐(原 min 侧 floor 漏掉羽化带、max 侧
+    // ceil 又多含一行,首跑实测两侧各差一个 coverage=0.5 的像素行)。
+    let feather = 0.5 * scale;
+    let min_x = ((rect_x0 - feather).floor().max(0.0) as u32).min(width.saturating_sub(1));
+    let min_y = ((rect_y0 - feather).floor().max(0.0) as u32).min(height.saturating_sub(1));
+    let max_x = ((rect_x1 + feather).ceil().min(f64::from(width - 1)).max(0.0)) as u32;
+    let max_y = ((rect_y1 + feather).ceil().min(f64::from(height - 1)).max(0.0)) as u32;
     // 块级 scissor(GPU 走 set_scissor_rect,同一 clip_rect)。
     let clip = chunk.clip_rect.map(|clip| {
         [
@@ -513,7 +518,15 @@ fn rasterize_backdrop_chunk(
                 ((center[1] - f64::from(origin[1])) * 0.5) as f32,
             ];
             let blurred = backdrop_sample_bilinear(&pong, half_size, coord);
-            let shaded = [blurred[0], blurred[1], blurred[2], blurred[3] * coverage];
+            // backdrop_sample_bilinear 在 0..255 u8 纹理上插值;blend_over
+            // 契约是 0..1 straight 空间(与 WGSL base 的 unorm 输出同口径)。
+            // 不归一会把 32640 级乘积 clamp 成纯白(首跑实测)。
+            let shaded = [
+                blurred[0] / 255.0,
+                blurred[1] / 255.0,
+                blurred[2] / 255.0,
+                blurred[3] / 255.0 * coverage,
+            ];
             written[index] = true;
             pixels[index] = blend_over(pixels[index], shaded);
         }

@@ -56,6 +56,9 @@ struct BaseParams {
     corner_radius: f32,
     logical_size: [f32; 2],
     physical_size: [f32; 2],
+    /// WGSL uniform 结构尺寸按对齐(16)取整到 64 字节;repr(C) 无尾填充,
+    /// 显式补齐,字段偏移与 WGSL 逐一对齐。
+    pad: [f32; 2],
 }
 
 /// Per-stage params block (WGSL `StageParams`).
@@ -215,6 +218,7 @@ impl Deep2dBackdropGpuResources {
             corner_radius: chunk.corner_radius,
             logical_size,
             physical_size: [target_size.0 as f32, target_size.1 as f32],
+            pad: [0.0; 2],
         };
         let uniform = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Deep2d backdrop base params"),
@@ -242,8 +246,18 @@ impl Deep2dBackdropGpuResources {
             ],
         });
         // Base quad vertices: the canvas-space rect corners (two triangles).
+        // SDF 羽化带(sdf_coverage 在 d=+0.5 logical 归零,CPU oracle 按
+        // floor..ceil 像素中心逐点评估)要求 quad 外扩同量,否则羽化带内
+        // 无 fragment;掩罩仍由 uniform 里的未外扩 rect 计算,外扩区域
+        // coverage→0,视觉与几何矩形一致。
         let [x, y, w, h] = chunk.rect;
-        let corners = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+        let feather = 0.5;
+        let corners = [
+            [x - feather, y - feather],
+            [x + w + feather, y - feather],
+            [x + w + feather, y + h + feather],
+            [x - feather, y + h + feather],
+        ];
         let vertices: Vec<f32> = [0usize, 1, 2, 0, 2, 3]
             .iter()
             .flat_map(|index| [corners[*index][0], corners[*index][1]])
@@ -279,17 +293,6 @@ impl Deep2dBackdropGpuResources {
         pass.set_bind_group(0, &base.bind_group, &[]);
         pass.set_vertex_buffer(0, base.vertex_buffer.slice(..));
         pass.draw(0..6, 0..1);
-    }
-
-    fn chain_for(&mut self, region: [u32; 2]) -> &CaptureChain {
-        if self
-            .chain
-            .as_ref()
-            .is_none_or(|chain| chain.region != region)
-        {
-            self.rebuild_chain(region);
-        }
-        self.chain.as_ref().expect("capture chain present")
     }
 
     fn rebuild_chain(&mut self, region: [u32; 2]) {

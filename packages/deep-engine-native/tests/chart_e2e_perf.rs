@@ -11,6 +11,10 @@
 #![allow(dead_code)] // include 的生产模块带有测试环境走不到的观测访问器
 #[path = "../src/deep2d_atlas_gpu.rs"]
 mod deep2d_atlas_gpu;
+#[path = "../src/deep2d_frame_context.rs"]
+mod deep2d_frame_context; // deep2d_gpu.rs 的宿主帧上下文再导出源
+#[path = "../src/deep2d_backdrop_gpu.rs"]
+mod deep2d_backdrop_gpu; // deep2d_gpu.rs 的刀4 backdrop 捕获链
 #[path = "../src/deep2d_gpu.rs"]
 mod deep2d_gpu;
 #[path = "../src/deep2d_dynamic_gpu.rs"]

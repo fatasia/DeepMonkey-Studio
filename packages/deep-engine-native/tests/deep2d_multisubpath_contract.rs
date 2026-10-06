@@ -46,6 +46,8 @@ fn path_command(fill: bool) -> deep_engine_native::deep2d::PathCommand {
         dash_offset: None,
         corner_radius: None,
         shadow: None,
+        blend: None,
+        backdrop_blur: None,
     }
 }
 

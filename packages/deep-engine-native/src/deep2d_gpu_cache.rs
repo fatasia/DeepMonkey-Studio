@@ -85,6 +85,11 @@ impl<T> Bounded<T> {
 pub struct CachedPathPipelines {
     pub pipeline: Arc<wgpu::RenderPipeline>,
     pub pipeline_stencil: Arc<wgpu::RenderPipeline>,
+    /// 刀 4 固定函数 blend 管线族,按 `DEEP2D_BLEND_*` 常量索引:
+    /// `.0` 无模板变体、`.1` Stencil8 no-op 变体。索引 0(normal)由
+    /// 构造方以 `pipeline`/`pipeline_stencil` 同对象覆盖,normal 帧零变化。
+    pub blend_families:
+        [(Arc<wgpu::RenderPipeline>, Arc<wgpu::RenderPipeline>); 6],
 }
 
 /// 刀 3 stencil-then-cover 动态路径管线族(每格式一套):

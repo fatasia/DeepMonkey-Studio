@@ -23,17 +23,46 @@ pub use vertex_transfer::VertexTransferStats;
 #[path = "deep2d_draw_evidence.rs"]
 mod draw_evidence;
 pub use draw_evidence::DrawEvidence;
+#[path = "deep2d_gpu_blend.rs"]
+mod blend_family;
+#[path = "deep2d_gpu_frame.rs"]
+mod frame_setup;
+pub(crate) use frame_setup::path_paint_layout;
+use frame_setup::{frame_layout, frame_resources};
+#[cfg(windows)]
+#[path = "deep2d_gpu_video_slot.rs"]
+mod video_slot;
+#[cfg(windows)]
+pub use video_slot::DashboardVideoSlot;
+#[cfg(windows)]
+use video_slot::dashboard_video_slots;
 
 struct Deep2dPathGpuResources {
-    pipeline: std::sync::Arc<wgpu::RenderPipeline>,
-    /// 刀 3:含模板附件 pass 用的 no-op stencil 变体(与主管线同 shader/
-    /// 布局/混合,仅 depth_stencil 声明 Stencil8)。
-    pipeline_stencil: std::sync::Arc<wgpu::RenderPipeline>,
+    /// 刀 4:blend 管线族(按 `DEEP2D_BLEND_*` 索引;.0 无模板/.1 Stencil8
+    /// no-op 变体;索引 0 = normal,与 legacy 主管线同参同对象)。
+    blend_families:
+        [(std::sync::Arc<wgpu::RenderPipeline>, std::sync::Arc<wgpu::RenderPipeline>); 6],
     /// Path bind group: frame uniform (binding 0) + paint storage (binding 1).
     bind_group: wgpu::BindGroup,
     vertex_buffer: std::sync::Arc<wgpu::Buffer>,
     snapshot: Option<vertex_transfer::VertexSnapshot>,
     transfer: VertexTransferStats,
+}
+
+impl Deep2dPathGpuResources {
+    /// 刀 4:按块选管线族;未知模式 fail-closed 回落 normal。
+    fn pipeline_for(&self, blend: u32, with_stencil: bool) -> &wgpu::RenderPipeline {
+        let (plain, stencil) = if blend < 6 {
+            &self.blend_families[blend as usize]
+        } else {
+            &self.blend_families[0]
+        };
+        if with_stencil {
+            stencil
+        } else {
+            plain
+        }
+    }
 }
 
 use std::sync::Arc;
@@ -46,6 +75,11 @@ pub struct Deep2dGpuPainter {
     dynamic: Option<Deep2dDynamicPathGpuResources>,
     /// 刀 3:按物理尺寸惰性创建的模板附件(动态块缺席的帧不附加)。
     stencil: std::cell::RefCell<Option<StencilTarget>>,
+    /// 刀 4:毛玻璃捕获链资源(无 backdrop 块的帧不创建,零开销)。
+    /// RefCell 与 stencil 同策略:pass 绘制闭包内需要 `&mut` 跑捕获链。
+    backdrop: std::cell::RefCell<Option<crate::deep2d_backdrop_gpu::Deep2dBackdropGpuResources>>,
+    /// 刀 4:backdrop 块参数,`Backdrop { index }` 指本表。
+    backdrop_chunks: Vec<deep_engine_native::deep2d::PreparedBackdropChunk>,
     cache: Arc<Deep2dGpuAssetCache>,
     path_cache: Arc<std::sync::Mutex<Deep2dPathCache>>,
     queue: Arc<wgpu::Queue>,
@@ -59,15 +93,6 @@ pub struct Deep2dGpuPainter {
     /// the re-upload (D06/D08).
     last_physical_size: std::cell::Cell<Option<(u32, u32)>>,
     pub summary: PreparedDeep2dRuntimeSummary,
-}
-
-#[cfg(windows)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct DashboardVideoSlot {
-    pub node_id: String,
-    pub layer_index: usize,
-    pub frame: [f32; 4],
-    pub clip: deep_engine_native::deep2d::Deep2dRect,
 }
 
 impl Deep2dGpuPainter {
@@ -176,6 +201,11 @@ impl Deep2dGpuPainter {
             atlas,
             dynamic,
             stencil: std::cell::RefCell::new(None),
+            backdrop: std::cell::RefCell::new(
+                (!prepared.path.backdrop_chunks.is_empty())
+                    .then(|| crate::deep2d_backdrop_gpu::Deep2dBackdropGpuResources::new(device, format)),
+            ),
+            backdrop_chunks: std::mem::take(&mut prepared.path.backdrop_chunks),
             cache: Arc::clone(cache),
             path_cache,
             queue: Arc::new(queue.clone()),
@@ -357,12 +387,9 @@ impl Deep2dGpuPainter {
                 PreparedDeep2dChunkKind::Path => {
                     let path = self.path.as_ref().expect("prepared path resource");
                     // Path pipeline binds frame uniform + paint storage.
+                    // 刀 4:按块选 blend 管线族(normal 与 legacy 同对象)。
                     pass.set_bind_group(0, &path.bind_group, &[]);
-                    pass.set_pipeline(if with_stencil {
-                        &path.pipeline_stencil
-                    } else {
-                        &path.pipeline
-                    });
+                    pass.set_pipeline(path.pipeline_for(chunk.blend, with_stencil));
                     pass.set_vertex_buffer(0, path.vertex_buffer.slice(..));
                 }
                 PreparedDeep2dChunkKind::Atlas { atlas_index } => {
@@ -411,6 +438,12 @@ impl Deep2dGpuPainter {
                     self.draw_evidence.record(chunk);
                     return;
                 }
+                PreparedDeep2dChunkKind::Backdrop { .. } => {
+                    // 刀 4 毛玻璃 bracket:块不携带主 pass 顶点(枚举约定
+                    // first_vertex/vertex_count 不用),capture→blur→底色
+                    // quad 由 backdrop 专用管线按绘制序负责,主 pass 跳过。
+                    return;
+                }
             }
             pass.draw(
                 chunk.first_vertex..chunk.first_vertex + chunk.vertex_count,
@@ -418,12 +451,33 @@ impl Deep2dGpuPainter {
             );
             self.draw_evidence.record(chunk);
         };
+        // 刀 4:backdrop 块在绘制序内强制 bracket——结束主 pass,对 target
+        // 跑捕获链(copy→下采样→可分离扫),再以完全一致的附件重开 pass 画
+        // 底色 quad;后续块(含视频层)在重开的 pass 上续画。
+        macro_rules! draw_chunk_ordered {
+            ($pass:ident, $chunk:expr) => {{
+                let chunk = $chunk;
+                if matches!(chunk.kind, PreparedDeep2dChunkKind::Backdrop { .. }) {
+                    drop($pass);
+                    $pass = self.backdrop_bracket(
+                        encoder,
+                        target,
+                        physical_size,
+                        chunk,
+                        with_stencil,
+                        stencil_guard.as_ref().map(|stencil| &stencil.view),
+                    );
+                } else {
+                    draw_chunk(&mut $pass, chunk);
+                }
+            }};
+        }
         for chunk in self
             .chunks
             .iter()
             .filter(|chunk| chunk.layer_index.is_none())
         {
-            draw_chunk(&mut pass, chunk);
+            draw_chunk_ordered!(pass, chunk);
         }
         let max_deep2d_layer = self
             .chunks
@@ -441,7 +495,7 @@ impl Deep2dGpuPainter {
                     .iter()
                     .filter(|chunk| chunk.layer_index == Some(layer_index))
                 {
-                    draw_chunk(&mut pass, chunk);
+                    draw_chunk_ordered!(pass, chunk);
                 }
                 #[cfg(windows)]
                 if let Some(videos) = videos {
@@ -449,6 +503,65 @@ impl Deep2dGpuPainter {
                 }
             }
         }
+    }
+
+    /// 刀 4 backdrop bracket:跑捕获链并以与主 pass 一致的附件重开 pass,
+    /// 画底色 quad;返回重开后的 pass 供后续块续画(附件/负载语义同主 pass:
+    /// color Load::Load,动态块存在时 stencil Clear(0) 与每块自 bracket 对齐)。
+    #[allow(clippy::too_many_arguments)]
+    fn backdrop_bracket<'pass>(
+        &self,
+        encoder: &'pass mut wgpu::CommandEncoder,
+        target: &wgpu::TextureView,
+        physical_size: (u32, u32),
+        chunk: &PreparedDeep2dChunk,
+        with_stencil: bool,
+        stencil: Option<&wgpu::TextureView>,
+    ) -> wgpu::RenderPass<'pass> {
+        let PreparedDeep2dChunkKind::Backdrop { index } = chunk.kind else {
+            unreachable!("backdrop bracket scheduled for a non-backdrop chunk");
+        };
+        let spec = &self.backdrop_chunks[index];
+        let base = {
+            let mut resources = self.backdrop.borrow_mut();
+            resources
+                .as_mut()
+                .expect("backdrop resources exist with backdrop chunks")
+                .capture_and_blur(encoder, target, physical_size, spec, self.logical_size)
+        };
+        let color_attachments = [Some(wgpu::RenderPassColorAttachment {
+            view: target,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })];
+        let depth_stencil_attachment =
+            stencil.map(|view| wgpu::RenderPassDepthStencilAttachment {
+                view,
+                depth_ops: None,
+                stencil_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(0),
+                    store: wgpu::StoreOp::Store,
+                }),
+            });
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Deep Engine native Deep2d ordered pass v2 (backdrop bracket)"),
+            color_attachments: &color_attachments,
+            depth_stencil_attachment,
+            ..Default::default()
+        });
+        if let Some(scissor) = chunk_scissor(chunk.clip_rect, self.logical_size, physical_size) {
+            pass.set_scissor_rect(scissor[0], scissor[1], scissor[2], scissor[3]);
+        }
+        self.backdrop
+            .borrow()
+            .as_ref()
+            .expect("backdrop resources exist with backdrop chunks")
+            .draw_base(&mut pass, &base, with_stencil);
+        pass
     }
 
     pub fn draw_evidence(&self) -> Vec<DrawEvidence> {
@@ -506,43 +619,6 @@ impl Deep2dGpuPainter {
     pub fn enable_draw_evidence(&self) {
         self.draw_evidence.enable();
     }
-}
-
-#[cfg(windows)]
-fn dashboard_video_slots(
-    content: &Deep2dRuntimeContent,
-) -> Result<Vec<DashboardVideoSlot>, String> {
-    let Deep2dRuntimeContent::Composite(composite) = content else {
-        return Ok(Vec::new());
-    };
-    composite
-        .layers()
-        .iter()
-        .enumerate()
-        .filter_map(|(layer_index, layer)| {
-            layer.id.strip_suffix(":video").map(|node_id| {
-                let list = layer.content.display_list();
-                let values = [
-                    layer.translation[0],
-                    layer.translation[1],
-                    list.logical_width,
-                    list.logical_height,
-                ];
-                if values.iter().any(|value| !value.is_finite())
-                    || values[2] <= 0.0
-                    || values[3] <= 0.0
-                {
-                    return Err("invalid dashboard video slot geometry".into());
-                }
-                Ok(DashboardVideoSlot {
-                    node_id: node_id.to_owned(),
-                    layer_index,
-                    frame: values.map(|value| value as f32),
-                    clip: layer.clip,
-                })
-            })
-        })
-        .collect()
 }
 
 impl Deep2dPathGpuResources {
@@ -637,10 +713,12 @@ impl Deep2dPathGpuResources {
             CachedPathPipelines {
                 pipeline: Arc::new(pipeline),
                 pipeline_stencil: Arc::new(pipeline_stencil),
+                blend_families: blend_family::blend_family(device, &pipeline_layout, &shader, format),
             }
         });
-        let pipeline = std::sync::Arc::clone(&cached.pipeline);
-        let pipeline_stencil = std::sync::Arc::clone(&cached.pipeline_stencil);
+        // 刀 4:族索引 0 用主管线同对象,保证 normal 帧与 legacy 逐字节一致。
+        let mut blend_families = cached.blend_families.clone();
+        blend_families[0] = (Arc::clone(&cached.pipeline), Arc::clone(&cached.pipeline_stencil));
         let previous = previous.and_then(|p| {
             p.snapshot
                 .as_ref()
@@ -670,99 +748,11 @@ impl Deep2dPathGpuResources {
             ],
         });
         Self {
-            pipeline,
-            pipeline_stencil,
+            blend_families,
             bind_group,
             vertex_buffer,
             snapshot: None,
             transfer,
         }
     }
-}
-
-/// Path-stage bind group layout: frame uniform (vertex) + paint storage
-/// (fragment). Separate from the shared atlas frame layout so the atlas
-/// pipeline never pays for the storage binding. 刀 3 动态 clear/fill 管线
-/// 复用同一布局以共享 bind group。
-pub(crate) fn path_paint_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("Deep Engine native Deep2d paint layout"),
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-        ],
-    })
-}
-
-fn frame_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("Deep Engine native Deep2d frame layout"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        }],
-    })
-}
-
-/// Cached frame uniform buffer + bind group per logical size. The physical
-/// size half of the uniform is written per draw; the initial upload assumes
-/// a square-uniform mapping so a first frame without any draw still binds.
-fn frame_resources(
-    device: &wgpu::Device,
-    _queue: &wgpu::Queue,
-    layout: &wgpu::BindGroupLayout,
-    cache: &Deep2dGpuAssetCache,
-    logical_size: [f32; 2],
-) -> std::sync::Arc<crate::deep2d_gpu_cache::FrameResources> {
-    if let Some(resources) = cache.frame_resources(logical_size[0], logical_size[1]) {
-        return resources;
-    }
-    let frame = [[
-        logical_size[0],
-        logical_size[1],
-        logical_size[0],
-        logical_size[1],
-    ]];
-    let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("Deep Engine native Deep2d frame"),
-        contents: cast_slice(&frame),
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-    });
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("Deep Engine native Deep2d frame bindings"),
-        layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: buffer.as_entire_binding(),
-        }],
-    });
-    cache.store_frame_resources(
-        logical_size[0],
-        logical_size[1],
-        crate::deep2d_gpu_cache::FrameResources { buffer, bind_group },
-    )
 }

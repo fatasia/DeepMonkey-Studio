@@ -73,6 +73,8 @@ fn path_command(id: &str, x: f64) -> Deep2dCommand {
         dash_offset: None,
         corner_radius: None,
         shadow: None,
+        blend: None,
+        backdrop_blur: None,
         })
 }
 

@@ -79,6 +79,8 @@ fn display_list() -> Deep2dDisplayList {
             dash_offset: None,
             corner_radius: None,
             shadow: None,
+            blend: None,
+            backdrop_blur: None,
             })],
         atlases: Vec::new(),
     }

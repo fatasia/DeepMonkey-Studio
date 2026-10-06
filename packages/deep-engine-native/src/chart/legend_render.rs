@@ -209,6 +209,8 @@ fn swatch(
             dash_offset: None,
             corner_radius: None,
             shadow: None,
+            blend: None,
+            backdrop_blur: None,
         }),
     )
 }
@@ -285,6 +287,8 @@ fn draw_focus_ring(
             dash_offset: None,
             corner_radius: None,
             shadow: None,
+            blend: None,
+            backdrop_blur: None,
         }));
     Ok(())
 }

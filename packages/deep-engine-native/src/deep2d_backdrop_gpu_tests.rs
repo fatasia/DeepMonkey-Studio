@@ -288,9 +288,18 @@ fn frosted_glass_matches_cpu_blur_oracle() {
         center[0] > 60 && center[2] > 60,
         "glass center must mix both stripes: {center:?}"
     );
-    // Outside the glass the background stripes are untouched.
-    assert_eq!(pixel(&gpu, [1.0, 4.0])[0], (0.9 * 255.0).round() as u8);
-    assert_eq!(pixel(&gpu, [7.0, 4.0])[2], (0.9 * 255.0).round() as u8);
+    // Outside the glass the background stripes are untouched. GPU unorm
+    // 存储在精确 .5 处的舍入与 CPU round-half-up 可能差 1(实测 DX12 下
+    // 0.9 存为 229),容差 ±1。
+    let expected = (0.9_f64 * 255.0).round() as i32;
+    assert!(
+        (i32::from(pixel(&gpu, [1.0, 4.0])[0]) - expected).abs() <= 1,
+        "left stripe must stay untouched"
+    );
+    assert!(
+        (i32::from(pixel(&gpu, [7.0, 4.0])[2]) - expected).abs() <= 1,
+        "right stripe must stay untouched"
+    );
     println!("adapter={adapter}");
 }
 

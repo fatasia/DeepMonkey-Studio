@@ -13,6 +13,7 @@ fn prepared(parts: &[(usize, f32)]) -> PreparedDeep2d {
             z_order: index as i32,
             source_index: index,
             clip_rect: None,
+            blend: 0,
         });
     }
     let count = vertices.len();
@@ -24,6 +25,7 @@ fn prepared(parts: &[(usize, f32)]) -> PreparedDeep2d {
         chunks,
         dynamic_edges: Vec::new(),
         dynamic_chunks: Vec::new(),
+        backdrop_chunks: Vec::new(),
         images: vec![],
         glyphs: vec![],
         summary: PreparedDeep2dSummary {
@@ -35,6 +37,7 @@ fn prepared(parts: &[(usize, f32)]) -> PreparedDeep2d {
             dynamic_commands: 0,
             dynamic_edges: 0,
             dynamic_fallbacks: 0,
+            backdrop_commands: 0,
         },
     }
 }

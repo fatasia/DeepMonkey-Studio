@@ -133,6 +133,8 @@ fn hit_index_build_and_query_stay_subsecond_on_large_lists() {
             dash_offset: None,
             corner_radius: None,
             shadow: None,
+            blend: None,
+            backdrop_blur: None,
             }));
     }
     let display_list = Deep2dDisplayList {

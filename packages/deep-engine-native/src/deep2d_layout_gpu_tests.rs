@@ -41,6 +41,8 @@ fn golden_card() -> LayoutTree {
             color: [0.0, 0.0, 0.0, 0.45],
             corner_radius: None,
         }),
+        blend: None,
+        backdrop_blur: None,
     };
     let header = LayoutBoxVisual {
         background: Some(Deep2dPaint::LinearGradient(LinearGradientPaint {
@@ -59,6 +61,8 @@ fn golden_card() -> LayoutTree {
         })),
         corner_radius: 4.0,
         shadow: None,
+        blend: None,
+        backdrop_blur: None,
     };
     let mut tree = LayoutTree::new(
         LayoutNode::box_node(LayoutStyle {
@@ -91,6 +95,8 @@ fn golden_card() -> LayoutTree {
             background: Some(Deep2dPaint::Solid([0.95, 0.62, 0.18, 1.0])),
             corner_radius: 6.0,
             shadow: None,
+            blend: None,
+            backdrop_blur: None,
         }),
     )
     .expect("icon");
@@ -100,6 +106,8 @@ fn golden_card() -> LayoutTree {
             background: Some(Deep2dPaint::Solid([0.22, 0.25, 0.3, 1.0])),
             corner_radius: 4.0,
             shadow: None,
+            blend: None,
+            backdrop_blur: None,
         }),
     )
     .expect("text placeholder");

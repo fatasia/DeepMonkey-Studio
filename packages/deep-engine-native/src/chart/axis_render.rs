@@ -103,6 +103,8 @@ fn stroke_line(
             dash_offset: None,
             corner_radius: None,
             shadow: None,
+            blend: None,
+            backdrop_blur: None,
         }));
 }
 
@@ -148,6 +150,8 @@ fn stroke_rect(
             dash_offset: None,
             corner_radius: None,
             shadow: None,
+            blend: None,
+            backdrop_blur: None,
         }));
 }
 

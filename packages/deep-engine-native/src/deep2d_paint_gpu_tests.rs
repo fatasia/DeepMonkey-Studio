@@ -68,6 +68,8 @@ fn paint_command(
         dash_offset: None,
         corner_radius,
         shadow,
+        blend: None,
+        backdrop_blur: None,
     })
 }
 

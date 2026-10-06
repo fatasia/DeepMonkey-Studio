@@ -230,8 +230,11 @@ fn quad_fragment(entry: PaintEntry, local: vec2f) -> vec4f {
   return vec4f(rgb / alpha, alpha);
 }
 
-@fragment
-fn fragment_main(input: VertexOutput) -> @location(0) vec4f {
+// 刀 4 fixed-function blend family:multiply/screen 管线族绑定 premul
+// 入口——在混合阶段前把(straight)片元输出预乘,正是
+// `paint_data::blend_composite` 那两个模式的前提。WGSL 禁止调用入口
+// 函数,求值体抽成普通函数,两个入口各自包一层。
+fn fragment_color(input: VertexOutput) -> vec4f {
   if (input.paint_index == 0u) {
     return input.color;
   }
@@ -242,12 +245,17 @@ fn fragment_main(input: VertexOutput) -> @location(0) vec4f {
   return paint_color(entry, input.local);
 }
 
+@fragment
+fn fragment_main(input: VertexOutput) -> @location(0) vec4f {
+  return fragment_color(input);
+}
+
 // 刀 4 fixed-function blend family: multiply/screen pipelines bind this
 // entry point, which premultiplies the (straight) fragment output before the
 // blend stage — the exact precondition of `paint_data::blend_composite` for
 // those modes. normal/darken/lighten/overwrite keep `fragment_main`.
 @fragment
 fn fragment_main_premultiplied(input: VertexOutput) -> @location(0) vec4f {
-  let color = fragment_main(input);
+  let color = fragment_color(input);
   return vec4f(color.rgb * color.a, color.a);
 }

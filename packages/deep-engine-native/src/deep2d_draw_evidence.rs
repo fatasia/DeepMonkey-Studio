@@ -116,6 +116,7 @@ mod tests {
             first_vertex: 0,
             vertex_count: count,
             clip_rect: None,
+            blend: 0,
         }
     }
     #[test]

@@ -157,6 +157,8 @@ pub(super) fn adapt_chart_extension(
             dash_offset: None,
             corner_radius: None,
             shadow: None,
+            blend: None,
+            backdrop_blur: None,
         }));
     }
     finish(

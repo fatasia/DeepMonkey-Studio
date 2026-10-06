@@ -269,8 +269,10 @@ fn assert_blend_value(
     );
     let actual = pixel(gpu, [4.0, 4.0]);
     for (channel, target) in actual.iter().zip(expected.iter()) {
+        // blend_composite 是 0..1 straight 空间,读回是 0..255 unorm:同一
+        // 刻度才能比(±2 ≈ 读回量化 + f32 舍入)。
         assert!(
-            (f64::from(*channel) - f64::from(*target)).abs() <= 2.0,
+            (f64::from(*channel) - f64::from(*target) * 255.0).abs() <= 2.0,
             "{context}: {actual:?} vs {expected:?}"
         );
     }
@@ -401,16 +403,22 @@ fn multiply_gradient_fill_blends_against_cpu_reference() {
         Deep2dGpuPainter::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &content, &cache)
             .expect("gradient multiply painter");
     let gpu = draw_and_compare(&device, &queue, &painter, &list, "gradient multiply", 2);
-    // Ramp midpoint (patch center): [0.5, 0, 0.5] multiplied over BG.
+    // 像素中心采样点:逻辑 (4,4) 读的是像素 (8,8),其中心在逻辑
+    // (4.25, 4.25)。线性坡度 start=[2,2] end=[6,6] 在该点的投影
+    // t = ((2.25,2.25)·(4,4)) / |(4,4)|² = 0.5625,坡度值 [0.4375, 0, 0.5625]
+    // (不是几何中点 4.0 处的 [0.5, 0, 0.5];全帧 CPU oracle 上面的
+    // divergent=0 已钉住同一采样口径)。
+    let t = 0.5625_f32;
     let expected = deep_engine_native::deep2d::blend_composite(
         Deep2dBlendMode::Multiply.as_u32(),
-        [0.5, 0.0, 0.5, 1.0],
+        [1.0 - t, 0.0, t, 1.0],
         BG.map(|channel| channel as f32),
     );
     let actual = pixel(&gpu, [4.0, 4.0]);
     for (channel, target) in actual.iter().zip(expected.iter()) {
+        // 同 assert_blend_value:0..1 解析值 ×255 对齐 0..255 读回刻度。
         assert!(
-            (f64::from(*channel) - f64::from(*target)).abs() <= 3.0,
+            (f64::from(*channel) - f64::from(*target) * 255.0).abs() <= 3.0,
             "gradient multiply: {actual:?} vs {expected:?}"
         );
     }
