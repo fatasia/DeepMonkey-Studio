@@ -26,6 +26,7 @@ import { configurePostProcessingAntialias } from "./postProcessingAntialias";
  */
 export class PostProcessingRuntime implements ViewerPostProcessingRuntime {
   readonly #composer: EffectComposer;
+  readonly #renderer: THREE.WebGLRenderer;
   readonly #ssaoPass: SSAOPass;
   readonly #gtaoPass: GTAOPass;
   readonly #outlinePass: OutlinePass;
@@ -38,8 +39,10 @@ export class PostProcessingRuntime implements ViewerPostProcessingRuntime {
   readonly #brightnessContrastPass: ShaderPass;
   readonly #smaaPass: SMAAPass;
   readonly #fxaaPass: FXAAPass;
+  #gtaoCapability: boolean | undefined;
 
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
+    this.#renderer = renderer;
     this.#composer = new EffectComposer(renderer);
     configurePostProcessingAntialias(renderer, [this.#composer.renderTarget1, this.#composer.renderTarget2]);
     this.#composer.addPass(new RenderPass(scene, camera));
@@ -71,7 +74,7 @@ export class PostProcessingRuntime implements ViewerPostProcessingRuntime {
     this.#ssaoPass.minDistance = 0.002;
     this.#ssaoPass.maxDistance = 0.12;
 
-    this.#gtaoPass.enabled = state.enabled && Boolean(state.gtao);
+    this.#gtaoPass.enabled = state.enabled && Boolean(state.gtao) && this.#gtaoSupported();
     this.#gtaoPass.blendIntensity = state.gtaoIntensity ?? 1;
     this.#bloomPass.enabled = state.enabled && state.bloom;
     this.#bloomPass.strength = state.bloomStrength;
@@ -129,6 +132,22 @@ export class PostProcessingRuntime implements ViewerPostProcessingRuntime {
     pass.enabled = false;
     this.#composer.addPass(pass as never);
     return pass;
+  }
+
+  /**
+   * three WebGPU 后端的 GTAO WGSL 依赖 `texture-gather` 特性（SwiftShader 与部分驱动缺失）：
+   * 缺失时管线创建失败并每帧刷 GPUValidationError，AO 实际无效——保持 pass 关闭（fail-soft）。
+   * WebGL 后端或后端尚未就绪时不受限（WebGL 走 GLSL 路径），能力仅在首次见到 WebGPU 设备时
+   * 判定一次；误杀防护：只有显式声明缺特性才禁用。
+   */
+  #gtaoSupported(): boolean {
+    if (this.#gtaoCapability !== undefined) return this.#gtaoCapability;
+    const features = (this.#renderer as unknown as {
+      backend?: { device?: { features?: { has(feature: string): boolean } } };
+    }).backend?.device?.features;
+    if (!features) return true;
+    this.#gtaoCapability = features.has("texture-gather");
+    return this.#gtaoCapability;
   }
 
   /**
