@@ -10,7 +10,7 @@ import { sceneModelMatrixValues } from "./sceneModelMatrixValues";
 import { sceneSnapshotToRenderPacket } from "./sceneSnapshotRenderPacket";
 import { worldToLocal } from "./sceneLocalCoordinates";
 import { createSceneGeometryPrecisionValidator } from "./sceneGeometryPrecision";
-import { sceneHexToLinearRgb, staticSceneEffectEmissive, unsupportedStaticSceneEffectFields } from "./sceneNeutralAppearance";
+import { sceneHexToLinearRgb, staticSceneEffectEmissive, unsupportedStaticSceneEffectFields, appearanceUnsupportedError } from "./sceneNeutralAppearance";
 import { compileSceneAuxiliaryGrid } from "./compileSceneAuxiliaryGrid";
 import { readSceneModelMaterialState } from "./sceneAuthorMaterialState";
 import { bindWebHlodAsset, type WebHlodPackage } from "./webHlodPackage";
@@ -264,7 +264,7 @@ function assertStaticModel(model: SceneModelState): void {
       model.layers?.length ? "layers" : undefined, model.explosionFactor ? "explosionFactor" : undefined,
       model.robotPose && Object.keys(model.robotPose).length ? "robotPose" : undefined]
       .filter((value): value is string => value !== undefined);
-    throw new Error(`对象 ${model.modelId} 的扩展外观需要模型适配：${fields.join(", ")}`);
+    throw appearanceUnsupportedError(`对象 ${model.modelId} 的扩展外观需要模型适配：${fields.join(", ")}`);
   }
 }
 function compare(a: string, b: string): number { return a < b ? -1 : a > b ? 1 : 0; }

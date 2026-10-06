@@ -1,6 +1,6 @@
 import type { SceneMaterialState } from "@bim-studio/contracts";
 import type { RenderPacket } from "@bim-studio/deep-engine";
-import { isNeutralMaterialField, sceneHexToLinearRgb } from "./sceneNeutralAppearance";
+import { isNeutralMaterialField, sceneHexToLinearRgb, appearanceUnsupportedError } from "./sceneNeutralAppearance";
 import { PHYSICAL_LOBE_KEYS, validatePhysicalLobePatch } from "../viewer/materialPhysicalLobeFields";
 import { projectPhysicalLobes, stateHasPhysicalLobeFields } from "./scenePhysicalLobeProjection";
 
@@ -24,7 +24,7 @@ export function assertStaticMaterialOverrides(state: SceneMaterialState | undefi
   }
   for (const [key, value] of Object.entries(state ?? {})) {
     if (value !== undefined && key !== "slotOverrides" && !scalarFields.has(key) && !lobeFields.has(key) && !isNeutralMaterialField(key, value)) {
-      throw new Error(`对象 ${id} 的扩展外观需要模型适配：${key}`);
+      throw appearanceUnsupportedError(`对象 ${id} 的扩展外观需要模型适配：${key}`);
     }
   }
 }

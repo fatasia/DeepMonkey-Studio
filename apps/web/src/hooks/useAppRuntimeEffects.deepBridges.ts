@@ -15,6 +15,7 @@ import { collectDeepOverlayPrimitives } from "../viewer/deepOverlayPrimitiveSour
 import { mergeDeepOverlayVertices } from "../viewer/deepOverlayPrimitives";
 import { projectStudioEditorOverlay } from "../viewer/studioDeepEditorOverlay";
 import { commitRendererPreference } from "../viewer/rendererBackendPreference";
+import { isSceneAppearanceUnsupportedError } from "../delivery/sceneNeutralAppearance";
 import type { AppRuntimeEffectsContext, RendererRecoveryContext } from "./useAppRuntimeEffects.context";
 
 interface DeepBridgeRefs {
@@ -70,8 +71,10 @@ export function useDeepBridgesSetup(context: AppRuntimeEffectsContext, refs: Dee
     // 首帧编译缓存(P0-2):authorRenderPacket 每次后端切换都会被调用;场景快照与
     // 资产清单未变时直接复用上一次的 RenderPacket(packet 经 prepareRenderPacket
     // 校验后按只读消费,复用安全)。缓存容量 1:只保留最近一次编译,内存代价可控。
+    // packet 为 undefined 表示该场景指纹已降级为投影路径(外观超集),切换不再重编译。
     // B4 簇级 HLOD:同一份编译的逐放置簇绑定随缓存共享,两个提供方顺序消费不打两次编译。
-    let cachedPacket: { key: string; packet: RenderPacket; clusters?: readonly HlodClusterStreamBinding[] } | undefined;
+    let cachedPacket: { key: string; packet: RenderPacket | undefined; clusters?: readonly HlodClusterStreamBinding[] } | undefined;
+    let appearanceNoticeKey: string | undefined;
     const compileAuthorScene = async (signal: AbortSignal) => {
       const latest = rendererRecoveryContextRef.current;
       const scene = latest.captureSceneSnapshot() ?? latest.activeScene;
@@ -84,30 +87,47 @@ export function useDeepBridgesSetup(context: AppRuntimeEffectsContext, refs: Dee
       ]);
       if (cachedPacket?.key === key) return cachedPacket;
       const hlodPackages = b4HlodClusterEnabled() ? await loadSceneHlodPackages(scene, project.models, signal) : undefined;
-      const compiled = await compileSceneRenderPacket(scene, {
-        signal,
-        // 编辑器逐帧把 Three AnimationMixer 的骨骼/形变姿态同步给 Deep,含蒙皮/形变目标的模型保留为活体。
-        liveDeformation: true,
-        // 4K 贴图合计超出引擎单资产解码预算时按需降采样;引擎导入子集之外的模型只隐藏并提示。
-        textureBudgetBytes: 112 * 1024 * 1024,
-        skipUndecodableModels: true,
-        imageDecoder: browserImageDecoder,
-        normalizeModel: normalizeStudioWasmModel,
-        ...(hlodPackages?.size ? { hlodPackages } : {}),
-        loadModel: async (assetId, loadSignal) => {
-          loadSignal.throwIfAborted();
-          const instance = scene.models.find((model) => getSceneModelAssetId(model) === assetId || model.modelId === assetId);
-          const resolvedAssetId = instance ? getSceneModelAssetId(instance) : assetId;
-          const model = project.models.find((candidate) => candidate.id === resolvedAssetId);
-          const url = model?.manifest?.geometryUrl;
-          if (!model || !url || model.status !== "ready") throw new Error(`Deep 编译缺少模型资源：${assetId}`);
-          return new Uint8Array(await loadViewerAssetBuffer(url, model.name, { signal: loadSignal, timeoutMs: 120_000 }));
-        },
-      });
-      signal.throwIfAborted();
-      deformationNoticeRef.current = describeDeepCompileNotice(compiled);
-      cachedPacket = { key, packet: compiled.packet, ...(compiled.hlodClusters ? { clusters: compiled.hlodClusters } : {}) };
-      return cachedPacket;
+      try {
+        const compiled = await compileSceneRenderPacket(scene, {
+          signal,
+          // 编辑器逐帧把 Three AnimationMixer 的骨骼/形变姿态同步给 Deep,含蒙皮/形变目标的模型保留为活体。
+          liveDeformation: true,
+          // 4K 贴图合计超出引擎单资产解码预算时按需降采样;引擎导入子集之外的模型只隐藏并提示。
+          textureBudgetBytes: 112 * 1024 * 1024,
+          skipUndecodableModels: true,
+          imageDecoder: browserImageDecoder,
+          normalizeModel: normalizeStudioWasmModel,
+          ...(hlodPackages?.size ? { hlodPackages } : {}),
+          loadModel: async (assetId, loadSignal) => {
+            loadSignal.throwIfAborted();
+            const instance = scene.models.find((model) => getSceneModelAssetId(model) === assetId || model.modelId === assetId);
+            const resolvedAssetId = instance ? getSceneModelAssetId(instance) : assetId;
+            const model = project.models.find((candidate) => candidate.id === resolvedAssetId);
+            const url = model?.manifest?.geometryUrl;
+            if (!model || !url || model.status !== "ready") throw new Error(`Deep 编译缺少模型资源：${assetId}`);
+            return new Uint8Array(await loadViewerAssetBuffer(url, model.name, { signal: loadSignal, timeoutMs: 120_000 }));
+          },
+        });
+        signal.throwIfAborted();
+        deformationNoticeRef.current = describeDeepCompileNotice(compiled);
+        appearanceNoticeKey = undefined;
+        cachedPacket = { key, packet: compiled.packet, ...(compiled.hlodClusters ? { clusters: compiled.hlodClusters } : {}) };
+        return cachedPacket;
+      } catch (reason) {
+        // 取消与未知编译失败照旧向上传播(取消由候选事务静默,未知失败使切换失败并回 WebGL)。
+        if (signal.aborted || !isSceneAppearanceUnsupportedError(reason)) throw reason;
+        // 场景外观(材质贴图 URL、扩展效果)超出独立包编译语义:降级 Three 投影路径。
+        // Deep 引擎保持激活(默认引擎不回退),作者材质已由 viewer 状态层挂好贴图,
+        // 投影桥按槽位承接(map/emissive/normal/ao/metalnessRoughness);不支持的对象
+        // 由投影器逐对象丢弃并记 issue,不再让整场切换失败。
+        cachedPacket = { key, packet: undefined };
+        deformationNoticeRef.current = undefined;
+        if (appearanceNoticeKey !== key) {
+          appearanceNoticeKey = key;
+          setMessage(`场景含独立编译路径暂不支持的外观，已改用兼容投影在 Deep 下呈现：${reason instanceof Error ? reason.message : String(reason)}`);
+        }
+        return cachedPacket;
+      }
     };
     const bridge = new StudioDeepWebGpuBridge(engine, viewportRef.current, {
       authorRenderPacket: async (signal) => (await compileAuthorScene(signal))?.packet,

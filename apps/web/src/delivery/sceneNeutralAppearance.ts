@@ -1,5 +1,23 @@
 import type { SceneModelEffectsState } from "@bim-studio/contracts";
 
+/**
+ * 场景外观超出静态作者包编译语义(贴图 URL、扩展效果等)的错误标记。
+ * 该类失败只说明"独立包路径"承接不了,宿主可降级 Three 投影路径继续用 Deep
+ * 渲染(作者材质已由 viewer 状态层挂好贴图),不必整场切换回 WebGL。
+ */
+export const SCENE_APPEARANCE_UNSUPPORTED = "SceneAppearanceUnsupported";
+
+export function appearanceUnsupportedError(message: string): Error {
+  const error = new Error(message);
+  error.name = SCENE_APPEARANCE_UNSUPPORTED;
+  return error;
+}
+
+export function isSceneAppearanceUnsupportedError(error: unknown): boolean {
+  return error instanceof Error && error.name === SCENE_APPEARANCE_UNSUPPORTED;
+}
+
+
 const neutralMaterial: Readonly<Record<string, number | boolean>> = {
   hue: 0, saturation: 0, brightness: 0, contrast: 0, normalScale: 1, wireframe: false,
   textureRepeat: 1, textureRepeatX: 1, textureRepeatY: 1,

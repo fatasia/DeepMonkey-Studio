@@ -4,7 +4,7 @@ import { Matrix4 } from "three";
 import { primitiveGeometry } from "../viewer/primitiveGeometry";
 import { sceneModelMatrixValues } from "./sceneModelMatrixValues";
 import { createSceneGeometryPrecisionValidator } from "./sceneGeometryPrecision";
-import { isNeutralMaterialField, sceneHexToLinearRgb, staticSceneEffectEmissive, unsupportedStaticSceneEffectFields } from "./sceneNeutralAppearance";
+import { isNeutralMaterialField, sceneHexToLinearRgb, staticSceneEffectEmissive, unsupportedStaticSceneEffectFields, appearanceUnsupportedError } from "./sceneNeutralAppearance";
 import { compileLinearPrefabRenderPacket } from "./compileLinearPrefabRenderPacket";
 import { PHYSICAL_LOBE_KEYS } from "../viewer/materialPhysicalLobeFields";
 import { withPhysicalLobes } from "./scenePhysicalLobeProjection";
@@ -48,7 +48,7 @@ function primitiveMaterial(item: PrimitiveState): RenderPacket["materials"][numb
   const state = item.material;
   const supported = new Set(["color", "roughness", "metalness", "ior", "emissive", "emissiveIntensity", "doubleSided", "customShader", ...PHYSICAL_LOBE_KEYS]);
   for (const [key, value] of Object.entries(state ?? {})) {
-    if (value !== undefined && !supported.has(key) && !isNeutralMaterialField(key, value)) throw new Error(`基础体 ${item.modelId} 的材质需要适配：${key}`);
+    if (value !== undefined && !supported.has(key) && !isNeutralMaterialField(key, value)) throw appearanceUnsupportedError(`基础体 ${item.modelId} 的材质需要适配：${key}`);
   }
   // 会改变几何或外观的配置不能静默丢弃。
   assertPrimitiveExtensions(item, false);
@@ -76,7 +76,7 @@ function assertPrimitiveExtensions(item: PrimitiveState, allowPrefab: boolean): 
     const fields = [!allowPrefab && item.prefab ? "prefab" : undefined, item.layers?.length ? "layers" : undefined,
       ...activeEffects, item.rig ? "rig" : undefined, item.explosionFactor ? "explosionFactor" : undefined]
       .filter((value): value is string => value !== undefined);
-    throw new Error(`基础体 ${item.modelId} 的扩展外观需要适配：${fields.join(", ")}`);
+    throw appearanceUnsupportedError(`基础体 ${item.modelId} 的扩展外观需要适配：${fields.join(", ")}`);
   }
 }
 
