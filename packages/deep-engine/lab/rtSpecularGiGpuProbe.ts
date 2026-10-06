@@ -154,8 +154,8 @@ export function buildSsrSynthetic(): { readonly trace: ArrayBuffer; readonly out
 
 /** 视法线 GBuffer 单源:相机主射线命中表面 → 世界法线 → 视空间(rgba8unorm 编码)。 */
 export function buildReceiverViewNormals(scene: ReflectionScene, depth: Float32Array,
-  invViewProjection: readonly number[], worldToViewBasis: readonly [number[], number[], number[]]):
-  { readonly bytes: Uint8Array; readonly hits: number } {
+  invViewProjection: ArrayLike<number>, worldToViewBasis: readonly [number[], number[], number[]]):
+  { readonly bytes: Uint8Array<ArrayBuffer>; readonly hits: number } {
   const tlas = buildTlas(scene.instances);
   const bytes = new Uint8Array(RES * RES * 4);
   let hits = 0;
@@ -311,7 +311,7 @@ fn generateDfg(@builtin(global_invocation_id) gid: vec3u) {
 function renderPassPipelineWgsl(): string { return DEPTH_PASS_WGSL; }
 
 async function renderSceneDepth(device: GPUDevice, scene: ReflectionScene,
-  viewProjection: Float32Array): Promise<GPUTexture> {
+  viewProjection: Float32Array<ArrayBuffer>): Promise<GPUTexture> {
   const vertices: number[] = [];
   for (const blas of scene.blasList) {
     for (let i = 0; i < blas.indices.length; i++) {
@@ -388,6 +388,12 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
       lookAt(REFLECTION_EYE, REFLECTION_TARGET, [0, 1, 0]));
     const worldToView = lookAt(REFLECTION_EYE, REFLECTION_TARGET, [0, 1, 0]);
     const invViewProjection = invertColumnMajor4x4(viewProjection);
+    // RayTraceClosestFramePass 合同要 16 元组(与 pbrRendererFrames 同式展开;源保证 16 长)。
+    const invViewProjectionTuple = [invViewProjection[0]!, invViewProjection[1]!, invViewProjection[2]!,
+      invViewProjection[3]!, invViewProjection[4]!, invViewProjection[5]!, invViewProjection[6]!,
+      invViewProjection[7]!, invViewProjection[8]!, invViewProjection[9]!, invViewProjection[10]!,
+      invViewProjection[11]!, invViewProjection[12]!, invViewProjection[13]!, invViewProjection[14]!,
+      invViewProjection[15]!] as const;
     const scene = buildReflectionScene(false);
     const depthTexture = await renderSceneDepth(device, scene, viewProjection);
     // 线性视深度换算(探针 GBuffer;SSR reconstruct 合同输入)。
@@ -466,7 +472,7 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
       dispatchIndirection: boolean): Promise<void> => {
       const encoder = device.createCommandEncoder();
       await closest.encode(encoder, { depthView: depthTexture.createView(), hitView: hitTexture.createView(),
-        width: RES, height: RES, invViewProjection, eye: REFLECTION_EYE, tMax: REFLECTION_T_MAX,
+        width: RES, height: RES, invViewProjection: invViewProjectionTuple, eye: REFLECTION_EYE, tMax: REFLECTION_T_MAX,
         bias: REFLECTION_BIAS, rayMask: 0xff });
       // 特性关 = 无 indirection dispatch(零纹理保持零;fill 双 miss 逐位透传)。
       if (dispatchIndirection) { indirectionPass.encode(encoder, {
@@ -503,7 +509,7 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
     const wallIndirection = await timed(async () => {
       const encoder = device.createCommandEncoder();
       await closest.encode(encoder, { depthView: depthTexture.createView(), hitView: hitTexture.createView(),
-        width: RES, height: RES, invViewProjection, eye: REFLECTION_EYE, tMax: REFLECTION_T_MAX,
+        width: RES, height: RES, invViewProjection: invViewProjectionTuple, eye: REFLECTION_EYE, tMax: REFLECTION_T_MAX,
         bias: REFLECTION_BIAS, rayMask: 0xff });
       indirectionPass.encode(encoder, {
         linearDepthView: linearTexture.createView(), viewNormalView: normalTexture.createView(),
@@ -521,7 +527,7 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
     const wallSsrOnly = await timed(async () => {
       const encoder = device.createCommandEncoder();
       await closest.encode(encoder, { depthView: depthTexture.createView(), hitView: hitTexture.createView(),
-        width: RES, height: RES, invViewProjection, eye: REFLECTION_EYE, tMax: REFLECTION_T_MAX,
+        width: RES, height: RES, invViewProjection: invViewProjectionTuple, eye: REFLECTION_EYE, tMax: REFLECTION_T_MAX,
         bias: REFLECTION_BIAS, rayMask: 0xff });
       device.queue.submit([encoder.finish()]);
     }, 3, 20);

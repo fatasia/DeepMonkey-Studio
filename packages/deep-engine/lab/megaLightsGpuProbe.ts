@@ -98,9 +98,9 @@ async function readbackColor(device: GPUDevice, runtime: MegaLightsRuntime): Pro
 
 /** wall-clock 口径(C2 同款):submit→onSubmittedWorkDone,含 CPU 提交开销,诚实偏大。 */
 async function runFrame(device: GPUDevice, runtime: MegaLightsRuntime,
-  resources: { width: number; height: number; lightCount: number }, timed: boolean): Promise<number> {
+  resources: { width: number; height: number; lightCount: number; visibilityEnabled?: boolean }, timed: boolean): Promise<number> {
   const encoder = device.createCommandEncoder({ label: "MegaLights probe frame" });
-  runtime.encode(encoder, resources);
+  runtime.encode(encoder, { ...resources, visibilityEnabled: resources.visibilityEnabled ?? false });
   const start = performance.now();
   device.queue.submit([encoder.finish()]);
   await device.queue.onSubmittedWorkDone();
@@ -893,8 +893,8 @@ async function winnerVisibilityLeg(): Promise<Record<string, unknown>> {
     const shadowSuppression = shadowMeanOff > 1e-6 ? shadowMeanOn / shadowMeanOff : 1;
     const litRelativeDiff = litMeanOff > 1e-6 ? Math.abs(litMeanOn - litMeanOff) / litMeanOff : 0;
     const sorted = [...frameTimes].sort((a, b) => a - b);
-    const visP50 = sorted[Math.floor(sorted.length * 0.5)] ?? NaN;
-    const visP95 = sorted[Math.floor(sorted.length * 0.95)] ?? NaN;
+    const visP50 = sorted[Math.floor(sorted.length * 0.5)] ?? Number.NaN
+    const visP95 = sorted[Math.floor(sorted.length * 0.95)] ?? Number.NaN
     const compileMessages = await compilationMessages(runtime);
     if (compileMessages.length) console.error("[compilation]", compileMessages.join(" | "));
     return { action: "megalights-winner-visibility", compileMessages,
@@ -910,7 +910,7 @@ async function winnerVisibilityLeg(): Promise<Record<string, unknown>> {
         instanceCount: scene.instanceCount, tlasNodeCount: scene.tlasNodeCount,
         blasNodeCount: scene.blasNodeCount, triangleCount: scene.triangleCount,
         nodeBytes: scene.nodeBytes.byteLength, orderLen: tlasBuild.built.order.length,
-        cpuArbitration: [[80, 90], [160, 90], [200, 90]].map(([x, y]) => {
+        cpuArbitration: ([[80, 90], [160, 90], [200, 90]] as const).map(([x, y]) => {
           const ray = lightRayOracle(x, y);
           const hit = traceTlasClosest(tlasBuild, { ox: ray.origin[0]!, oy: ray.origin[1]!,
             oz: ray.origin[2]!, dx: ray.dir[0]!, dy: ray.dir[1]!, dz: ray.dir[2]!, tMax: ray.tMax });

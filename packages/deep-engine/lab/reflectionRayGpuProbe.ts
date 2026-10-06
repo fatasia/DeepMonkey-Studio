@@ -89,7 +89,7 @@ struct Vp { viewProjection: mat4x4f };
 
 /** 渲染场景深度(三角形合并绘制;三角形查询:盒 12 + 墙 2 + 板 2)。 */
 async function renderSceneDepth(device: GPUDevice, scene: ReflectionScene,
-  viewProjection: Float32Array): Promise<GPUTexture> {
+  viewProjection: Float32Array<ArrayBuffer>): Promise<GPUTexture> {
   const vertices: number[] = [];
   for (const blas of scene.blasList) {
     for (let i = 0; i < blas.indices.length; i++) {
@@ -158,6 +158,12 @@ export async function runReflectionRayGpuProbe(): Promise<ReflectionGpuProbeResu
   const viewProjection = multiply(perspective(50 * Math.PI / 180, aspect, 0.1, 200),
     lookAt(REFLECTION_EYE, REFLECTION_TARGET, [0, 1, 0]));
   const invViewProjection = invertColumnMajor4x4(viewProjection);
+  // RayTraceClosestFramePass 合同要 16 元组(与 pbrRendererFrames 同式展开;源保证 16 长)。
+  const invViewProjectionTuple = [invViewProjection[0]!, invViewProjection[1]!, invViewProjection[2]!,
+    invViewProjection[3]!, invViewProjection[4]!, invViewProjection[5]!, invViewProjection[6]!,
+    invViewProjection[7]!, invViewProjection[8]!, invViewProjection[9]!, invViewProjection[10]!,
+    invViewProjection[11]!, invViewProjection[12]!, invViewProjection[13]!, invViewProjection[14]!,
+    invViewProjection[15]!] as const;
   const variants: Array<{ variant: "f32" | "f16"; f16: boolean }> =
     [{ variant: "f32", f16: false }, ...(shaderF16 ? [{ variant: "f16" as const, f16: true }] : [])];
   for (const spec of variants) {
@@ -174,7 +180,7 @@ export async function runReflectionRayGpuProbe(): Promise<ReflectionGpuProbeResu
         const encode = async (): Promise<void> => {
           const encoder = device.createCommandEncoder();
           await pass.encode(encoder, { depthView, hitView, width: RESOLUTION, height: RESOLUTION,
-            invViewProjection, eye: REFLECTION_EYE, tMax: REFLECTION_T_MAX, bias: REFLECTION_BIAS,
+            invViewProjection: invViewProjectionTuple, eye: REFLECTION_EYE, tMax: REFLECTION_T_MAX, bias: REFLECTION_BIAS,
             rayMask: 0xff });
           device.queue.submit([encoder.finish()]);
         };

@@ -93,8 +93,26 @@ function h16ToFloat(half: number): number {
   return f32[0]!;
 }
 
+/**
+ * 探针证据形状(逐门一节;真机 JSON 报告直接序列化)。用 type 别名而非 interface:
+ * type 别名对象带隐式索引签名,可赋给本函数声明的 Promise<Record<string, unknown>>。
+ * 声明为 Partial:各门证据在 try 块内顺序落位,gate 汇总行前四门必然已赋值。
+ */
+type SsgiGpuProbeEvidence = {
+  bleed: { meanRed: number; meanBlue: number; samples: number };
+  bleedGate: { redThreshold: number; ratioThreshold: number; pass: boolean };
+  parity: { maxAbsDiff: number; tolerance: number; pass: boolean };
+  determinism: { sameSeedMaxAbsDiff: number; rotatedSeedMaxAbsDiff: number; pass: boolean };
+  frameTiming: { withPassP95: number; withPassP50: number; baselineP95: number; baselineP50: number;
+    incrementP95: number; budgetMs: number; methodology: string; pass: boolean };
+  uncapturedErrors: boolean;
+  errorMessages: string[];
+  uncapturedGate: { pass: boolean };
+  gate: boolean;
+};
+
 export async function runSsgiGpuProbe(): Promise<Record<string, unknown>> {
-  const evidence: Record<string, unknown> & { frameTiming?: { pass: boolean } } = {};
+  const evidence: Partial<SsgiGpuProbeEvidence> = {};
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH; canvas.height = HEIGHT;
   const session = await DeviceSession.open(canvas, navigator.gpu, new AbortController().signal);
@@ -165,8 +183,8 @@ export async function runSsgiGpuProbe(): Promise<Record<string, unknown>> {
       pass: meanRed > 0.01 && meanRed > meanBlue * 2.5 };
 
     // ②CPU 镜像奇偶:同场景同 seed,GPU 输出 − 基色 vs CPU 合成输出 − 基色。
-    const cpu = screenSpaceGiCpu({ width: WIDTH, height: HEIGHT, depth: scene.depth,
-      normals: normalUnormToLinear(scene.normalBytes), color: scene.color }, { ...OPTIONS });
+    const cpu = screenSpaceGiCpu({ width: WIDTH, height: HEIGHT, depth: [...scene.depth],
+      normals: normalUnormToLinear(scene.normalBytes), color: [...scene.color] }, { ...OPTIONS });
     let parityMax = 0;
     for (let index = 0; index < onOutput.length; index++) {
       parityMax = Math.max(parityMax,
@@ -221,8 +239,8 @@ export async function runSsgiGpuProbe(): Promise<Record<string, unknown>> {
     evidence.uncapturedErrors = session.hasErrors || errorMessages.length > 0;
     evidence.errorMessages = errorMessages.slice(0, 8);
     evidence.uncapturedGate = { pass: evidence.uncapturedErrors !== true };
-    evidence.gate = evidence.bleedGate.pass === true && evidence.parity.pass === true
-      && evidence.determinism.pass === true && evidence.frameTiming.pass === true
+    evidence.gate = evidence.bleedGate!.pass === true && evidence.parity!.pass === true
+      && evidence.determinism!.pass === true && evidence.frameTiming!.pass === true
       && evidence.uncapturedErrors !== true;
     pass.dispose();
     return evidence;

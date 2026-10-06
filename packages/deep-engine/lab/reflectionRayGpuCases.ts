@@ -118,11 +118,11 @@ export function referenceReflectionRecords(scene: ReflectionScene, depth: Float3
       if (d >= 1) { miss(base); continue; }
       if (x + 1 >= width || y + 1 >= height || depthAt(x + 1, y) >= 1 || depthAt(x, y + 1) >= 1) { miss(base); continue; }
       const world = worldOf(x, y, d);
-      const worldRight = worldOf(x + 1, y, depthAt(x + 1, y));
-      const worldDown = worldOf(x, y + 1, depthAt(x, y + 1));
+      const worldRight = worldOf(x + 1, y, depthAt(x + 1, y)!); // 上行已守卫 <1 且在界内。
+      const worldDown = worldOf(x, y + 1, depthAt(x, y + 1)!);
       const e1 = [worldRight[0] - world[0], worldRight[1] - world[1], worldRight[2] - world[2]];
       const e2 = [worldDown[0] - world[0], worldDown[1] - world[1], worldDown[2] - world[2]];
-      let n = [e1[1]! * e2[2]! - e1[2]! * e2[1]!, e1[2]! * e2[0]! - e1[0]! * e2[2]!, e1[0]! * e2[1]! - e1[1]! * e2[0]!];
+      let n: [number, number, number] = [e1[1]! * e2[2]! - e1[2]! * e2[1]!, e1[2]! * e2[0]! - e1[0]! * e2[2]!, e1[0]! * e2[1]! - e1[1]! * e2[0]!];
       const nLen = Math.hypot(n[0], n[1], n[2]);
       if (!(nLen > 0)) { miss(base); continue; }
       n = [n[0]! / nLen, n[1]! / nLen, n[2]! / nLen];
@@ -131,7 +131,7 @@ export function referenceReflectionRecords(scene: ReflectionScene, depth: Float3
         n = [-n[0]!, -n[1]!, -n[2]!];
       }
       let incident = [world[0] - eye[0], world[1] - eye[1], world[2] - eye[2]];
-      const iLen = Math.hypot(incident[0], incident[1], incident[2]);
+      const iLen = Math.hypot(incident[0]!, incident[1]!, incident[2]!);
       if (!(iLen > 0)) { miss(base); continue; }
       incident = [incident[0]! / iLen, incident[1]! / iLen, incident[2]! / iLen];
       if (incident[0]! * n[0]! + incident[1]! * n[1]! + incident[2]! * n[2]! >= -1e-4) { miss(base); continue; }
@@ -166,15 +166,15 @@ export function hitNormalWorld(scene: ReflectionScene, instanceId: string, primi
   if (n[0]! * dir[0] + n[1]! * dir[1] + n[2]! * dir[2] > 0) { n = [-n[0]!, -n[1]!, -n[2]!]; }
   // 法线世界变换 = (worldToLocal 3×3)⁻ᵀ;L=invertAffine3x4 的线性部分行主序取转置乘。
   const localToWorld = invertAffine3x4(instance.worldToLocal);
-  let world = [
+  let world: [number, number, number] = [
     localToWorld[0]! * n[0]! + localToWorld[4]! * n[1]! + localToWorld[8]! * n[2]!,
     localToWorld[1]! * n[0]! + localToWorld[5]! * n[1]! + localToWorld[9]! * n[2]!,
     localToWorld[2]! * n[0]! + localToWorld[6]! * n[1]! + localToWorld[10]! * n[2]!];
   const len = Math.hypot(world[0], world[1], world[2]);
-  if (!(len > 0)) return [0, 0, 1]; // 退化不应发生(命中即有非零几何法线);保守给 +z。
+  if (!(len > 0)) return [0, 0, 1] as const; // 退化不应发生(命中即有非零几何法线);保守给 +z。
   world = [world[0]! / len, world[1]! / len, world[2]! / len];
   if (world[0]! * dir[0] + world[1]! * dir[1] + world[2]! * dir[2] > 0) {
     world = [-world[0]!, -world[1]!, -world[2]!];
   }
-  return world;
+  return [world[0], world[1], world[2]] as const;
 }
