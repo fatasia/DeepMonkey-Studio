@@ -478,6 +478,7 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
       if (dispatchIndirection) { indirectionPass.encode(encoder, {
         linearDepthView: linearTexture.createView(), viewNormalView: normalTexture.createView(),
         brdfLutView: dfgTexture.createView(), rtHitView: hitTexture.createView(),
+        bounceShadingView: hitTexture.createView(),
         indirectionView: indirection.createView(), width: RES, height: RES,
         params: { width: RES, height: RES, tanHalfFov: Math.tan(50 * Math.PI / 360), aspect: 1,
           surfaceToLightWorld: [...RT_SPECULAR_PROBE_LIGHT.surfaceToLightWorld],
@@ -514,6 +515,7 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
       indirectionPass.encode(encoder, {
         linearDepthView: linearTexture.createView(), viewNormalView: normalTexture.createView(),
         brdfLutView: dfgTexture.createView(), rtHitView: hitTexture.createView(),
+        bounceShadingView: hitTexture.createView(),
         indirectionView: indirectionOn.createView(), width: RES, height: RES,
         params: { width: RES, height: RES, tanHalfFov: Math.tan(50 * Math.PI / 360), aspect: 1,
           surfaceToLightWorld: [...RT_SPECULAR_PROBE_LIGHT.surfaceToLightWorld],
