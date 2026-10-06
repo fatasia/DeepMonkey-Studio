@@ -91,6 +91,10 @@
   gap: 10px;
 }
 .desktop-gate label {
+  /* 指向 input 的 label 是点击目标:28px 最小点击目标(UI 红线),与 .environment-field-label 同族同值。 */
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
   color: #d6deec;
   font-size: 12px;
   font-weight: 650;

@@ -6,11 +6,10 @@ export function SceneEnvironmentMips({ locale, environment, active, onChange }: 
   onChange: (value: SceneEnvironmentState) => void;
 }) {
   return <div className="environment-row environment-compact-row">
-    <label htmlFor="environment-specular-mips" style={{ color: "var(--text-muted)", fontSize: 11 }}>{tr(locale, "反射细节", "Reflection detail")}</label>
+    {/* 标签点击聚焦下方下拉;28px 最小点击目标由 .environment-field-label 统一保证(UI 红线)。 */}
+    <label htmlFor="environment-specular-mips" className="environment-field-label">{tr(locale, "反射细节", "Reflection detail")}</label>
     <select id="environment-specular-mips" value={environment.environmentSpecularMips ?? "full"}
-      disabled={!active} style={{ minWidth: 0, width: "100%", color: "var(--text-strong)",
-        background: "var(--surface-1)", border: "1px solid var(--line-strong)", fontSize: 11,
-        ...(active ? {} : { opacity: 0.5, cursor: "not-allowed" }) }}
+      disabled={!active} className="environment-field-select"
       title={tr(locale, active ? "降低细节可减少环境反射显存，保留粗糙表面的照明。" : "切换到 Deep WebGPU 后可调整反射细节。",
         active ? "Lower detail reduces reflection memory while preserving rough-surface lighting." : "Switch to Deep WebGPU to adjust reflection detail.")}
       onChange={event => {
