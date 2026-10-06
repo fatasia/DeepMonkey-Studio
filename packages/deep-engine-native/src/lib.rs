@@ -103,6 +103,14 @@ mod probe_gi_native_adapter_tests;
 pub mod gpu_cluster_lod_dag;
 pub mod gpu_cluster_lod_dag_tests;
 pub mod gpu_cluster_lod_dag_probe_tests;
+/// 批 C 渲染器接线运行时(六引擎对标 P1 收官件):DAG 三面产物 → GPU 驻留 buffer 族
+/// (预检 fail-closed)+ 相机 uniform 打包 + 选层 dispatch(帧循环模式)+ faults 零门
+/// → indirect 计划 → draw-indexed-indirect 命令字写入 + 渲染 pass 消费面
+/// (encode_draws;详见模块文档,GpuLod attach 接入帧循环)。
+pub mod gpu_cluster_lod_runtime;
+pub mod gpu_cluster_lod_runtime_tests;
+/// 批 C 运行时 GPU 探针(#[ignore] 真机门;golden 双臂端到端对拍 + 渲染消费)。
+pub mod gpu_cluster_lod_runtime_gpu_probe;
 pub mod gpu_cluster_lod_indirect;
 #[cfg(test)]
 mod _dbg2;
