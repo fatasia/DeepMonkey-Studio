@@ -31,7 +31,7 @@ pub mod types;
 pub mod validation;
 
 pub use dag::{build_meshlet_dag, DagLevel, DagOptions, MeshletDag};
-pub use dgc::{crc32c, read_dgc, write_dgc, DgcWriteOptions, NO_PARENT};
+pub use dgc::{crc32c, read_dgc, write_dgc, DgcWriteOptions, FLAG_ZLIB, NO_PARENT};
 pub use error::{DagError, DagResult};
 pub use local_triangle::{pack_local_triangle, unpack_local_triangle};
 pub use meshlet_builder::{build_meshlets, MeshletBuildResult};
