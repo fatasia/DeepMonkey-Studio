@@ -7,6 +7,7 @@ import {
   g1ClusterLodEnabled,
   megaLightsEnabled,
   projectedTexturesEnabled,
+  rayTracedReflectionsEnabled,
   rayTracedShadowsEnabled,
   sdfGiEnabled,
   ssgiEnabled,
@@ -164,5 +165,25 @@ describe("experimental feature registry", () => {
     expect(experimentalFeatureLabel(spec, "en-US")).toBe(spec.label[1]);
     expect(experimentalFeatureDetail(spec, "zh-CN")).toBe(spec.detail[0]);
     expect(experimentalFeatureDetail(spec, "en-US")).toBe(spec.detail[1]);
+  });
+});
+
+describe("ray-traced-reflections toggle (engine-gated, 桥接线前单文件对拍)", () => {
+  // P1 RT specular GI:URL 开关已入 toggles 单文件,桥 features 字面量接线属下一切批
+  // (清单 ray-traced-reflections evidence 如实登记)。本块锁定判定矩阵,防止接线时
+  // "面板/URL 语义漂移"(同族条款)。
+  const MATRIX = ["", "?x=1", "=1", "=true", "=on", "=0", "=false", "=off", "=yes", "=TRUE", "=On"] as const;
+
+  it("默认关;1/true/on 开;其余假值关(与 opt-in 家族同矩阵)", () => {
+    for (const suffix of MATRIX) {
+      setSearch(`http://localhost/?ray-traced-reflections${suffix}`, `?ray-traced-reflections${suffix}`);
+      const value = suffix.startsWith("=") ? suffix.slice(1).toLowerCase() : "";
+      expect(rayTracedReflectionsEnabled(), `ray-traced-reflections${suffix}`)
+        .toBe(["1", "true", "on"].includes(value));
+    }
+  });
+
+  it("未注册进 EXPERIMENTAL_FEATURES(桥接线前不上面板,登记与状态一致)", () => {
+    expect(EXPERIMENTAL_FEATURES.some((spec) => spec.param === "ray-traced-reflections")).toBe(false);
   });
 });

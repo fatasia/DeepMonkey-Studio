@@ -258,7 +258,8 @@ export class ScreenSpaceReflectionPass {
     this.session.release(allocation.radiance);
   }
   private result(cache: Allocation, updated: boolean, revision: number, activeRadianceMipLevels: number): ScreenSpaceReflectionResult {
-    return Object.freeze({ texture: cache.output, format: SSR_COMPOSITE_FORMAT, width: cache.width, height: cache.height,
+    return Object.freeze({ texture: cache.output, trace: cache.trace, format: SSR_COMPOSITE_FORMAT,
+      width: cache.width, height: cache.height,
       traceWidth: cache.traceWidth, traceHeight: cache.traceHeight, revision, updated,
       radianceMipLevelCount: activeRadianceMipLevels, passCount: activeRadianceMipLevels + 2 });
   }

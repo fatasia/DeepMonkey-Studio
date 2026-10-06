@@ -94,7 +94,7 @@ function h16ToFloat(half: number): number {
 }
 
 export async function runSsgiGpuProbe(): Promise<Record<string, unknown>> {
-  const evidence: Record<string, unknown> = {};
+  const evidence: Record<string, unknown> & { frameTiming?: { pass: boolean } } = {};
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH; canvas.height = HEIGHT;
   const session = await DeviceSession.open(canvas, navigator.gpu, new AbortController().signal);

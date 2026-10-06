@@ -46,6 +46,11 @@ export interface ScreenSpaceReflectionOptions {
 export interface ScreenSpaceReflectionResult {
   /** Borrowed until resize, device loss, or dispose. */
   readonly texture: GPUTexture;
+  /**
+   * 半分辨率 trace 屏内 mask 单源(alpha 通道;合成端与 RT specular GI 屏外填充都以
+   * 它判定"SSR 是否命中")。Borrowed until resize, device loss, or dispose。
+   */
+  readonly trace: GPUTexture;
   readonly format: typeof SSR_COMPOSITE_FORMAT;
   readonly width: number;
   readonly height: number;

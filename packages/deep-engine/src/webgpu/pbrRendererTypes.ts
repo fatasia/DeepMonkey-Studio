@@ -275,7 +275,13 @@ export interface FrameMetrics {
    * 为本帧 dispatch 形状。命中记录的生产消费未接线,画面零变化(下一切片)。
    */
   readonly rtReflections?: { dispatched: boolean; reason?: string;
-    width?: number; height?: number; dispatchX?: number; dispatchY?: number };
+    width?: number; height?: number; dispatchX?: number; dispatchY?: number;
+    /**
+     * P1 RT specular GI 一次反弹 indirection 本帧状态:true = 已 dispatch 且 indirection
+     * 已供给 SSR 合成后屏外填充;false = fail-closed(缺失 reason 如实披露),填充不
+     * 发生,SSR 输出逐位透传。字段缺省 = 特性关或本帧无 closest-hit 通道。
+     */
+    indirectDispatched?: boolean; indirectReason?: string };
   /**
    * P2 投影纹理光遥测(features.projectedTextures 开启且 RenderView 供给投影器时出现):
    * active=本帧实际进后链加性层;active=false 为 fail-closed(校验失败,缺失

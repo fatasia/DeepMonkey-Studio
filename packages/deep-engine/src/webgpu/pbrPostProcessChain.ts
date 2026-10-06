@@ -13,6 +13,8 @@ import { TEMPORAL_UPSCALE_COLOR_FORMAT } from "../postprocess/temporalUpscaleTyp
 import { internalRenderSize } from "../postprocess/temporalUpscaleCpu.js";
 import { ScreenSpaceReflectionPass } from "../postprocess/screenSpaceReflection.js";
 import { SSR_COMPOSITE_FORMAT } from "../postprocess/screenSpaceReflectionTypes.js";
+import { RtSpecularFillPass } from "../rayTracing/rtSpecularFramePasses.js";
+import { RT_SPECULAR_FILL_FORMAT } from "../rayTracing/rtSpecularFillKernel.js";
 import { ScreenSpaceGiPass, defaultScreenSpaceGiOptions } from "../postprocess/screenSpaceGi.js";
 import { SSGI_COMPOSITE_FORMAT, SSGI_TRACE_FORMAT } from "../postprocess/screenSpaceGiTypes.js";
 import { ProjectedTexturePass } from "../postprocess/projectedTexture.js";
@@ -43,6 +45,15 @@ import type { AdaptiveQualityKnobs } from "./adaptiveQuality.js";
 /** Soft-knee starts at linear radiance 1: SDR surfaces and backgrounds do not glow. */
 export const DEFAULT_PBR_BLOOM_OPTIONS = Object.freeze({ threshold: 1.25, softKnee: 0.2, intensity: 0.55, maxLevels: 5 });
 
+/** 池化纹理的默认全 mip 视图缓存(present/trace 视图身份稳定,避免每帧 createView)。 */
+const chainTextureViews = new WeakMap<GPUTexture, GPUTextureView>();
+
+function chainViewOf(texture: GPUTexture): GPUTextureView {
+  let view = chainTextureViews.get(texture);
+  if (!view) chainTextureViews.set(texture, view = texture.createView());
+  return view;
+}
+
 export interface PbrPostProcessInput {
   readonly postProcess?: PbrPostProcessOverrides;
   readonly encoder: GPUCommandEncoder;
@@ -63,6 +74,12 @@ export interface PbrPostProcessInput {
   readonly reactiveMask?: GPUTexture;
   /** C11 SSR 物理化:主着色器同一 split-sum DFG(environment.brdf);缺省时 SSR 拒绝编码。 */
   readonly brdfLut?: GPUTextureView;
+  /**
+   * P1 RT specular GI 屏外填充输入(帧编排侧在反射 closest-hit + indirection dispatch
+   * 成功且 SSR 激活时供给;缺省 = 链路逐位零变化)。indirection 为 rgba16float
+   * [radiance×fraction, fraction],消费点在 SSR 合成之后(见 encodeFinal SSR 分支)。
+   */
+  readonly rtSpecular?: { readonly indirection: GPUTextureView };
   /**
    * P2 投影纹理光帧输入(features.projectedTextures 且场景供给投影器时由渲染器
    * resolve 供给;缺省 = 链路逐位零变化)。消费点在 SSR 之前(SSR 命中 UV 采色
@@ -115,6 +132,8 @@ export class PbrPostProcessChain {
   private readonly screenSpaceReflection: ScreenSpaceReflectionPass | undefined;
   private readonly screenSpaceGi: ScreenSpaceGiPass | undefined;
   private readonly projectedTexture: ProjectedTexturePass | undefined;
+  /** P1 RT specular GI 屏外填充(懒构造;rtSpecular 输入首帧才建,缺省零构造)。 */
+  private rtSpecularFill: RtSpecularFillPass | undefined;
   private readonly volumetricFog: VolumetricFogPass | undefined;
   private volumetricGodRays: VolumetricGodRaysPass | undefined;
   private readonly volumetricFogComposite: VolumetricFogCompositePass | undefined;
@@ -166,8 +185,8 @@ export class PbrPostProcessChain {
       if (this.features.bloom) bloom = new BloomPass(session, pool);
     } catch (error) {
       failWithResourceCleanup(error, "Post-process construction failed", [
-        () => bloom?.dispose(), () => temporalUpscale?.dispose(), () => temporalAa?.dispose(), () => screenSpaceReflection?.dispose(),
-        () => screenSpaceGi?.dispose(), () => projectedTexture?.dispose(),
+      () => bloom?.dispose(), () => temporalUpscale?.dispose(), () => temporalAa?.dispose(), () => screenSpaceReflection?.dispose(),
+      () => screenSpaceGi?.dispose(), () => projectedTexture?.dispose(),
         () => volumetricFogComposite?.dispose(), () => volumetricFog?.dispose(),
         () => ambientOcclusionComposite?.dispose(),
         () => ambientOcclusion?.dispose(), () => hiZ?.dispose(),
@@ -304,6 +323,25 @@ export class PbrPostProcessChain {
         } : {}), ...(input.adaptiveQuality ? { coneMipLevels: input.adaptiveQuality.ssrConeLevels } : {}),
         verticalFovRadians, ...(input.passTiming ? { passTiming: input.passTiming } : {}) });
       marched = reflected.texture; effectPasses += reflected.passCount;
+      // P1 RT specular GI 屏外填充(opt-in input.rtSpecular;缺省 = 本分支不进,SSR
+      // 输出逐位透传):合成点 = 既有 SSR 合成之后。内核语义(单源 rtSpecularFillKernel
+      // + rtSpecularIndirectionCpu 镜像):trace.a>0(SSR 屏内命中,含半权双线性边缘)
+      // 逐位透传;trace.a==0 且 rt.a>0 用 SSR composite 同式 out*(1-α)+rgb 把 RT 一次
+      // 反弹 1:1 换掉 IBL 高光回退(能量不叠加);双方皆 miss = out×1+0 逐位等于输入。
+      if (input.rtSpecular) {
+        if (!this.pool) throw new Error("RT specular fill requires the transient texture pool.");
+        this.rtSpecularFill ??= new RtSpecularFillPass(this.session.device);
+        const handle = this.pool.acquire({ resourceId: "rt-specular-fill", width: reflected.width,
+          height: reflected.height, sampleCount: 1, format: RT_SPECULAR_FILL_FORMAT,
+          usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
+        try {
+          this.rtSpecularFill.encode(encoder, {
+            ssrOutputView: chainViewOf(reflected.texture), ssrTraceView: chainViewOf(reflected.trace),
+            indirectionView: input.rtSpecular.indirection, outputView: handle.view,
+            width: reflected.width, height: reflected.height });
+          marched = handle.texture; effectPasses += 1;
+        } finally { this.pool.release(handle); }
+      }
     }
     let temporal: { readonly texture: GPUTexture } = { texture: marched };
     if (this.features.temporalAa) {
@@ -607,6 +645,7 @@ export class PbrPostProcessChain {
     this.disposed = true;
     runResourceCleanup("Post-process disposal failed", [() => this.instanceOutline?.dispose(), () => this.authorBloom?.dispose(), () => this.bloom?.dispose(),
       () => this.temporalAa?.dispose(), () => this.temporalUpscale?.dispose(), () => this.screenSpaceReflection?.dispose(),
+      () => this.rtSpecularFill?.destroy(),
       () => this.screenSpaceGi?.dispose(), () => this.projectedTexture?.dispose(),
       () => this.volumetricFogComposite?.dispose(), () => this.volumetricGodRays?.dispose(), () => this.volumetricFog?.dispose(),
       () => this.ambientOcclusionComposite?.dispose(),

@@ -120,6 +120,21 @@ export function rayTracedShadowsEnabled(): boolean {
   return value === "1" || value === "true" || value === "on";
 }
 
+/**
+ * RT specular GI 开关：`ray-traced-reflections=1`（opt-in，默认关）。
+ * 开启后渲染器挂反射 closest-hit 帧通道 + 一次反弹 indirection（主方向光 N·L +
+ * F1 ambient 合同环境项，中性反照率）+ SSR 合成后屏外填充（SSR 屏内 miss 像素用
+ * RT 替换 IBL 高光回退，同式 1:1 换手）。关闭 = 通道零 dispatch、填充不发生，
+ * 帧逐位零变化；场景未 staging/管线构造失败 fail-closed 降级并如实披露。
+ * 需与 SSR 同开（填充消费点在 SSR 合成后）。
+ */
+export function rayTracedReflectionsEnabled(): boolean {
+  const params = typeof location !== "undefined" && location.search
+    ? new URLSearchParams(location.search) : undefined;
+  const value = params?.get("ray-traced-reflections")?.toLowerCase();
+  return value === "1" || value === "true" || value === "on";
+}
+
 /** F3 虚拟纹理开关：`f3-virtual-textures=1`（opt-in，默认整纹理驻留路径零变化）。 */
 export function f3VirtualTexturesEnabled(): boolean {
   const params = typeof location !== "undefined" && location.search
