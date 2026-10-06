@@ -48,14 +48,14 @@ await page.waitForTimeout(700);
 await page.evaluate(() => {
   const state = { phase: "idle", segments: { drag: [], capture: [] }, longTasks: [],
     pointerSerial: 0, pointerAt: 0, backendSerial: 0, submitInDrag: 0, submitInCapture: 0,
-    submitGapDrag: [], lastSubmit: 0, last: performance.now(), screenshotAt: [] };
+    submitGapDrag: [], lastSubmit: 0, submitSeen: 0, last: performance.now(), screenshotAt: [] };
   const tick = now => {
     const interval = now - state.last;
     state.last = now;
     if (state.phase === "drag" || state.phase === "capture") {
       state.segments[state.phase].push(interval);
       if (state.lastSubmit && state.phase === "drag") {
-        if (state.lastSubmit > state.submitWindowStart) state.submitGapDrag.push(now - state.lastSubmit);
+        if (state.lastSubmit > state.submitSeen) { state.submitGapDrag.push(now - state.lastSubmit); state.submitSeen = state.lastSubmit; }
       }
     }
     requestAnimationFrame(tick);

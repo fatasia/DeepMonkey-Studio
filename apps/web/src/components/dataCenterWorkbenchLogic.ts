@@ -1,7 +1,7 @@
 import type { DataConnectorDiagnostics, DataDatasetField, DataFieldType } from "@bim-studio/contracts";
 
 /**
- * 数据中心工作台纯逻辑层（帆软 FVS 信息密度纪律的决策面）：
+ * 数据中心工作台纯逻辑层（大屏信息密度纪律的决策面）：
  * 四步向导三态推导、连接监控迷你趋势标定、字段统计（类型徽章/样例值/空值率）、
  * 预览表虚拟滚动行窗。全部确定性纯函数，画布/表格外的一切决策在此可单测。
  *
