@@ -17,7 +17,12 @@ const distRoot = resolve(outputRoot, "dist");
 const chromePath = process.env.BIM_STUDIO_CHROME_PATH ?? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const runs = finiteEnvironment("BIM_STUDIO_RENDER_BENCHMARK_RUNS", 5, 1, 7);
 const rebuildCycles = finiteEnvironment("BIM_STUDIO_RENDER_BENCHMARK_CYCLES", 20, 1, 30);
-const engines = ["three-webgl", "three-webgpu"];
+// 默认矩阵保持发布门原状;新增引擎(如 babylon-webgpu)经 BIM_STUDIO_RENDER_BENCHMARK_ENGINES 显式
+// opt-in,证据跑满后由评审决定是否升为默认列,避免发布门基线被静默扩大。
+const VALID_ENGINES = new Set(["three-webgl", "three-webgpu", "babylon-webgpu", "deep-webgpu"]);
+const engineOverride = process.env.BIM_STUDIO_RENDER_BENCHMARK_ENGINES?.split(",").map(item => item.trim()).filter(Boolean) ?? [];
+const engines = engineOverride.length ? engineOverride : ["three-webgl", "three-webgpu"];
+if (engines.length === 0 || engines.some(engine => !VALID_ENGINES.has(engine))) throw new Error(`未知引擎档位:${engineOverride.join(",")}`);
 const workloads = ["static", "dynamic"];
 const objectCounts = [120, 1000];
 const geometryParityTolerance = 0.01;
@@ -343,7 +348,7 @@ function renderMarkdown(current) {
     ? JSON.stringify(webGpuEnvironment.webGpuLimits)
     : "无数据";
   return [
-    "# Three.js WebGL / WebGPU 同场景基准",
+    "# 渲染引擎同场景基准",
     "",
     `生成时间：${current.createdAt}；每组 ${current.runs} 次冷上下文运行；固定 1440×900、DPR 1、ACES、PBR、1024 阴影。`,
     "",

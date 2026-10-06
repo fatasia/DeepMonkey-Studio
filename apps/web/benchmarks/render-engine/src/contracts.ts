@@ -1,4 +1,4 @@
-export type BenchmarkEngine = "three-webgl" | "three-webgpu" | "babylon-webgpu";
+export type BenchmarkEngine = "three-webgl" | "three-webgpu" | "babylon-webgpu" | "deep-webgpu";
 export type BenchmarkWorkload = "static" | "dynamic";
 
 export interface FrameMetrics {

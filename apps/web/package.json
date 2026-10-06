@@ -32,6 +32,7 @@
     "sweep:maintenance": "tsx scripts/e4-maintenance-sweep.ts"
   },
   "dependencies": {
+    "@babylonjs/core": "9.29.0",
     "@bim-studio/contracts": "workspace:*",
     "@bim-studio/data-runtime": "workspace:*",
     "@bim-studio/deep-engine": "workspace:*",

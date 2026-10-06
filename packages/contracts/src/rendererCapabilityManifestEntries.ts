@@ -303,8 +303,10 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:groundPlane/groundGrid(默认开;作者场景接管地板时关闭)",
     },
     native: {
-      support: "unavailable", reason: "absent",
-      evidence: "packages/deep-engine-native/src/runtime_package/solid_environment.rs(solid-background-no-ibl/prefiltered-ibl 仅背景底,无内置地面/网格)",
+      // 地面预览批(2026-10-06):native 网格预览核逐式移植入库,真机 GPU
+      // 对拍通过;forward pass 地面 quad 接线为后继切片——如实 harness-only。
+      support: "supported", reason: "harness-only",
+      evidence: "packages/deep-engine-native/src/ground_preview.rs:ground_grid_factor_cpu/ground_grid_albedo_cpu(TS pbrShader ground 分支/groundGridAlbedo 同式,f64 逐位 golden)+ GROUND_PREVIEW_WGSL/create_ground_preview_pipeline(y=0 双三角 quad,格距 2.4/径向衰减 0.06/对比度 0.32;TS fwidth 显式化为 uniform footprint,偏离如实声明)+ tests/ground_preview_gpu.rs 真机 readback 对拍(RTX 4060/Vulkan ≤2e-3 相对)",
     },
   },
   {
@@ -524,8 +526,10 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine/src/environment/atmosphereSkyGate.ts:resolveAtmosphereSkyMode(fail-closed 门,默认 neutral;atmosphereSky.ts 预计算表采样+equirect 环境图走 radiance-hdr 权威 IBL 链能量链零改动;quality 档映射 atmosphereSkyPresetForQuality)",
     },
     native: {
-      support: "unavailable", reason: "absent",
-      evidence: "packages/deep-engine-native/src/lib.rs(native 直出光栅化无环境源通路,无大气散射模块;天空源按设计属 web PbrRenderer 的 radiance-hdr/studio 环境)",
+      // 大气散射批(2026-10-06):T09 解析单散射天空逐式移植入库,真机 GPU
+      // 对拍通过;生产背景 pass 接线与 perez 档为后继切片——如实 harness-only。
+      support: "supported", reason: "harness-only",
+      evidence: "packages/deep-engine-native/src/atmosphere_sky.rs:sample_analytic_sky_cpu(TS skyReference sampleAnalyticSky 同式,TS 金样 f64 1e-9 相对对拍;参数合同同构 turbidity∈[1.9,10]/太阳 ENU 单位矢量/大气厚度 8000m)+ ATMOSPHERE_SKY_WGSL/create_atmosphere_sky_pipeline(全屏背景 pass,线性 HDR 直写;WGSL 1−exp 对 expm1 偏离如实声明)+ tests/atmosphere_sky_gpu.rs 真机 readback 对拍(RTX 4060/Vulkan ≤2e-3 相对)",
     },
   },
   {

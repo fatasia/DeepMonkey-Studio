@@ -1,4 +1,9 @@
 pub mod adapter_n1;
+/// atmosphere-sky 能力行(native 缺位补齐,2026-10-06):T09 解析单散射天空的
+/// CPU 权威镜像 + WGSL 单源 + 全屏背景管线(TS skyReference.ts 同构;
+/// 登记 supported/harness-only,生产背景 pass 接线为后继切片)。
+pub mod atmosphere_sky;
+pub mod ground_preview;
 pub mod asset_package;
 pub mod author_grading;
 pub mod output_color_profile;

@@ -297,10 +297,20 @@ async function sampleStaticFrames(page) {
       if (intervals.length >= samples) {
         const sorted = intervals.slice(1).sort((a, b) => a - b);
         const at = ratio => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * ratio))] ?? 0;
+        // 行业口径(PresentMon/CapFrameX):1%/5% Low FPS = 最慢 1%/5% 帧均值的倒数;
+        // 卡顿率 = 超 budget(16.7ms)/20ms/2×中位数的帧占比。原始序列一并持久化供复核。
+        const worst1 = sorted.slice(Math.max(0, sorted.length - Math.max(1, Math.round(sorted.length * 0.01))));
+        const worst5 = sorted.slice(Math.max(0, sorted.length - Math.max(1, Math.round(sorted.length * 0.05))));
+        const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
+        const avg = list => list.reduce((sum, v) => sum + v, 0) / (list.length || 1);
+        const countOver = limit => sorted.filter(v => v > limit).length;
         const gpuMedian = gpuMemorySamples.length > 0
           ? gpuMemorySamples.slice().sort((a, b) => a - b)[Math.floor(gpuMemorySamples.length / 2)] : null;
         resolve({ sampledFrames: sorted.length, p50Ms: at(0.5), p95Ms: at(0.95), p99Ms: at(0.99),
-          maxMs: sorted[sorted.length - 1] ?? 0, gpuMemoryMbMedian: gpuMedian });
+          maxMs: sorted[sorted.length - 1] ?? 0, gpuMemoryMbMedian: gpuMedian,
+          framesMs: sorted,
+          low1Fps: 1000 / avg(worst1), low5Fps: 1000 / avg(worst5),
+          jankOver16_7: countOver(16.7), jankOver20: countOver(20), jankOver2xMedian: countOver(2 * median) });
         return;
       }
       requestAnimationFrame(tick);

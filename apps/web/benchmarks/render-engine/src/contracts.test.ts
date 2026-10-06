@@ -23,9 +23,9 @@ describe("render benchmark result contract", () => {
     });
   });
 
-  it("reports unavailable Babylon without inventing a sample", () => {
+  it("Babylon 档位指向锁定的依赖版本,WebGPU 缺席时由运行时如实抛错而不是伪造样本", () => {
     const result = babylonAvailability();
-    expect(result.available).toBe(false);
-    expect(result.reason).toContain("未检测到");
+    expect(result.available).toBe(true);
+    expect(result.package).toBe("@babylonjs/core");
   });
 });

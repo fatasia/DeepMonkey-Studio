@@ -1,16 +1,16 @@
 import type { BenchmarkEngineAdapter } from "./contracts";
 
-/** Babylon is intentionally reported as unavailable until the workspace pins a Babylon build.
- * Keeping this adapter explicit prevents silently comparing different fixtures or dependency versions. */
+/** Babylon WebGPU 档位。依赖 @babylonjs/core 已在 apps/web 锁定精确版本后启用;
+ * WebGPU 不支持或依赖缺失时如实报不可用,不回退 WebGL、不伪造结果。 */
 export const babylonWebGpuAdapter: BenchmarkEngineAdapter = {
   engine: "babylon-webgpu",
-  available: false,
-  reason: "未检测到工作区锁定的 Babylon.js 依赖；未擅自引入依赖或伪造基准结果",
-  async create() {
-    throw new Error(this.reason);
+  available: true,
+  async create(canvas, objectCount, startedAt, workload) {
+    const { createBabylonWebgpuRuntime } = await import("./babylonWebgpuRuntime");
+    return createBabylonWebgpuRuntime(canvas, objectCount, startedAt, workload);
   },
 };
 
-export function babylonAvailability(): { available: false; reason: string } {
-  return { available: false, reason: babylonWebGpuAdapter.reason! };
+export function babylonAvailability(): { available: true; package: string } {
+  return { available: true, package: "@babylonjs/core" };
 }

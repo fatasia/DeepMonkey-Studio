@@ -1,6 +1,7 @@
 import "./benchmark.css";
 import { exportBenchmarkResult, type BenchmarkEngine, type BenchmarkWorkload, type RenderBenchmarkControl, type RenderBenchmarkRuntime } from "./contracts";
 import { babylonWebGpuAdapter } from "./babylonAdapter";
+import { deepWebGpuAdapter } from "./deepAdapter";
 import { waitForFrames } from "./frameSampler";
 
 const params = new URLSearchParams(location.search);
@@ -38,5 +39,6 @@ void createRuntime(requestedEngine, workload, canvas, objectCount, startedAt).th
 async function createRuntime(engine: BenchmarkEngine, workload: BenchmarkWorkload, target: HTMLCanvasElement, count: number, initializedAt: number): Promise<RenderBenchmarkRuntime> {
   if (engine === "three-webgl") return (await import("./threeWebglRuntime")).createThreeWebglRuntime(target, count, initializedAt, workload);
   if (engine === "babylon-webgpu") return babylonWebGpuAdapter.create(target, count, initializedAt, workload);
+  if (engine === "deep-webgpu") return deepWebGpuAdapter.create(target, count, initializedAt, workload);
   return (await import("./threeWebgpuRuntime")).createThreeWebgpuRuntime(target, count, initializedAt, workload);
 }
