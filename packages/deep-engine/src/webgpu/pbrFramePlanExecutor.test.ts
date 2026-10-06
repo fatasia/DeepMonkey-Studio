@@ -329,7 +329,7 @@ describe("pass execution receipt", () => {
     const subject = buildPbrFrameExecutionPlan(SURFACE, { transparency: true,
       features: resolvePbrRendererFeatures({ ambientOcclusion: true, screenSpaceReflection: true,
         volumetricFog: true, temporalAa: true, bloom: true, occlusionCulling: true, spatialAa: true,
-        contactShadows: true, temporalUpscale: true, sdfGi: true, ssgi: true }) });
+        contactShadows: true, temporalUpscale: true, sdfGi: true, ssgi: true, projectedTextures: true }) });
     expect([...subject.mappedPassIds].sort()).toEqual([...PBR_TIMED_PASS_IDS].sort());
   });
 });

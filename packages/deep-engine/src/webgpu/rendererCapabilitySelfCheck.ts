@@ -224,6 +224,13 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
     observed: { ssgi: FEATURE_DEFAULTS.ssgi },
   },
   {
+    // P2 六引擎对标 three r186 ProjectorLight 投影纹理(gobo 纹理半部):单投影器视锥
+    // 纹理直接光后链加性层(SSR 前;反射链路命中点经 SSR 命中 UV 采色携带投影贡献)。
+    capabilityId: "projected-textures", support: "supported", reason: "opt-in-default-off",
+    passIds: passes("projected-texture-"),
+    observed: { projectedTextures: FEATURE_DEFAULTS.projectedTextures },
+  },
+  {
     capabilityId: "fog-volumetric", support: "supported", reason: "opt-in-default-off",
     passIds: passes("volumetric-fog-"),
     observed: {

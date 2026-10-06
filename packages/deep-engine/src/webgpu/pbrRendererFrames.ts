@@ -14,6 +14,7 @@ import { pickScene, pickingUnavailable, type PickOptions, type PickResult } from
 import { spherePacket } from "./spherePacket.js";
 import { CameraFrameHistory } from "./cameraFrameHistory.js";
 import { PbrPostProcessChain, type PbrPostProcessInput } from "./pbrPostProcessChain.js";
+import { resolveProjectedTextureFrame } from "../postprocess/projectedTextureCpu.js";
 import { resolvePbrPostProcessOverrides } from "./pbrPostProcessOverrides.js";
 import { PbrTransparencyPass } from "./pbrTransparencyPass.js";
 import { viewProjectionFrustum } from "./pbrFrusta.js";
@@ -682,6 +683,18 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     }
     // The chain owns override resolution. Keep the resolved snapshot above for
     // capture planning, but do not feed it back as if it were author input.
+    // P2 投影纹理光(features.projectedTextures 且场景供给投影器时):帧内解析视空间
+    // 矩阵供后链加性层(SSR 前);校验失败 fail-closed 丢弃该帧投影器并披露,不炸帧。
+    let projectedTextureInput: PbrPostProcessInput["projectedTextures"] | undefined;
+    let projectedTextureMetrics: FrameMetrics["projectedTextures"] | undefined;
+    if (host.features.projectedTextures && view.projectedTextures && !directClear) {
+      try {
+        projectedTextureInput = resolveProjectedTextureFrame(view.projectedTextures, frameState.worldToView);
+        projectedTextureMetrics = { active: true, projectors: 1 };
+      } catch (error) {
+        projectedTextureMetrics = { active: false, projectors: 0, fallbackReason: (error as Error).message };
+      }
+    }
     const postProcessInput: PbrPostProcessInput = { encoder, targets: host.targets, revision: history.revision,
       ...(postProcess.volumetricFog && postProcess.volumetricFogProfile.godRaysStrength !== undefined
         ? { godRays: { ...pbrGodRaysFrame(sceneLighting.primary, frameState.worldToView),
@@ -701,6 +714,8 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       reactiveMaskAvailable: false,
       // C11:SSR 替换分数与主着色器共用同一 DFG(environment.brdf)。
       ...(host.environment.current ? { brdfLut: host.environment.current.brdf } : {}),
+      // P2 投影纹理光:resolve 成功才供给(链内在 SSR 前;缺省 = 链路逐位零变化)。
+      ...(projectedTextureInput ? { projectedTextures: projectedTextureInput } : {}),
       surfaceWidth: size.width, surfaceHeight: size.height,
       ...(host.adaptiveQuality ? { adaptiveQuality: host.adaptiveQuality.state().knobs } : {}),
       ...(passTiming ? { passTiming } : {}) };
@@ -851,6 +866,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       ...(host.autoExposure ? { autoExposure: host.autoExposure.metrics() } : {}),
       ...(clusterLod ? { clusterLod: clusterLod.metrics() } : {}),
       ...(rtShadowRoute ? { rtShadowRoute: rtShadowRouteMetrics(rtShadowRoute) } : {}),
+      ...(projectedTextureMetrics ? { projectedTextures: projectedTextureMetrics } : {}),
       cameraCut: history.cameraCut, postProcessPasses: opaqueEffects.passCount + finalEffects.passCount + (hasTransparent ? 2 + Number(host.transparency.currentReactiveMask !== undefined) : 0) + (upscaling ? 1 : 0) + (!directClear && host.outputs.spatialAaActive ? 1 : 0),
       weightedOit: hasTransparent,
       hiZMipLevels: opaqueEffects.hiZ?.mipLevelCount ?? 0,

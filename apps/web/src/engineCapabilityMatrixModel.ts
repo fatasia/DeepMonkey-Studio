@@ -124,8 +124,9 @@ const STATUS_LABELS: Partial<Record<RendererCapabilityEndDeclaration["support"],
 export function rendererCapabilityDomainId(id: string): string {
   if (id.startsWith("deep2d-")) return "deep-2d";
   if (id.startsWith("ray-traced-") || id === "hardware-ray-query") return "ray-tracing";
-  if (id === "sdf-gi" || id.startsWith("gi-") || id === "ibl-environment" || id === "megalights") return "gi";
+  if (id === "sdf-gi" || id === "ssgi" || id.startsWith("gi-") || id === "ibl-environment" || id === "megalights") return "gi";
   if (id.startsWith("shadow-") || id === "contact-shadows" || id === "local-shadow-abi-16") return "shadows";
+  if (id === "projected-textures") return "post-fx";
   if (id.startsWith("material-") || id === "white-furnace-conservation" || id === "ies-lighting") return "materials";
   if (id.startsWith("device-recovery")) return "device";
   if (POSTFX_IDS.has(id)) return "post-fx";

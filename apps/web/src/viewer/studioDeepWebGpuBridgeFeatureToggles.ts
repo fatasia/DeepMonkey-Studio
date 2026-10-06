@@ -153,3 +153,18 @@ export function ssgiEnabled(): boolean {
   const value = params?.get("ssgi")?.toLowerCase();
   return value === "1" || value === "true" || value === "on";
 }
+
+/**
+ * 投影纹理光开关（P2 六引擎对标 three r186 ProjectorLight gobo 纹理半部）：
+ * `projected-textures=1`（opt-in，默认关）。关闭 = 渲染链不构建投影纹理 pass，
+ * 帧逐位零变化；开启后单投影器（位置/目标/FOV/强度/贴图）视锥纹理直接光作为
+ * 后链加性层（输出在 SSGI 之后、SSR 之前——SSR 命中 UV 采色即携带投影贡献）。
+ * 场景未供给投影器时开启也无 dispatch（帧逐位零变化）；投影器描述符的场景
+ * 供给（作者链）属后续切片。
+ */
+export function projectedTexturesEnabled(): boolean {
+  const params = typeof location !== "undefined" && location.search
+    ? new URLSearchParams(location.search) : undefined;
+  const value = params?.get("projected-textures")?.toLowerCase();
+  return value === "1" || value === "true" || value === "on";
+}

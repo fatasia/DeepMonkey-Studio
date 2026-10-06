@@ -15,6 +15,9 @@ import { ScreenSpaceReflectionPass } from "../postprocess/screenSpaceReflection.
 import { SSR_COMPOSITE_FORMAT } from "../postprocess/screenSpaceReflectionTypes.js";
 import { ScreenSpaceGiPass, defaultScreenSpaceGiOptions } from "../postprocess/screenSpaceGi.js";
 import { SSGI_COMPOSITE_FORMAT, SSGI_TRACE_FORMAT } from "../postprocess/screenSpaceGiTypes.js";
+import { ProjectedTexturePass } from "../postprocess/projectedTexture.js";
+import { PROJECTED_TEXTURE_COLOR_FORMAT } from "../postprocess/projectedTextureTypes.js";
+import type { ProjectedTextureFrame } from "../postprocess/projectedTextureTypes.js";
 import { VolumetricFogPass } from "../fog/volumetricFogPass.js";
 import { VolumetricGodRaysPass } from "../fog/volumetricGodRaysPass.js";
 import type { GodRaysShadowSource } from "../fog/volumetricGodRaysPassTypes.js";
@@ -60,6 +63,12 @@ export interface PbrPostProcessInput {
   readonly reactiveMask?: GPUTexture;
   /** C11 SSR 物理化:主着色器同一 split-sum DFG(environment.brdf);缺省时 SSR 拒绝编码。 */
   readonly brdfLut?: GPUTextureView;
+  /**
+   * P2 投影纹理光帧输入(features.projectedTextures 且场景供给投影器时由渲染器
+   * resolve 供给;缺省 = 链路逐位零变化)。消费点在 SSR 之前(SSR 命中 UV 采色
+   * 携带投影贡献,反射链路命中点的投影纹理贡献)。
+   */
+  readonly projectedTextures?: ProjectedTextureFrame;
   readonly adaptiveQuality?: Readonly<AdaptiveQualityKnobs>;
   /**
    * 对象级描边帧输入。仅当 packet 含 outline 实例时由渲染器提供;缺省(绝大多数帧)时
@@ -105,6 +114,7 @@ export class PbrPostProcessChain {
   private readonly ambientOcclusionComposite: AmbientOcclusionCompositePass | undefined;
   private readonly screenSpaceReflection: ScreenSpaceReflectionPass | undefined;
   private readonly screenSpaceGi: ScreenSpaceGiPass | undefined;
+  private readonly projectedTexture: ProjectedTexturePass | undefined;
   private readonly volumetricFog: VolumetricFogPass | undefined;
   private volumetricGodRays: VolumetricGodRaysPass | undefined;
   private readonly volumetricFogComposite: VolumetricFogCompositePass | undefined;
@@ -126,6 +136,7 @@ export class PbrPostProcessChain {
     let ambientOcclusionComposite: AmbientOcclusionCompositePass | undefined;
     let screenSpaceReflection: ScreenSpaceReflectionPass | undefined;
     let screenSpaceGi: ScreenSpaceGiPass | undefined;
+    let projectedTexture: ProjectedTexturePass | undefined;
     let volumetricFog: VolumetricFogPass | undefined, volumetricFogComposite: VolumetricFogCompositePass | undefined;
     let temporalAa: TemporalAaPass | undefined, bloom: BloomPass | undefined;
     let temporalUpscale: TemporalUpscalePass | undefined;
@@ -141,6 +152,11 @@ export class PbrPostProcessChain {
         if (!pool) throw new Error("Screen-space GI requires the transient texture pool.");
         screenSpaceGi = new ScreenSpaceGiPass(session, pool);
       }
+      // P2 投影纹理光(opt-in,默认关):同 SSGI 池纪律。
+      if (this.features.projectedTextures) {
+        if (!pool) throw new Error("Projected texture light requires the transient texture pool.");
+        projectedTexture = new ProjectedTexturePass(session, pool);
+      }
       if (this.features.volumetricFog) {
         volumetricFog = new VolumetricFogPass(session, pool);
         volumetricFogComposite = new VolumetricFogCompositePass(session, pool);
@@ -151,7 +167,7 @@ export class PbrPostProcessChain {
     } catch (error) {
       failWithResourceCleanup(error, "Post-process construction failed", [
         () => bloom?.dispose(), () => temporalUpscale?.dispose(), () => temporalAa?.dispose(), () => screenSpaceReflection?.dispose(),
-        () => screenSpaceGi?.dispose(),
+        () => screenSpaceGi?.dispose(), () => projectedTexture?.dispose(),
         () => volumetricFogComposite?.dispose(), () => volumetricFog?.dispose(),
         () => ambientOcclusionComposite?.dispose(),
         () => ambientOcclusion?.dispose(), () => hiZ?.dispose(),
@@ -161,6 +177,7 @@ export class PbrPostProcessChain {
     this.ambientOcclusionComposite = ambientOcclusionComposite;
     this.screenSpaceReflection = screenSpaceReflection;
     this.screenSpaceGi = screenSpaceGi;
+    this.projectedTexture = projectedTexture;
     this.volumetricFog = volumetricFog; this.volumetricFogComposite = volumetricFogComposite;
     this.temporalAa = temporalAa; this.temporalUpscale = temporalUpscale; this.bloom = bloom;
   }
@@ -256,6 +273,21 @@ export class PbrPostProcessChain {
       }, { ...defaultScreenSpaceGiOptions(extent), verticalFovRadians, seed: revision >>> 0,
         ...(input.passTiming ? { passTiming: input.passTiming } : {}) });
       marched = bounced.texture; effectPasses += bounced.passCount;
+    }
+    // P2 投影纹理光(opt-in input.projectedTextures;缺省 = 分支不进,链逐位透传):
+    // 解析直接光加性层,插在 SSGI 之后、SSR 之前——SSR composite 在命中 UV 采色时
+    // 自然携带投影贡献(反射链路命中点的投影纹理贡献,projectedTextureChain 测试
+    // 钉死差分);TAA 在后顺带时域稳定。场景未供给投影器时 features 开也无 dispatch。
+    if (this.features.projectedTextures && this.projectedTexture && input.projectedTextures) {
+      const lit = this.projectedTexture.encode(encoder, {
+        color: marched, depth: targets.linearDepthTexture, normal: targets.normalTexture,
+        gobo: input.projectedTextures.gobo, viewToProjector: input.projectedTextures.viewToProjector,
+        positionView: input.projectedTextures.positionView, intensity: input.projectedTextures.intensity,
+        lightColor: input.projectedTextures.color, range: input.projectedTextures.range,
+        edgeSoften: input.projectedTextures.edgeSoften, revision,
+        depthEncoding: "linear-view-depth-positive", normalSpace: "view", colorEncoding: "linear-hdr",
+      }, { verticalFovRadians, ...(input.passTiming ? { passTiming: input.passTiming } : {}) });
+      marched = lit.texture; effectPasses += lit.passCount;
     }
     if (active.screenSpaceReflection && this.screenSpaceReflection) {
       // E04 首切片:SSR 在 TAA 前,TAA 顺带平滑半分辨率步进痕迹;顺序与 Babylon SSR→TAA 一致。
@@ -376,7 +408,9 @@ export class PbrPostProcessChain {
     const fogInput = opaqueDomain;
     // P2 SSGI:漫射反弹插在雾合成之后、SSR 之前(SSR 反射含 GI 的表面;TAA 在后平滑)。
     const giInput = features.volumetricFog ? "volumetric-fog-hdr" : fogInput;
-    const reflectionInput = features.ssgi ? "ssgi-hdr" : giInput;
+    // P2 投影纹理光:单 pass 加性层插在 SSGI 之后、SSR 之前(SSR 命中 UV 采色携带投影贡献)。
+    const projectorInput = features.ssgi ? "ssgi-hdr" : giInput;
+    const reflectionInput = features.projectedTextures ? "projected-texture-hdr" : projectorInput;
     // E04:SSR 插在透明合成之后、TAA 之前;启用时 TAA 的输入域改为 ssr-hdr。
     const temporalInput = features.screenSpaceReflection ? "ssr-hdr" : reflectionInput;
     // 输入资源的创建 usage 随生产者不同:composited-hdr 来自 OIT scratch;ao-hdr 来自 AO composite 输出。
@@ -385,7 +419,9 @@ export class PbrPostProcessChain {
       : ["storage-binding", "texture-binding", "render-attachment", "copy-src"];
     const giInputUsages: readonly FramePlanUsage[] = features.volumetricFog
       ? ["storage-binding", "texture-binding", "copy-src"] : opaqueInputUsages;
-    const reflectionInputUsages: readonly FramePlanUsage[] = features.ssgi
+    const projectorInputUsages: readonly FramePlanUsage[] = features.ssgi || features.volumetricFog
+      ? ["storage-binding", "texture-binding", "copy-src"] : opaqueInputUsages;
+    const reflectionInputUsages: readonly FramePlanUsage[] = features.projectedTextures || features.ssgi
       ? ["storage-binding", "texture-binding", "copy-src"]
       : features.volumetricFog ? ["storage-binding", "texture-binding", "copy-src"] : opaqueInputUsages;
     // ssr-hdr 自 C12 起带 COPY_SRC(present-color 读回链落点);其余输入域不变。
@@ -468,6 +504,20 @@ export class PbrPostProcessChain {
         { id: "ssgi-hdr", access: "write", format: SSGI_COMPOSITE_FORMAT, sampleCount: 1,
           usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "surface" }],
       unplannedAttachments: [{ id: "ssgi-composite-sampler", reason: "composite 双线性上采样的私有 filtering sampler" }],
+      gpuPassCount: 1,
+    });
+    if (features.projectedTextures) passes.push({
+      passId: "projected-texture-light", executor: "ProjectedTexturePass.encode", kind: "compute",
+      reads: [projectorInput, "linear-depth", "view-normal"], writes: ["projected-texture-hdr"],
+      claims: [{ id: projectorInput, access: "read", format: PBR_HDR_FORMAT, sampleCount: 1,
+        usages: projectorInputUsages, sizeRole: "surface" },
+        geometryRead("linear-depth"), geometryRead("view-normal"),
+        // copy-src:投影纹理为链尾效果时 present-color 读回链落在本输出上(与 ssr/ssgi-hdr 同合同)。
+        { id: "projected-texture-hdr", access: "write", format: PROJECTED_TEXTURE_COLOR_FORMAT, sampleCount: 1,
+          usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "surface" }],
+      unplannedAttachments: [
+        { id: "projected-texture-gobo/sampler/params", reason: "作者 gobo 视图、双线性 sampler 与 128B 参数块的图外供给" },
+      ],
       gpuPassCount: 1,
     });
     if (features.screenSpaceReflection) passes.push({
@@ -557,7 +607,7 @@ export class PbrPostProcessChain {
     this.disposed = true;
     runResourceCleanup("Post-process disposal failed", [() => this.instanceOutline?.dispose(), () => this.authorBloom?.dispose(), () => this.bloom?.dispose(),
       () => this.temporalAa?.dispose(), () => this.temporalUpscale?.dispose(), () => this.screenSpaceReflection?.dispose(),
-      () => this.screenSpaceGi?.dispose(),
+      () => this.screenSpaceGi?.dispose(), () => this.projectedTexture?.dispose(),
       () => this.volumetricFogComposite?.dispose(), () => this.volumetricGodRays?.dispose(), () => this.volumetricFog?.dispose(),
       () => this.ambientOcclusionComposite?.dispose(),
       () => this.ambientOcclusion?.dispose(), () => this.hiZ?.dispose()]);

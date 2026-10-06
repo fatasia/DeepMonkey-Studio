@@ -72,6 +72,7 @@ const MAPPED_EXECUTORS: Readonly<Record<string, string>> = Object.freeze({
   "screen-space-reflection-composite": "ScreenSpaceReflectionPass.encode/composite",
   "screen-space-gi-trace": "ScreenSpaceGiPass.encode/trace",
   "screen-space-gi-composite": "ScreenSpaceGiPass.encode/composite",
+  "projected-texture-light": "ProjectedTexturePass.encode",
   "volumetric-fog-march": "VolumetricFogPass.encode",
   "volumetric-fog-composite": "VolumetricFogCompositePass.encode",
   "transparent-oit": "PbrTransparencyPass.encode → WeightedOitPass accumulation",
@@ -288,9 +289,11 @@ export function collectActualPbrFramePasses(features: PbrRendererFeatures, trans
   // present 读其输出(contact-hdr)——不是链头。此前模拟写在链头,默认 opt-in 时从不暴露;
   // 默认开启后被 plan/actual 对拍抓出(本修复对齐真实编码,非放宽)。
   const chainTail = features.bloom ? "bloom-hdr" : features.temporalAa ? "temporal-hdr"
-    : features.screenSpaceReflection ? "ssr-hdr" : features.ssgi ? "ssgi-hdr"
-      : features.volumetricFog ? "volumetric-fog-hdr"
-      : transparency ? "composited-hdr" : opaqueColorResource;
+    : features.screenSpaceReflection ? "ssr-hdr"
+      : features.projectedTextures ? "projected-texture-hdr"
+        : features.ssgi ? "ssgi-hdr"
+          : features.volumetricFog ? "volumetric-fog-hdr"
+            : transparency ? "composited-hdr" : opaqueColorResource;
   return Object.freeze([
     ...sdfGiPasses,
     describePbrOpaquePass(options),

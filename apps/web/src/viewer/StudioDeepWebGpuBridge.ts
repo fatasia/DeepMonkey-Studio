@@ -40,12 +40,12 @@ import { cameraSnapshot, renderViewFingerprint, sameSnapshot, resolveAuthorWorld
   nextFrame, type BridgeModuleLoader, type RuntimeSession, type DeepRenderView } from "./studioDeepWebGpuBridgeSceneHelpers";
 import { markSwitchPhase, t11PipelineBootstrap, t07DynamicResolutionPolicy, b4HlodClusterEnabled, g1ClusterLodEnabled,
   t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled, debugFullRenderEnabled, sdfGiEnabled,
-  megaLightsEnabled, rayTracedShadowsEnabled, ssgiEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
+  megaLightsEnabled, rayTracedShadowsEnabled, ssgiEnabled, projectedTexturesEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
 import type { StudioDeepWebGpuBridgeOptions, StudioRendererSwitchResult } from "./studioDeepWebGpuBridgeOptions";
 
 export { t11PipelineBootstrap, t07DynamicResolutionPolicy, b4HlodClusterEnabled, g1ClusterLodEnabled,
   t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled, sdfGiEnabled, ssgiEnabled,
-  megaLightsEnabled, rayTracedShadowsEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
+  projectedTexturesEnabled, megaLightsEnabled, rayTracedShadowsEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
 export type { StudioDeepWebGpuBridgeOptions, StudioRendererSwitchResult } from "./studioDeepWebGpuBridgeOptions";
 
 /**
@@ -328,6 +328,9 @@ export class StudioDeepWebGpuBridge {
                 ...(sdfGiEnabled() ? { sdfGi: true } : {}),
                 // P2 SSGI:opt-in 默认不带该字段(帧逐位零变化);与 sdf-gi 叠加合法。
                 ...(ssgiEnabled() ? { ssgi: true } : {}),
+                // P2 投影纹理光(three r186 ProjectorLight gobo 纹理半部):opt-in 默认不带;
+                // 开启且场景未供给投影器时同样零 dispatch(帧逐位零变化)。
+                ...(projectedTexturesEnabled() ? { projectedTextures: true } : {}),
                 environment: true, groundPlane: false,
                 groundGrid: false, screenSpaceReflection: true, volumetricFog: true,
                 toneMapping: DEFAULT_DISPLAY_CONTRACT.toneMapping.operator },

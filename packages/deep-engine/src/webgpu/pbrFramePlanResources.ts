@@ -5,6 +5,7 @@ import { TEMPORAL_UPSCALE_COLOR_FORMAT } from "../postprocess/temporalUpscaleTyp
 import { TEMPORAL_AA_COLOR_FORMAT } from "../postprocess/temporalAaTypes.js";
 import { SSR_COMPOSITE_FORMAT, SSR_TRACE_FORMAT } from "../postprocess/screenSpaceReflectionTypes.js";
 import { SSGI_COMPOSITE_FORMAT, SSGI_TRACE_FORMAT } from "../postprocess/screenSpaceGiTypes.js";
+import { PROJECTED_TEXTURE_COLOR_FORMAT } from "../postprocess/projectedTextureTypes.js";
 import { VOLUMETRIC_FOG_SCATTER_FORMAT } from "../fog/volumetricFogPassTypes.js";
 import { VOLUMETRIC_FOG_COMPOSITE_FORMAT } from "../fog/volumetricFogCompositeTypes.js";
 import { PBR_HDR_FORMAT, PBR_LINEAR_DEPTH_FORMAT,
@@ -96,6 +97,9 @@ export const PBR_FRAME_RESOURCE_CONTRACTS: readonly PbrFrameResourceContract[] =
   { id: "ssgi-trace", descriptor: "rgba16float-half", format: SSGI_TRACE_FORMAT, sampleCount: 1,
     usages: ["storage-binding", "texture-binding"], sizeRole: "half", external: false },
   { id: "ssgi-hdr", descriptor: "rgba16float", format: SSGI_COMPOSITE_FORMAT, sampleCount: 1,
+    usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "surface", external: false },
+  // P2 投影纹理光:单 pass 全分辨率加性输出(compute storage 写;COPY_SRC 同 ssr/ssgi-hdr 合同)。
+  { id: "projected-texture-hdr", descriptor: "rgba16float", format: PROJECTED_TEXTURE_COLOR_FORMAT, sampleCount: 1,
     usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "surface", external: false },
   { id: "volumetric-fog-scatter", descriptor: "rgba16float-half", format: VOLUMETRIC_FOG_SCATTER_FORMAT, sampleCount: 1,
     usages: ["storage-binding", "texture-binding"], sizeRole: "half", external: false },

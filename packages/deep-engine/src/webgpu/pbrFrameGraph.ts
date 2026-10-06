@@ -103,6 +103,16 @@ export function buildPbrFrameGraph(options: PbrFrameGraphOptions): RenderGraphBu
       .addPass({ id: "screen-space-gi-composite", kind: "compute", inputs: [temporalInput, "ssgi-trace"], outputs: ["ssgi-hdr"] });
     temporalInput = "ssgi-hdr";
   }
+  // P2 投影纹理光(three r186 ProjectorLight gobo 纹理半部):单 pass 解析直接光加性
+  // 层,插在 SSGI 之后、SSR 之前(SSR 命中 UV 采色即携带投影贡献)。与
+  // PBR_TIMED_PASS_IDS / MAPPED_EXECUTORS / PBR_FRAME_RESOURCE_CONTRACTS / describePasses
+  // 同切片原子 diff;场景未供给投影器时帧逐位零变化,关闭 = 拓扑零变化。
+  if (features.projectedTextures) {
+    graph.addResource({ id: "projected-texture-hdr", descriptor: "rgba16float", aliasKey: "full-rgba16float" })
+      .addPass({ id: "projected-texture-light", kind: "compute",
+        inputs: [temporalInput, "linear-depth", "view-normal"], outputs: ["projected-texture-hdr"] });
+    temporalInput = "projected-texture-hdr";
+  }
   if (features.screenSpaceReflection) {
     graph.addResource({ id: "ssr-trace", descriptor: "rgba16float-half" })
       .addResource({ id: "ssr-hdr", descriptor: "rgba16float" })

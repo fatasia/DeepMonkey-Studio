@@ -128,6 +128,16 @@ export const EXPERIMENTAL_FEATURES: readonly ExperimentalFeatureSpec[] = [
     group: "rendering",
   },
   {
+    param: "projected-textures",
+    kind: "opt-in",
+    label: ["投影纹理光", "Projected texture light"],
+    detail: [
+      "P2 六引擎对标(three r186 ProjectorLight gobo):单投影器视锥纹理直接光加性层(输出在 SSGI 之后、SSR 之前,SSR 命中点携带投影贡献);场景供给投影器后生效。",
+      "Six-engine parity P2 (three r186 ProjectorLight gobo): single-projector frustum texture direct light as an additive layer (after SSGI, before SSR; reflection hits carry the contribution); takes effect once the scene supplies a projector.",
+    ],
+    group: "rendering",
+  },
+  {
     param: "t25-gpu-pass-timing",
     kind: "opt-in",
     label: ["逐 Pass GPU 计时", "Per-pass GPU timing"],

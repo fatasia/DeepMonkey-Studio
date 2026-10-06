@@ -22,6 +22,13 @@ export interface RenderView extends PbrFrameUniformView {
   readonly particleFlow?: GpuParticleFlowField;
   readonly authorGrid?: AuthorGridView | undefined;
   readonly editorOverlay?: EditorOverlaySnapshot;
+  /**
+   * P2 投影纹理光(three r186 ProjectorLight gobo 纹理半部;opt-in features.projectedTextures
+   * 且本字段供给时生效):单投影器视锥纹理直接光,帧内解析为视空间矩阵后进后链加性层
+   * (SSR 前)。未供给/校验失败 = 该帧无投影器贡献(后者经 FrameMetrics.projectedTextures
+   * fallbackReason 披露),帧逐位零变化。
+   */
+  readonly projectedTextures?: import("../postprocess/projectedTextureTypes.js").ProjectedTextureLight;
   readonly width: number; readonly height: number; readonly pixelRatio: number;
   readonly lights?: WorldClusteredLights; readonly lodBudget?: LodFrameBudget;
 }
@@ -269,6 +276,13 @@ export interface FrameMetrics {
    */
   readonly rtReflections?: { dispatched: boolean; reason?: string;
     width?: number; height?: number; dispatchX?: number; dispatchY?: number };
+  /**
+   * P2 投影纹理光遥测(features.projectedTextures 开启且 RenderView 供给投影器时出现):
+   * active=本帧实际进后链加性层;active=false 为 fail-closed(校验失败,缺失
+   * fallbackReason 如实披露,不伪零)。场景未供给投影器时整字段缺省。
+   */
+  readonly projectedTextures?: { readonly active: boolean; readonly projectors: number;
+    readonly fallbackReason?: string };
   readonly postProcessPasses: number; readonly weightedOit: boolean;
   readonly hiZMipLevels: number; readonly occlusionCulling: boolean;
   readonly frustumCulledBatches: number; readonly hiZOccludedBatches: number; readonly lodSelectionBatches: number; readonly lodIndirectDraws: number;

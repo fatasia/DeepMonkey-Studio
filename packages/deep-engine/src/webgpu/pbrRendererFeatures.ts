@@ -71,6 +71,14 @@ export interface PbrRendererFeatureOptions {
    * + SSGI 反弹(post 链)叠加无双计。关闭时运行时不构建,既有帧逐位零变化。
    */
   readonly ssgi?: boolean;
+  /**
+   * P2 六引擎对标 three r186 ProjectorLight 投影纹理(gobo 纹理半部;opt-in,默认关):
+   * 单投影器(位置/目标/FOV/强度/贴图)视锥纹理直接光后链加性层,输出插在 SSGI 之后、
+   * SSR 之前——SSR composite 在命中 UV 采色即携带投影贡献(反射链路命中点的投影纹理
+   * 贡献,projectedTextureChain 测试钉死)。场景未供给投影器时帧逐位零变化;关闭时
+   * 运行时不构建。
+   */
+  readonly projectedTextures?: boolean;
 }
 
 export interface PbrRendererFeatures {
@@ -99,6 +107,7 @@ export interface PbrRendererFeatures {
   readonly megaLights: boolean;
   readonly rayTracedReflections: boolean;
   readonly ssgi: boolean;
+  readonly projectedTextures: boolean;
 }
 
 export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze({
@@ -114,6 +123,7 @@ export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze(
   megaLights: false,
   rayTracedReflections: false,
   ssgi: false,
+  projectedTextures: false,
 });
 
 export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = {}): PbrRendererFeatures {
@@ -148,5 +158,6 @@ export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = 
     sdfGi: boolean("sdfGi"),
     megaLights: boolean("megaLights"),
     rayTracedReflections: boolean("rayTracedReflections"),
-    ssgi: boolean("ssgi") });
+    ssgi: boolean("ssgi"),
+    projectedTextures: boolean("projectedTextures") });
 }
