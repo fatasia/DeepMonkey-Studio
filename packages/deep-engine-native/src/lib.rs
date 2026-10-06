@@ -92,6 +92,10 @@ pub mod native_mesh_wgsl;
 mod probe_gi_native_adapter_tests;
 /// P1 质量主线(六引擎对标刀位 1):native SDF-GI 链——场景级 SDF 体积烘焙
 /// (CPU 权威镜像,TS sdfSceneBake/sdfGrid 同构)+ 探针 lattice 推导。
+pub mod gpu_cluster_lod_indirect;
+#[cfg(test)]
+mod _dbg2;
+pub mod gpu_cluster_lod_indirect_tests;
 pub mod gpu_cluster_lod_selection;
 pub mod gpu_cluster_lod_selection_tests;
 pub mod sdf_gi_scene;
