@@ -84,6 +84,20 @@ export class SceneAuthoringHistory {
     return true;
   }
 
+  /**
+   * 恢复尾部收敛对齐：把撤销/重做恢复完成后迟到的引擎收敛（异步挂载/资源就绪等，
+   * Deep 下晚于 acceptRestoredScene 到达）吸收进栈当前快照——只推进 current，
+   * 不落撤销条目、不清重做栈。与 record 的区别正是这两点：收敛不是用户编辑，
+   * 若走 record 会让紧随的重做变成静默空操作（门10 undo/redo 竞态根因）。
+   */
+  absorb(scene: SceneSnapshot): boolean {
+    if (!this.current) return false;
+    if (sceneFingerprint(this.current) === sceneFingerprint(scene)) return false;
+    this.current = cloneScene(scene);
+    this.emit();
+    return true;
+  }
+
   /** 首次保存只确定身份，所有草稿历史仍指向同一已保存场景。 */
   adoptSceneIdentity(saved: SceneSnapshot): void {
     if (!this.current || this.current.projectId !== saved.projectId) { this.reset(saved); return; }

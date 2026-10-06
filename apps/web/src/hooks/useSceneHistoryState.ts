@@ -21,9 +21,10 @@ export interface SceneEditTransaction {
   rollback(): SceneSnapshot | undefined;
 }
 
-/** flush 的可调用句柄；beginTransaction 让多步异步序列获得显式事务边界（零接线成本随 flush 传递）。 */
+/** flush 的可调用句柄；beginTransaction 让多步异步序列获得显式事务边界（零接线成本随 flush 传递）。
+ * historyEntry=true 标记撤销/重做的入口冲刷：恢复尾部吸收（armSceneHistoryTailAbsorb）只作用于它。 */
 export interface SceneEditHistoryFlush {
-  (label?: string): void;
+  (label?: string, historyEntry?: boolean): void;
   beginTransaction(label: string): SceneEditTransaction;
 }
 
@@ -97,6 +98,16 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
   // until 是 performance.now() 时间戳：Infinity=静默中；settle 后时间戳自然过期，无需定时器。
   const sceneLoadSilenceUntilRef = useRef(0);
   const isSceneLoadSilent = () => performance.now() < sceneLoadSilenceUntilRef.current;
+  // 撤销/重做恢复尾部吸收（门10 undo/redo 竞态）：恢复完成（acceptRestoredScene）后，
+  // 引擎侧收敛（异步就绪晚于 accept）与栈 current 存在差异；撤销/重做的入口冲刷若把该
+  // 差异 record 落栈，会以"编辑三维场景"清空重做栈，令紧随的重做变静默空操作。
+  // armed 时【且无待落用户编辑】的入口冲刷改走 history.absorb 对齐 current；携带待落
+  // 编辑（防抖计时器在飞=用户刚编辑）的入口冲刷与所有命令路径照常落栈并解除武装。
+  const sceneHistoryTailAbsorbRef = useRef(false);
+  /** 撤销/重做恢复成功后武装尾部吸收；由 applySceneHistorySnapshot 调用。 */
+  function armSceneHistoryTailAbsorb(): void {
+    sceneHistoryTailAbsorbRef.current = true;
+  }
   /** 载入开始：无限期静默（必须由 endSceneLoadSilence 解除，漏解除等于永久禁记，测试会暴露）。 */
   function beginSceneLoadSilence(): void { sceneLoadSilenceUntilRef.current = Number.POSITIVE_INFINITY; }
   /** 载入结束：settleMs>0 时再静默一个窗口，吸收挂载尾巴的防抖散记；0=立即恢复记账。 */
@@ -125,7 +136,7 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
     sceneHistoryTimerRef.current = undefined;
   }, [routeView]);
 
-  function flushSceneHistoryEdit(label?: string): void {
+  function flushSceneHistoryEdit(label?: string, historyEntry = false): void {
     const pending = sceneHistoryTimerRef.current;
     if (pending) window.clearTimeout(pending.timer);
     sceneHistoryTimerRef.current = undefined;
@@ -136,7 +147,23 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
     // T27：事务窗口内的散记全部吸收，由 commit 统一落一条。
     if (sceneEditTransactionRef.current) return;
     const snapshot = sceneSnapshotFactoryRef.current?.();
-    if (snapshot) sceneHistoryRef.current.record(snapshot, label ?? pending?.label ?? "编辑三维场景");
+    if (!snapshot) return;
+    // 恢复尾部吸收只处理"无待落用户编辑"的入口冲刷:此时引擎快照与栈 current 的差异
+    // 是恢复自身的收敛(异步就绪晚于 acceptRestoredScene),record 会以"编辑三维场景"
+    // 清空重做栈,令紧随的重做变静默空操作(门10 undo/redo 竞态根因)→ absorb 对齐。
+    // 入口冲刷携带待落编辑(防抖计时器在飞=用户刚编辑,如删除后立即撤销)时,必须
+    // 正常落栈——那是用户编辑,吞掉会让撤销弹错条目;落栈即解除武装。
+    if (sceneHistoryTailAbsorbRef.current) {
+      if (historyEntry && !pending) {
+        const absorbed = sceneHistoryRef.current.absorb(snapshot);
+        console.debug(`[scene-history] tail-absorb(entry-flush) absorbed=${absorbed}`);
+        if (!absorbed) sceneHistoryTailAbsorbRef.current = false;
+        return;
+      }
+      sceneHistoryTailAbsorbRef.current = false;
+    }
+    const recorded = sceneHistoryRef.current.record(snapshot, label ?? pending?.label ?? "编辑三维场景");
+    console.debug(`[scene-history] flush-record label=${label ?? pending?.label ?? "编辑三维场景"} recorded=${recorded}`);
   }
 
   function scheduleSceneHistoryEdit(label: string): void {
@@ -208,6 +235,7 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
     sceneHistoryRevision,
     beginSceneLoadSilence,
     endSceneLoadSilence,
+    armSceneHistoryTailAbsorb,
     flushSceneHistoryEdit: sceneEditFlush,
     runSceneHistoryEdit,
     beginSceneEditTransaction,

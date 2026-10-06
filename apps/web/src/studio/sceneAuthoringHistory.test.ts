@@ -129,4 +129,24 @@ describe("SceneAuthoringHistory", () => {
     expect(history.getState().canRedo).toBe(true);
     expect(history.redo()?.models).toHaveLength(0);
   });
+
+  it("absorbs restore-tail convergence into current without an entry or redo loss", () => {
+    // 门10 undo/redo 竞态回归：恢复完成后迟到的引擎收敛若经 record 落栈，会以
+    // "编辑三维场景"清空重做栈，令紧随的 redo 变静默空操作。absorb 必须只对齐 current。
+    const history = new SceneAuthoringHistory();
+    const baseline = scene(); history.reset(baseline);
+    const deleted = { ...baseline, primitives: [{ modelId: "device-2", kind: "box" as const, name: "设备 002" }] } as unknown as SceneSnapshot;
+    history.record(deleted, "删除基础元素");
+    expect(history.undo()).toEqual(baseline);
+    const state = history.getState();
+    // 恢复后引擎收敛:测量等作者域出现迟到差异。
+    const converged = { ...baseline, measurements: [{ id: "m1" }] } as unknown as SceneSnapshot;
+    expect(history.absorb(converged)).toBe(true);
+    expect(history.getState()).toEqual(state);
+    // 收敛后的同源快照不再产生条目;用户重做仍然有效。
+    expect(history.record(converged, "编辑三维场景")).toBe(false);
+    expect(history.redo()).toEqual(deleted);
+    // 指纹一致时 absorb 是空操作。
+    expect(history.absorb(deleted)).toBe(false);
+  });
 });

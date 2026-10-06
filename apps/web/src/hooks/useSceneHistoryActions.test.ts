@@ -101,7 +101,7 @@ describe("transaction window guard (T27)", () => {
         sceneHistoryApplyingRef: { current: false }, sceneEditTransactionRef: transaction,
         sceneHistoryRef: { current: { revision: 7, record: vi.fn(), undo, redo, acceptRestoredScene: vi.fn() } },
         sceneSnapshotFactoryRef: { current: () => structuredClone(server) }, flushSceneHistoryEdit: vi.fn(),
-        beginSceneLoadSilence, endSceneLoadSilence,
+        beginSceneLoadSilence, endSceneLoadSilence, armSceneHistoryTailAbsorb: vi.fn(),
       },
       playModeActive,
       applyScene,
@@ -132,7 +132,7 @@ describe("transaction window guard (T27)", () => {
         sceneHistoryApplyingRef: { current: true }, sceneEditTransactionRef: { current: undefined },
         sceneHistoryRef: { current: { revision: 7, record: vi.fn(), undo: vi.fn(() => structuredClone(server)), redo: vi.fn(() => structuredClone(server)), acceptRestoredScene: vi.fn() } },
         sceneSnapshotFactoryRef: { current: () => structuredClone(server) }, flushSceneHistoryEdit: vi.fn(),
-        beginSceneLoadSilence: vi.fn(), endSceneLoadSilence: vi.fn(),
+        beginSceneLoadSilence: vi.fn(), endSceneLoadSilence: vi.fn(), armSceneHistoryTailAbsorb: vi.fn(),
       },
       applyScene: vi.fn(async () => undefined),
     } as unknown as Parameters<typeof useSceneHistoryActions>[0];

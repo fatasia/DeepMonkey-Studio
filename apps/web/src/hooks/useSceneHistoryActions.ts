@@ -32,6 +32,7 @@ export function useSceneHistoryActions({ state, history, playModeActive = false,
     setRecoveryDraft,
     beginSceneLoadSilence,
     endSceneLoadSilence,
+    armSceneHistoryTailAbsorb,
     flushSceneHistoryEdit,
   } = history;
 
@@ -60,6 +61,11 @@ export function useSceneHistoryActions({ state, history, playModeActive = false,
       const restored = sceneSnapshotFactoryRef.current?.();
       if (!restored) throw new Error("场景恢复后无法读取作者快照，请等待模型就绪后重试。");
       stack.acceptRestoredScene(restored, expectedRevision);
+      // 恢复完成即武装一次性尾部吸收：undo/redo 的入口 flush 若带来恢复自身的引擎收敛
+      // 差异，走 absorb 对齐 current 而不落"编辑三维场景"条目——否则重做栈被清空，
+      // 紧随的重做变静默空操作（门10 undo/redo 竞态根因）。一次性：紧随的真实用户编辑
+      // 从第二次 flush 起正常落栈。
+      armSceneHistoryTailAbsorb();
       setMessage(action === "undo" ? "已撤销三维编辑" : "已重做三维编辑");
     } catch (reason) {
       // Never move a newer stack to compensate an obsolete asynchronous restore.
@@ -78,15 +84,17 @@ export function useSceneHistoryActions({ state, history, playModeActive = false,
   async function undoSceneEdit(): Promise<void> {
     // Shared by toolbar/keyboard: no duplicate restore, open transaction or Play mutation.
     if (playModeActive || sceneEditTransactionRef?.current || sceneHistoryApplyingRef.current || busy || !project || !activeScene) return;
-    flushSceneHistoryEdit();
+    flushSceneHistoryEdit(undefined, true);
     const snapshot = sceneHistoryRef.current.undo();
+    console.debug(`[scene-history] undo popped=${snapshot ? "entry" : "none"}`);
     if (snapshot) await applySceneHistorySnapshot(snapshot, "undo");
   }
 
   async function redoSceneEdit(): Promise<void> {
     if (playModeActive || sceneEditTransactionRef?.current || sceneHistoryApplyingRef.current || busy || !project || !activeScene) return;
-    flushSceneHistoryEdit();
+    flushSceneHistoryEdit(undefined, true);
     const snapshot = sceneHistoryRef.current.redo();
+    console.debug(`[scene-history] redo popped=${snapshot ? "entry" : "none"}`);
     if (snapshot) await applySceneHistorySnapshot(snapshot, "redo");
   }
 
