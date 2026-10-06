@@ -96,7 +96,10 @@ pub mod gpu_cluster_lod_indirect;
 #[cfg(test)]
 mod _dbg2;
 pub mod gpu_cluster_lod_indirect_tests;
+pub mod gpu_cluster_lod_gpu;
+pub mod gpu_cluster_lod_gpu_probe_tests;
 pub mod gpu_cluster_lod_selection;
+pub mod gpu_cluster_lod_wgsl;
 pub mod gpu_cluster_lod_selection_tests;
 pub mod sdf_gi_scene;
 pub mod sdf_gi_scene_compose;
