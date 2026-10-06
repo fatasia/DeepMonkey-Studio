@@ -1,6 +1,6 @@
 use deep_engine_native::{
     culling_contract::prepare_gpu_culling, lod_contract::prepare_gpu_lod,
-    mesh_abi::MATERIAL_UNIFORM_FLOATS, pbr_texture::prepare_material_uniform_rows,
+    mesh_abi::MaterialUniformRow, pbr_texture::prepare_material_uniform_rows,
     pbr_texture::prepare_pbr_resources, scene::prepare_scene, scene::recompute_surface_flags,
     scene_bounds::prepare_scene_bounds,
 };
@@ -54,7 +54,7 @@ pub(crate) enum StagedRenderPacketUpdate {
 }
 
 pub(crate) struct StagedMaterialUniformRefresh {
-    pub(crate) rows: Vec<(usize, [f32; MATERIAL_UNIFORM_FLOATS])>,
+    pub(crate) rows: Vec<(usize, MaterialUniformRow)>,
     pub(crate) scene_content_key: u64,
 }
 
@@ -277,7 +277,7 @@ impl Renderer {
                     && let MaterialResourceDiff::UniformOnly { changed_indices } =
                         classify_material_resources(&previous_rows, &next_rows)
                 {
-                    let rows: Vec<(usize, [f32; MATERIAL_UNIFORM_FLOATS])> = changed_indices
+                    let rows: Vec<(usize, MaterialUniformRow)> = changed_indices
                         .iter()
                         .map(|&index| (index, next_rows[index].uniform))
                         .collect();

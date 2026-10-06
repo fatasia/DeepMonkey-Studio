@@ -66,7 +66,9 @@ fn rt_shade_surface(
   // 与本体 fragment_main 的唯一差异：directional 阴影可见性改走 Ray Query。
   let visibility = select(rt_directional_visibility(input.world, light),
     1.0, flag(input.material.w, 16u) || (authored_light && frame.lightingOptions.y == 0.0));
-  let surface_color = native_lit_response(input, normal, geometry_normal, base, metal,
+  // C9/native 扩展带:RT 像素路与栅格路共用 native_extended_shade 包装核——
+  // 同步契约由函数共享保证;全零带回落后与旧 native_lit_response 调用逐位一致。
+  let surface_color = native_extended_shade(input, normal, geometry_normal, base, metal,
     rough_raw, input.dielectric, ao, emission, view, light, visibility);
   return NativeMeshShading(surface_color, normal, clamp(rough_raw, 0.045, 1.0), alpha, geometry_normal, base,
     clamp(input.base_color.w * mr_sample.b, 0.0, 1.0), rough_raw, ao, emission, view, light, visibility);

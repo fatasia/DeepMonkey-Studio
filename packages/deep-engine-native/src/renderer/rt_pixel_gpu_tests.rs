@@ -20,6 +20,12 @@ mod probe_gi_gpu_tests;
 #[path = "white_furnace_gpu_tests.rs"]
 mod white_furnace_gpu_tests;
 
+// C9/native 材质扩展带(clearcoat + advanced sheen 子集)真机 GPU 探针,
+// 同样以子模块挂载复用 parity 回读助手;期望值在 lib 侧 material_extended_cpu。
+#[cfg(test)]
+#[path = "material_extended_gpu_tests.rs"]
+mod material_extended_gpu_tests;
+
 // F2 设备恢复证据切片:旧驻留整体丢弃后重建自足(Ray Query 探针验证),
 // 同样以子模块挂载,复用本文件的 request_ray_query_device 与 parity 场景。
 #[cfg(test)]

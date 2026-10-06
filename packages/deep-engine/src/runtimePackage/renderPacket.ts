@@ -2,8 +2,9 @@ import { STOCK_MATERIAL_INSTANCE_OPTIONS } from "../materialInstanceAbi.js";
 import { prepareRenderPacket, type PbrMaterial, type RenderPacket } from "../renderPacket.js";
 import { array, fields, integer, record, requireValue, string, snapshotJson } from "./primitives.js";
 import { assertNativePacketDeformationSupported, deformationForBrowserJson, materializePacketDeformation } from "./renderPacketDeformation.js";
-import { browserMaterialExtensions, layeredMaterialExtension } from "./renderPacketBrowserMaterial.js";
-import { assertNativeLayeredMaterialSupported } from "./renderPacketNativeMaterial.js";
+import { browserMaterialExtensions, layeredMaterialExtension, parseExtendedMaterialParametersJson, parseAdvancedMaterialParametersJson } from "./renderPacketBrowserMaterial.js";
+import { assertNativeLayeredMaterialSupported, assertNativeStockMaterialExtensionsSupported } from "./renderPacketNativeMaterial.js";
+import { normalizeAdvancedMaterialParameters } from "../shader/materialAdvancedParameters.js";
 export { assertNativePacketDeformationSupported } from "./renderPacketDeformation.js";
 
 const GEOMETRY_OPTIONAL = ["uv0", "uv1", "tangents", "colors"];
@@ -36,15 +37,26 @@ function numericArray(input: unknown, path: string, maxInteger?: number): number
 function material(input: unknown, path: string, browserProfile: boolean): PbrMaterial {
   const value = record(input, path);
   // I-C23:layered 是双端字段(Web 消费 + Native 生产消费),两个 profile 都
-  // 走同一 fail-closed 校验;extendedParameters 仍是 Browser-only(native
-  // stock 光照核不评扩展 lobe,native 包携带它会被 Rust 契约拒绝)。
+  // 走同一 fail-closed 校验。C9/native:stock extendedParameters 与 advanced
+  // (保守子集 sheen)接通 native 求值,两个 profile 走同一闭合域 JSON 解析;
+  // 子集差异由 assertNativeStockMaterialExtensionsSupported 承担(未消费的
+  // anisotropy/transmission/iridescence/volume 非零值 fail-closed,不静默忽略)。
   const optional = browserProfile ? [...MATERIAL_OPTIONAL, "extendedParameters", "layered", "advancedParameters"]
-    : [...MATERIAL_OPTIONAL, "layered"];
+    : [...MATERIAL_OPTIONAL, "extendedParameters", "layered", "advancedParameters"];
   fields(value, ["id", "baseColor", "metallic", "roughness"], optional, path);
   const extensions = browserProfile ? browserMaterialExtensions(value, path)
-    : (Object.hasOwn(value, "layered")
-      ? { layered: layeredMaterialExtension(value, path) }
-      : {});
+    : (() => {
+      const extendedParameters = Object.hasOwn(value, "extendedParameters")
+        ? parseExtendedMaterialParametersJson(value.extendedParameters, `${path}.extendedParameters`) : undefined;
+      const advancedParameters = Object.hasOwn(value, "advancedParameters")
+        ? normalizeAdvancedMaterialParameters(parseAdvancedMaterialParametersJson(value.advancedParameters, `${path}.advancedParameters`)) : undefined;
+      assertNativeStockMaterialExtensionsSupported(extendedParameters, advancedParameters, path);
+      return {
+        ...(extendedParameters ? { extendedParameters } : {}),
+        ...(Object.hasOwn(value, "layered") ? { layered: layeredMaterialExtension(value, path) } : {}),
+        ...(advancedParameters ? { advancedParameters } : {}),
+      };
+    })();
   if (!browserProfile) assertNativeLayeredMaterialSupported(extensions.layered, `${path}.layered`);
   id(value.id, `${path}.id`); nonnullOptions(value, MATERIAL_OPTIONAL, path);
   for (const name of ["baseColorTexture", "metallicRoughnessTexture", "normalTexture", "occlusionTexture", "emissiveTexture"]) {

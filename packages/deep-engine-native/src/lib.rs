@@ -77,6 +77,14 @@ pub mod pbr_layered;
 #[cfg(test)]
 #[path = "pbr_layered_contract_tests.rs"]
 mod pbr_layered_contract_tests;
+/// C9/native 材质扩展带 CPU 权威镜像(f64;TS materialEvaluate/materialAdvancedReference
+/// 同式移植 + native_extended_shade 合成腿),与 material_parity_tests 共同消费
+/// fixtures 对拍;仅供测试与真机对拍,生产渲染不引用。
+pub mod material_extended_cpu;
+
+#[cfg(test)]
+#[path = "material_parity_tests.rs"]
+mod material_parity_tests;
 pub mod pbr_reference;
 pub mod pbr_texture;
 pub mod platform_text;

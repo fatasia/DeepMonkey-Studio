@@ -3,7 +3,8 @@
 //! 与 Web 单源对齐:
 //! - 304B 块布局 = TS `packLayeredSurfaceBlock` 逐字节镜像(header 16B + 2×144B 行,
 //!   每行 9×vec4:params0/params1/colorCoverage/surfaceMode/baseRow0/baseRow1/
-//!   mrRow0/mrRow1/indices)。既有 192B 材质块、224B 数组行、160B native 基础块不动。
+//!   mrRow0/mrRow1/indices)。既有 192B Web 材质块、224B 数组行、native 基础块
+//!   (C9 后 240B:核心 40 float 逐字节不变+扩展/advanced 带)不动。
 //! - 混合闭式 = `wgsl/materialLayerBlend.wgsl`(唯一真源)与 TS
 //!   `materialLayeredEvaluate.blendChannel` 逐运算镜像:两种模式同为凸混合,权重 w
 //!   只由层总响应 rgb 派生并共享给全部通道(replace w=coverage;overlay w=coverage×
@@ -348,6 +349,8 @@ mod tests {
             premultiplied_alpha: None,
             fog: None,
             layered,
+            extended_parameters: None,
+            advanced_parameters: None,
         }
     }
 

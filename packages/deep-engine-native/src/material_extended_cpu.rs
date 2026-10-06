@@ -470,11 +470,13 @@ pub fn native_extended_response(
     let energy_indirect = 1.0 - sheen_peak * sheen_albedo_view;
     let energy_direct =
         1.0 - sheen_peak * sheen_albedo_view.max(ibl_sheen_brdf(nl, sheen_roughness));
+    // WGSL 同式:sheen.xyz · (D·V·nl) · sun · visibility(sheen_direct_brdf
+    // 本体只含 color·D·V,nl 由合成处乘)。
     let sheen_brdf = sheen_direct_brdf(sheen_color, sheen_roughness, nv, nl, nh);
     let sheen_direct = [
-        sheen_brdf[0] * sun[0] * visibility,
-        sheen_brdf[1] * sun[1] * visibility,
-        sheen_brdf[2] * sun[2] * visibility,
+        sheen_brdf[0] * sun[0] * nl * visibility,
+        sheen_brdf[1] * sun[1] * nl * visibility,
+        sheen_brdf[2] * sun[2] * nl * visibility,
     ];
     std::array::from_fn(|axis| {
         (original[axis] - stock_direct[axis] - emission[axis]) * energy_indirect

@@ -112,10 +112,17 @@ mod tests {
             0,
             "RT fragment must not carry a multiscattering text copy"
         );
+        // C9/native(2026-10-06):RT 像素路与栅格路共用 native_extended_shade
+        // (其内部仍是唯一的 native_lit_response 共享核,零带回退逐位一致)。
+        assert_eq!(
+            rt.matches("native_extended_shade(").count(),
+            1,
+            "RT fragment must consume the shared extended response wrapper (single site, both entries)"
+        );
         assert_eq!(
             rt.matches("native_lit_response(").count(),
-            1,
-            "RT fragment must consume the shared response core (single site, both entries)"
+            0,
+            "RT fragment must not bypass the extended wrapper for the lit core"
         );
     }
 
@@ -203,10 +210,13 @@ mod tests {
             "production source builder must assemble the r185 direct DFG table"
         );
         let mesh = include_str!("../assets/shaders/native_mesh_v1.wgsl");
+        // C9/native(2026-10-06):第 4 处 = native_extended_shade 的扩展带
+        // stock_direct 替换抵消项(与 native_lit_response 同一 r185 表来源,
+        // 单源合同不变)。
         assert_eq!(
             mesh.matches("deepDirectDfg185(").count(),
-            3,
-            "mesh body must hold the three direct sampling sites (dfg_light + lazy dfg_view + seed)"
+            4,
+            "mesh body must hold the four direct sampling sites (dfg_light + lazy dfg_view + seed + extended wrapper)"
         );
         assert_eq!(
             mesh.matches("textureSampleLevel(brdf_lut,").count(),

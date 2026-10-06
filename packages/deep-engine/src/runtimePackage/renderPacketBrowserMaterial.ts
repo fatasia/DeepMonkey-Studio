@@ -77,6 +77,11 @@ export function browserMaterialExtensions(value: Record<string, unknown>, path: 
   return { ...(extendedParameters ? { extendedParameters } : {}), ...(layered ? { layered } : {}), ...(advanced ? { advancedParameters: advanced } : {}) };
 }
 
+/** Native profile 与 Browser 共用同一闭合域 JSON 解析(C9/native 扩展接通后,
+ * stock extendedParameters/advancedParameters 走同一 schema/数值校验;子集差异
+ * 由 renderPacketNativeMaterial 的 fail-closed 守卫承担)。 */
+export { parameters as parseExtendedMaterialParametersJson, advancedParameters as parseAdvancedMaterialParametersJson };
+
 /** I-C23:分层材质扩展的独立校验/规范化。Native 生产消费接通后,native
  * profile 放行 layered(与本扩展同一校验路径),但 extendedParameters 仍是
  * Browser-only(native stock 光照核不评扩展 lobe,与 native 基材同界)。 */

@@ -45,8 +45,25 @@ pub const COLOR_VERTEX_BYTES: wgpu::BufferAddress =
 pub const PACKED_INSTANCE_FLOATS: usize = 36;
 pub const PACKED_INSTANCE_BYTES: wgpu::BufferAddress =
     (PACKED_INSTANCE_FLOATS * size_of::<f32>()) as wgpu::BufferAddress;
-pub const MATERIAL_UNIFORM_FLOATS: usize = 40;
-pub const MATERIAL_UNIFORM_BYTES: u64 = (MATERIAL_UNIFORM_FLOATS * size_of::<f32>()) as u64;
+/// 材质 uniform 扩展带边界(T08/C9):核心块 40 float(legacy 逐字节不变)之上,
+/// 40..46 消费 Web `packExtendedParameterBlock` 的 6 float,顺序 =
+/// MATERIAL_PARAMETER_KEYS(ior, clearcoatFactor, clearcoatRoughness,
+/// anisotropyStrength, anisotropyRotation, transmissionFactor)。native 求值子集
+/// 只消费 ior+clearcoat;anisotropy/transmission 槽由合同 fail-closed 拒绝非零
+/// (contract::validate),槽位仍占位以保持与 Web 192B 打包带同序。
+pub const MATERIAL_UNIFORM_FLOATS: usize = 46;
+/// 材质行 / GPU uniform 总 float:46 上取 16B 对齐到 48 + advanced 带 12(48..60,
+/// 与 Web MATERIAL_PARAMETER_ADVANCED_FLOATS=60 布局同构)。native 保守子集只消费
+/// advanced0 = sheen.rgb + sheen.roughness;iridescence/volume 槽(52..60)由合同
+/// 保持零。扩展/advanced 带全零 → WGSL 走原 stock 分支,旧包逐位不变。
+pub const MATERIAL_UNIFORM_ROW_FLOATS: usize = 60;
+pub const MATERIAL_EXTENDED_BAND_FLOAT_OFFSET: usize = 40;
+pub const MATERIAL_ADVANCED_BAND_FLOAT_OFFSET: usize = 48;
+pub const MATERIAL_ADVANCED_BAND_FLOATS: usize = 12;
+/// GPU 绑定最小字节数:240B(15×vec4f,与 WGSL MaterialTextures 结构同尺寸)。
+pub const MATERIAL_UNIFORM_BYTES: u64 = (MATERIAL_UNIFORM_ROW_FLOATS * size_of::<f32>()) as u64;
+/// 材质 uniform 行类型(PreparedMaterial/GPU 上传/增量更新共用)。
+pub type MaterialUniformRow = [f32; MATERIAL_UNIFORM_ROW_FLOATS];
 
 pub const GEOMETRY_VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 4] =
     wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 10 => Float32x2, 13 => Float32x2];
@@ -239,6 +256,28 @@ mod tests {
         assert_eq!(COLOR_VERTEX_ATTRIBUTES[0].shader_location, 16);
         assert_eq!(COLOR_VERTEX_ATTRIBUTES[0].format, VertexFormat::Float32x4);
         assert_eq!(COLOR_VERTEX_ATTRIBUTES[0].offset, 0);
+    }
+
+    /// C9/native 扩展带 ABI 钉版:核心块 40 float 语义不变,40..46 = Web 扩展带,
+    /// 行总量 240B(15×vec4f)且 advanced 带从 48 起——与 Web
+    /// MATERIAL_PARAMETER_ADVANCED_FLOATS=60 布局同构。
+    #[test]
+    fn material_uniform_extension_band_abi_is_frozen() {
+        use super::*;
+        assert_eq!(MATERIAL_UNIFORM_FLOATS, 46);
+        assert_eq!(MATERIAL_EXTENDED_BAND_FLOAT_OFFSET, 40);
+        assert_eq!(MATERIAL_UNIFORM_ROW_FLOATS, 60);
+        assert_eq!(MATERIAL_ADVANCED_BAND_FLOAT_OFFSET, 48);
+        assert_eq!(MATERIAL_ADVANCED_BAND_FLOATS, 12);
+        assert_eq!(MATERIAL_UNIFORM_BYTES, 240);
+        // 16B 对齐:WGSL MaterialTextures = 15×vec4f,缓冲与绑定最小尺寸一致。
+        assert_eq!(MATERIAL_UNIFORM_BYTES % 16, 0);
+        // 扩展带与 advanced 带不重叠,advanced 带不越行界。
+        assert!(MATERIAL_ADVANCED_BAND_FLOAT_OFFSET >= MATERIAL_UNIFORM_FLOATS);
+        assert_eq!(
+            MATERIAL_ADVANCED_BAND_FLOAT_OFFSET + MATERIAL_ADVANCED_BAND_FLOATS,
+            MATERIAL_UNIFORM_ROW_FLOATS
+        );
     }
 
     #[test]

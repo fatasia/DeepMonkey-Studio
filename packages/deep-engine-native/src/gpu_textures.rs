@@ -333,7 +333,7 @@ impl GpuMaterial {
                 textures,
                 fallbacks,
             )?),
-            // 无分层 layout 或材质未声明层行:普通绑定即可(层词不进 160B 块)。
+            // 无分层 layout 或材质未声明层行:普通绑定即可(层词不进基础块)。
             // 提供 layout 但材质声明了层行却落 None 只发生在 custom ShaderPackage
             // 路径(那里由调用方 fail-closed 拒绝),此处不静默吞层。
             _ => None,
@@ -439,7 +439,7 @@ mod tests {
             id: id.into(),
             normal_mapped: false,
             texture_indices: [None; 5],
-            uniform: [value; MaterialUniformRow::LEN],
+            uniform: [value; deep_engine_native::mesh_abi::MATERIAL_UNIFORM_ROW_FLOATS],
             layered: None,
         }
     }

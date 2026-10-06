@@ -349,6 +349,8 @@ mod transform_update_tests {
             premultiplied_alpha: None,
             fog: None,
             layered: None,
+            extended_parameters: None,
+            advanced_parameters: None,
         }
     }
 
@@ -383,6 +385,8 @@ mod transform_update_tests {
             premultiplied_alpha: None,
             fog: None,
             layered: None,
+            extended_parameters: None,
+            advanced_parameters: None,
         };
         for alpha_mode in [
             None,

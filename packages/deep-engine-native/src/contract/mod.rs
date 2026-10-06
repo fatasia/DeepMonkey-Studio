@@ -22,6 +22,10 @@ mod transparency_tests;
 #[cfg(test)]
 mod validate_layered_params_tests;
 
+#[cfg(test)]
+#[path = "validate_stock_extensions_tests.rs"]
+mod validate_stock_extensions_tests;
+
 use std::{fs::File, io::Read, path::Path};
 
 pub use lod::DEFAULT_LOD_HYSTERESIS_RATIO;
@@ -29,7 +33,8 @@ pub use types::{
     AlphaMode, GeometryResource, LayerAnisotropyParams, LayerBlendMode, LayerClearcoatParams,
     LayerMaterialParams, LayerResponseModel, LayerSurface, LayerTransmissionParams, LayeredMaterial, MaterialLayer,
     NormalTextureSlot, OcclusionTextureSlot, PbrMaterial, PixelLevel, RenderInstance,
-    RenderLodLevel, RenderLodProfile, RenderPacket, ShadingModel, TextureResource, TextureSampler,
+    RenderLodLevel, RenderLodProfile, RenderPacket, ShadingModel, StockAdvancedParameters,
+    StockIridescenceParameters, StockSheenParameters, StockVolumeParameters, TextureResource, TextureSampler,
     TextureSemantic, TextureSlot,
 };
 pub use validate::{ContractSummary, validate_packet};

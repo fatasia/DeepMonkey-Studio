@@ -552,7 +552,11 @@ mod tests {
         }
         // RT 变体必须经共享响应核(rt_shade_surface 被 plain/layered 两入口
         // 复用,故恰一次调用),不允许光照体文本副本。
-        assert_eq!(rt.matches("native_lit_response(").count(), 1,
-            "RT fragment must consume the shared native_lit_response");
+        // C9/native(2026-10-06):RT 像素路与栅格路共用 native_extended_shade
+        // (内部仍是唯一的 native_lit_response 共享核;零带回退逐位一致)。
+        assert_eq!(rt.matches("native_extended_shade(").count(), 1,
+            "RT fragment must consume the shared native_extended_shade wrapper");
+        assert_eq!(rt.matches("native_lit_response(").count(), 0,
+            "RT fragment must not bypass the extended wrapper for the lit core");
     }
 }

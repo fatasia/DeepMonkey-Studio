@@ -32,6 +32,14 @@ struct MaterialTextures {
   occlusion_row_0: vec4f, occlusion_row_1: vec4f,
   normal_row_0: vec4f, normal_row_1: vec4f,
   emissive_row_0: vec4f, emissive_row_1: vec4f,
+  // C9/native 扩展带(float 40..46)+ 16B 垫(46..48 恒零,合同不写)+
+  // advanced 带 48..60(Web MATERIAL_PARAMETER_ADVANCED_FLOATS=60 布局同构:
+  // advanced0=sheen.rgb+roughness,advanced1=film/厚度,advanced2=衰减)。
+  // native 保守子集只消费 extended0/1 的 ior+clearcoat 与 advanced0 的 sheen;
+  // 其余槽位由 wire 合同保持零。全零带 → native_extended_shade 原样回落
+  // native_lit_response,旧 40 float 包渲染逐位不变。
+  extended0: vec4f, extended1: vec4f,
+  advanced0: vec4f, advanced1: vec4f, advanced2: vec4f,
 };
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(8) var<uniform> section_plane: vec4f;
@@ -660,6 +668,99 @@ struct NativeMeshShading {
   visibility: f32,
 }
 
+// ===== C9/native 扩展带与 advanced 保守子集(sheen)=====
+// 数学逐式移植 TS 权威:deepAdv* 与 Web advancedMaterials 变体
+// (shader/materialAdvancedWgsl.ts ADVANCED_MATERIAL_MATH_WGSL)同名同式,
+// CPU 权威为 shader/materialAdvancedReference.ts(f64,parity fixture 单源)。
+const DEEP_ADV_PI: f32 = 3.141592653589793;
+fn deepAdvMax3(c: vec3f) -> f32 { return max(c.x, max(c.y, c.z)); }
+fn deepAdvDCharlie(roughness: f32, nh: f32) -> f32 {
+  let invAlpha = 1.0 / (roughness * roughness);
+  let sin2h = max(1.0 - nh * nh, 0.0078125);
+  return (2.0 + invAlpha) * pow(sin2h, invAlpha * 0.5) / (2.0 * DEEP_ADV_PI);
+}
+fn deepAdvVNeubelt(nv: f32, nl: f32) -> f32 { return clamp(1.0 / (4.0 * max(nl + nv - nl * nv, 0.000001)), 0.0, 1.0); }
+fn deepAdvIblSheen(nv: f32, roughness: f32) -> f32 {
+  let r2 = roughness * roughness;
+  let rInv = 1.0 / (roughness + 0.1);
+  let a = -1.9362 + 1.0678 * roughness + 0.4573 * r2 - 0.8469 * rInv;
+  let b = -0.6014 + 0.5538 * roughness - 0.4670 * r2 - 0.1255 * rInv;
+  return clamp(exp(a * nv + b), 0.0, 1.0);
+}
+
+// 扩展带材质响应(Web pbrShader.ts extendedShade 的 native 同构):
+// - 扩展带/advanced 带全零 → 原样 native_lit_response(旧包逐位不变);
+// - clearcoat 等扩展 lobe:单源 deepEvaluateExtendedMaterial(materialEvaluateCore
+//   .wgsl,与 I-C23 层路径共用)替换主方向光直射项,IBL/局部灯/自发光保持 stock;
+// - sheen(advanced0):直射 Charlie lobe + 直/间接能量补偿
+//   (materialAdvancedReference sheenDirectBrdf/sheenDirectEnergy/sheenIndirectEnergy)。
+// 直射替换序(native 合同,如实登记):extended.rgb 先替换主光直射,再对
+// "非直射项"乘 energyIndirect、"直射项(替换后)"乘 energyDirect、叠加 sheenDirect;
+// 与 Web deepAdvancedShade 的能量作用面同形(直射项吃 energyDirect,coat 项其后
+// 叠加在 native 由扩展带直射替换承载)。CPU 镜像 material_extended_cpu 同式。
+fn native_extended_shade(
+  input: VertexOutput,
+  normal: vec3f,
+  geometry_normal: vec3f,
+  base: vec3f,
+  metal: f32,
+  rough_raw: f32,
+  dielectric: f32,
+  ao: f32,
+  emission: vec3f,
+  view: vec3f,
+  light: vec3f,
+  visibility: f32,
+) -> vec3f {
+  let ext0 = material_textures.extended0;
+  let ext1 = material_textures.extended1;
+  let sheen = material_textures.advanced0;
+  let sheen_peak = deepAdvMax3(sheen.xyz);
+  let legacy = ext0.y == 0.0 && ext0.w == 0.0 && ext1.y == 0.0 && sheen_peak <= 0.0;
+  if (legacy) {
+    return native_lit_response(input, normal, geometry_normal, base, metal,
+      rough_raw, dielectric, ao, emission, view, light, visibility);
+  }
+  if (flag(input.material.w, 64u)) { return base; }
+  let rough = min(1.0, clamp(rough_raw, 0.045, 1.0) + native_view_geometry_roughness(geometry_normal));
+  let authored_light = frame.sunColor.w >= 2.0;
+  let sun = select(vec3f(3.2, 3.0, 2.8), frame.sunColor.rgb, authored_light);
+  let original = native_lit_response(input, normal, geometry_normal, base, metal,
+    rough_raw, dielectric, ao, emission, view, light, visibility);
+  let nv = clamp(dot(normal, view), 0.001, 1.0);
+  let nl = clamp(dot(normal, light), 0.0, 1.0);
+  // stock 主光直射(与 native_lit_response 内部同式:min(1,clamp+几何粗糙度)、
+  // r185 多散射同源 direct DFG)——替换抵消必须逐位同式。
+  let direct_dfg = deepDirectDfg185(rough, nv);
+  let stock_direct = (brdfWithDielectricF0(normal, view, light, base, metal, rough, dielectric)
+    + native_direct_multiscattering(normal, light, base, metal, rough, dielectric, direct_dfg))
+    * sun * visibility;
+  var direct_term = stock_direct;
+  if (ext0.y != 0.0 || ext0.w != 0.0 || ext1.y != 0.0) {
+    let tangent = safe_normalize(input.tangent.xyz - normal * dot(normal, input.tangent.xyz),
+      tangent_fallback(normal));
+    let extended = deepEvaluateExtendedMaterial(base, metal, rough_raw, normal, view,
+      light, tangent, sun,
+      DeepMaterialEvalParams(ext0.x, ext0.y, ext0.z, ext0.w, ext1.x, ext1.y));
+    direct_term = extended.rgb * visibility;
+  }
+  if (sheen_peak <= 0.0) {
+    return original - stock_direct + direct_term;
+  }
+  let sheen_roughness = clamp(sheen.w, 0.0001, 1.0);
+  let half_dir = safe_normalize(view + light, normal);
+  let nh = clamp(dot(normal, half_dir), 0.0, 1.0);
+  let sheen_albedo_view = deepAdvIblSheen(nv, sheen_roughness);
+  let energy_indirect = 1.0 - sheen_peak * sheen_albedo_view;
+  let energy_direct = 1.0 - sheen_peak * max(sheen_albedo_view, deepAdvIblSheen(nl, sheen_roughness));
+  let sheen_direct = sheen.xyz
+    * (deepAdvDCharlie(sheen_roughness, nh) * deepAdvVNeubelt(nv, nl) * nl)
+    * sun * visibility;
+  let emissive = input.emissive_alpha.rgb * emission;
+  return (original - stock_direct - emissive) * energy_indirect
+    + direct_term * energy_direct + sheen_direct + emissive;
+}
+
 // naga collects uniform-resource usage by static call-graph reachability, so a
 // runtime `if (layered)` branch inside a shared body still binds group1@11 for
 // every entry point. The layer stack therefore lives ONLY in the *_layered
@@ -702,7 +803,7 @@ fn shade_native_mesh(
   let light = safe_normalize(frame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));
   let visibility = select(shadow_visibility(input.world, normal, max(dot(normal, light), 0.0)),
     1.0, flag(input.material.w, 16u) || (authored_light && frame.lightingOptions.y == 0.0));
-  let surface_color = native_lit_response(input, normal, geometry_normal, base, metal,
+  let surface_color = native_extended_shade(input, normal, geometry_normal, base, metal,
     rough_raw, input.dielectric, ao, emission, view, light, visibility);
   return NativeMeshShading(surface_color, normal, rough, alpha, geometry_normal, base, metal,
     rough_raw, ao, emission, view, light, visibility);

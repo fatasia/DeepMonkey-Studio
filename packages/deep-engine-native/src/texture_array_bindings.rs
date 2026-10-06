@@ -34,7 +34,7 @@ pub const MATERIAL_ARRAY_INDICES_BYTES: u64 =
     (MATERIAL_ARRAY_INDEX_FLOATS * std::mem::size_of::<i32>()) as u64;
 
 /// 槽位→绑定号静态合同:0..4 数组纹理视图、5..9 采样器;indexOffset 是 32B 通道内偏移
-/// (Web TEXTURE_ARRAY_SLOT_BINDINGS 逐位一致)。材质参数 uniform 仍是 160B 块。
+/// (Web TEXTURE_ARRAY_SLOT_BINDINGS 逐位一致)。材质参数 uniform 为 240B 块(C9 扩展带)。
 pub const TEXTURE_ARRAY_SLOT_MAP_BINDINGS: [u32; MATERIAL_ARRAY_SLOT_COUNT] = [0, 1, 2, 3, 4];
 pub const TEXTURE_ARRAY_SLOT_SAMPLER_BINDINGS: [u32; MATERIAL_ARRAY_SLOT_COUNT] = [5, 6, 7, 8, 9];
 pub const TEXTURE_ARRAY_SLOT_INDEX_OFFSETS: [usize; MATERIAL_ARRAY_SLOT_COUNT] = [0, 1, 2, 3, 4];
@@ -216,7 +216,7 @@ pub fn create_dummy_array_texture(device: &wgpu::Device) -> wgpu::Texture {
 }
 
 /// 数组版材质 bind group layout:binding 0..4 D2Array float 纹理、5..9 filtering
-/// 采样器、10 材质参数 uniform(160B,minBindingSize 与既有 D2 路径同 ABI)、
+/// 采样器、10 材质参数 uniform(240B,minBindingSize 与既有 D2 路径同 ABI)、
 /// 11 数组索引 uniform(32B)。fragment-only,与 Web materialLayout 逐项一致。
 pub fn create_texture_array_material_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     let texture = |binding: u32| wgpu::BindGroupLayoutEntry {

@@ -1,8 +1,12 @@
 use std::collections::HashMap;
 
 use crate::contract::{
-    PbrMaterial, RenderPacket, TextureResource, TextureSampler, TextureSemantic, TextureSlot,
-    validate_packet,
+    LayerMaterialParams, PbrMaterial, RenderPacket, StockAdvancedParameters, TextureResource,
+    TextureSampler, TextureSemantic, TextureSlot, validate_packet,
+};
+use crate::mesh_abi::{
+    MATERIAL_ADVANCED_BAND_FLOAT_OFFSET, MATERIAL_EXTENDED_BAND_FLOAT_OFFSET,
+    MATERIAL_UNIFORM_ROW_FLOATS, MaterialUniformRow,
 };
 use crate::pbr_layered::{
     LAYERED_SURFACE_BLOCK_FLOATS, LayerTextureBinding, LayeredBlockRow, layered_block_rows,
@@ -65,7 +69,7 @@ pub struct PreparedMaterial {
     pub id: String,
     pub normal_mapped: bool,
     pub texture_indices: [Option<usize>; 5],
-    pub uniform: [f32; MATERIAL_UNIFORM_FLOATS],
+    pub uniform: MaterialUniformRow,
     /// I-C23 分层材质:304B 块 + 按槽纹理索引 [base0, mr0, base1, mr1]。
     /// 无层材质为 None;层的数组层码在 native D2 借用下恒 0(打包已固定)。
     pub layered: Option<PreparedLayeredMaterial>,
@@ -244,10 +248,17 @@ pub fn prepare_layered_material(
 
 /// Prepare only the numeric material uniform; no texture decoding/upload occurs.
 /// C3 uses this for uniform-only incremental updates.
-pub fn prepare_material_uniform(
-    material: &PbrMaterial,
-) -> Result<[f32; MATERIAL_UNIFORM_FLOATS], String> {
-    let mut uniform = [0.0; MATERIAL_UNIFORM_FLOATS];
+///
+/// C9/native 扩展带:核心块 0..40(legacy 逐位不变)之上,40..46 写 Web
+/// `packExtendedParameterBlock` 同序的 6 float(ior, clearcoatFactor,
+/// clearcoatRoughness, anisotropyStrength, anisotropyRotation, transmissionFactor,
+/// 缺省域与 TS serializeMaterialParameters 一致);48..52 写 advanced 带 sheen
+/// 四元组(color.rgb + roughness,TS packAdvancedParameterBlock 前 4 float 同序,
+/// 缺省 [0,0,0,1])。46..48 与 52..60 恒零(合同拒绝 anisotropy/transmission/
+/// iridescence/volume 非零,槽位无载荷)。无扩展/advanced 字段时全带零——
+/// WGSL 据此走原 stock 分支,旧包渲染逐位不变。
+pub fn prepare_material_uniform(material: &PbrMaterial) -> Result<MaterialUniformRow, String> {
+    let mut uniform = [0.0; MATERIAL_UNIFORM_ROW_FLOATS];
     let base = material.base_color_texture.as_ref();
     let mr = material.metallic_roughness_texture.as_ref();
     let normal = material.normal_texture.as_ref();
@@ -270,7 +281,41 @@ pub fn prepare_material_uniform(
     )?;
     uniform[31] = normal.and_then(|slot| slot.normal_scale).unwrap_or(1.0);
     write_transform(&mut uniform, 32, emissive, emissive.is_some())?;
+    if let Some(extended) = &material.extended_parameters {
+        uniform[MATERIAL_EXTENDED_BAND_FLOAT_OFFSET..MATERIAL_UNIFORM_FLOATS]
+            .copy_from_slice(&extended_band_words(extended));
+    }
+    if let Some(advanced) = &material.advanced_parameters {
+        uniform[MATERIAL_ADVANCED_BAND_FLOAT_OFFSET..MATERIAL_ADVANCED_BAND_FLOAT_OFFSET + 4]
+            .copy_from_slice(&sheen_band_words(advanced));
+    }
     Ok(uniform)
+}
+
+/// 扩展带 6 词(TS serializeMaterialParameters 缺省域:ior=1.5,coat 0/0,
+/// anisotropy 0/0,transmission 0)。native 合同已拒绝 anisotropy/transmission
+/// 非零,槽位照写以保持与 Web 打包带逐词同构。
+fn extended_band_words(params: &LayerMaterialParams) -> [f32; 6] {
+    [
+        params.ior.unwrap_or(1.5),
+        params.clearcoat.as_ref().and_then(|value| value.factor).unwrap_or(0.0),
+        params.clearcoat.as_ref().and_then(|value| value.roughness).unwrap_or(0.0),
+        params.anisotropy.as_ref().and_then(|value| value.strength).unwrap_or(0.0),
+        params.anisotropy.as_ref().and_then(|value| value.rotation).unwrap_or(0.0),
+        params.transmission.as_ref().and_then(|value| value.factor).unwrap_or(0.0),
+    ]
+}
+
+/// advanced 带 sheen 四词(TS packAdvancedParameterBlock 前 4 float:rgb+roughness,
+/// 缺省 [0,0,0,1]);iridescence/volume 槽由合同保持零,此处不写。
+fn sheen_band_words(params: &StockAdvancedParameters) -> [f32; 4] {
+    let sheen = params.sheen.as_ref();
+    [
+        sheen.and_then(|value| value.color).map(|color| color[0]).unwrap_or(0.0),
+        sheen.and_then(|value| value.color).map(|color| color[1]).unwrap_or(0.0),
+        sheen.and_then(|value| value.color).map(|color| color[2]).unwrap_or(0.0),
+        sheen.and_then(|value| value.roughness).unwrap_or(1.0),
+    ]
 }
 
 fn prepare_texture(texture: &TextureResource) -> Result<PreparedTexture, String> {
@@ -512,6 +557,8 @@ mod tests {
             premultiplied_alpha: None,
             fog: None,
             layered: None,
+            extended_parameters: None,
+            advanced_parameters: None,
         };
         let packet = RenderPacket {
             schema: crate::contract::CONTRACT_SCHEMA.into(),
@@ -527,5 +574,98 @@ mod tests {
         // selector 0(禁用)+ strength 缺省 1.0,与 prepare_material_uniform 合同一致。
         assert_eq!(rows[0].uniform[3], 0.0);
         assert_eq!(rows[0].uniform[23], 1.0);
+    }
+
+    /// 旧 40 float 包 wire 兼容:无扩展/advanced 字段的材质行 = 核心 40 float
+    /// 原值 + 扩展带/advanced 带全零(GPU 缓冲 240B 中 160B 核心块逐字节不变)。
+    #[test]
+    fn legacy_packet_keeps_core_block_and_zero_bands() {
+        use crate::mesh_abi::{
+            MATERIAL_ADVANCED_BAND_FLOAT_OFFSET, MATERIAL_EXTENDED_BAND_FLOAT_OFFSET,
+            MATERIAL_UNIFORM_FLOATS,
+        };
+        let (packet, _) = load_and_validate(default_textured_fixture_path()).unwrap();
+        let rows = prepare_material_uniform_rows(&packet).unwrap();
+        for row in &rows {
+            assert!(
+                row.uniform[MATERIAL_EXTENDED_BAND_FLOAT_OFFSET..].iter().all(|value| *value == 0.0),
+                "material {} extension band must stay zero without extendedParameters",
+                row.id
+            );
+            assert!(
+                row.uniform[MATERIAL_ADVANCED_BAND_FLOAT_OFFSET..].iter().all(|value| *value == 0.0),
+                "material {} advanced band must stay zero without advancedParameters",
+                row.id
+            );
+        }
+        // 核心块哨兵:40 float 界内仍是 textureless 合同的 selector/strength 语义。
+        assert_eq!(MATERIAL_UNIFORM_FLOATS, 46);
+        assert_eq!(MATERIAL_EXTENDED_BAND_FLOAT_OFFSET, 40);
+    }
+
+    /// 扩展/advanced 带:pack 词序与缺省域(TS packExtendedParameterBlock /
+    /// packAdvancedParameterBlock 前 4 float 同序同缺省)。
+    #[test]
+    fn extension_and_advanced_bands_pack_in_ts_word_order() {
+        use crate::contract::{
+            LayerAnisotropyParams, LayerClearcoatParams, LayerTransmissionParams,
+            StockAdvancedParameters, StockSheenParameters,
+        };
+        let material = PbrMaterial {
+            id: "m".into(),
+            shading_model: None,
+            base_color: [0.1, 0.2, 0.3],
+            metallic: 0.4,
+            roughness: 0.6,
+            ior: Some(1.52),
+            base_color_texture: None,
+            metallic_roughness_texture: None,
+            normal_texture: None,
+            occlusion_texture: None,
+            emissive_factor: None,
+            emissive_texture: None,
+            base_color_alpha: None,
+            alpha_mode: None,
+            alpha_cutoff: None,
+            double_sided: None,
+            premultiplied_alpha: None,
+            fog: None,
+            layered: None,
+            extended_parameters: Some(LayerMaterialParams {
+                ior: Some(1.52),
+                clearcoat: Some(LayerClearcoatParams { factor: Some(0.9), roughness: Some(0.3) }),
+                anisotropy: Some(LayerAnisotropyParams { strength: Some(0.0), rotation: Some(0.0) }),
+                transmission: Some(LayerTransmissionParams { factor: Some(0.0) }),
+            }),
+            advanced_parameters: Some(StockAdvancedParameters {
+                sheen: Some(StockSheenParameters { color: Some([0.25, 0.5, 0.75]), roughness: Some(0.4) }),
+                iridescence: None,
+                volume: None,
+            }),
+        };
+        let uniform = prepare_material_uniform(&material).unwrap();
+        assert_eq!(
+            uniform[40..46],
+            [1.52, 0.9, 0.3, 0.0, 0.0, 0.0]
+        );
+        assert_eq!(uniform[48..52], [0.25, 0.5, 0.75, 0.4]);
+        // iridescence/volume 槽保持零(native 子集合同)。
+        assert!(uniform[52..60].iter().all(|value| *value == 0.0));
+        // 缺省域:只有 partial 字段时按 TS 缺省填充。
+        let mut partial = material.clone();
+        partial.extended_parameters = Some(LayerMaterialParams {
+            ior: None,
+            clearcoat: None,
+            anisotropy: None,
+            transmission: None,
+        });
+        partial.advanced_parameters = Some(StockAdvancedParameters {
+            sheen: None,
+            iridescence: None,
+            volume: None,
+        });
+        let uniform = prepare_material_uniform(&partial).unwrap();
+        assert_eq!(uniform[40..46], [1.5, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(uniform[48..52], [0.0, 0.0, 0.0, 1.0]);
     }
 }

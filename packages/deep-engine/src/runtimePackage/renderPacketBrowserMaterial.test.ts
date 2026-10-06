@@ -44,10 +44,27 @@ it("owns restored parameter, color and UV arrays independently of the caller JSO
   expect(block(restored).bytes).toEqual(before);
   expect(block(restored).prepared.parameters.base.clearcoat.factor).toBe(.25);
 });
-it("keeps Native publish strict for Browser-only extendedParameters", () => {
+it("admits clearcoat-subset extendedParameters into the Native publish profile", () => {
+  // C9/native(2026-10-06):stock 扩展带接通,clearcoat 子集经同一闭合域校验
+  // 放行;未消费的 anisotropy/transmission 非零仍 fail-closed(下组用例)。
   const input = JSON.parse(serializeBrowserRenderPacket(packet()));
   delete input.materials[0].layered;
-  expect(() => validateRuntimeRenderPacket(input, "$.packet")).toThrow("$.packet.materials[0].extendedParameters: Unknown field");
+  expect(() => validateRuntimeRenderPacket(input, "$.packet")).not.toThrow();
+  const restored = materializeRuntimeRenderPacket(input, "$.packet");
+  expect(restored.materials[0]!.extendedParameters!.clearcoat.factor).toBe(.25);
+  expect(restored.materials[0]!.extendedParameters!.clearcoat.roughness).toBe(Math.fround(.4));
+});
+it.each([
+  (input: any) => { input.materials[0].extendedParameters = { clearcoat: { factor: .25, roughness: .4 },
+    anisotropy: { strength: .4, rotation: 0 }, transmission: { factor: 0 } }; },
+  (input: any) => { input.materials[0].extendedParameters = { clearcoat: { factor: .25, roughness: .4 },
+    anisotropy: { strength: 0, rotation: 0 }, transmission: { factor: .5 } }; },
+])("keeps the Native extendedParameters subset fail-closed", mutate => {
+  const input = JSON.parse(serializeBrowserRenderPacket(packet()));
+  delete input.materials[0].layered;
+  mutate(input);
+  expect(() => validateRuntimeRenderPacket(input, "$.packet")).toThrow(
+    "$.packet.materials[0].extendedParameters");
 });
 it("admits layered materials into the Native publish profile with the same closed validation", () => {
   // I-C23:Native 生产消费接通后,native profile 放行 layered(同一 fail-closed

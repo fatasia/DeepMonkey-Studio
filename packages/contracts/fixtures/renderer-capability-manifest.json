@@ -588,9 +588,9 @@
         "evidence": "packages/deep-engine/src/shader/materialParameters.ts:MATERIAL_PARAMETER_KEYS(扩展带 ior/clearcoat/各向异性/透射 6 参数;factor=0 即 KHR_materials_clearcoat 默认无层,缺省零行为=stock PBR;materialBindings.ts MATERIAL_PARAMETER_EXTENDED_BAND_FLOAT_OFFSET=40 六 float 槽 40..46,materialEvaluateWgsl.ts 清漆层叠着色路径+白炉真机守恒 gate)"
       },
       "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/mesh_abi.rs:MATERIAL_UNIFORM_FLOATS(=40 核心块;native 不消费 Web 扩展带 40..46,无清漆层叠着色路径)"
+        "support": "supported",
+        "reason": "opt-in-default-off",
+        "evidence": "packages/deep-engine-native/src/mesh_abi.rs:MATERIAL_UNIFORM_FLOATS(=46:核心块 40 逐字节不变+消费 Web 扩展带 40..46;行型 MATERIAL_UNIFORM_ROW_FLOATS=60/240B,advanced 带 48..60)+packages/deep-engine-native/src/pbr_texture.rs prepare_material_uniform(扩展带 6 词=TS packExtendedParameterBlock 同序)+packages/deep-engine-native/assets/shaders/native_mesh_v1.wgsl native_extended_shade(单源 wgsl/materialEvaluateCore.wgsl deepEvaluateExtendedMaterial 清漆层叠替换主方向光直射,与 I-C23 层路径共用;全零带回退 native_lit_response 旧包逐位不变,RT 入口 native_mesh_rt_fragment_v1.wgsl 同换)+packages/deep-engine-native/src/material_extended_cpu.rs(TS materialEvaluate/packageClearcoat f64 镜像)+material_parity_tests(fixture material-native-parity-v1.json:f64 相对 ≤1e-9、求值词 ≤2ulp、打包词位级)+renderer/material_extended_gpu_tests 真机腿(clearcoat/sheen/组合/零带位级控制);native 子集:anisotropy.strength/transmission.factor 非零由 contract::validate 拒绝(TS renderPacketNativeMaterial.assertNativeStockMaterialExtensionsSupported 同构)"
       }
     },
     {
@@ -603,9 +603,9 @@
         "evidence": "packages/deep-engine/src/webgpu/pbrAdvancedMaterialShader.ts:composeAdvancedMaterialSceneShader(PbrRendererOptions.advancedMaterials 缺省 false→场景 WGSL 字节不变;启用后材质 uniform 192→240B,materialAdvancedParameters.ts 12 float 带)+packages/deep-engine/scripts/advancedMaterialGpuTest.mjs(球白炉/解析直射对拍 CPU)+advancedMaterialThreeParityTest.mjs(真 three r185 对拍)+apps/web/src/viewer/StudioDeepWebGpuBridge.ts(场景含激活 lobe 时按需启用,编辑中新激活则受控重建一次)"
       },
       "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine/src/runtimePackage/renderPacket.ts:native profile 的 material 可选字段不含 advancedParameters(闭合材质 profile 拒绝)+packages/deep-engine-native/src/mesh_abi.rs:MATERIAL_UNIFORM_FLOATS(=40 核心块,无 advanced 带与 sheen/薄膜/体积着色路径)"
+        "support": "degraded",
+        "reason": "reduced-tier",
+        "evidence": "packages/deep-engine-native/src/contract/types.rs StockAdvancedParameters(闭合域与 TS AdvancedMaterialParameters 同构)+contract/validate.rs validate_stock_extensions(native 子集:sheen 放行,iridescence.factor/volume.thickness 非零 fail-closed 拒绝;unlit 拒绝)+pbr_texture.rs prepare_material_uniform(advanced 带 48..52=sheen.rgb+roughness,TS packAdvancedParameterBlock 前 4 词同序位级)+native_mesh_v1.wgsl(deepAdvDCharlie/deepAdvVNeubelt/deepAdvIblSheen 与 Web shader/materialAdvancedWgsl.ts ADVANCED_MATERIAL_MATH 同名同式;native_extended_shade 直射 Charlie lobe+能量补偿)+material_extended_cpu.rs(TS materialAdvancedReference f64 镜像)+material_parity_tests(原语/能量对拍 fixture material-native-parity-v1.json f64 ≤1e-9)+renderer/material_extended_gpu_tests 真机 sheen/组合/零带腿;TS native profile 放行=renderPacket.ts assertNativeStockMaterialExtensionsSupported;如实降档:iridescence(薄膜干涉)与 volume(厚度/衰减/透射)未接——contract 非零拒绝,clearcoat IBL 分量未接(native 直射替换为 T08 单源式,非 Web advanced 变体 coat-IBL 合成)"
       }
     },
     {

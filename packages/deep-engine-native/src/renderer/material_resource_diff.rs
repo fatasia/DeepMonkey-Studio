@@ -31,7 +31,7 @@ pub fn classify_material_resources(
         {
             return MaterialResourceDiff::Structural;
         }
-        // I-C23:分层块走独立 304B uniform,160B 基础快路径看不到它。层行
+        // I-C23:分层块走独立 304B uniform,基础块快路径看不到它。层行
         // 存在性或块内容任一变化都按 Structural 回落全量重建(bind group
         // 携带分层纹理槽,原位覆写会静默丢层)。
         if old.layered != new.layered {
@@ -89,7 +89,7 @@ mod tests {
             id: "m".into(),
             normal_mapped: false,
             texture_indices: [None; 5],
-            uniform: [uniform; 40],
+            uniform: [uniform; deep_engine_native::mesh_abi::MATERIAL_UNIFORM_ROW_FLOATS],
             layered: None,
         }
     }
@@ -163,6 +163,8 @@ mod tests {
             premultiplied_alpha: None,
             fog: None,
             layered: None,
+            extended_parameters: None,
+            advanced_parameters: None,
         }
     }
 
@@ -193,12 +195,12 @@ mod tests {
     /// 原位写缓冲,不再重算)。
     #[test]
     fn uniform_rows_generation_follows_changed_indices() {
-        use deep_engine_native::mesh_abi::MATERIAL_UNIFORM_FLOATS;
+        use deep_engine_native::mesh_abi::MaterialUniformRow;
         let before = vec![prepared(0.0), prepared(1.0), prepared(2.0)];
         let mut after = before.clone();
         after[0].uniform[7] = 9.0;
         after[2].uniform[7] = -3.0;
-        let rows: Vec<(usize, [f32; MATERIAL_UNIFORM_FLOATS])> =
+        let rows: Vec<(usize, MaterialUniformRow)> =
             match classify_material_resources(&before, &after) {
                 MaterialResourceDiff::UniformOnly { changed_indices } => changed_indices
                     .iter()

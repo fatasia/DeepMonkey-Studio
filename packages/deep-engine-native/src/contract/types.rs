@@ -88,6 +88,70 @@ pub struct PbrMaterial {
     /// 基材清漆与各向异性/透射由发布合同拒绝。
     #[serde(default, deserialize_with = "present")]
     pub layered: Option<LayeredMaterial>,
+    /// C9 stock 扩展参数(键值域与 TS `ExtendedMaterialParameters`/层 params 同构;
+    /// 复用 LayerMaterialParams 闭合结构)。native 求值子集只消费 ior+clearcoat,
+    /// anisotropy.strength/transmission.factor 非零由 validate fail-closed 拒绝
+    /// (native 光照核无该两 lobe,不得静默忽略)。缺省=扩展带全零=stock 逐位不变。
+    #[serde(default, deserialize_with = "present")]
+    pub extended_parameters: Option<LayerMaterialParams>,
+    /// advancedMaterials 保守子集(native):只消费 sheen(直射 Charlie lobe +
+    /// 直/间接能量补偿);iridescence.factor 与 volume.thickness 非零由 validate
+    /// fail-closed 拒绝。unlit 材质拒绝(与 Web 同界)。
+    #[serde(default, deserialize_with = "present")]
+    pub advanced_parameters: Option<StockAdvancedParameters>,
+}
+
+/// advancedMaterials 的闭合域形态(与 TS `AdvancedMaterialParameters` 键值域同构,
+/// camelCase,deny_unknown_fields)。native 只消费 sheen 子集,其余字段保留域以
+/// 便 fail-closed 语义对 TS 逐词一致(拒绝而非未知字段报错)。
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct StockAdvancedParameters {
+    #[serde(default, deserialize_with = "present")]
+    pub sheen: Option<StockSheenParameters>,
+    #[serde(default, deserialize_with = "present")]
+    pub iridescence: Option<StockIridescenceParameters>,
+    #[serde(default, deserialize_with = "present")]
+    pub volume: Option<StockVolumeParameters>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct StockSheenParameters {
+    /// 线性 0..1;全 0 = 无 sheen(three 默认)。
+    #[serde(default, deserialize_with = "present")]
+    pub color: Option<[f32; 3]>,
+    /// 0..1;求值时夹取到 [0.0001, 1]。
+    #[serde(default, deserialize_with = "present")]
+    pub roughness: Option<f32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct StockIridescenceParameters {
+    /// 0..1;native 子集必须为 0(validate 拒绝非零)。
+    #[serde(default, deserialize_with = "present")]
+    pub factor: Option<f32>,
+    /// 薄膜折射率 1..3。
+    #[serde(default, deserialize_with = "present")]
+    pub ior: Option<f32>,
+    /// 薄膜厚度(nm)0..10000。
+    #[serde(default, deserialize_with = "present")]
+    pub thickness: Option<f32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct StockVolumeParameters {
+    /// 体积厚度 ≥0;native 子集必须为 0(validate 拒绝非零)。
+    #[serde(default, deserialize_with = "present")]
+    pub thickness: Option<f32>,
+    /// Beer-Lambert 衰减色 (0,1]。
+    #[serde(default, deserialize_with = "present")]
+    pub attenuation_color: Option<[f32; 3]>,
+    /// 衰减距离;缺省/Infinity = 不衰减(打包为 0 哨兵,与 TS 一致)。
+    #[serde(default, deserialize_with = "present")]
+    pub attenuation_distance: Option<f32>,
 }
 
 /// 扩展材质参数的层形态(与 TS `ExtendedMaterialParameters` 键值域同构,camelCase)。
