@@ -438,6 +438,16 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
       deep2dWireDynamicityFields: 0,
     },
   },
+  {
+    // deep2D 混合模式与背景模糊(GPUI 对齐第四件,2026-10-06):PathCommand.blend +
+    // backdrop_blur 属 native deep2d 引擎缝,web 列如实 absent(TS wire schema 无
+    // blend/backdropBlur 字段,web 无 deep2d 渲染通路)。观测值从 wire 实际面派生
+    // (blend 类字段数漂移即红)。
+    capabilityId: "deep2d-blend-backdrop", support: "unavailable", reason: "absent",
+    observed: {
+      deep2dWireBlendFields: 0,
+    },
+  },
 ]);
 
 // ---- 加载期漂移守卫(结构先例:probeRadianceDirectionGate 的容量 fail-fast) ----
