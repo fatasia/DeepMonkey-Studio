@@ -77,11 +77,18 @@ describe("AiAssistantPanel", () => {
     expect(html).toContain("执行任务");
     expect(html).toContain("搬运机器人");
     expect(html).toContain('data-drag-handle="true"');
-    // 体验切换为带文字的分段按钮；范围收进输入框工具栏的单个下拉，不再是一整行纯图标页签。
+    // 体验切换为带文字的分段按钮；范围收进输入框工具栏的平台统一弹层下拉，不再是一整行纯图标页签。
     expect(html).toContain("<span>对话</span>");
     expect(html).toContain("<span>执行任务</span>");
     expect(html).toContain('aria-label="提问范围"');
-    expect(html).toMatch(/<option value="scene" selected="">场景<\/option>/);
+    // 2026-10-06 UI 修复:原生 select 已替换为 details 弹层下拉——触发器显示当前模式,
+    // 选项以 listbox/option 语义渲染并带 aria-selected 选中态。
+    expect(html).toContain(">场景</span>");
+    expect(html).toContain('role="option"');
+    expect(html).toContain('aria-selected="true"');
+    // 旧的原生 select 提问范围标记已整体移除(模型控件等合法 select 不受影响)。
+    expect(html).toContain('class="ai-scope-select"');
+    expect(html).not.toContain('class="ai-mode-select"');
     expect(html).not.toContain("ai-assistant-tabs");
     expect(html).not.toContain('aria-pressed=');
   });
@@ -101,7 +108,10 @@ describe("AiAssistantPanel", () => {
       onValidateDashboardPageDraft={() => ({ changeCount: 1, labels: ["产量"] })}
       onApplyDashboardPageDraft={vi.fn()} onClose={vi.fn()} />);
     expect(html).toContain("二维 AI 助手");
-    expect(html).toMatch(/<option value="dashboard" selected="">二维<\/option>/);
+    // 范围下拉的平台统一弹层契约:触发器为当前模式"二维",选项带 aria-selected 选中态。
+    expect(html).toContain(">二维</span>");
+    expect(html).toContain('aria-selected="true"');
+    expect(html).toContain('class="ai-scope-select"');
     expect(html).toContain("当前二维看板草稿");
     expect(html).toContain("会话模型");
     expect(html).toContain("向 AI 助手提问");

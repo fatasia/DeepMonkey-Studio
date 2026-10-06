@@ -11,6 +11,7 @@ import { api, type AssistantMode } from "../api";
 import type { BimAssistantPreparedContext } from "../bimAssistant";
 import { translate as tr, type AppLocale } from "../i18n";
 import { AiChangeConfirmation } from "./AiChangeConfirmation";
+import { AiModeSelect } from "./AiModeSelect";
 import { AskDataQuickQuery } from "./AskDataQuickQuery";
 import { AiCapabilityCatalog } from "./AiCapabilityCatalog";
 import type { AiWorkspaceTask } from "../ai/capabilityCatalog";
@@ -433,13 +434,9 @@ export function AiAssistantPanel({
       {experience === "chat" && <AiAssistantComposer locale={locale} question={question} busy={busy}
         sendDisabled={sessions.loading} disabledReason={t("正在恢复会话，请稍候", "Restoring the conversation; please wait")}
         toolbar={<>
-          <label className="ai-mode-select" title={t("提问范围：决定读取哪些证据", "Scope: decides which evidence is read")}>
-            {(() => { const ActiveIcon = tabs.find((tab) => tab.id === mode)?.icon ?? Sparkles; return <ActiveIcon size={12} aria-hidden="true" />; })()}
-            <select aria-label={t("提问范围", "Question scope")} disabled={busy} value={mode}
-              onChange={(event) => selectMode(event.target.value as AssistantMode)}>
-              {tabs.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
-            </select>
-          </label>
+          {/* 提问范围:平台统一 details 弹层下拉(2026-10-06 UI 修复),替代原生 select 系统弹窗。 */}
+          <AiModeSelect locale={locale} value={mode} options={tabs} disabled={busy}
+            onChange={(next) => selectMode(next as AssistantMode)} />
           <AssistantModelControls compact allowAuto lastRoute={execution?.route} locale={locale} mode={mode} value={sessionOptions} onChange={setSessionOptions} disabled={busy} />
         </>}
         onChange={setQuestion} onSend={() => { if (!sessions.loading) void ask(); }} onStop={() => {

@@ -8,7 +8,9 @@ export interface WorkspaceModeSwitchProps {
   locale: AppLocale;
   active: WorkspaceMode;
   /** 当前页面或场景名称，帮助用户确认自己仍在同一交付上下文。 */
-  contextLabel: string;
+  /** 可选:仅当该名称在此处是唯一来源时才传(如二维页头);studio 顶栏的场景名
+   * 已由右侧可编辑标题承载,再传会造成同屏重复(2026-10-06 用户反馈)。 */
+  contextLabel?: string;
   sceneAvailable?: boolean;
   scriptsAvailable?: boolean;
   onSelect2D?: () => void;
@@ -32,10 +34,12 @@ export function WorkspaceModeSwitch({
 }: WorkspaceModeSwitchProps) {
   return (
     <nav className="workspace-mode-switch" aria-label={tr(locale, "编辑模式", "Editor mode")}>
-      <span className="workspace-context" title={contextLabel}>
-        {active === "2d" ? <LayoutDashboard size={14} /> : active === "3d" ? <Box size={14} /> : <Braces size={14} />}
-        {contextLabel}
-      </span>
+      {contextLabel ? (
+        <span className="workspace-context" title={contextLabel}>
+          {active === "2d" ? <LayoutDashboard size={14} /> : active === "3d" ? <Box size={14} /> : <Braces size={14} />}
+          {contextLabel}
+        </span>
+      ) : null}
       <button type="button" className={active === "2d" ? "active" : ""} aria-current={active === "2d" ? "page" : undefined} disabled={active === "2d"} onClick={onSelect2D}>
         <LayoutDashboard size={14} />{tr(locale, "二维", "2D")}
       </button>

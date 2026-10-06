@@ -172,11 +172,11 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
               </button>
             </>
           )}
-          {/* 模式按钮已高亮当前模式、右侧另有可编辑场景名，面包屑属重复信息（用户反馈低级错误）已移除。 */}
+          {/* 模式按钮只承载页签导航(2026-10-06 用户反馈:场景名与右侧可编辑标题同屏重复,
+              不再传 contextLabel);二维页头仍传页面名,那是该工作区的唯一名称来源。 */}
           <WorkspaceModeSwitch
             locale={locale}
             active={sceneBehaviorOpen ? "script" : "3d"}
-            contextLabel={sceneName}
             scriptsAvailable={Boolean(activeScene) && !playMode?.active}
             onSelect2D={() => leaveThreeDimensionalWorkspace("dashboard")}
             onSelect3D={showThreeDimensionalWorkspace}
