@@ -659,31 +659,30 @@ export default function OntologyWorkspace({
       ) : (
         <div className="ontology-columns">
           <div className="ontology-main">
-            <div className="ontology-main-split">
-              <div className="ontology-readonly-summary">
-                {ONTOLOGY_ASSET_KINDS.map((kind) => {
-                  const Icon = ASSET_META[kind].icon;
-                  const sample = kind === "objects"
-                    ? workspace.currentPackage!.objects.slice(0, 6)
-                    : kind === "relations"
-                      ? workspace.currentPackage!.relations.slice(0, 6)
-                      : workspace.currentPackage!.actions.slice(0, 6);
-                  return (
-                    <section key={kind}>
-                      <h4><Icon size={13} /> {tr(locale, ASSET_META[kind].labelZh, ASSET_META[kind].labelEn)} ({counts[kind]})</h4>
-                      {sample.length === 0 && <small>{tr(locale, "暂无", "None")}</small>}
-                      <ul>
-                        {sample.map((item) => (
-                          <li key={item.id}>
-                            <strong>{item.label || item.key}</strong>
-                            <small>{item.key}</small>
-                          </li>
-                        ))}
-                      </ul>
-                    </section>
-                  );
-                })}
-              </div>
+            {/* 只读总览不进 ontology-main-split 两列壳(230px+1fr):单子元素会全压进 230px 首列,中部整片空置。 */}
+            <div className="ontology-readonly-summary">
+              {ONTOLOGY_ASSET_KINDS.map((kind) => {
+                const Icon = ASSET_META[kind].icon;
+                const sample = kind === "objects"
+                  ? workspace.currentPackage!.objects.slice(0, 6)
+                  : kind === "relations"
+                    ? workspace.currentPackage!.relations.slice(0, 6)
+                    : workspace.currentPackage!.actions.slice(0, 6);
+                return (
+                  <section key={kind}>
+                    <h4><Icon size={13} /> {tr(locale, ASSET_META[kind].labelZh, ASSET_META[kind].labelEn)} ({counts[kind]})</h4>
+                    {sample.length === 0 && <small>{tr(locale, "暂无", "None")}</small>}
+                    <ul>
+                      {sample.map((item) => (
+                        <li key={item.id}>
+                          <strong>{item.label || item.key}</strong>
+                          <small>{item.key}</small>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                );
+              })}
             </div>
             <Inspector pkg={workspace.currentPackage} validation={undefined} versions={workspace.versions} locale={locale} />
           </div>
