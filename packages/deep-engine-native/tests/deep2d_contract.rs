@@ -240,6 +240,8 @@ fn validates_cross_field_paint_rules_and_semantic_decode_failure() {
 
     let bytes = serde_json::to_vec(&display_list).expect("semantic fixture");
     let error = decode_display_list(&bytes).expect_err("semantic validation must reject");
-    assert!(error.contains("Path command requires fill or stroke"));
+    // 刀 4 起 backdrop-only Path 命令(fill/stroke 双缺 + backdropBlur)合法,
+    // 空 paint 拒绝文案随之扩词(validate_commands_kinds)。
+    assert!(error.contains("Path command requires fill, stroke or backdropBlur paint"));
     assert!(error.contains("commands[0]"));
 }

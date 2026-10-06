@@ -53,11 +53,18 @@ fn native_shaders_are_versioned_and_do_not_embed_javascript() {
         ),
         (
             "assets/shaders/native_deep2d_v1.wgsl",
-            "native Deep2d painter shader contract v1",
+            // 视觉三命令刀起着色器合同升 v2(渐变/圆角/阴影片段级求值),
+            // 刀 4 在其上叠加 premul 混合入口,合同行仍是 v2。
+            "native Deep2d painter shader contract v2",
         ),
         (
             "assets/shaders/native_deep2d_atlas_v1.wgsl",
             "native Deep2d atlas shader contract v1",
+        ),
+        (
+            "assets/shaders/native_deep2d_backdrop_v1.wgsl",
+            // 刀 4 毛玻璃捕获链着色器入版本合同门。
+            "native Deep2d backdrop shader contract v1",
         ),
         (
             "assets/shaders/native_output_v1.wgsl",

@@ -1,3 +1,5 @@
+// Deep Engine native Deep2d backdrop shader contract v1.
+//
 // Deep Engine native Deep2d backdrop blur chain (刀 4 frosted glass).
 //
 // Captures the composited target below a backdrop command, downsamples it to
