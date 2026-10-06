@@ -74,6 +74,20 @@ Bare-engine fixture: identical deterministic layout, 6 shapes / 6 PBR colors, sa
 
 Reproduce: `BIM_STUDIO_RENDER_BENCHMARK_ENGINES=three-webgl,three-webgpu,babylon-webgpu,deep-webgpu pnpm --filter @bim-studio/web benchmark:render-engines`; the full 23-column evidence lives in `test-output/render-engine-comparison/report.md`. The full metric set, the native reference-table protocol, and the per-round interception log are in the [benchmark program](docs/specs/render-benchmark-program-20261007.md).
 
+### Native reference (Unity 2022.3, Windows x64)
+
+> Native runtime (Mono backend — IL2CPP module not installed, stated as-is; Win64 window + vsync), **not directly comparable with the browser table above, reference only**. Same fixture layout contract, 600 frame-tail-sampled frames, same RTX 4060 Laptop; metric definitions match the browser table.
+
+| Metric | Unity 2022.3 (Mono) |
+| --- | --- |
+| Idle P50 / P95 (120 / 1000 objects) | 6.94 / 7.12 ms |
+| Dynamic P95 (1000 objects) | 7.26 ms |
+| Idle max frame (120 objects) | 8.29 ms |
+| 1% Low FPS (1000 objects, idle) | 137.9 |
+| Jank frames (>16.7ms / >20ms) | 0 / 0 |
+
+The Deep Native column joins this table once benchmark-program P3.1 (small native frame-timing change, ~1.5 days) lands; full samples in `test-output/unity-native-bench/summary.json`.
+
 ### Product-scene fair comparison (Deep vs three WebGL)
 
 Same scene, same camera pose, 120 idle frames (RTX 4060, 2026-10-05):

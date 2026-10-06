@@ -80,6 +80,20 @@ https://github.com/user-attachments/assets/cb60822e-f2ee-41ec-ab45-943929da2f5a
 
 复现:`BIM_STUDIO_RENDER_BENCHMARK_ENGINES=three-webgl,three-webgpu,babylon-webgpu,deep-webgpu pnpm --filter @bim-studio/web benchmark:render-engines`;完整 23 列证据与守卫判定见 `test-output/render-engine-comparison/report.md`。指标全集、原生参考表协议与逐轮拦截记录见[基准程序](docs/specs/render-benchmark-program-20261007.md)。
 
+### 原生参考表(Unity 2022.3,Windows x64)
+
+> 原生运行时(Mono 后端,IL2CPP 模块未装如实采用 Mono;Win64 窗口+垂直同步),**与上表浏览器口径不可直接对比,仅供参考**。同一 fixture 布局合约,帧尾采样 600 帧,RTX 4060 Laptop 同机;指标口径与浏览器表一致。
+
+| 指标 | Unity 2022.3(Mono) |
+| --- | --- |
+| 静置 P50 / P95(120 / 1000 物体) | 6.94 / 7.12 ms |
+| 动态 P95(1000 物体) | 7.26 ms |
+| 静置最大帧(120 物体) | 8.29 ms |
+| 1% Low FPS(1000 物体静置) | 137.9 |
+| 卡顿帧(>16.7ms / >20ms) | 0 / 0 |
+
+Deep Native 列在基准程序 P3.1(原生帧时输出小改,约 1-1.5 天)完成后并入本表;完整采样数据见 `test-output/unity-native-bench/summary.json`。
+
 ### 产品场景公平对拍(Deep vs three WebGL)
 
 同场景、同相机位姿、静置 120 帧(RTX 4060,2026-10-05):

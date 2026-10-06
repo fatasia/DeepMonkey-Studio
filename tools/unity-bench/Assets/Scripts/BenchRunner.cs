@@ -26,6 +26,7 @@ public class BenchRunner : MonoBehaviour
     float[] samples;
     int recorded;
     int warmupLeft = 120;
+    bool lastSet;
     float last;
     Transform[] placed;
     float[] baseY;
@@ -244,14 +245,12 @@ public class BenchRunner : MonoBehaviour
         }
         float now = Time.realtimeSinceStartup;
         if (warmupLeft > 0) { warmupLeft--; last = now; return; }
-        if (recorded == 0) { last = now; recorded = -1; return; }
-        if (recorded > 0 && recorded < frames)
-        {
-            samples[recorded] = (now - last) * 1000f;
-            recorded++;
-            last = now;
-            if (recorded == frames) Finish();
-        }
+        if (recorded >= frames) return;
+        if (!lastSet) { lastSet = true; last = now; return; }
+        samples[recorded] = (now - last) * 1000f;
+        last = now;
+        recorded++;
+        if (recorded == frames) Finish();
     }
 
     void Finish()
