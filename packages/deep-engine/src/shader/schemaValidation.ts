@@ -100,8 +100,8 @@ function validateNode(value: unknown, path: string, diagnostics: ShaderDiagnosti
     "add", "subtract", "multiply", "divide", "min", "max", "pow", "dot", "cross", "scale",
     "transform-direction", "transform-position",
   ].includes(value.op)) validateInputs(value, path, common, 2, diagnostics);
-  else if (["select", "clamp", "mix"].includes(value.op)) validateInputs(value, path, common, 3, diagnostics);
-  else if (["normalize", "negate", "saturate"].includes(value.op)) validateInputs(value, path, common, 1, diagnostics);
+  else if (["select", "clamp", "mix", "smoothstep"].includes(value.op)) validateInputs(value, path, common, 3, diagnostics);
+  else if (["normalize", "negate", "saturate", "one-minus", "abs", "floor", "fract"].includes(value.op)) validateInputs(value, path, common, 1, diagnostics);
   else if (value.op === "compose-vec4") validateInputs(value, path, common, 2, diagnostics);
   else if (value.op === "swizzle") {
     validateInputs(value, path, [...common, "mask"], 1, diagnostics);

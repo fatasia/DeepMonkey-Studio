@@ -111,8 +111,8 @@ export type ShaderNode =
         | "transform-direction" | "transform-position";
       inputs: readonly [string, string];
     }>)
-  | (ShaderNodeBase & Readonly<{ op: "select" | "clamp" | "mix"; inputs: readonly [string, string, string] }>)
-  | (ShaderNodeBase & Readonly<{ op: "normalize" | "negate" | "saturate"; inputs: readonly [string] }>)
+  | (ShaderNodeBase & Readonly<{ op: "select" | "clamp" | "mix" | "smoothstep"; inputs: readonly [string, string, string] }>)
+  | (ShaderNodeBase & Readonly<{ op: "normalize" | "negate" | "saturate" | "one-minus" | "abs" | "floor" | "fract"; inputs: readonly [string] }>)
   | (ShaderNodeBase & Readonly<{ op: "compose-vec4"; inputs: readonly [string, string] }>)
   | (ShaderNodeBase & Readonly<{ op: "swizzle"; inputs: readonly [string]; mask: string }>)
   | (ShaderNodeBase & Readonly<{

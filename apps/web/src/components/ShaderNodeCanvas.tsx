@@ -10,11 +10,12 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { ShaderGraphAssetV1 } from "@bim-studio/deep-engine/shader-graph";
-import { lowerShaderGraphAsset, validateShaderGraphAsset } from "@bim-studio/deep-engine/shader-graph";
+import { shaderGraphNodeRegistry } from "@bim-studio/deep-engine/shader-graph";
 import { translate as tr, type AppLocale } from "../i18n";
 import {
   SURFACE_FIELD_KEYS, addNode, bindSurfaceField, canvasEdges, canvasNodes, connect, disconnect,
-  removeNode, surfaceBindings, updateNodeConfig, type CanvasNodePosition, type SurfaceFieldKey,
+  diagnosticEdgeKeys, diagnosticNodeIds, graphDiagnostics, removeNode, surfaceBindings,
+  updateNodeConfig, type CanvasGraphDiagnostic, type CanvasNodePosition, type SurfaceFieldKey,
 } from "./shaderNodeCanvasModel.js";
 
 interface Props {
@@ -24,11 +25,51 @@ interface Props {
   readonly disabled?: boolean;
 }
 
+/** 节点双语名(键 = 注册表 op;未收录回退引擎 label)。 */
+const NODE_LABELS: Readonly<Record<string, readonly [string, string]>> = {
+  literal: ["常量", "Literal"], property: ["材质属性", "Property"], attribute: ["顶点属性", "Attribute"],
+  varying: ["插值变量", "Varying"], add: ["加法", "Add"], subtract: ["减法", "Subtract"],
+  multiply: ["乘法", "Multiply"], divide: ["除法", "Divide"], min: ["最小值", "Min"],
+  max: ["最大值", "Max"], pow: ["幂", "Pow"], dot: ["点积", "Dot"], normalize: ["归一化", "Normalize"],
+  negate: ["取反", "Negate"], saturate: ["饱和", "Saturate"], "one-minus": ["一减", "One Minus"],
+  abs: ["绝对值", "Abs"], floor: ["向下取整", "Floor"], fract: ["小数部分", "Fract"],
+  "compose-vec4": ["组装 Vec4", "Compose Vec4"], swizzle: ["重排分量", "Swizzle"],
+  select: ["条件选择", "Select"], clamp: ["钳制", "Clamp"], mix: ["插值", "Mix"],
+  smoothstep: ["平滑阶梯", "Smoothstep"], cross: ["叉积", "Cross"], scale: ["缩放", "Scale"],
+  "transform-direction": ["变换方向", "Transform Direction"],
+  "transform-position": ["变换位置", "Transform Position"],
+  "texture-sample": ["纹理采样", "Texture Sample"], "pbr-frame-view": ["PBR 帧", "PBR Frame View"],
+};
+const CATEGORY_LABELS: Readonly<Record<string, readonly [string, string]>> = {
+  input: ["输入", "Input"], math: ["数学", "Math"], geometry: ["几何", "Geometry"],
+  texture: ["纹理", "Texture"], stage: ["阶段", "Stage"], surface: ["表面", "Surface"],
+};
+const CATEGORY_ORDER = ["input", "math", "geometry", "texture", "stage", "surface"] as const;
+
+/** 调色板按注册表分组(注册表扩面即画布可见,无需改组件)。 */
+function paletteGroups(locale: AppLocale): Array<{ category: string; label: string; ops: string[] }> {
+  const groups: Record<string, string[]> = {};
+  for (const meta of shaderGraphNodeRegistry()) (groups[meta.category] ??= []).push(meta.op);
+  return CATEGORY_ORDER.filter(category => groups[category]?.length).map(category => ({
+    category,
+    label: tr(locale, CATEGORY_LABELS[category]?.[0] ?? category, CATEGORY_LABELS[category]?.[1] ?? category),
+    ops: groups[category]!,
+  }));
+}
+
 /** 材质节点图画布(ReactFlow 薄壳;编辑语义全在 shaderNodeCanvasModel)。M1 只编辑 fragment stage。 */
 export function ShaderNodeCanvas({ locale, asset, onAssetChange, disabled }: Props) {
   const [positions, setPositions] = useState<Record<string, CanvasNodePosition>>({});
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [bindField, setBindField] = useState<SurfaceFieldKey>("baseColor");
+
+  const issues = useMemo(() => graphDiagnostics(asset), [asset]);
+  const errorNodeIds = useMemo(() => diagnosticNodeIds(issues), [issues]);
+  const errorEdgeKeys = useMemo(() => diagnosticEdgeKeys(issues), [issues]);
+  const nodeLabel = useCallback((op: string, fallback: string) => {
+    const pair = NODE_LABELS[op];
+    return pair ? tr(locale, pair[0], pair[1]) : fallback;
+  }, [locale]);
 
   const nodes = useMemo<Node[]>(() => canvasNodes(asset).map((node) => ({
     id: node.id,
@@ -36,16 +77,21 @@ export function ShaderNodeCanvas({ locale, asset, onAssetChange, disabled }: Pro
       x: 40 + (Object.keys(positions).length % 6) * 190,
       y: 30 + Math.floor(Object.keys(positions).length / 6) * 110,
     },
-    data: { label: `${node.label}\n[${node.type}]` },
-  })), [asset, positions]);
+    ...(errorNodeIds.has(node.id) ? { className: "shader-node-invalid" } : {}),
+    data: { label: `${nodeLabel(node.op, node.label)}\n[${node.type}]` },
+  })), [asset, positions, errorNodeIds, nodeLabel]);
 
-  const edges = useMemo<Edge[]>(() => canvasEdges(asset).map((edge) => ({
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    targetHandle: edge.targetHandle,
-    animated: false,
-  })), [asset]);
+  const edges = useMemo<Edge[]>(() => canvasEdges(asset).map((edge) => {
+    const invalid = errorEdgeKeys.has(edge.key);
+    return {
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      targetHandle: edge.targetHandle,
+      animated: invalid,
+      ...(invalid ? { style: { stroke: "#e5484d" } } : {}),
+    };
+  }), [asset, errorEdgeKeys]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     if (disabled) return;
@@ -77,27 +123,17 @@ export function ShaderNodeCanvas({ locale, asset, onAssetChange, disabled }: Pro
     setSelectedId(undefined);
   }, [asset, onAssetChange, selectedId]);
 
-  const diagnostics = useMemo(() => validateShaderGraphAsset(asset), [asset]);
-  // 降级检查 = 图 → 既有 WGSL 编译器 IR 的确定性检查(非管线编译;节点输入未补全时
-  // 引擎 tuple 抛错,如实报告为「待补全」,不伪报编译通过)。
-  const loweringNote = useMemo(() => {
-    if (!diagnostics.valid) return "";
-    try {
-      const result = lowerShaderGraphAsset(asset);
-      if (result.success) {
-        const nodeCount = result.stages?.[0]?.nodes.length ?? 0;
-        return tr(locale, ` · 降级通过(${nodeCount} 节点)`, ` · lowering ok (${nodeCount} nodes)`);
-      }
-      return tr(locale, ` · 降级未通过:${result.diagnostics[0]?.message ?? ""}`, ` · lowering failed: ${result.diagnostics[0]?.message ?? ""}`);
-    } catch (error) {
-      return tr(locale, ` · 输入待补全(${error instanceof Error ? error.message : "lowering error"})`,
-        ` · inputs incomplete (${error instanceof Error ? error.message : "lowering error"})`);
+  const errorCount = issues.filter(issue => issue.severity === "error").length;
+  const warningCount = issues.length - errorCount;
+  const statusText = issues.length === 0
+    ? tr(locale, "图有效", "Graph is valid")
+    : tr(locale, `${errorCount} 错误 · ${warningCount} 警告`, `${errorCount} errors · ${warningCount} warnings`);
+  const describeIssue = useCallback((issue: CanvasGraphDiagnostic) => {
+    if (issue.severity === "warning") {
+      return tr(locale, `输入待连接:${issue.message}`, `Input pending: ${issue.message}`);
     }
-  }, [asset, diagnostics.valid, locale]);
-  const errorText = diagnostics.diagnostics
-    .filter(d => d.severity === "error")
-    .map(d => d.message)
-    .join("；") || tr(locale, "图有效", "Graph is valid");
+    return issue.message;
+  }, [locale]);
   const bindings = useMemo(() => surfaceBindings(asset), [asset]);
 
   return (
@@ -115,14 +151,11 @@ export function ShaderNodeCanvas({ locale, asset, onAssetChange, disabled }: Pro
           }}
         >
           <option value="">{tr(locale, "添加节点…", "Add node…")}</option>
-          <option value="literal">{tr(locale, "常量", "Literal")}</option>
-          <option value="add">{tr(locale, "加法", "Add")}</option>
-          <option value="subtract">{tr(locale, "减法", "Subtract")}</option>
-          <option value="multiply">{tr(locale, "乘法", "Multiply")}</option>
-          <option value="divide">{tr(locale, "除法", "Divide")}</option>
-          <option value="min">{tr(locale, "最小值", "Min")}</option>
-          <option value="max">{tr(locale, "最大值", "Max")}</option>
-          <option value="property">{tr(locale, "材质属性", "Property")}</option>
+          {paletteGroups(locale).map(group => (
+            <optgroup key={group.category} label={group.label}>
+              {group.ops.map(op => <option key={op} value={op}>{nodeLabel(op, op)}</option>)}
+            </optgroup>
+          ))}
         </select>
         <button
           type="button"
@@ -131,10 +164,28 @@ export function ShaderNodeCanvas({ locale, asset, onAssetChange, disabled }: Pro
         >
           {tr(locale, "删除选中", "Delete selected")}
         </button>
-        <span className={`shader-node-canvas-status ${diagnostics.valid ? "ok" : "error"}`} role="status">
-          {errorText}{loweringNote}
+        <span className={`shader-node-canvas-status ${errorCount === 0 ? "ok" : "error"}`} role="status">
+          {statusText}
         </span>
       </div>
+      {issues.length > 0 && (
+        <ul className="shader-node-canvas-issues" role="alert">
+          {issues.map((issue, index) => (
+            <li key={`${issue.code}-${issue.path}-${index}`} className={issue.severity}>
+              <span className="shader-node-canvas-issue-severity">
+                {issue.severity === "error" ? tr(locale, "错误", "Error") : tr(locale, "警告", "Warning")}
+              </span>
+              <span className="shader-node-canvas-issue-text">{describeIssue(issue)}</span>
+              {issue.nodeId && (
+                <button type="button" className="shader-node-canvas-issue-locate"
+                  onClick={() => setSelectedId(issue.nodeId)}>
+                  {tr(locale, `定位 ${issue.nodeId}`, `Locate ${issue.nodeId}`)}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="shader-node-canvas-flow">
         <ReactFlow
           nodes={nodes}
@@ -155,7 +206,7 @@ export function ShaderNodeCanvas({ locale, asset, onAssetChange, disabled }: Pro
       </div>
       {selectedNode && !disabled && (
         <div className="shader-node-canvas-props">
-          <strong>{selectedNode.label}</strong>
+          <strong>{nodeLabel(selectedNode.op, selectedNode.label)}</strong>
           {selectedNode.category === "input" && selectedNode.id.startsWith("literal") && (
             <label>
               {tr(locale, "常量值", "Value")}

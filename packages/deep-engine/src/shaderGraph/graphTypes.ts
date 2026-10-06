@@ -13,10 +13,12 @@ export interface ShaderGraphPortMetadata {
 export interface ShaderGraphNodeMetadata {
   readonly op: ShaderNode["op"];
   readonly label: string;
-  readonly category: "input" | "math" | "texture" | "surface" | "stage";
+  readonly category: "input" | "math" | "texture" | "surface" | "stage" | "geometry";
   readonly stages: readonly ShaderStage[];
   readonly ports: readonly ShaderGraphPortMetadata[];
   readonly preview: "scalar" | "vector" | "color" | "none";
+  /** 边输入端口数;省略 = 该 op 不吃边输入(literal/property 等符号源)。 */
+  readonly inputCount?: number;
 }
 
 export interface ShaderGraphNodeInstance {
@@ -51,9 +53,14 @@ export interface ShaderGraphAssetV1 {
 
 export interface ShaderGraphDiagnostic {
   readonly severity: "error" | "warning";
-  readonly code: "unknown-node" | "duplicate-node" | "missing-edge" | "invalid-stage" | "cycle" | "budget";
+  readonly code: "unknown-node" | "duplicate-node" | "missing-edge" | "invalid-stage" | "cycle" | "budget"
+    | "missing-input" | "extra-input" | "dangling-output" | "duplicate-edge" | "lowering-error";
   readonly path: string;
   readonly message: string;
+  /** 归因:出错的节点 id(画布标红与错误面板定位消费)。 */
+  readonly nodeId?: string;
+  /** 归因:出错的边,键形如 `${to}#${input ?? 0}`(与画布边数据同键)。 */
+  readonly edgeKey?: string;
 }
 
 export interface ShaderGraphValidationResult {

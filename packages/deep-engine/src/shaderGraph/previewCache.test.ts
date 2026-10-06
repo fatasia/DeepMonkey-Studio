@@ -21,7 +21,8 @@ describe("预览降级结果缓存", () => {
     const previous = cache.current;
     const failed = cache.prepare(graph("normalize"));
     expect(failed.status).toBe("failed");
-    expect(failed.candidate.diagnostics[0]?.message).toContain("expects 1 inputs");
+    expect(failed.candidate.diagnostics[0]).toMatchObject({ code: "missing-input", nodeId: "value",
+      message: expect.stringContaining("expects 1 input, 0 connected") });
     expect(cache.current).toBe(previous);
   });
   it("首次失败不创建成功快照，清理后不复用旧结果", () => {

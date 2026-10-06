@@ -3,7 +3,8 @@ import type { ShaderGraphNodeInstance } from "@bim-studio/deep-engine/shader-gra
 
 type NodeValueType = ShaderGraphNodeInstance["type"];
 import { SHADER_GRAPH_SCHEMA_VERSION, shaderGraphNodeMetadata, shaderGraphNodeRegistry,
-  validateShaderGraphAsset } from "@bim-studio/deep-engine/shader-graph";
+  lowerShaderGraphAsset, validateShaderGraphAsset } from "@bim-studio/deep-engine/shader-graph";
+import type { ShaderGraphDiagnostic } from "@bim-studio/deep-engine/shader-graph";
 
 /** 画布节点 UI 态(位置不进资产合同;由画布本地保存)。 */
 export interface CanvasNodePosition { x: number; y: number }
@@ -42,6 +43,7 @@ export function addNode(asset: ShaderGraphAssetV1, op: string): { asset: ShaderG
     type: defaultTypeFor(meta ?? { ports: [] }),
     ...(op === "literal" ? { config: { value: 0 } } : {}),
     ...(op === "property" || op === "attribute" || op === "varying" ? { config: { name: "" } } : {}),
+    ...(op === "texture-sample" ? { config: { texture: "", sampler: "" } } : {}),
   };
   const nextStage: ShaderGraphStage = stage
     ? { ...stage, nodes: [...stage.nodes, node] }
@@ -100,13 +102,14 @@ export function disconnect(asset: ShaderGraphAssetV1, from: string, to: string, 
 }
 
 /** asset → ReactFlow 节点数据(位置由调用方本地态合并)。 */
-export function canvasNodes(asset: ShaderGraphAssetV1): Array<{ id: string; label: string; category: string; type: string; config: Readonly<Record<string, unknown>> | undefined }> {
+export function canvasNodes(asset: ShaderGraphAssetV1): Array<{ id: string; op: string; label: string; category: string; type: string; config: Readonly<Record<string, unknown>> | undefined }> {
   const registry = shaderGraphNodeRegistry();
   const metaByOp = new Map(registry.map(m => [m.op as string, m]));
   return fragmentStageOf(asset).nodes.map(node => {
     const meta = metaByOp.get(node.op);
     return {
       id: node.id,
+      op: node.op as string,
       label: meta?.label ?? node.op,
       category: meta?.category ?? "math",
       type: node.type,
@@ -115,14 +118,48 @@ export function canvasNodes(asset: ShaderGraphAssetV1): Array<{ id: string; labe
   });
 }
 
-/** asset → ReactFlow 边数据。 */
-export function canvasEdges(asset: ShaderGraphAssetV1): Array<{ id: string; source: string; target: string; targetHandle: string }> {
+/** asset → ReactFlow 边数据(key 与引擎诊断 edgeKey 同形:`${to}#${input ?? 0}`)。 */
+export function canvasEdges(asset: ShaderGraphAssetV1): Array<{ id: string; source: string; target: string; targetHandle: string; key: string }> {
   return fragmentStageOf(asset).edges.map((edge, index) => ({
     id: `edge-${index}`,
     source: edge.from,
     target: edge.to,
     targetHandle: edge.input === undefined ? "in" : `in-${edge.input}`,
+    key: `${edge.to}#${edge.input ?? 0}`,
   }));
+}
+
+/** 画布诊断条目:引擎校验+降级链透传,带节点/边归因。 */
+export type CanvasGraphDiagnostic = ShaderGraphDiagnostic;
+
+/**
+ * 图诊断组合:结构校验(错误+输入完备性警告)先行;图无错误时再跑降级,
+ * 降级失败的逐节点诊断(含 nodeId)透传——编译链不再以「输入待补全」粗粒度呈现。
+ */
+export function graphDiagnostics(asset: ShaderGraphAssetV1): readonly CanvasGraphDiagnostic[] {
+  const validation = validateShaderGraphAsset(asset);
+  if (!validation.valid) return validation.diagnostics;
+  try {
+    const lowered = lowerShaderGraphAsset(asset);
+    if (lowered.success) return validation.diagnostics;
+    // 降级失败的同因子 warning(同 code+nodeId)被错误覆盖,避免面板同一条缺输入出两行。
+    const superseded = new Set(lowered.diagnostics.map(d => `${d.code}:${d.nodeId ?? ""}`));
+    return [...validation.diagnostics.filter(d => !superseded.has(`${d.code}:${d.nodeId ?? ""}`)),
+      ...lowered.diagnostics];
+  } catch (error) {
+    return [...validation.diagnostics, { severity: "error", code: "lowering-error", path: "$",
+      message: error instanceof Error ? error.message : "lowering failed" }];
+  }
+}
+
+/** 出错节点 id 集合(画布标红消费);边错误由 edgeKey 在 canvasEdges(key) 上对拍。 */
+export function diagnosticNodeIds(diagnostics: readonly CanvasGraphDiagnostic[]): ReadonlySet<string> {
+  return new Set(diagnostics.flatMap(d => d.nodeId ? [d.nodeId] : []));
+}
+
+/** 出错边键集合(画布边标红消费,键形如 `${to}#${input ?? 0}`)。 */
+export function diagnosticEdgeKeys(diagnostics: readonly CanvasGraphDiagnostic[]): ReadonlySet<string> {
+  return new Set(diagnostics.flatMap(d => d.edgeKey ? [d.edgeKey] : []));
 }
 
 function defaultTypeFor(meta: { ports: readonly { direction: string; type: NodeValueType }[] }): NodeValueType {

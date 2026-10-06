@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ShaderGraphAssetV1 } from "@bim-studio/deep-engine/shader-graph";
 import {
   SURFACE_FIELD_KEYS, addNode, bindSurfaceField, canvasEdges, canvasNodes, connect, disconnect,
-  emptyShaderGraph, fragmentStageOf, loadShaderGraphDraft, registryByCategory, removeNode,
+  diagnosticEdgeKeys, diagnosticNodeIds, emptyShaderGraph, fragmentStageOf, graphDiagnostics,
+  loadShaderGraphDraft, registryByCategory, removeNode,
   resolveShaderGraphDraft, saveShaderGraphDraft, surfaceBindings, updateNodeConfig,
   type KeyValueStore,
 } from "./shaderNodeCanvasModel.js";
@@ -18,9 +19,29 @@ function emptyAsset(): ShaderGraphAssetV1 {
 }
 
 describe("shader node canvas model", () => {
-  it("registry groups 17 ops into five categories", () => {
+  it("registry groups all ops into six categories including the geometry family", () => {
     const groups = registryByCategory();
-    expect(Object.keys(groups).sort()).toEqual(["input", "math", "stage", "texture"]);
+    expect(Object.keys(groups).sort()).toEqual(["geometry", "input", "math", "stage", "texture"]);
+    expect(groups.geometry).toEqual(["cross", "scale", "transform-direction", "transform-position"]);
+    expect(groups.math!.length).toBeGreaterThanOrEqual(20);
+  });
+
+  it("addNode defaults texture-sample config and fixed output types from the registry ports", () => {
+    const sampler = addNode(emptyAsset(), "texture-sample");
+    expect(canvasNodes(sampler.asset)[0]!.config).toEqual({ texture: "", sampler: "" });
+    const cross = addNode(emptyAsset(), "cross");
+    expect(canvasNodes(cross.asset)[0]).toMatchObject({ op: "cross", type: "vec3f" });
+    const position = addNode(emptyAsset(), "transform-position");
+    expect(canvasNodes(position.asset)[0]).toMatchObject({ op: "transform-position", type: "vec4f" });
+  });
+
+  it("canvasNodes exposes the op and canvasEdges carry engine-compatible diagnostic keys", () => {
+    let asset = addNode(emptyAsset(), "one-minus").asset;
+    asset = addNode(asset, "literal").asset;
+    const ids = canvasNodes(asset).map(n => n.id);
+    asset = connect(asset, ids[1]!, ids[0]!, 0);
+    expect(canvasNodes(asset).map(n => n.op)).toEqual(["one-minus", "literal"]);
+    expect(canvasEdges(asset)[0]).toMatchObject({ source: ids[1], target: ids[0], key: `${ids[0]}#0` });
   });
 
   it("addNode appends to fragment stage with deterministic ids and literal default config", () => {
@@ -167,5 +188,37 @@ describe("shader graph draft persistence", () => {
     expect(resolveShaderGraphDraft(store, "missing")).toEqual(emptyShaderGraph());
     expect(() => saveShaderGraphDraft(undefined, "k", emptyShaderGraph())).not.toThrow();
     expect(store.map.size).toBe(0);
+  });
+});
+
+/** 诊断组合:错误/警告分层并归因到节点与边;降级链失败透传 nodeId,不再只剩「输入待补全」。 */
+describe("shader canvas graph diagnostics", () => {
+  it("surfaces incomplete inputs as attributed errors while the draft itself stays loadable", () => {
+    let asset = addNode(emptyAsset(), "smoothstep").asset;
+    const issues = graphDiagnostics(asset);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ severity: "error", code: "missing-input", nodeId: "smoothstep-1" });
+    expect(diagnosticNodeIds(issues).has("smoothstep-1")).toBe(true);
+    expect(diagnosticEdgeKeys(issues).size).toBe(0);
+  });
+
+  it("passes lowering failures through with the offending node id and no duplicate rows", () => {
+    let asset = addNode(emptyAsset(), "add").asset;
+    const nodeId = canvasNodes(asset)[0]!.id;
+    const literal = addNode(asset, "literal");
+    asset = literal.asset;
+    asset = connect(asset, canvasNodes(asset)[1]!.id, nodeId, 1);
+    const issues = graphDiagnostics(asset);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ severity: "error", code: "missing-input", nodeId });
+    expect(diagnosticNodeIds(issues)).toEqual(new Set([nodeId]));
+  });
+
+  it("empty graphs and complete drafts report no diagnostics", () => {
+    expect(graphDiagnostics(emptyShaderGraph())).toEqual([]);
+    let asset = addNode(emptyShaderGraph(), "literal").asset;
+    const nodeId = canvasNodes(asset)[0]!.id;
+    asset = bindSurfaceField(asset, "metallic", nodeId);
+    expect(graphDiagnostics(asset)).toEqual([]);
   });
 });

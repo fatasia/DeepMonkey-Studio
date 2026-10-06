@@ -7,6 +7,8 @@ export interface ShaderGraphEditorDiagnostic extends Omit<ShaderDiagnostic, "cod
   readonly nodeId?: string;
   readonly portId?: string;
   readonly edgeId?: string;
+  /** 图级边归因键(`${to}#${input ?? 0}`),与 graphValidation/画布同形。 */
+  readonly edgeKey?: string;
 }
 
 /** 增量式编辑器诊断存储；编译器报告保持不可变。 */

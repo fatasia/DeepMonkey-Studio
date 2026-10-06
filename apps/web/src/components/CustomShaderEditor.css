@@ -52,3 +52,13 @@
 .shader-node-canvas-bindings button { flex: none; min-width: 20px; min-height: 20px; padding-inline: 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-2); color: var(--text-muted); font-size: 11px; line-height: 1; cursor: pointer; }
 .shader-node-canvas-bindings button:hover { color: var(--danger); border-color: var(--danger); }
 .shader-node-canvas-bindrow { display: flex; gap: 6px; }
+/* 诊断面:错误面板列表 + 画布错误节点/边标红(引擎 nodeId/edgeKey 归因,全部令牌派生) */
+.shader-node-canvas-issues { list-style: none; display: grid; gap: 3px; max-height: 96px; margin: 0; padding: 6px 8px; overflow-y: auto; border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line-subtle)); border-radius: 6px; font-size: 11px; }
+.shader-node-canvas-issues li { display: flex; align-items: baseline; gap: 6px; overflow-wrap: anywhere; }
+.shader-node-canvas-issues li.warning .shader-node-canvas-issue-severity { color: var(--warning); }
+.shader-node-canvas-issues li.error .shader-node-canvas-issue-severity { color: var(--danger); }
+.shader-node-canvas-issue-severity { flex: none; font-weight: 650; }
+.shader-node-canvas-issue-text { min-width: 0; flex: 1; color: var(--text-muted); }
+.shader-node-canvas-issue-locate { flex: none; min-height: 20px; padding-inline: 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-2); color: var(--text-muted); font-size: 11px; cursor: pointer; }
+.shader-node-canvas-issue-locate:hover, .shader-node-canvas-issue-locate:focus-visible { color: var(--text-strong); border-color: var(--line-strong); }
+.shader-node-canvas .react-flow__node.shader-node-invalid > div { border-color: var(--danger); box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 40%, transparent); }

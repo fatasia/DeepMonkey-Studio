@@ -134,6 +134,11 @@ function expression(node: ShaderNode, nodes: ReadonlyMap<string, ShaderNode>, as
   if (node.op === "normalize") return `normalize(${input(0)})`;
   if (node.op === "negate") return `-${input(0)}`;
   if (node.op === "saturate") return `clamp(${input(0)}, ${splat(node.type, "0.0")}, ${splat(node.type, "1.0")})`;
+  if (node.op === "one-minus") return `${splat(node.type, "1.0")} - ${input(0)}`;
+  if (node.op === "abs") return `abs(${input(0)})`;
+  if (node.op === "floor") return `floor(${input(0)})`;
+  if (node.op === "fract") return `fract(${input(0)})`;
+  if (node.op === "smoothstep") return `smoothstep(${input(0)}, ${input(1)}, ${input(2)})`;
   if (node.op === "scale") return `${input(0)} * ${splat(node.type, input(1))}`;
   if (node.op === "transform-direction") return `${input(0)} * ${input(1)}`;
   if (node.op === "transform-position") return `${input(0)} * vec4f(${input(1)}, 1.0)`;

@@ -66,6 +66,10 @@ function checkNode(
     if (!inputs[0] || !vector.has(node.type) || inputs[0].type !== node.type) issue(diagnostics, "type-mismatch", path, "normalize requires and produces the same vector type.");
   } else if (node.op === "negate" || node.op === "saturate") {
     if (!numeric.has(node.type) || inputs[0]?.type !== node.type) issue(diagnostics, "type-mismatch", path, `${node.op} requires and produces the same scalar or vector type.`);
+  } else if (node.op === "one-minus" || node.op === "abs" || node.op === "floor" || node.op === "fract") {
+    if (!numeric.has(node.type) || inputs[0]?.type !== node.type) issue(diagnostics, "type-mismatch", path, `${node.op} requires and produces the same scalar or vector type.`);
+  } else if (node.op === "smoothstep") {
+    if (!numeric.has(node.type) || inputs.some((input) => input && input.type !== node.type)) issue(diagnostics, "type-mismatch", path, "smoothstep requires equal edge and value types.");
   } else if (node.op === "scale") {
     if (!vector.has(node.type) || inputs[0]?.type !== node.type || inputs[1]?.type !== "f32") issue(diagnostics, "type-mismatch", path, "scale requires a vector and an f32 factor.");
   } else if (node.op === "cross") {
