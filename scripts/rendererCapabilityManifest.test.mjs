@@ -19,7 +19,11 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
+// contracts 清单体量门拆分(2026-10-05):manifest 对 entries 子模块引入了运行时
+// `.js` 相对导入,而本文件头部 hook 只对其后的**动态** import 生效(静态边在
+// 模块链接期先于 register() 解析,注释见上)。故与下方 loadSelfCheck 同法改为
+// hook 注册后的动态导入;全部断言代码一字未动。
+const {
   RENDERER_CAPABILITY_CONTRACT_VERSION,
   RENDERER_CAPABILITY_IDS,
   RENDERER_CAPABILITY_MANIFEST,
@@ -31,7 +35,7 @@ import {
   rendererCapabilityDeclarationIssues,
   rendererCapabilityEvidencePath,
   rendererCapabilityManifestJson,
-} from "../packages/contracts/src/rendererCapabilityManifest.ts";
+} = await import("../packages/contracts/src/rendererCapabilityManifest.ts");
 
 /**
  * deep-engine TS 自检导出(跨包动态导入;该模块导入闭包无 bare 依赖,
