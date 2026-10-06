@@ -127,6 +127,9 @@ export class PbrRenderer {
   readonly rtShadows: RtShadowFrameController | undefined;
   /** B3 RT 阴影自动选路状态(滞回冷却计数;与 rtShadows 同生命周期,未接选路为 undefined)。 */
   readonly rtShadowScheduling: import("./rtShadowScheduling.js").RtShadowSchedulingState | undefined;
+  /** M2 供给收口(2026-10-06):已接入 shadowState 的 mask 视图 epoch;帧钩子按
+   *  rtShadows.maskViewEpoch 差分换装(仅 resize/staging 时重建 group(2) bind group)。 */
+  rtShadowMaskEpoch = 0;
   private rtShadowsFallbackReason: string | undefined;
   private readonly frameCapture: PbrFrameCapture | undefined;
   private lastFrameReadback: Promise<readonly PbrFrameReadbackResult[]> | undefined;
@@ -257,8 +260,12 @@ export class PbrRenderer {
       if (options.rayTracedShadowScene !== undefined) this.stageRayTracedShadowScene(options.rayTracedShadowScene);
       else this.rtShadowsFallbackReason = "scene-not-supplied";
     }
-    const rtShadowMaskView = this.rtShadows !== undefined && this.rtShadows.sceneStaged
-      ? this.rtShadows.maskView : undefined;
+    // RT 管线变体的 group(2) binding(3) 槽恒装配:未 staging 时供占位 1×1 mask
+    // (值 1.0 = 可见,fail-closed 方向;features 快照 RT 位未就绪时已压 0,级联生效)。
+    // 2026-10-06 供给收口:场景允许"先建后 stage"——构造期 sceneStaged=false 曾与
+    // 管线变体失配直接抛错(渲染器整体起不来);真实 mask 视图由 stageRayTracedShadowScene
+    // 与帧钩子按 maskViewEpoch 换装进 shadowState。
+    const rtShadowMaskView = this.rtShadows !== undefined ? this.rtShadows.maskView : undefined;
     this.shadowState = new PbrShadowState(session, pipelines, options.shadows, rtShadowMaskView);
     this.optionsExactShadowCascade = options.shadows?.exactProfile?.cascadeCount;
     // B1 Brief-VSM:虚拟档资源(opt-in shadowMode="virtual";构造失败 fail-closed 回
@@ -333,6 +340,14 @@ export class PbrRenderer {
       this.rtShadowsFallbackReason = undefined;
       if (!this.features.rayTracedShadows) {
         this.features = Object.freeze({ ...this.features, rayTracedShadows: true });
+      }
+      // 供给收口(2026-10-06):真实 mask 视图换装进 group(2)(构造期经占位视图装配;
+      // 后置 staging 在此接入)。构造期直供场景的路径 shadowState 尚未构造,由构造器
+      // 尾部的 PbrShadowState 初建按当前 maskView 装配,不在此重复。
+      const shadowState = this.shadowState as PbrShadowState | undefined;
+      if (shadowState !== undefined && this.pipelines?.rayTracedShadowMaskBinding === true) {
+        shadowState.setRayTracedShadowMaskView(controller.maskView);
+        this.rtShadowMaskEpoch = controller.maskViewEpoch;
       }
     } else {
       this.rtShadowsFallbackReason = controller.disabled?.reason ?? "scene-not-staged";

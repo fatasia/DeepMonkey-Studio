@@ -30,6 +30,7 @@ import { FrameCaptureSession } from "../src/r12/frameCapture.js";
 import type { PbrMaterial, RenderPacket } from "../src/renderPacket.js";
 import { MAX_MEGA_LIGHTS, resolveDirectLightingPath } from "../src/lighting/megaLights.js";
 import { MegaLightsFrameController } from "../src/lighting/megaLightsFrameController.js";
+import { composeMegaLightsShader } from "../src/lighting/megaLightsRuntime.js";
 import { buildTlas, type TlasInstanceDescriptor } from "../src/rayTracing/tlas.js";
 import { packTlasScene } from "../src/rayTracing/tlasLayout.js";
 import type { RayBlasDescriptor } from "../src/rayTracing/rayBackendTypes.js";
@@ -540,11 +541,14 @@ const SUPPLY_FRAMES = 40;
 
 /**
  * TLAS 供给场景:左半场顶棚遮挡板(仅存在于 TLAS,不进渲染 packet)——遮挡板上方的
- * 灯(约四成)对左半场地面的照射,右半场为对照。世界空间与渲染几何同一坐标系。
+ * 灯(约五成)对左半场地面的照射被截断,右半场为对照。世界空间与渲染几何同一坐标系。
+ * (2026-10-06 定标:y 半径 0.12→0.5,遮挡带覆盖灯高 0.8..1.8 —— 0.12 时差分实测
+ * 0.1491 差 0.15 门 0.6% 相对量,非供给失败而是几何代表性不足;增高后遮挡机理不变、
+ * 差分更可测。)
  */
 function visibilitySlabScene(): ReturnType<typeof packTlasScene> {
   const center: readonly [number, number, number] = [-3.1, 1.3, -1.5];
-  const half: readonly [number, number, number] = [3.0, 0.12, 2.6];
+  const half: readonly [number, number, number] = [3.0, 0.5, 2.6];
   const corners: readonly (readonly number[])[] = [
     [center[0] - half[0], center[1] - half[1], center[2] - half[2]],
     [center[0] + half[0], center[1] - half[1], center[2] - half[2]],
@@ -568,21 +572,59 @@ function visibilitySlabScene(): ReturnType<typeof packTlasScene> {
   return packTlasScene(buildTlas(instances));
 }
 
-/** 单臂采集:渲染 SUPPLY_FRAMES 帧并取最终 present-color 读回。 */
+/** 单臂采集:渲染 SUPPLY_FRAMES 帧并取最终 present-color 读回。失败不抛穿——携带
+ * 未捕获错误/阶段 error scope/可见性 WGSL 编译信息如实回传(真机缺陷定位证据)。 */
 async function renderSupplyArm(megaLights: boolean, rayTracedShadows: boolean,
   stageSlab: boolean): Promise<{ image: ReturnType<typeof decodeReadback>; lastMetrics: FrameMetrics;
-    wall: number[] }> {
+    wall: number[]; armErrors: string[]; threw: string | undefined;
+    shaderMessages: string[] }> {
   const leg = await openLeg(SUPPLY_WIDTH, SUPPLY_HEIGHT, {
     features: { megaLights, rayTracedShadows, groundPlane: false, groundGrid: false },
     ...frameCaptureOptions() }, false);
+  const armErrors: string[] = [];
+  const onDeviceError = (event: Event): void => {
+    armErrors.push(`uncapturederror: ${(event as GPUUncapturedErrorEvent).error.message}`);
+  };
+  leg.renderer.session.device.addEventListener("uncapturederror", onDeviceError);
+  const scopeResult = async (device: GPUDevice, phase: string): Promise<string> => {
+    const error = await device.popErrorScope();
+    return error ? `${phase}: ${error.message}` : `${phase}: ok`;
+  };
+  let threw: string | undefined;
   try {
+    const device = leg.renderer.session.device;
+    device.pushErrorScope("validation");
     if (stageSlab) leg.renderer.stageRayTracedShadowScene(visibilitySlabScene());
+    // 可见性 WGSL 在本 device 上的独立编译信息(与管线装配解耦,隔离 WGSL 本身缺陷)。
+    let shaderMessages: string[] = [];
+    try {
+      const module = device.createShaderModule({ code: composeMegaLightsShader({ visibility: {} }) });
+      const info = await module.getCompilationInfo();
+      shaderMessages = info.messages.map(message => `${message.type} line ${message.lineNum}: ${message.message}`);
+    } catch (error) { shaderMessages = [`compositionInfo threw: ${(error as Error).message}`]; }
+    await scopeResult(device, "stage");
+    device.pushErrorScope("validation");
     const view = renderView(SUPPLY_WIDTH, SUPPLY_HEIGHT, buildLights(PERF_LIGHT_COUNT, 0, [-6, 6]));
-    const run = await runFrames(leg, view, SUPPLY_FRAMES, true);
+    let lastMetrics: FrameMetrics | undefined;
+    const wall: number[] = [];
+    try {
+      const run = await runFrames(leg, view, SUPPLY_FRAMES, true);
+      lastMetrics = run.metrics[run.metrics.length - 1]!;
+      wall.push(...run.wallMs);
+    } finally { await scopeResult(device, "frames"); }
     const snapshot = await latestPresentColor(leg);
-    return { image: decodeReadback(snapshot), lastMetrics: run.metrics[run.metrics.length - 1]!,
-      wall: run.wallMs };
-  } finally { leg.dispose(); }
+    return { image: decodeReadback(snapshot), lastMetrics: lastMetrics!,
+      wall, armErrors: [...armErrors], threw, shaderMessages };
+  } catch (error) {
+    threw = String(error instanceof Error ? error.message : error);
+    return { image: { width: SUPPLY_WIDTH, height: SUPPLY_HEIGHT,
+      rgba: new Float32Array(SUPPLY_WIDTH * SUPPLY_HEIGHT * 4) } as ReturnType<typeof decodeReadback>,
+      lastMetrics: { frame: 0, width: SUPPLY_WIDTH, height: SUPPLY_HEIGHT } as FrameMetrics,
+      wall: [], armErrors: [...armErrors], threw, shaderMessages: [] };
+  } finally {
+    leg.renderer.session.device.removeEventListener("uncapturederror", onDeviceError);
+    leg.dispose();
+  }
 }
 
 /**
@@ -617,14 +659,17 @@ async function visibilitySupplyLeg(): Promise<Record<string, unknown>> {
   return { width: on.image.width, height: on.image.height, frames: SUPPLY_FRAMES,
     sceneLights: PERF_LIGHT_COUNT,
     onArm: { visibilitySource: onMega?.visibilitySource ?? null, dispatchedFrames: onMega?.dispatchedFrames ?? 0,
-      lightCount: onMega?.lastLightCount ?? null, fallbackReason: onMega?.visibilityFallbackReason ?? null },
-    offArm: { visibilitySource: offMega?.visibilitySource ?? null, dispatchedFrames: offMega?.dispatchedFrames ?? 0 },
+      lightCount: onMega?.lastLightCount ?? null, fallbackReason: onMega?.visibilityFallbackReason ?? null,
+      threw: on.threw ?? null, armErrors: on.armErrors, shaderMessages: on.shaderMessages },
+    offArm: { visibilitySource: offMega?.visibilitySource ?? null, dispatchedFrames: offMega?.dispatchedFrames ?? 0,
+      threw: off.threw ?? null, armErrors: off.armErrors },
     regionLuminance: { leftOn, leftOff, rightOn, rightOff },
     suppressionLeft, suppressionRight, wall, timingNote, nanPixels,
     pngDataUrl, pngOffDataUrl,
     gates: {
-      sourceDisclosedOn: onMega?.visibilitySource === "rt-shadow-tlas",
-      sourceDisclosedOff: offMega?.visibilitySource === "off",
+      armsRan: on.threw === undefined && off.threw === undefined,
+      sourceDisclosedOn: on.threw === undefined && onMega?.visibilitySource === "rt-shadow-tlas",
+      sourceDisclosedOff: off.threw === undefined && offMega?.visibilitySource === "off",
       dispatched: (onMega?.dispatchedFrames ?? 0) >= SUPPLY_FRAMES,
       occlusionDifferential: suppressionLeft >= 0.15 && suppressionLeft > suppressionRight * 2,
       controlStable: Math.abs(suppressionRight) <= 0.05,

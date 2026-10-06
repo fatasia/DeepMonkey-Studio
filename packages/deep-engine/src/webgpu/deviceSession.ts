@@ -96,13 +96,15 @@ export class DeviceSession {
     const adapter = await abortable(gpu.requestAdapter({ powerPreference: "high-performance" }), signal);
     if (!adapter) throw new Error("No WebGPU adapter is available.");
     // B1 Brief-VSM:group 2 增补(页表 storage ×2 + 页 atlas 采样纹理 ×1)后,主片元
-    // 布局峰值为 10 storage / 17 sampled;layered 材质峰值 19 sampled。按需取并集、
+    // 布局峰值为 10 storage / 18 sampled(2026-10-06 M2 胜者可见性供给收口:RT 构建档
+    // 的 group(2) mask 槽把片元采样纹理推到 18,17 为级联档峰值 —— Dawn 实测超限即
+    // 毒化全部主管线);layered 材质峰值 19 sampled。按需取并集、
     // clamp 到 adapter 上限(requestDevice 不接受超上限值),适配器不足时由管线布局
     // 验证显式失败(fail-closed,不静默降级),虚拟档回退级联路径见 PbrShadowState。
     const desiredLimits: Record<string, number> = {};
     if (capabilities?.extendedShadowBindings === true) {
       desiredLimits.maxStorageBuffersPerShaderStage = 10;
-      desiredLimits.maxSampledTexturesPerShaderStage = 17;
+      desiredLimits.maxSampledTexturesPerShaderStage = 18;
       desiredLimits.maxBindGroups = 5;
     }
     if (capabilities?.layeredMaterials === true) {

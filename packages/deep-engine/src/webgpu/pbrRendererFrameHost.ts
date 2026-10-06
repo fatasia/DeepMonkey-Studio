@@ -63,6 +63,8 @@ export interface PbrRendererFrameHost {
   readonly rtShadows: import("./rtShadowFrame.js").RtShadowFrameController | undefined;
   /** B3 RT 阴影自动选路状态(与 rtShadows 同生命周期;undefined = 未接选路)。 */
   readonly rtShadowScheduling: import("./rtShadowScheduling.js").RtShadowSchedulingState | undefined;
+  /** M2 供给收口(2026-10-06):已接入 shadowState 的 mask 视图 epoch(与 PbrRenderer 同名字段)。 */
+  rtShadowMaskEpoch: number;
   /**
    * B2 MegaLights M2 万灯 RIS 生产 dispatch(opt-in features.megaLights):帧编排内
    * 懒构造(PbrRenderer 构造器零改动),默认 undefined = 既有帧逐位零变化;路径

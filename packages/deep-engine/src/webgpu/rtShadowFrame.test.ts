@@ -82,12 +82,13 @@ describe("invertColumnMajor4x4", () => {
 });
 
 describe("RtShadowFrameController resource contract", () => {
-  it("allocates a 1×1 visible placeholder mask with storage+texture+copy-src usage", () => {
+  it("allocates a 1×1 visible placeholder mask with storage+texture+copy-src+copy-dst usage", () => {
     const stub = deviceStub();
     const controller = new RtShadowFrameController(sessionStub(stub.device));
     expect(stub.textures).toHaveLength(1);
     expect(stub.textures[0]!.width).toBe(1); expect(stub.textures[0]!.height).toBe(1);
-    expect(stub.textures[0]!.usage).toBe(0x01 | 0x04 | 0x08);
+    // COPY_DST 为占位 writeTexture 必需(缺失即真机 uncaptured validation error)。
+    expect(stub.textures[0]!.usage).toBe(0x01 | 0x02 | 0x04 | 0x08);
     // 占位值 1.0(可见):开关位误开也不产生黑影(fail-closed 方向)。
     expect(stub.device.queue.writeTexture).toHaveBeenCalledWith({ texture: stub.textures[0] },
       expect.any(Float32Array), { bytesPerRow: 4, rowsPerImage: 1 }, [1, 1]);

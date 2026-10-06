@@ -22,9 +22,11 @@ import type { TlasPackedScene } from "../rayTracing/tlasLayout.js";
 import type { DeviceSession } from "./deviceSession.js";
 
 const MASK_FORMAT: GPUTextureFormat = "r32float";
-// GPUTextureUsage.COPY_SRC|TEXTURE_BINDING|STORAGE_BINDING = 0x01|0x04|0x08(数字字面量
-// 避开模块顶层 GPU* 全局求值 —— node 消费链无 WebGPU 全局,同 shadowRayFramePass 先例)。
-const MASK_USAGE = 0x01 | 0x04 | 0x08;
+// GPUTextureUsage.COPY_SRC|COPY_DST|TEXTURE_BINDING|STORAGE_BINDING = 0x01|0x02|0x04|0x08
+// (数字字面量避开模块顶层 GPU* 全局求值 —— node 消费链无 WebGPU 全局,同 shadowRayFramePass
+// 先例)。COPY_DST 为占位 mask 的 writeTexture 必需(2026-10-06 真机收口:缺失即
+// uncaptured validation error → DeviceSession.hasErrors,帧循环 fail)。
+const MASK_USAGE = 0x01 | 0x02 | 0x04 | 0x08;
 /** 全实例射线掩码(与 TLAS 实例 mask 按位与;0xffffffff = 不按掩码跳过)。 */
 const DEFAULT_RAY_MASK = 0xffffffff;
 
@@ -116,6 +118,8 @@ export class RtShadowFrameController {
 
   get maskView(): GPUTextureView { return this.maskView_!; }
   get sceneStaged(): boolean { return this.sceneCommitted; }
+  /** mask 视图代次(ensureMask 重建即 +1;帧宿主按差分把新视图换装进 shadowState)。 */
+  maskViewEpoch = 0;
   /** 当前已staging的 TLAS 打包场景(RT 反射通道场景复用;未 staging 为 undefined)。 */
   get packedScene(): import("../rayTracing/tlasLayout.js").TlasPackedScene | undefined { return this.pass?.packed; }
 
@@ -192,6 +196,7 @@ export class RtShadowFrameController {
     });
     this.maskTexture = texture;
     this.maskView_ = texture.createView({ dimension: "2d" });
+    this.maskViewEpoch += 1;
   }
 
   private assertUsable(operation: string): void {
