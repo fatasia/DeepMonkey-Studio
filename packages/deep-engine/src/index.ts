@@ -203,6 +203,7 @@ export * from "./packagePurity.js";
 export * from "./residencyDiagnostics.js";
 export * from "./assetBakePlan.js";
 export * from "./assetBakeResidency.js";
+export * from "./assetClusterLodIngest.js";
 export * from "./geometry/index.js";
 export * from "./spatial/index.js";
 export * from "./scene/index.js";
