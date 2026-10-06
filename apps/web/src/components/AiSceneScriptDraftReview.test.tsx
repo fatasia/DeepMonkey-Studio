@@ -13,8 +13,8 @@ const intelligence: SceneScriptIntelligenceContext = {
 };
 
 describe("AiSceneScriptDraftReview", () => {
-  it("shows risk, static gates and a confirm-to-editor action without a run action", () => {
-    const draft = createAiSceneScriptDraft({ intent: "定位并播放动画", sceneId: "scene-1", target, intelligence });
+  it("shows risk, static gates and a confirm-to-editor action without a run action", async () => {
+    const draft = await createAiSceneScriptDraft({ intent: "定位并播放动画", sceneId: "scene-1", target, intelligence });
     const html = renderToStaticMarkup(
       <AiSceneScriptDraftReview locale="zh-CN" draft={draft} onCancel={vi.fn()} onInsertIntoEditor={vi.fn()} />,
     );
@@ -27,8 +27,8 @@ describe("AiSceneScriptDraftReview", () => {
     expect(html).not.toContain("确认并运行");
   });
 
-  it("disables insertion for an ambiguous draft", () => {
-    const draft = createAiSceneScriptDraft({ intent: "显示后隐藏", sceneId: "scene-1", target, intelligence });
+  it("disables insertion for an ambiguous draft", async () => {
+    const draft = await createAiSceneScriptDraft({ intent: "显示后隐藏", sceneId: "scene-1", target, intelligence });
     const html = renderToStaticMarkup(
       <AiSceneScriptDraftReview locale="zh-CN" draft={draft} onCancel={vi.fn()} onInsertIntoEditor={vi.fn()} />,
     );

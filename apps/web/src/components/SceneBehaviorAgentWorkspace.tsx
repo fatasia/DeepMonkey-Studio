@@ -110,7 +110,7 @@ export function SceneBehaviorAgentWorkspace(props: Props) {
   async function generateDraft(request: ScriptAssistantRequest, sampleIntent?: string) {
     const intent = (sampleIntent ?? prompt).trim();
     if (!intent || !props.sceneId || !props.target || !props.draft) return;
-    const direct = createAiSceneScriptDraft({
+    const direct = await createAiSceneScriptDraft({
       intent,
       sceneId: props.sceneId,
       target: props.target,
@@ -138,7 +138,7 @@ export function SceneBehaviorAgentWorkspace(props: Props) {
         setModelEvidence(toModelEvidence(response));
         return;
       }
-      const reviewed = createAiSceneScriptDraft({
+      const reviewed = await createAiSceneScriptDraft({
         intent: normalized.normalizedIntent,
         sceneId: props.sceneId,
         target: props.target,

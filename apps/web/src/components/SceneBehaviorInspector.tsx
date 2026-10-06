@@ -4,7 +4,7 @@ import type { SceneCapability } from "@bim-studio/scene-sdk";
 import { AlertTriangle, Box, Code2, Database, LayoutPanelTop, Radio, Search, Sparkles } from "lucide-react";
 import type { SceneBehaviorManagerEntry } from "../behavior/SceneBehaviorManager";
 import { translate as tr, type AppLocale } from "../i18n";
-import { applySceneScriptDeclarations, type SceneScriptAnalysis } from "../studio/sceneScriptAnalysis";
+import type { SceneScriptAnalysis } from "../studio/sceneScriptAnalysis";
 import type { SceneScriptIntelligenceContext, SceneScriptTarget } from "../studio/sceneScriptContext";
 import { capabilitySnippet, runtimeStatus, safeIdentifier, sceneScriptResourceSnippet } from "./sceneBehaviorPanelModel";
 
@@ -97,7 +97,7 @@ export function SceneBehaviorInspector(props: Props) {
         ? tr(props.locale, `已识别 ${props.analysis.lifecycle.length} 个生命周期，${props.analysis.capabilities.length} 类场景能力。`, `${props.analysis.lifecycle.length} lifecycle hooks and ${props.analysis.capabilities.length} SDK capabilities detected.`)
         : tr(props.locale, "请先添加 onStart、onUpdate 等生命周期函数。", "Add an onStart, onUpdate, or another lifecycle function.")}</p>
       {declarationGap
-        ? <button type="button" onClick={() => props.onDraftChange(applySceneScriptDeclarations(props.draft, props.analysis!))}><Sparkles size={11} />{tr(props.locale, "一键补齐声明", "Complete declarations")}</button>
+        ? <button type="button" onClick={() => { void import("../studio/sceneScriptAnalysis").then(({ applySceneScriptDeclarations }) => props.onDraftChange(applySceneScriptDeclarations(props.draft, props.analysis!))); }}><Sparkles size={11} />{tr(props.locale, "一键补齐声明", "Complete declarations")}</button>
         : props.analysis.lifecycle.length > 0 && <small>{tr(props.locale, "代码与生命周期、能力、权限声明已对齐。", "Code and lifecycle, capability, and permission declarations are aligned.")}</small>}</>}
     </section>
 

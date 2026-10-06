@@ -7,7 +7,6 @@ import { translate as tr } from "../i18n";
 import type { SceneBehaviorManagerEntry } from "../behavior/SceneBehaviorManager";
 import { ProfessionalCodeEditor, type CodeInsertRequest } from "./ProfessionalCodeEditor";
 import type { SceneScriptIntelligenceContext, SceneScriptTarget } from "../studio/sceneScriptContext";
-import { analyzeSceneScript } from "../studio/sceneScriptAnalysis";
 import { SceneBehaviorAgentWorkspace, type SceneBehaviorAiMode } from "./SceneBehaviorAgentWorkspace";
 import { BehaviorEditorToolbar } from "./BehaviorEditorToolbar";
 import { AuthorBehaviorDebugNotice } from "./AuthorBehaviorDebugNotice";
@@ -179,7 +178,22 @@ export function SceneBehaviorPanel(props: {
   const [runScope, setRunScope] = useState<AuthorBehaviorScope>("current");
   const savingRef = useRef(false);
   const runSequence = useRef(0);
-  const analysis = useMemo(() => (draft ? analyzeSceneScript(draft.code, draft, props.intelligence) : undefined), [draft, props.intelligence]);
+  // 脚本静态分析依赖 TypeScript 编译器(~3.4MB minified)。为不把编译器打进行为面板
+  // chunk,分析模块在首次出现草稿时按需动态加载;加载前诊断区为空(与"无草稿"一致),
+  // 模块缓存后同步求值,行为与原先一致。
+  const [analysisModule, setAnalysisModule] = useState<typeof import("../studio/sceneScriptAnalysis")>();
+  useEffect(() => {
+    if (!draft || analysisModule) return;
+    let cancelled = false;
+    void import("../studio/sceneScriptAnalysis").then((module) => {
+      if (!cancelled) setAnalysisModule(module);
+    });
+    return () => { cancelled = true; };
+  }, [draft, analysisModule]);
+  const analysis = useMemo(
+    () => (analysisModule && draft ? analysisModule.analyzeSceneScript(draft.code, draft, props.intelligence) : undefined),
+    [analysisModule, draft, props.intelligence],
+  );
   const editorDiagnostics = useMemo(() => {
     const diagnostics = [...(analysis?.issues ?? [])];
     if (runtime?.diagnostics.lastError) {

@@ -6,7 +6,7 @@ import {
   type SceneCommand,
 } from "@bim-studio/scene-sdk";
 import { authorizeSceneCommands } from "../behavior/sceneCommandPolicy";
-import { analyzeSceneScript, applySceneScriptDeclarations, type SceneScriptAnalysis } from "../studio/sceneScriptAnalysis";
+import type { SceneScriptAnalysis } from "../studio/sceneScriptAnalysis";
 import type { SceneScriptIntelligenceContext, SceneScriptTarget } from "../studio/sceneScriptContext";
 import { createEvidenceFingerprint, EVIDENCE_FINGERPRINT_ALGORITHM } from "@bim-studio/studio-core";
 import {
@@ -73,9 +73,13 @@ const EMPTY_DIFF = { summary: "没有生成可应用差异", addedLines: 0, remo
 /**
  * 把自然语言意图编译为有限动作模板。这里不执行脚本，也不接受任意 API 名称；
  * 草稿必须同时通过脚本分析、SceneCommand 结构校验和命令授权策略。
+ *
+ * 静态分析依赖 TypeScript 编译器（minified ~3.4MB）。为不把编译器打进行为面板
+ * chunk，分析模块按需动态加载：本函数因此为 async；调用方均为用户触发（AI 草稿
+ * 按钮/样例），一次性 import 后浏览器缓存，后续调用近零开销。
  */
-export function createAiSceneScriptDraft(input: AiSceneScriptDraftInput): AiSceneScriptDraftResult {
-  const result = createDraft(input);
+export async function createAiSceneScriptDraft(input: AiSceneScriptDraftInput): Promise<AiSceneScriptDraftResult> {
+  const result = await createDraft(input);
   return {
     ...result,
     evidenceFingerprint: createEvidenceFingerprint({ input, result }),
@@ -83,7 +87,7 @@ export function createAiSceneScriptDraft(input: AiSceneScriptDraftInput): AiScen
   };
 }
 
-function createDraft(input: AiSceneScriptDraftInput): Omit<AiSceneScriptDraftResult, "evidenceFingerprint" | "fingerprintAlgorithm"> {
+async function createDraft(input: AiSceneScriptDraftInput): Promise<Omit<AiSceneScriptDraftResult, "evidenceFingerprint" | "fingerprintAlgorithm">> {
   const intent = input.intent.trim();
   const base = input.existingScript ?? newDraftScript(input.target);
   const initial: Omit<AiSceneScriptDraftResult, "evidenceFingerprint" | "fingerprintAlgorithm"> = {
@@ -140,6 +144,7 @@ function createDraft(input: AiSceneScriptDraftInput): Omit<AiSceneScriptDraftRes
     capabilities: unique([...base.capabilities, ...requiredCapabilities]),
     permissions: unique([...base.permissions, ...requiredPermissions]),
   };
+  const { analyzeSceneScript, applySceneScriptDeclarations } = await import("../studio/sceneScriptAnalysis");
   const inferredAnalysis = analyzeSceneScript(draft.code, draft, input.intelligence);
   draft = applySceneScriptDeclarations(draft, inferredAnalysis);
   const analysis = analyzeSceneScript(draft.code, draft, input.intelligence);

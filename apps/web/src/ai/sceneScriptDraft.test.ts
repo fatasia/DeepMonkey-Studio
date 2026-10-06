@@ -13,17 +13,17 @@ const intelligence: SceneScriptIntelligenceContext = {
   eventNames: ["click", "alarm"],
 };
 
-describe("createAiSceneScriptDraft", () => {
-  it("compiles the one-click local sample for both object and component targets", () => {
+describe("createAiSceneScriptDraft", async () => {
+  it("compiles the one-click local sample for both object and component targets", async () => {
     for (const target of [robot, widget]) {
-      const draft = createAiSceneScriptDraft({ intent: "点击当前对象时隐藏", sceneId: "scene-1", target, intelligence });
+      const draft = await createAiSceneScriptDraft({ intent: "点击当前对象时隐藏", sceneId: "scene-1", target, intelligence });
       expect(draft.status).toBe("ready");
       expect(draft.lifecycle).toBe("onEvent");
       expect(draft.draftScript?.enabled).toBe(false);
     }
   });
-  it("compiles multiple object actions through the script analyzer and command policy", () => {
-    const result = createAiSceneScriptDraft({
+  it("compiles multiple object actions through the script analyzer and command policy", async () => {
+    const result = await createAiSceneScriptDraft({
       intent: "定位搬运机器人并播放动画",
       sceneId: "scene-1",
       target: robot,
@@ -40,8 +40,8 @@ describe("createAiSceneScriptDraft", () => {
     expect(result.analysis?.issues.filter((item) => item.severity === "error")).toEqual([]);
   });
 
-  it("creates a data-triggered draft only for a real project data key", () => {
-    const result = createAiSceneScriptDraft({
+  it("creates a data-triggered draft only for a real project data key", async () => {
+    const result = await createAiSceneScriptDraft({
       intent: "当 robot.temperature > 80 时颜色改为 #ef4444",
       sceneId: "scene-1",
       target: robot,
@@ -55,12 +55,12 @@ describe("createAiSceneScriptDraft", () => {
     expect(result.draftScript?.capabilities).toEqual(expect.arrayContaining(["studio.data", "studio.object"]));
   });
 
-  it("injects into a standard lifecycle without replacing existing behavior", () => {
+  it("injects into a standard lifecycle without replacing existing behavior", async () => {
     const existing = script(`function onStart(ctx) {
   const note = "brace } inside a string";
   ctx.log(note);
 }`);
-    const result = createAiSceneScriptDraft({
+    const result = await createAiSceneScriptDraft({
       intent: "显示对象",
       sceneId: "scene-1",
       target: robot,
@@ -74,8 +74,8 @@ describe("createAiSceneScriptDraft", () => {
     expect(result.diff.removedLines).toBeGreaterThanOrEqual(0);
   });
 
-  it("blocks automatic merge when an existing script uses raw commands", () => {
-    const result = createAiSceneScriptDraft({
+  it("blocks automatic merge when an existing script uses raw commands", async () => {
+    const result = await createAiSceneScriptDraft({
       intent: "隐藏对象",
       sceneId: "scene-1",
       target: robot,
@@ -88,8 +88,8 @@ describe("createAiSceneScriptDraft", () => {
     expect(result.issues[0]?.message).toContain("原始 command");
   });
 
-  it("asks for clarification instead of choosing between conflicting states", () => {
-    const result = createAiSceneScriptDraft({
+  it("asks for clarification instead of choosing between conflicting states", async () => {
+    const result = await createAiSceneScriptDraft({
       intent: "显示后再隐藏对象",
       sceneId: "scene-1",
       target: robot,
@@ -100,8 +100,8 @@ describe("createAiSceneScriptDraft", () => {
     expect(result.issues).toContainEqual(expect.objectContaining({ code: "ambiguous-intent" }));
   });
 
-  it("blocks stale target identities", () => {
-    const result = createAiSceneScriptDraft({
+  it("blocks stale target identities", async () => {
+    const result = await createAiSceneScriptDraft({
       intent: "定位对象",
       sceneId: "scene-1",
       target: { ...robot, id: "retired-robot" },
@@ -112,8 +112,8 @@ describe("createAiSceneScriptDraft", () => {
     expect(result.issues[0]?.code).toBe("unknown-target");
   });
 
-  it("marks coordinate changes high risk and keeps them behind confirmation", () => {
-    const result = createAiSceneScriptDraft({
+  it("marks coordinate changes high risk and keeps them behind confirmation", async () => {
+    const result = await createAiSceneScriptDraft({
       intent: "移动到 12, 0, -6",
       sceneId: "scene-1",
       target: robot,
@@ -126,9 +126,9 @@ describe("createAiSceneScriptDraft", () => {
     expect(result.codeFragment).toContain("setPosition(12, 0, -6)");
   });
 
-  it("uses dedicated component and Unity command capabilities", () => {
-    const componentDraft = createAiSceneScriptDraft({ intent: "隐藏组件", sceneId: "scene-1", target: widget, intelligence });
-    const unityDraft = createAiSceneScriptDraft({ intent: "灯光强度设为 2.5", sceneId: "scene-1", target: unity, intelligence });
+  it("uses dedicated component and Unity command capabilities", async () => {
+    const componentDraft = await createAiSceneScriptDraft({ intent: "隐藏组件", sceneId: "scene-1", target: widget, intelligence });
+    const unityDraft = await createAiSceneScriptDraft({ intent: "灯光强度设为 2.5", sceneId: "scene-1", target: unity, intelligence });
 
     expect(componentDraft).toMatchObject({ status: "ready", commandTypes: ["component.update"] });
     expect(componentDraft.draftScript?.capabilities).toContain("studio.component");

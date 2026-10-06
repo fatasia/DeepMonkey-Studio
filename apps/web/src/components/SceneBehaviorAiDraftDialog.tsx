@@ -36,9 +36,10 @@ export function SceneBehaviorAiDraftDialog(props: SceneBehaviorAiDraftDialogProp
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [props.onClose]);
 
-  function generateDraft(sampleIntent?: string) {
+  // 草稿生成为 async:静态分析模块(含 TypeScript 编译器)按需动态加载,不进行为面板 chunk。
+  async function generateDraft(sampleIntent?: string) {
     setError("");
-    setResult(createAiSceneScriptDraft({
+    setResult(await createAiSceneScriptDraft({
       intent: sampleIntent ?? intent,
       sceneId: props.sceneId,
       target: props.target,
