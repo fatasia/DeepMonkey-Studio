@@ -18,6 +18,9 @@ export {
 } from "./dgcLoader.js";
 export type { DgcBytes, DgcDag, DgcDagLevel, DgcFileHeader, DgcSectionHeader } from "./dgcLoader.js";
 export { dgcDagToMeshletDag, meshletDagFromDgc } from "./dgcDagBridge.js";
+export { dgcDagToEncodable, encodeDgc, meshletDagToEncodable } from "./dgcEncoder.js";
+export type { DgcEncodeOptions, DgcEncodableDag, DgcEncodableLevel,
+  DgcEncodableSourceLevel } from "./dgcEncoder.js";
 export { buildMeshlets, packLocalTriangle, unpackLocalTriangle } from "./meshletBuilder.js";
 export { hashMeshletBuild } from "./meshletHash.js";
 export { expandMeshletIndices, isMirroredMeshletTransform } from "./meshletIndices.js";
