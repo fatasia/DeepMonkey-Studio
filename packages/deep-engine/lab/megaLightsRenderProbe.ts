@@ -30,6 +30,9 @@ import { FrameCaptureSession } from "../src/r12/frameCapture.js";
 import type { PbrMaterial, RenderPacket } from "../src/renderPacket.js";
 import { MAX_MEGA_LIGHTS, resolveDirectLightingPath } from "../src/lighting/megaLights.js";
 import { MegaLightsFrameController } from "../src/lighting/megaLightsFrameController.js";
+import { buildTlas, type TlasInstanceDescriptor } from "../src/rayTracing/tlas.js";
+import { packTlasScene } from "../src/rayTracing/tlasLayout.js";
+import type { RayBlasDescriptor } from "../src/rayTracing/rayBackendTypes.js";
 import type { WorldClusteredLights, WorldPointLight } from "../src/lighting/worldLights.js";
 import type { LightVector3 } from "../src/lighting/types.js";
 
@@ -526,6 +529,117 @@ async function poolFailClosedLeg(): Promise<Record<string, unknown>> {
 export function probeAdapterInfo(): unknown {
   return { href: location.href, userAgent: navigator.userAgent, webgpu: "gpu" in navigator };
 }
+
+// ---- 腿 E:生产帧 TLAS 供给(2026-10-05 收口)——遮挡差分可见 + 来源披露 + fail-closed ----
+
+/** 供给腿分辨率(1080p 半宽;读回差分足够,时长可控)。 */
+const SUPPLY_WIDTH = 960;
+const SUPPLY_HEIGHT = 540;
+/** 双臂帧数:颜色 EMA(1/32)~30 帧收敛,40 帧留裕量。 */
+const SUPPLY_FRAMES = 40;
+
+/**
+ * TLAS 供给场景:左半场顶棚遮挡板(仅存在于 TLAS,不进渲染 packet)——遮挡板上方的
+ * 灯(约四成)对左半场地面的照射,右半场为对照。世界空间与渲染几何同一坐标系。
+ */
+function visibilitySlabScene(): ReturnType<typeof packTlasScene> {
+  const center: readonly [number, number, number] = [-3.1, 1.3, -1.5];
+  const half: readonly [number, number, number] = [3.0, 0.12, 2.6];
+  const corners: readonly (readonly number[])[] = [
+    [center[0] - half[0], center[1] - half[1], center[2] - half[2]],
+    [center[0] + half[0], center[1] - half[1], center[2] - half[2]],
+    [center[0] + half[0], center[1] - half[1], center[2] + half[2]],
+    [center[0] - half[0], center[1] - half[1], center[2] + half[2]],
+    [center[0] - half[0], center[1] + half[1], center[2] - half[2]],
+    [center[0] + half[0], center[1] + half[1], center[2] - half[2]],
+    [center[0] + half[0], center[1] + half[1], center[2] + half[2]],
+    [center[0] - half[0], center[1] + half[1], center[2] + half[2]]];
+  const quads = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
+  const vertices: number[] = [], indices: number[] = [];
+  quads.forEach((quad, quadIndex) => {
+    const base = quadIndex * 4;
+    quad.forEach(cornerId => vertices.push(...corners[cornerId]!));
+    indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+  });
+  const slab: RayBlasDescriptor = { id: "mega-supply-occluder-slab",
+    vertices: Float32Array.from(vertices), indices: Uint32Array.from(indices) };
+  const instances: TlasInstanceDescriptor[] = [{ id: slab.id, blas: slab,
+    worldToLocal: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0] as const, mask: 1 }];
+  return packTlasScene(buildTlas(instances));
+}
+
+/** 单臂采集:渲染 SUPPLY_FRAMES 帧并取最终 present-color 读回。 */
+async function renderSupplyArm(megaLights: boolean, rayTracedShadows: boolean,
+  stageSlab: boolean): Promise<{ image: ReturnType<typeof decodeReadback>; lastMetrics: FrameMetrics;
+    wall: number[] }> {
+  const leg = await openLeg(SUPPLY_WIDTH, SUPPLY_HEIGHT, {
+    features: { megaLights, rayTracedShadows, groundPlane: false, groundGrid: false },
+    ...frameCaptureOptions() }, false);
+  try {
+    if (stageSlab) leg.renderer.stageRayTracedShadowScene(visibilitySlabScene());
+    const view = renderView(SUPPLY_WIDTH, SUPPLY_HEIGHT, buildLights(PERF_LIGHT_COUNT, 0, [-6, 6]));
+    const run = await runFrames(leg, view, SUPPLY_FRAMES, true);
+    const snapshot = await latestPresentColor(leg);
+    return { image: decodeReadback(snapshot), lastMetrics: run.metrics[run.metrics.length - 1]!,
+      wall: run.wallMs };
+  } finally { leg.dispose(); }
+}
+
+/**
+ * 供给腿:开臂(rtShadows staged → visibilitySource=rt-shadow-tlas,胜者射线生效)
+ * vs 关臂(无场景 → fail-closed 恒 1)同一场景同灯阵。门:
+ *   ① 来源披露逐字(on=rt-shadow-tlas / off=off);
+ *   ② 遮挡差分:左半场(板下)开/关亮度抑制显著,右半场(对照)近零;
+ *   ③ 无 NaN、零 uncaptured error。
+ */
+async function visibilitySupplyLeg(): Promise<Record<string, unknown>> {
+  const on = await renderSupplyArm(true, true, true);
+  const off = await renderSupplyArm(true, false, false);
+  const leftFloor: readonly [number, number, number, number] = [0.06, 0.46, 0.55, 0.92];
+  const rightFloor: readonly [number, number, number, number] = [0.54, 0.94, 0.55, 0.92];
+  const leftOn = regionMeanLuminance(on.image, leftFloor);
+  const leftOff = regionMeanLuminance(off.image, leftFloor);
+  const rightOn = regionMeanLuminance(on.image, rightFloor);
+  const rightOff = regionMeanLuminance(off.image, rightFloor);
+  const suppressionLeft = 1 - leftOn / Math.max(leftOff, 1e-6);
+  const suppressionRight = 1 - rightOn / Math.max(rightOff, 1e-6);
+  let nanPixels = 0;
+  for (let index = 0; index < on.image.width * on.image.height * 4; index++) {
+    if (!Number.isFinite(on.image.rgba[index]!)) nanPixels++;
+  }
+  const onMega = on.lastMetrics.megaLights, offMega = off.lastMetrics.megaLights;
+  const wall = { samples: on.wall.length, p50: percentileOf(on.wall, 0.5),
+    p95: percentileOf(on.wall, 0.95), max: Math.max(...on.wall) };
+  const timingNote = "整帧口径含主帧全部 pass + RT 阴影 mask dispatch(本腿开启 rayTracedShadows),"
+    + "与 ≤20ms 先例(standalone RIS 三趟)不同口径不混报;预算门见 megaLightsVisibilityGpuTest.mjs ⑦ 腿。";
+  const pngDataUrl = await pngFromLinear(on.image);
+  const pngOffDataUrl = await pngFromLinear(off.image);
+  return { width: on.image.width, height: on.image.height, frames: SUPPLY_FRAMES,
+    sceneLights: PERF_LIGHT_COUNT,
+    onArm: { visibilitySource: onMega?.visibilitySource ?? null, dispatchedFrames: onMega?.dispatchedFrames ?? 0,
+      lightCount: onMega?.lastLightCount ?? null, fallbackReason: onMega?.visibilityFallbackReason ?? null },
+    offArm: { visibilitySource: offMega?.visibilitySource ?? null, dispatchedFrames: offMega?.dispatchedFrames ?? 0 },
+    regionLuminance: { leftOn, leftOff, rightOn, rightOff },
+    suppressionLeft, suppressionRight, wall, timingNote, nanPixels,
+    pngDataUrl, pngOffDataUrl,
+    gates: {
+      sourceDisclosedOn: onMega?.visibilitySource === "rt-shadow-tlas",
+      sourceDisclosedOff: offMega?.visibilitySource === "off",
+      dispatched: (onMega?.dispatchedFrames ?? 0) >= SUPPLY_FRAMES,
+      occlusionDifferential: suppressionLeft >= 0.15 && suppressionLeft > suppressionRight * 2,
+      controlStable: Math.abs(suppressionRight) <= 0.05,
+      noNan: nanPixels === 0,
+    },
+    uncapturedErrors: [] as string[],
+  };
+}
+
+export async function runVisibilitySupply(): Promise<Record<string, unknown>> {
+  try {
+    return await visibilitySupplyLeg();
+  } finally { /* 双臂渲染器均在腿内自持释放;无保活句柄。 */ }
+}
+
 
 export async function runFullFrameOn(): Promise<Record<string, unknown>> { return fullFrameLeg(true); }
 export async function runFullFrameOff(): Promise<Record<string, unknown>> { return fullFrameLeg(false); }

@@ -922,6 +922,113 @@ async function winnerVisibilityLeg(): Promise<Record<string, unknown>> {
   } finally { runtime.dispose(); }
 }
 
+// ---- ⑦ 生产供给 perf:M2 三趟(RIS 两趟 + 胜者遮挡 trace)@5000 灯 1080p ----
+
+/** 可见性 perf 场景:灯与灯之间、墙(z=−3)与灯阵之间的遮挡盒阵(trace 有真实命中)。 */
+function visibilityPerfScene(): ReturnType<typeof packTlasScene> {
+  const boxes = [
+    visibilityOccluderBox(-1.1, 0.4, -1.7, 0.5, 0.6, 0.05),
+    visibilityOccluderBox(0.2, 0.6, -1.4, 0.6, 0.7, 0.05),
+    visibilityOccluderBox(1.3, 0.3, -1.9, 0.45, 0.55, 0.05),
+  ];
+  const instances: TlasInstanceDescriptor[] = boxes.map((box, index) => ({ id: box.id, blas: box,
+    worldToLocal: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0] as const, mask: 1 }));
+  return packTlasScene(buildTlas(instances));
+}
+
+/** 掩码读回(遮挡像素占比 = trace 真实命中的直接证据;perf 腿末尾采样一次)。 */
+async function readbackVisibilityMask(device: GPUDevice, runtime: MegaLightsRuntime): Promise<Uint32Array> {
+  const pixels = runtime.pixelCount;
+  const buffer = device.createBuffer({ label: "MegaLights visibility perf mask readback",
+    size: pixels * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  try {
+    const source = (runtime as unknown as { resources?: { visibilityMask?: GPUBuffer } }).resources
+      ?.visibilityMask;
+    if (!source) throw new Error("visibility perf leg requires a visibility allocation.");
+    const encoder = device.createCommandEncoder({ label: "MegaLights visibility perf mask" });
+    encoder.copyBufferToBuffer(source, 0, buffer, 0, pixels * 4);
+    device.queue.submit([encoder.finish()]);
+    await buffer.mapAsync(GPUMapMode.READ);
+    return new Uint32Array(buffer.getMappedRange().slice(0));
+  } finally { buffer.destroy(); }
+}
+
+/**
+ * 生产供给 perf 腿(双口径四相位,2026-10-05):
+ *   先例口径(spatial off,同 M1 perf 腿):可见性关 → 开,绝对 p95 ≤ 20ms 门
+ *   (≤20ms 先例在自身口径下带 trace 复验);
+ *   生产口径(spatial on,生产控制器缺省):可见性关 → 开,trace 增量披露
+ *   (生产绝对帧时口径含空间复用,先于本切片已 >20ms,如实披露不混报)。
+ * 证据:四相位 p50/p95、trace 增量、掩码遮挡占比、哨兵零。
+ */
+async function visibilityPerfLeg(): Promise<Record<string, unknown>> {
+  const device = await requestDevice();
+  device.addEventListener?.("uncapturederror", (event) => {
+    console.error("[uncapturederror]", (event as GPUUncapturedErrorEvent).error.message);
+  });
+  const runtime = new MegaLightsRuntime(shimSession(device), { visibility: {} });
+  try {
+    const width = PERF_WIDTH, height = PERF_HEIGHT;
+    const surfaces = buildPerfSurfaces(width, height);
+    const scene = visibilityPerfScene();
+    const identity = Float32Array.from([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    const visibilityInput = { scene, viewToWorld: identity, rayMask: 0xffffffff };
+    const compileMessages = await compilationMessages(runtime);
+    const phase = async (visibility: boolean, spatial: boolean): Promise<number[]> => {
+      const times: number[] = [];
+      for (let frame = 0; frame < 70; frame++) {
+        const packed = packMegaLights(megaLightsFromClustered(buildPerfLights(frame)));
+        runtime.prepare({ width, height, lights: packed, surfaces, temporalEnabled: true,
+          spatialEnabled: spatial, alphaBlend: frame === 0 ? 1 : 1 / 32,
+          ...(visibility ? { visibility: visibilityInput } : {}) });
+        const elapsed = await runFrame(device, runtime,
+          { width, height, lightCount: packed.count, visibilityEnabled: visibility }, frame >= 10);
+        if (frame >= 10) times.push(elapsed);
+      }
+      return times;
+    };
+    const summary = (values: readonly number[]) => {
+      const sorted = [...values].sort((left, right) => left - right);
+      const percentile = (fraction: number): number =>
+        sorted[Math.min(sorted.length - 1, Math.floor(fraction * sorted.length))]!;
+      return { samples: values.length, p50: percentile(0.5), p95: percentile(0.95),
+        max: sorted[sorted.length - 1]!,
+        mean: values.reduce((total, value) => total + value, 0) / values.length };
+    };
+    // 先例口径(同 M1 perf 腿 spatial off):关 → 开。
+    const precedentOff = summary(await phase(false, false));
+    const precedentOn = summary(await phase(true, false));
+    // 生产口径(spatial on,控制器缺省):关 → 开。
+    const productionOff = summary(await phase(false, true));
+    const productionOn = summary(await phase(true, true));
+    const mask = await readbackVisibilityMask(device, runtime);
+    let occluded = 0;
+    for (let pixel = 0; pixel < mask.length; pixel++) { if (mask[pixel] === 0) occluded++; }
+    const sentinelBuffer = device.createBuffer({ label: "MegaLights visibility perf sentinel",
+      size: 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    const sentinelEncoder = device.createCommandEncoder({ label: "MegaLights visibility perf sentinel" });
+    runtime.readbackStackOverflows(sentinelEncoder, sentinelBuffer);
+    device.queue.submit([sentinelEncoder.finish()]);
+    await sentinelBuffer.mapAsync(GPUMapMode.READ);
+    const overflowSentinel = new Uint32Array(sentinelBuffer.getMappedRange().slice(0))[0]!;
+    sentinelBuffer.destroy();
+    const increment = (off: ReturnType<typeof summary>, on: ReturnType<typeof summary>) =>
+      ({ p50: on.p50 - off.p50, p95: on.p95 - off.p95 });
+    return { action: "megalights-production-visibility-perf", width, height,
+      lightCount: PERF_LIGHT_COUNT, compileMessages,
+      precedentSpatialOff: { off: precedentOff, on: precedentOn },
+      productionSpatialOn: { off: productionOff, on: productionOn },
+      traceIncrementMs: { precedent: increment(precedentOff, precedentOn),
+        production: increment(productionOff, productionOn) },
+      occludedFraction: occluded / mask.length, overflowSentinel,
+      pass: precedentOn.p95 <= 20 && (productionOn.p95 - productionOff.p95) <= 4
+        && overflowSentinel === 0 && occluded > 0 && compileMessages
+          .every(message => message.startsWith("info")),
+      gate: "先例口径(spatial off)带 trace 绝对 p95 ≤ 20ms + 生产口径(spatial on)trace 增量 p95 ≤ 4ms"
+        + "+ 哨兵零 + trace 真实命中;生产口径绝对帧时先于本切片已 >20ms(空间复用主项),如实披露" };
+  } finally { runtime.dispose(); }
+}
+
 // ---- 组装入口(runner 逐腿调用) ----
 
 export function probeAdapterInfo(): unknown {
@@ -942,4 +1049,9 @@ export async function runParity(): Promise<Record<string, unknown>> {
 
 export async function runWinnerVisibility(): Promise<Record<string, unknown>> {
   return winnerVisibilityLeg();
+}
+
+/** ⑦ 生产供给 perf(2026-10-05 TLAS 供给收口):5000 灯 1080p 三趟 p95 门。 */
+export async function runVisibilityPerf(): Promise<Record<string, unknown>> {
+  return visibilityPerfLeg();
 }

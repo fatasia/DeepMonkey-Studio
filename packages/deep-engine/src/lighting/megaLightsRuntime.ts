@@ -46,8 +46,10 @@ import { MEGA_LIGHTS_RIS_WGSL } from "./megaLightsRisWgsl.js";
  *          无遮挡口径(估计器合同,CPU 镜像 megaLightsRisCpu 同式同位)。
  * 可见性档关闭(缺省构造或 prepare 不带 visibility)→ params.visibilityEnabled=0:
  * trace 零 dispatch、visibilityAt 恒 1.0(×1.0 精确),帧输出与 M1 逐位一致。
- * 生产帧 TLAS 供给接线(pbrRendererFrames 域)属下一切片;真机验收走
- * scripts/megaLightsGpuTest.mjs 可见性腿。
+ * 生产帧 TLAS 供给已收口(2026-10-05):MegaLightsFrameController 按帧上下文消费
+ * pbrRendererFrames 复用 RT 阴影 staging 通道(rtShadows.packedScene)供给的场景,
+ * 供给失败 fail-closed 恒 1 并经 FrameMetrics.megaLights.visibilitySource 披露;
+ * 真机验收走 scripts/megaLightsGpuTest.mjs 可见性腿 + 渲染级 harness 供给腿。
  */
 
 /** 趟一入口(buildReservoirs:K 候选 + 时域合并 → A [+ 胜者射线流])。 */
@@ -507,6 +509,9 @@ export class MegaLightsRuntime {
     if (allocation?.overflows === undefined) throw new Error("MegaLights visibility sentinel requires a visibility allocation.");
     encoder.copyBufferToBuffer(allocation.overflows, 0, readback, 0, 4);
   }
+
+  /** 可见性档是否已装配(构造项 visibility 开启;帧控制器升级判定消费)。 */
+  get visibilityLegReady(): boolean { return this.visibilityPipelines !== undefined; }
 
   get pixelCount(): number {
     if (!this.resources) throw new Error("MegaLights runtime has no allocation until prepare.");

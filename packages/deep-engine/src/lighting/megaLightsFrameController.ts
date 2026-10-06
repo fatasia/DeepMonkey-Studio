@@ -22,6 +22,14 @@
  * - 开关语义:features.megaLights=false → 控制器不存在(PbrRenderer 构造器零
  *   改动,帧编排内懒构造),帧逐位一致;构造后翻 false → 调用方停发 encodeFrame
  *   (资源保留,复用零成本)。
+ * - 胜者可见性射线供给(2026-10-05 生产帧 TLAS 收口):runtime 缺省按 legacy 两趟
+ *   构造(既有逐位行为);首个携带 context.visibility 的帧原位升级到可见性档
+ *   (三段管线,一次性构造,先建后弃——升级失败旧 runtime 原样保留),此后同档
+ *   复用。供给失败(上下文无场景)与升级失败均 fail-closed:prepare 不带
+ *   visibility → trace 零 dispatch、deepMegaVisibilityAt 恒 1.0(×1.0 精确,帧输出
+ *   与旧行为逐位一致),来源经 metrics.visibilitySource 披露(off/unsupported,
+ *   unsupported 附 visibilityFallbackReason 且 sticky 不重试)。可见性档下"关闭帧"
+ *   (有场景上下文但本帧未携带)同样 ×1.0 精确——switch 位只落 params。
  * - 领地纪律:只 import webgpu/rtShadowFrame 的 invertColumnMajor4x4(只复用不
  *   修改,该文件已在 pbrRendererFrames 已提交钩子中成为主干依赖);不触碰
  *   postprocess/、pbrShader、pipelines、pbrPipelineSet 与渲染器互斥域。
@@ -33,9 +41,9 @@ import { MAX_MEGA_LIGHTS, megaLightsFromClustered, packMegaLights,
   resolveDirectLightingPath, type DirectLightingPathDecision } from "./megaLights.js";
 import { MEGA_LIGHTS_SURFACES_STRIDE_VEC4 } from "./megaLightsAbi.js";
 import type { MegaLightsFrameEncodeContext, MegaLightsFrameControllerOptions,
-  MegaLightsFrameMetrics, MegaLightsFrameResult } from "./megaLightsFrameDecision.js";
+  MegaLightsFrameMetrics, MegaLightsFrameResult, MegaLightsVisibilitySource } from "./megaLightsFrameDecision.js";
 import { multiplyColumnMajor4x4 } from "./megaLightsFrameDecision.js";
-import type { MegaLightsPrepareInput } from "./megaLightsRuntime.js";
+import type { MegaLightsFrameVisibilityInput, MegaLightsPrepareInput } from "./megaLightsRuntime.js";
 import { MegaLightsRuntime } from "./megaLightsRuntime.js";
 import { MEGA_LIGHTS_COMPOSITE_PARAMS_BYTES, MEGA_LIGHTS_COMPOSITE_WGSL,
   MEGA_LIGHTS_REBUILD_PARAMS_BYTES, MEGA_LIGHTS_REBUILD_WGSL } from "./megaLightsFrameWgsl.js";
@@ -69,7 +77,8 @@ interface MegaLightsFrameAllocation {
  * 加性合成,四段挂同一 encoder。资源 rollback-safe(照 clusterCompute/M1 纪律)。
  */
 export class MegaLightsFrameController {
-  private readonly runtime: MegaLightsRuntime;
+  /** legacy 档构造;首个可见性供给帧原位升级(先建后弃,失败保留旧档)。 */
+  private runtime: MegaLightsRuntime;
   private readonly rebuildModule: GPUShaderModule;
   private readonly compositeModule: GPUShaderModule;
   private readonly rebuildPipeline: GPUComputePipeline;
@@ -86,6 +95,10 @@ export class MegaLightsFrameController {
   private lastReason: DirectLightingPathDecision["reason"] = "within-cluster-budget";
   private lastDispatchGroupsX = 0;
   private lastDispatchGroupsY = 0;
+  /** 可见性供给状态机(封闭词汇见 MegaLightsVisibilitySource;sticky 失败不重试)。 */
+  private visibilityUnsupported: string | undefined;
+  private lastVisibilitySource: MegaLightsVisibilitySource = "off";
+  private lastVisibilityFallbackReason: string | undefined;
   private disposed = false;
 
   constructor(private readonly session: Pick<DeviceSession, "device" | "state" | "own" | "release">,
@@ -131,7 +144,9 @@ export class MegaLightsFrameController {
   get metrics(): MegaLightsFrameMetrics {
     return { dispatchedFrames: this.dispatchedFrames, lastLightCount: this.lastLightCount,
       lastReason: this.lastReason, lastDispatchGroupsX: this.lastDispatchGroupsX,
-      lastDispatchGroupsY: this.lastDispatchGroupsY };
+      lastDispatchGroupsY: this.lastDispatchGroupsY, visibilitySource: this.lastVisibilitySource,
+      ...(this.lastVisibilityFallbackReason !== undefined
+        ? { visibilityFallbackReason: this.lastVisibilityFallbackReason } : {}) };
   }
 
   /** RIS compute 运行时(真机探针/诊断复用;生产帧请走 encodeFrame)。 */
@@ -153,6 +168,9 @@ export class MegaLightsFrameController {
     this.lastReason = decision.reason;
     this.lastLightCount = decision.localLightCount;
     if (decision.path === "cluster-forward-plus") {
+      // 簇光快路径帧无 RIS dispatch:可见性来源回 off(可见性只存在于 RIS 帧语义)。
+      this.lastVisibilitySource = "off";
+      this.lastVisibilityFallbackReason = undefined;
       return { dispatched: false, reason: decision.reason, localLightCount: decision.localLightCount,
         areaCount };
     }
@@ -172,11 +190,13 @@ export class MegaLightsFrameController {
     }
     const groupsX = Math.ceil(width / 8);
     const groupsY = Math.ceil(height / 8);
+    const visibility = this.resolveVisibilityLeg(context.visibility);
     const prepareInput: MegaLightsPrepareInput = { width, height, lights: packed,
       surfaces: this.sharedZeroSurfaces(width, height),
-      spatialEnabled: this.spatialReuse, temporalEnabled: true };
+      spatialEnabled: this.spatialReuse, temporalEnabled: true,
+      ...(visibility !== undefined ? { visibility } : {}) };
     this.runtime.prepare(prepareInput);
-    this.encodeDispatches(context, packed.count, groupsX, groupsY);
+    this.encodeDispatches(context, packed.count, groupsX, groupsY, visibility !== undefined);
     this.dispatchedFrames += 1;
     this.lastDispatchGroupsX = groupsX;
     this.lastDispatchGroupsY = groupsY;
@@ -193,7 +213,7 @@ export class MegaLightsFrameController {
   }
 
   private encodeDispatches(context: MegaLightsFrameEncodeContext, lightCount: number,
-    groupsX: number, groupsY: number): void {
+    groupsX: number, groupsY: number, visibilityEnabled: boolean): void {
     const { encoder, width, height, depthTexture } = context;
     const device = this.session.device;
     const allocation = this.ensureAllocation(width, height, depthTexture);
@@ -205,7 +225,8 @@ export class MegaLightsFrameController {
     rebuildPass.dispatchWorkgroups(groupsX, groupsY);
     rebuildPass.end();
     // 段二/三:RIS 两趟(读重建表面;M1 单源核;pass 边界内存序规范强保证)。
-    this.runtime.encode(encoder, { width, height, lightCount, visibilityEnabled: false });
+    // 可见性档三趟中段 trace 由 runtime 按开关位 dispatch(关闭帧零 dispatch)。
+    this.runtime.encode(encoder, { width, height, lightCount, visibilityEnabled });
     // 段四:加性合成(render pass,one+one 混合;loadOp load 保留既有 HDR 内容,
     // alpha 加 0;附件视图由调用方供给——主帧 1x HDR)。
     device.queue.writeBuffer(allocation.compositeParams, 0, this.packCompositeParams(width, height).buffer as ArrayBuffer);
@@ -237,6 +258,47 @@ export class MegaLightsFrameController {
     const length = width * height * MEGA_LIGHTS_SURFACES_STRIDE_VEC4 * 4;
     if (this.zeroSurfaces?.length !== length) this.zeroSurfaces = new Float32Array(length);
     return this.zeroSurfaces;
+  }
+
+  /**
+   * 胜者可见性供给裁决(封闭词汇,sticky 失败不重试):
+   * - 无供给上下文 → off(fail-closed;可见性恒 1 = 旧行为,原因查调用方 RT 阴影
+   *   状态通道)。
+   * - 有供给且 runtime 已是可见性档 → rt-shadow-tlas(本帧 trace dispatch)。
+   * - 有供给但 runtime 仍是 legacy 档 → 原位升级(先建新 runtime 再弃旧——升级失败
+   *   旧 runtime 与本帧编码路径原样保留);升级失败 sticky 记 unsupported + 原因。
+   */
+  private resolveVisibilityLeg(input: MegaLightsFrameVisibilityInput | undefined):
+    MegaLightsFrameVisibilityInput | undefined {
+    if (input === undefined) {
+      this.lastVisibilitySource = "off";
+      this.lastVisibilityFallbackReason = undefined;
+      return undefined;
+    }
+    if (this.visibilityUnsupported === undefined && !this.runtimeVisibilityReady()) {
+      try {
+        const upgraded = new MegaLightsRuntime(this.session, { visibility: {} });
+        this.runtime.dispose();
+        this.runtime = upgraded;
+      } catch (error) {
+        // f16 缺 feature / WGSL 校验失败 / 存储上限不足:sticky fail-closed,可见性
+        // 恒 1,帧照常按 legacy 档编码(不抛穿渲染循环)。
+        this.visibilityUnsupported = (error as Error).message;
+      }
+    }
+    if (this.visibilityUnsupported !== undefined) {
+      this.lastVisibilitySource = "unsupported";
+      this.lastVisibilityFallbackReason = this.visibilityUnsupported;
+      return undefined;
+    }
+    this.lastVisibilitySource = "rt-shadow-tlas";
+    this.lastVisibilityFallbackReason = undefined;
+    return input;
+  }
+
+  /** runtime 是否已按可见性档构造(三段管线;公开访问器,不做私有面窥探)。 */
+  private runtimeVisibilityReady(): boolean {
+    return this.runtime.visibilityLegReady;
   }
 
   /** bind group 按 (depth 纹理, surfaces buffer, color buffer) 身份缓存;任一更换即重建。 */

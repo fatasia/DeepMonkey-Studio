@@ -5,6 +5,7 @@
  * 零第二实现。
  */
 import { resolveDirectLightingPath, type DirectLightingPathDecision } from "./megaLights.js";
+import type { MegaLightsFrameVisibilityInput } from "./megaLightsRuntime.js";
 import type { ClusteredLights } from "./types.js";
 
 /** 控制器构造选项。 */
@@ -28,6 +29,13 @@ export interface MegaLightsFrameEncodeContext {
   readonly depthViewProjection: Float32Array;
   /** 世界→视矩阵(列主序 16 f32;与灯变换同源)。 */
   readonly worldToView: Float32Array;
+  /**
+   * M2 胜者可见性射线供给(2026-10-05 生产帧 TLAS 收口;缺省 = fail-closed,可见性
+   * 恒 1 = 旧行为)。场景复用 RT 阴影 staging 通道的世界空间两级 TLAS(同
+   * packTlasScene 形,traceTwoLevelOccluded 同族);调用方负责从 rtShadows.packedScene
+   * 取已 staging 场景,未 staging 时不带本字段并经 visibilitySource 披露。
+   */
+  readonly visibility?: MegaLightsFrameVisibilityInput;
   /** 视空间灯(megaLights.megaLightsFromClustered 消费口径)。 */
   readonly lights: ClusteredLights;
 }
@@ -40,12 +48,24 @@ export interface MegaLightsFrameResult {
   readonly areaCount: number;
 }
 
+/** 胜者可见性射线供给来源(封闭词汇;off/unsupported = fail-closed,可见性恒 1)。 */
+export type MegaLightsVisibilitySource = "off" | "rt-shadow-tlas" | "unsupported";
+
 export interface MegaLightsFrameMetrics {
   readonly dispatchedFrames: number;
   readonly lastLightCount: number;
   readonly lastReason: DirectLightingPathDecision["reason"];
   readonly lastDispatchGroupsX: number;
   readonly lastDispatchGroupsY: number;
+  /**
+   * 最近一次 encodeFrame 的胜者可见性射线来源:rt-shadow-tlas = RT 阴影 staging 通道
+   * 供给且本帧 trace dispatch;off = 本帧无供给(可见性恒 1 = 旧行为;原因查
+   * rayTracedShadowStatus:rtShadows 未构造 = features 关,sceneStaged=false = 场景未
+   * staging);unsupported = 可见性档运行时构建失败(fail-closed,不重试)。
+   */
+  readonly visibilitySource: MegaLightsVisibilitySource;
+  /** fail-closed 原因(visibilitySource = unsupported 时如实披露;供给成功帧缺省)。 */
+  readonly visibilityFallbackReason?: string;
 }
 
 /** 帧早段决策纯函数(depth 消费判定与 encodeFrame 决策单一同源,零重复实现)。
