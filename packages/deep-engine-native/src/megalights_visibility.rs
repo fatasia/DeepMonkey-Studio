@@ -18,8 +18,8 @@
 //! mask 语义与 [`crate::megalights_ris::MegaLightsFrameInput::visibility`] 对接:
 //! self 路径乘本像素、空间分支乘源像素,目标权重保持无遮挡口径(CPU 镜像同式同位)。
 
-use crate::megalights_abi::{MegaLight, MegaSurfaceRow, RisReservoir, MEGALIGHTS_INVALID_LIGHT};
-use crate::ray_backend::{trace_occluded, TlasInstance, TraceQuery};
+use crate::megalights_abi::{MEGALIGHTS_INVALID_LIGHT, MegaLight, MegaSurfaceRow, RisReservoir};
+use crate::ray_backend::{TlasInstance, TraceQuery, trace_occluded};
 
 /// 胜者射线自相交偏移(相对射线长度;与 TS megaLightsAbi.ts 同值)。
 pub const MEGA_LIGHTS_VISIBILITY_RAY_BIAS_RELATIVE: f64 = 1e-3;
@@ -37,7 +37,10 @@ fn apply_view_to_world(m: &[f32; 16], p: [f64; 3]) -> [f64; 3] {
     [
         x * p[0] + y * p[1] + z * p[2] + f64::from(m[12]),
         f64::from(m[1]) * p[0] + f64::from(m[5]) * p[1] + f64::from(m[9]) * p[2] + f64::from(m[13]),
-        f64::from(m[2]) * p[0] + f64::from(m[6]) * p[1] + f64::from(m[10]) * p[2] + f64::from(m[14]),
+        f64::from(m[2]) * p[0]
+            + f64::from(m[6]) * p[1]
+            + f64::from(m[10]) * p[2]
+            + f64::from(m[14]),
     ]
 }
 
@@ -61,23 +64,34 @@ fn apply_world_to_local_direction(m: &[f32; 12], d: [f32; 3]) -> [f32; 3] {
 
 /// 两级 TLAS 遮挡查询(traceTwoLevelOccluded 同族):逐实例 mask 过滤 → 逆变换到
 /// 局部 → BLAS any-hit;任意实例命中即遮挡(实例粒度早退)。
-fn trace_two_level_occluded(instances: &[TlasInstance], origin: [f64; 3], direction: [f64; 3], t_max: f64, ray_mask: u32) -> bool {
-    if !(t_max > 0.0) {
+fn trace_two_level_occluded(
+    instances: &[TlasInstance],
+    origin: [f64; 3],
+    direction: [f64; 3],
+    t_max: f64,
+    ray_mask: u32,
+) -> bool {
+    if t_max <= 0.0 || t_max.is_nan() {
         return false;
     }
     let origin_f32 = [origin[0] as f32, origin[1] as f32, origin[2] as f32];
-    let direction_f32 = [direction[0] as f32, direction[1] as f32, direction[2] as f32];
+    let direction_f32 = [
+        direction[0] as f32,
+        direction[1] as f32,
+        direction[2] as f32,
+    ];
     for instance in instances {
         if instance.mask & ray_mask == 0 {
             continue;
         }
         let local_origin = apply_world_to_local(&instance.world_to_local, origin_f32);
-        let local_direction = apply_world_to_local_direction(&instance.world_to_local, direction_f32);
+        let local_direction =
+            apply_world_to_local_direction(&instance.world_to_local, direction_f32);
         let scale = (local_direction[0] * local_direction[0]
             + local_direction[1] * local_direction[1]
             + local_direction[2] * local_direction[2])
             .sqrt();
-        if !(scale > 0.0) {
+        if scale <= 0.0 || scale.is_nan() {
             continue;
         }
         let query = TraceQuery {
@@ -89,7 +103,12 @@ fn trace_two_level_occluded(instances: &[TlasInstance], origin: [f64; 3], direct
             dz: local_direction[2] / scale,
             t_max: (t_max as f32) * scale,
         };
-        if trace_occluded(&instance.blas_vertices, &instance.blas_indices, &instance.blas, &query) {
+        if trace_occluded(
+            &instance.blas_vertices,
+            &instance.blas_indices,
+            &instance.blas,
+            &query,
+        ) {
             return true;
         }
     }
@@ -120,7 +139,11 @@ pub fn winner_visibility_mask(
         if reservoir.winner == MEGALIGHTS_INVALID_LIGHT || reservoir.m == 0 {
             continue; // 退化射线直通可见(GPU tMax=0 同语义)。
         }
-        let position_view = [surfaces[pixel_index][0][0], surfaces[pixel_index][0][1], surfaces[pixel_index][0][2]];
+        let position_view = [
+            surfaces[pixel_index][0][0],
+            surfaces[pixel_index][0][1],
+            surfaces[pixel_index][0][2],
+        ];
         let world_origin = apply_view_to_world(view_to_world, position_view);
         let light = &lights[reservoir.winner as usize];
         let world_target = apply_view_to_world(view_to_world, light.position_view);
@@ -130,10 +153,15 @@ pub fn winner_visibility_mask(
             world_target[2] - world_origin[2],
         ];
         let distance = f64::hypot(f64::hypot(delta[0], delta[1]), delta[2]);
-        if !(distance > 0.0) {
+        // NaN 判遮挡直通(与 TS `!(distance > 0)` 同语义:退化几何 fail-open 可见)。
+        if distance <= 0.0 || distance.is_nan() {
             continue;
         }
-        let direction = [delta[0] / distance, delta[1] / distance, delta[2] / distance];
+        let direction = [
+            delta[0] / distance,
+            delta[1] / distance,
+            delta[2] / distance,
+        ];
         let epsilon = distance * MEGA_LIGHTS_VISIBILITY_RAY_BIAS_RELATIVE;
         let ray_origin = [
             world_origin[0] + direction[0] * epsilon,
@@ -141,7 +169,13 @@ pub fn winner_visibility_mask(
             world_origin[2] + direction[2] * epsilon,
         ];
         let ray_t_max = distance - epsilon - epsilon;
-        if trace_two_level_occluded(scene.instances, ray_origin, direction, ray_t_max, scene.ray_mask) {
+        if trace_two_level_occluded(
+            scene.instances,
+            ray_origin,
+            direction,
+            ray_t_max,
+            scene.ray_mask,
+        ) {
             mask[pixel_index] = 0.0;
         }
     }
@@ -151,7 +185,7 @@ pub fn winner_visibility_mask(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::megalights_abi::{MegaLight, MegaLightKind, RisReservoir};
+    use crate::megalights_abi::MegaLightKind;
     use crate::ray_backend::build_bvh;
     use std::rc::Rc;
 
@@ -189,11 +223,19 @@ mod tests {
     ];
 
     fn surface_at(position: [f64; 3]) -> MegaSurfaceRow {
-        [[position[0], position[1], position[2], 0.0], [0.0, 1.0, 0.0, 0.2], [0.8, 0.7, 0.6, 0.0]]
+        [
+            [position[0], position[1], position[2], 0.0],
+            [0.0, 1.0, 0.0, 0.2],
+            [0.8, 0.7, 0.6, 0.0],
+        ]
     }
 
     fn reservoir_with(winner: u32) -> RisReservoir {
-        RisReservoir { weight_sum: 1.0, winner, m: 1 }
+        RisReservoir {
+            weight_sum: 1.0,
+            winner,
+            m: 1,
+        }
     }
 
     /// fail-closed:无场景(None / 空实例表)→ 可见性恒 1 = 旧行为。
@@ -202,11 +244,21 @@ mod tests {
         let lights = [light_at([0.0, 4.0, 0.0])];
         let surfaces = [surface_at([0.0, 0.0, 0.0]), surface_at([1.0, 0.0, 0.0])];
         let built = [reservoir_with(0), reservoir_with(0)];
-        let none = winner_visibility_mask(&lights, &surfaces, &built, &IDENTITY_VIEW_TO_WORLD, None);
+        let none =
+            winner_visibility_mask(&lights, &surfaces, &built, &IDENTITY_VIEW_TO_WORLD, None);
         assert_eq!(none, vec![1.0, 1.0]);
         let instances: Vec<TlasInstance> = Vec::new();
-        let empty = MegaLightsVisibilityScene { instances: &instances, ray_mask: 0xffff_ffff };
-        let empty_mask = winner_visibility_mask(&lights, &surfaces, &built, &IDENTITY_VIEW_TO_WORLD, Some(&empty));
+        let empty = MegaLightsVisibilityScene {
+            instances: &instances,
+            ray_mask: 0xffff_ffff,
+        };
+        let empty_mask = winner_visibility_mask(
+            &lights,
+            &surfaces,
+            &built,
+            &IDENTITY_VIEW_TO_WORLD,
+            Some(&empty),
+        );
         assert_eq!(empty_mask, vec![1.0, 1.0]);
     }
 
@@ -228,8 +280,17 @@ mod tests {
             0xffff_ffff,
         );
         let instances = vec![occluder];
-        let scene = MegaLightsVisibilityScene { instances: &instances, ray_mask: 0xffff_ffff };
-        let mask = winner_visibility_mask(&lights, &surfaces, &built, &IDENTITY_VIEW_TO_WORLD, Some(&scene));
+        let scene = MegaLightsVisibilityScene {
+            instances: &instances,
+            ray_mask: 0xffff_ffff,
+        };
+        let mask = winner_visibility_mask(
+            &lights,
+            &surfaces,
+            &built,
+            &IDENTITY_VIEW_TO_WORLD,
+            Some(&scene),
+        );
         assert_eq!(mask[0], 0.0, "ray crossing the wall must be occluded");
         assert_eq!(mask[1], 1.0, "invalid winner degenerates to visible");
         // 遮挡像素直接喂帧输入:shade 侧乘 0 → 全黑(与 ris_tests 可见性腿同链)。
@@ -253,14 +314,32 @@ mod tests {
             0b10,
         );
         let instances = vec![occluder];
-        let blocked = MegaLightsVisibilityScene { instances: &instances, ray_mask: 0b10 };
+        let blocked = MegaLightsVisibilityScene {
+            instances: &instances,
+            ray_mask: 0b10,
+        };
         assert_eq!(
-            winner_visibility_mask(&lights, &surfaces, &built, &IDENTITY_VIEW_TO_WORLD, Some(&blocked))[0],
+            winner_visibility_mask(
+                &lights,
+                &surfaces,
+                &built,
+                &IDENTITY_VIEW_TO_WORLD,
+                Some(&blocked)
+            )[0],
             0.0
         );
-        let bypassed = MegaLightsVisibilityScene { instances: &instances, ray_mask: 0b01 };
+        let bypassed = MegaLightsVisibilityScene {
+            instances: &instances,
+            ray_mask: 0b01,
+        };
         assert_eq!(
-            winner_visibility_mask(&lights, &surfaces, &built, &IDENTITY_VIEW_TO_WORLD, Some(&bypassed))[0],
+            winner_visibility_mask(
+                &lights,
+                &surfaces,
+                &built,
+                &IDENTITY_VIEW_TO_WORLD,
+                Some(&bypassed)
+            )[0],
             1.0
         );
     }
@@ -287,9 +366,18 @@ mod tests {
         off_path.world_to_local = [1.0, 0.0, 0.0, 4.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
         // 注意:local = M × world 平移方向为 +4 → 实例世界盒 x∈[-4.5,-0.5],仍在路径外。
         let instances = vec![off_path];
-        let scene = MegaLightsVisibilityScene { instances: &instances, ray_mask: 0xffff_ffff };
+        let scene = MegaLightsVisibilityScene {
+            instances: &instances,
+            ray_mask: 0xffff_ffff,
+        };
         assert_eq!(
-            winner_visibility_mask(&lights, &surfaces, &built, &IDENTITY_VIEW_TO_WORLD, Some(&scene))[0],
+            winner_visibility_mask(
+                &lights,
+                &surfaces,
+                &built,
+                &IDENTITY_VIEW_TO_WORLD,
+                Some(&scene)
+            )[0],
             1.0,
             "instance transformed off the ray path must not occlude"
         );
@@ -306,9 +394,18 @@ mod tests {
         );
         on_path.world_to_local = [1.0, 0.0, 0.0, -0.75, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
         let instances = vec![on_path];
-        let scene = MegaLightsVisibilityScene { instances: &instances, ray_mask: 0xffff_ffff };
+        let scene = MegaLightsVisibilityScene {
+            instances: &instances,
+            ray_mask: 0xffff_ffff,
+        };
         assert_eq!(
-            winner_visibility_mask(&lights, &surfaces, &built, &IDENTITY_VIEW_TO_WORLD, Some(&scene))[0],
+            winner_visibility_mask(
+                &lights,
+                &surfaces,
+                &built,
+                &IDENTITY_VIEW_TO_WORLD,
+                Some(&scene)
+            )[0],
             0.0,
             "instance transformed onto the ray path must occlude"
         );
@@ -336,25 +433,52 @@ mod tests {
         };
         // 板面在表面点(x=0):bias 起点已越过(x≈2e-3)→ 可见。
         let instances = vec![wall(0.0)];
-        let scene = MegaLightsVisibilityScene { instances: &instances, ray_mask: 0xffff_ffff };
+        let scene = MegaLightsVisibilityScene {
+            instances: &instances,
+            ray_mask: 0xffff_ffff,
+        };
         assert_eq!(
-            winner_visibility_mask(&lights, &surfaces, &built, &IDENTITY_VIEW_TO_WORLD, Some(&scene))[0],
+            winner_visibility_mask(
+                &lights,
+                &surfaces,
+                &built,
+                &IDENTITY_VIEW_TO_WORLD,
+                Some(&scene)
+            )[0],
             1.0,
             "wall through the surface point must be skipped by the origin bias"
         );
         // 板面在灯点(x=2):tMax 收缩后(x≤1.998)够不到 → 可见。
         let instances = vec![wall(2.0)];
-        let scene = MegaLightsVisibilityScene { instances: &instances, ray_mask: 0xffff_ffff };
+        let scene = MegaLightsVisibilityScene {
+            instances: &instances,
+            ray_mask: 0xffff_ffff,
+        };
         assert_eq!(
-            winner_visibility_mask(&lights, &surfaces, &built, &IDENTITY_VIEW_TO_WORLD, Some(&scene))[0],
+            winner_visibility_mask(
+                &lights,
+                &surfaces,
+                &built,
+                &IDENTITY_VIEW_TO_WORLD,
+                Some(&scene)
+            )[0],
             1.0,
             "wall through the light point must be skipped by the tMax shrink"
         );
         // 板面在路径中段(x=0.5):照常遮挡。
         let instances = vec![wall(0.5)];
-        let scene = MegaLightsVisibilityScene { instances: &instances, ray_mask: 0xffff_ffff };
+        let scene = MegaLightsVisibilityScene {
+            instances: &instances,
+            ray_mask: 0xffff_ffff,
+        };
         assert_eq!(
-            winner_visibility_mask(&lights, &surfaces, &built, &IDENTITY_VIEW_TO_WORLD, Some(&scene))[0],
+            winner_visibility_mask(
+                &lights,
+                &surfaces,
+                &built,
+                &IDENTITY_VIEW_TO_WORLD,
+                Some(&scene)
+            )[0],
             0.0,
             "mid-path wall must occlude regardless of the endpoint bias"
         );
