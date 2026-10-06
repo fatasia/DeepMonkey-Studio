@@ -145,15 +145,23 @@ describe("published renderer lifecycle", () => {
     expect(harness.resolvePublishedRenderer).not.toHaveBeenCalled(); expect(app.changeRendererBackend).not.toHaveBeenCalled();
   });
 
-  it("ignores a late published decision after navigation and restores the author preference", async () => {
+  it("ignores a late published decision after navigation and does not yank an unsaved default", async () => {
     const pending = deferred<{ backend: string }>(); harness.resolvePublishedRenderer.mockReturnValue(pending.promise);
     const app = fixture({ route: { view: "published" }, rendererBackend: "webgpu" }); app.render();
     app.render({ route: { view: "studio" } });
+    // 无保存偏好:会话默认 Deep WebGPU 必须保持,不得被缺省 WebGL 拉回(用户指令:默认要使用 Deep)。
+    expect(app.changeRendererBackend).not.toHaveBeenCalled();
+    pending.resolve({ backend: "webgl" }); await Promise.resolve();
+    expect(app.changeRendererBackend).not.toHaveBeenCalled();
+    expect(window.localStorage.setItem).not.toHaveBeenCalled();
+  });
+
+  it("restores only an explicitly saved author preference", async () => {
+    window.localStorage.getItem = vi.fn(() => "webgl");
+    const app = fixture({ rendererBackend: "webgpu" }); app.render();
     expect(app.changeRendererBackend).toHaveBeenCalledExactlyOnceWith("webgl", {
       persistPreference: false, message: "已恢复用户渲染偏好：WebGL",
     });
-    pending.resolve({ backend: "webgl" }); await Promise.resolve();
-    expect(app.changeRendererBackend).toHaveBeenCalledTimes(1);
     expect(window.localStorage.setItem).not.toHaveBeenCalled();
   });
 

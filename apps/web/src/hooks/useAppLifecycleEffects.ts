@@ -218,10 +218,11 @@ export function useAppLifecycleEffects({ state, playModeActive = false, saveActi
   useEffect(() => {
     if (!engine || route.view === "published"
       || !canAutomaticallyChangeRenderer(rendererSwitchPhase, rendererSwitching)) return;
+    // 只恢复用户显式保存过的偏好;无保存时缺省回退 WebGL 会把会话默认的 Deep WebGPU 拉回去。
     const storedValue = window.localStorage.getItem(RENDERER_BACKEND_STORAGE_KEY);
-    const stored = storedValue === "webgpu" || storedValue === "wasm" ? storedValue : "webgl";
-    if (stored !== rendererBackend) {
-      void changeRendererBackend(stored, { persistPreference: false, message: `已恢复用户渲染偏好：${stored === "wasm" ? "Deep WASM" : stored === "webgpu" ? "Deep WebGPU" : "WebGL"}` });
+    if (storedValue !== "webgpu" && storedValue !== "wasm" && storedValue !== "webgl") return;
+    if (storedValue !== rendererBackend) {
+      void changeRendererBackend(storedValue, { persistPreference: false, message: `已恢复用户渲染偏好：${storedValue === "wasm" ? "Deep WASM" : storedValue === "webgpu" ? "Deep WebGPU" : "WebGL"}` });
     }
   }, [engine, rendererBackend, rendererSwitching, rendererSwitchPhase, route.view]);
 }
