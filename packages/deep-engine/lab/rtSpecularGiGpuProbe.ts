@@ -53,8 +53,10 @@ export const RT_SPECULAR_PROBE_ROUGHNESS = 0.25;
 const PROBE_LIGHT_RAW: readonly [number, number, number] = [0.2, 0.85, 0.45];
 const PROBE_LIGHT_LENGTH = Math.hypot(...PROBE_LIGHT_RAW);
 export const RT_SPECULAR_PROBE_LIGHT = {
-  surfaceToLightWorld: PROBE_LIGHT_RAW.map((value) => value / PROBE_LIGHT_LENGTH) as
-    readonly [number, number, number],
+  surfaceToLightWorld: (() => {
+    const normalized = PROBE_LIGHT_RAW.map((value) => value / PROBE_LIGHT_LENGTH);
+    return [normalized[0]!, normalized[1]!, normalized[2]!] as const;
+  })(),
   lightColor: [1.0, 0.96, 0.9] as const,
   lightIntensity: 3.0,
   envRadiance: [0.06, 0.07, 0.09] as const,
