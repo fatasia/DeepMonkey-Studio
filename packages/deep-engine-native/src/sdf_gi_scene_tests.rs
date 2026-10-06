@@ -1,6 +1,7 @@
 //! [`crate::sdf_gi_scene`] 单元测试:解析解(轴对齐盒)+ 排除/跳过合同 + lattice。
 
 use super::*;
+use crate::sdf_gi_scene::{SdfSceneTransform, build_sdf_grid};
 
 /// 单位闭盒 12 三角形(6 面各 2;CCW 外向)。
 fn unit_box(tr: f64) -> (Vec<f32>, Vec<u32>) {

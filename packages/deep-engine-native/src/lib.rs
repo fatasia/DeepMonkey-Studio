@@ -93,6 +93,7 @@ mod probe_gi_native_adapter_tests;
 /// P1 质量主线(六引擎对标刀位 1):native SDF-GI 链——场景级 SDF 体积烘焙
 /// (CPU 权威镜像,TS sdfSceneBake/sdfGrid 同构)+ 探针 lattice 推导。
 pub mod sdf_gi_scene;
+pub mod sdf_gi_scene_compose;
 /// 天光圆锥追踪(visibility+hitDistance 双输出)+ Fibonacci 方向集
 /// (TS sdfSkyVisibility/probeOcclusionDirection 同构)。
 pub mod sdf_gi_trace;
