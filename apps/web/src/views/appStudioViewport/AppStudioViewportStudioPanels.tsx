@@ -5,9 +5,7 @@ import { SceneEngineeringAnalysisPanel } from "../../components/SceneEngineering
 import { SceneEnvironmentPanel } from "../../components/SceneEnvironmentPanel";
 import { ScenePhysicsPanel } from "../../components/ScenePhysicsPanel";
 import { PhysicsDebugPanel } from "../../components/PhysicsDebugPanel";
-import { QualityTelemetryPanel } from "../../components/QualityTelemetryPanel";
-import { ProfilerSwimlanePanel } from "../../components/ProfilerSwimlanePanel";
-import { DevHud } from "../../components/DevHud";
+import { PerformanceDiagnosticsPanel } from "../../components/PerformanceDiagnosticsPanel";
 import { ExperimentalFeaturesPanel } from "../../components/ExperimentalFeaturesPanel";
 import { LightingBakeBenchPanel } from "../../components/LightingBakeBenchPanel";
 import { SceneXrPanel } from "../../components/SceneXrPanel";
@@ -19,12 +17,12 @@ import type { AppStudioPhysicsDebugState } from "./useAppStudioPhysicsDebugState
  * AppStudioViewport studio 实体面板接线(source-size 拆分,2026-10-04:自
  * AppStudioViewport.tsx 按职责抽出,JSX 逐行同源,仅包一层组件;语义零变化)。
  *
- * 职责:工程分析 / 环境 / 物理 / 物理调试 / 质量 / 开发者 HUD / 实验性功能 /
+ * 职责:工程分析 / 环境 / 物理 / 物理调试 / 性能与诊断(统一面板)/ 实验性功能 /
  * 光照烘焙工作台 / XR 面板的开态条件渲染与 props 接线。
  */
 export function AppStudioViewportStudioPanels({ controller, toggles, physicsDebug, probeBake, bakeProbeGrid, xrAuthorBackend }: {
   controller: AppStudioController;
-  toggles: Pick<AppStudioViewportToggles, "engineeringOpen" | "setEngineeringOpen" | "qualityPanelOpen" | "setQualityPanelOpen" | "profilerPanelOpen" | "setProfilerPanelOpen" | "devHudOpen" | "setDevHudOpen" | "experimentalPanelOpen" | "setExperimentalPanelOpen" | "bakeBenchOpen" | "setBakeBenchOpen">;
+  toggles: Pick<AppStudioViewportToggles, "engineeringOpen" | "setEngineeringOpen" | "diagnosticsOpen" | "setDiagnosticsOpen" | "experimentalPanelOpen" | "setExperimentalPanelOpen" | "bakeBenchOpen" | "setBakeBenchOpen">;
   physicsDebug: Pick<AppStudioPhysicsDebugState, "physicsDebugVisible" | "setPhysicsDebugVisible" | "physicsDebugFilter" | "setPhysicsDebugFilter" | "physicsDebugLayers" | "setPhysicsDebugLayers" | "physicsDebugPanelOpen" | "setPhysicsDebugPanelOpen">;
   probeBake: ProbeGridBakeUiState;
   bakeProbeGrid: (grid: ProbeGridBakeGrid) => void;
@@ -32,6 +30,7 @@ export function AppStudioViewportStudioPanels({ controller, toggles, physicsDebu
 }) {
   const {
     addLight,
+    cameraInfo,
     changeEngineeringAnalysis,
     changeLighting,
     changePhysics,
@@ -47,6 +46,7 @@ export function AppStudioViewportStudioPanels({ controller, toggles, physicsDebu
     locale,
     physics,
     physicsOpen,
+    pointerInfo,
     postProcessing,
     project,
     removeLight,
@@ -58,6 +58,7 @@ export function AppStudioViewportStudioPanels({ controller, toggles, physicsDebu
     sceneCoordinates,
     sceneEnvironment,
     sceneName,
+    sceneStatistics,
     setEnvironmentOpen,
     setPhysicsOpen,
     setSceneCoordinates,
@@ -156,25 +157,14 @@ export function AppStudioViewportStudioPanels({ controller, toggles, physicsDebu
           selectedName={selected?.name}
         />
       )}
-      {route.view === "studio" && toggles.qualityPanelOpen && (
-        <QualityTelemetryPanel
+      {route.view === "studio" && toggles.diagnosticsOpen && (
+        <PerformanceDiagnosticsPanel
           locale={locale}
           engine={engine ?? undefined}
-          onClose={() => toggles.setQualityPanelOpen(false)}
-        />
-      )}
-      {route.view === "studio" && toggles.profilerPanelOpen && (
-        <ProfilerSwimlanePanel
-          locale={locale}
-          engine={engine ?? undefined}
-          onClose={() => toggles.setProfilerPanelOpen(false)}
-        />
-      )}
-      {route.view === "studio" && toggles.devHudOpen && (
-        <DevHud
-          locale={locale}
-          engine={engine ?? undefined}
-          onClose={() => toggles.setDevHudOpen(false)}
+          statistics={sceneStatistics}
+          camera={cameraInfo}
+          pointer={pointerInfo}
+          onClose={() => toggles.setDiagnosticsOpen(false)}
         />
       )}
       {route.view === "studio" && toggles.experimentalPanelOpen && (

@@ -16,7 +16,7 @@ import type { AppStudioSimulationDockState } from "./useAppStudioSimulationDock"
  */
 export function AppStudioViewportToolDock({ controller, toggles, physicsDebug, simulation, viewerExplosionActive, onToggleViewerExplosion, xrUnavailableReason }: {
   controller: AppStudioController;
-  toggles: Pick<AppStudioViewportToggles, "viewerObjectPanelOpen" | "setViewerObjectPanelOpen" | "engineeringOpen" | "setEngineeringOpen" | "qualityPanelOpen" | "setQualityPanelOpen" | "profilerPanelOpen" | "setProfilerPanelOpen" | "devHudOpen" | "setDevHudOpen" | "experimentalPanelOpen" | "setExperimentalPanelOpen" | "bakeBenchOpen" | "setBakeBenchOpen">;
+  toggles: Pick<AppStudioViewportToggles, "viewerObjectPanelOpen" | "setViewerObjectPanelOpen" | "engineeringOpen" | "setEngineeringOpen" | "diagnosticsOpen" | "setDiagnosticsOpen" | "experimentalPanelOpen" | "setExperimentalPanelOpen" | "bakeBenchOpen" | "setBakeBenchOpen">;
   physicsDebug: Pick<AppStudioPhysicsDebugState, "physicsDebugVisible">;
   simulation: Pick<AppStudioSimulationDockState, "simulationPanelId" | "toggleSimulationPanel" | "directorWorkspace" | "openDirector" | "setSimulationTrack">;
   viewerExplosionActive: boolean;
@@ -132,19 +132,14 @@ export function AppStudioViewportToolDock({ controller, toggles, physicsDebug, s
           behaviorOpen={sceneBehaviorOpen}
           physicsOpen={physicsOpen}
           physicsDebugActive={physicsDebug.physicsDebugVisible}
-          qualityPanelOpen={toggles.qualityPanelOpen}
-          onQualityPanelToggle={() => toggles.setQualityPanelOpen(value => !value)}
-          profilerPanelOpen={toggles.profilerPanelOpen}
-          onProfilerPanelToggle={() => toggles.setProfilerPanelOpen(value => !value)}
-          devHudOpen={toggles.devHudOpen}
-          onDevHudToggle={() => toggles.setDevHudOpen(value => !value)}
+          diagnosticsOpen={toggles.diagnosticsOpen}
+          onDiagnosticsToggle={() => toggles.setDiagnosticsOpen(value => !value)}
           experimentalPanelOpen={toggles.experimentalPanelOpen}
           onExperimentalPanelToggle={() => toggles.setExperimentalPanelOpen(value => !value)}
           bakeBenchOpen={toggles.bakeBenchOpen}
           onBakeBenchToggle={() => toggles.setBakeBenchOpen(value => !value)}
           xrOpen={xrPanelOpen}
           simulationPanel={simulation.simulationPanelId}
-          infoEnabled={infoEnabled}
           engineeringOpen={toggles.engineeringOpen}
           onFitAll={() => engine?.fitAll()}
           onSelect={() => changeNavigation("orbit")}
@@ -166,7 +161,6 @@ export function AppStudioViewportToolDock({ controller, toggles, physicsDebug, s
             setAvatarVisible(next);
             engine?.setAvatarVisible(next);
           }}
-          onInfoToggle={() => setInfoEnabled((value) => !value)}
           onEngineeringToggle={() => {
             toggles.setEngineeringOpen((value) => !value);
             setEnvironmentOpen(false);
@@ -188,6 +182,5 @@ export function AppStudioViewportToolDock({ controller, toggles, physicsDebug, s
           }}
           onXrToggle={() => setXrPanelOpen((value) => !value)}
           onSimulationPanelChange={simulation.toggleSimulationPanel}
-        />
-      ) : null;
+        />      ) : null;
 }

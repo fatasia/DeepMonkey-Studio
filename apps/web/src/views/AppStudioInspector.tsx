@@ -13,7 +13,6 @@ import { ObjectAppearanceEditor } from "../components/ObjectAppearanceEditor";
 import { MaterialGraphEditor } from "../components/MaterialGraphEditor";
 import { SceneAnnotationInspector } from "../components/SceneAnnotationInspector";
 import { SceneDataBindingEditor } from "../components/SceneDataBindingEditor";
-import { SceneInspectorInfo } from "../components/SceneInspectorInfo";
 import { SceneMultiSelectionInspector } from "../components/SceneMultiSelectionInspector";
 import { SceneResultLists } from "../components/SceneResultLists";
 import { SceneSpaceInspector } from "../components/SceneSpaceInspector";
@@ -27,7 +26,6 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
     activeScene,
     behaviorScriptContext,
     bindings,
-    cameraInfo,
     cameraViews,
     chooseMaterialTexture,
     collisions,
@@ -38,8 +36,6 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
     explosionFactor,
     explosionMode,
     focusComponent,
-    frameRate,
-    infoEnabled,
     inspectorTab,
     interactionTargetOptions,
     locale,
@@ -47,7 +43,6 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
     message,
     openDataCenter,
     openDocs,
-    pointerInfo,
     project,
     removeObjectInteractions,
     rendererBackend,
@@ -57,7 +52,6 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
     sceneDataBindings,
     sceneInteractions,
     sceneOrganizationSelection,
-    sceneStatistics,
     scenes,
     selected,
     selectedAnnotation,
@@ -109,7 +103,6 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
           <h2>{tr(locale, "属性检查器", "Inspector")}</h2>
         </div>
       </div>
-      {infoEnabled && <SceneInspectorInfo locale={locale} statistics={sceneStatistics} frameRate={frameRate} camera={cameraInfo} pointer={pointerInfo} />}
       {selectedAnnotation ? (
         <SceneAnnotationInspector
           locale={locale}

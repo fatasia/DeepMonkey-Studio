@@ -15,8 +15,6 @@ import {
   FlaskConical,
   Focus,
   Footprints,
-  Gauge,
-  Info,
   Layers3,
   MapPin,
   MousePointer2,
@@ -68,14 +66,9 @@ interface SceneToolDockProps {
   physicsOpen: boolean;
   /** T0 刀 3：物理调试视图开启时坞内「物理系统」入口显示调试指示点（UX：调试态顶栏可见）。 */
   physicsDebugActive?: boolean;
-  qualityPanelOpen: boolean;
-  onQualityPanelToggle: () => void;
-  /** 六引擎对标 P2:作者级 Profiler 泳道面板;默认关,本菜单开。 */
-  profilerPanelOpen?: boolean;
-  onProfilerPanelToggle?: () => void;
-  /** 刀 6:开发者 HUD(性能观测小条,F9 亦可开关);开关挂「查看与分析」菜单,默认关。 */
-  devHudOpen?: boolean;
-  onDevHudToggle?: () => void;
+  /** 统一「性能与诊断」面板(帧时/场景/资源/管线;F9 亦可开关);开关挂「查看与分析」菜单,默认关。 */
+  diagnosticsOpen?: boolean;
+  onDiagnosticsToggle?: () => void;
   /** 配置易用性:实验性功能面板(URL opt-in 开关集中呈递);默认关。 */
   experimentalPanelOpen?: boolean;
   onExperimentalPanelToggle?: () => void;
@@ -84,7 +77,6 @@ interface SceneToolDockProps {
   onBakeBenchToggle?: () => void;
   xrOpen: boolean;
   simulationPanel: SceneSimulationPanelId | undefined;
-  infoEnabled: boolean;
   engineeringOpen: boolean;
   onFitAll: () => void;
   onSelect: () => void;
@@ -97,7 +89,6 @@ interface SceneToolDockProps {
   onExplosionToggle: () => void;
   onNavigationChange: (mode: NavigationMode) => void;
   onAvatarToggle: () => void;
-  onInfoToggle: () => void;
   onEngineeringToggle: () => void;
   onEnvironmentToggle: () => void;
   onAnimationToggle: () => void;
@@ -252,9 +243,8 @@ export function SceneToolDock(props: SceneToolDockProps) {
           props.explosionActive ||
           props.environmentOpen ||
           props.animationOpen ||
-          props.infoEnabled ||
           props.engineeringOpen ||
-          props.devHudOpen === true
+          props.diagnosticsOpen === true
         }
         onToggle={() => setOpenMenu((value) => (value === "inspect" ? undefined : "inspect"))}
       >
@@ -321,22 +311,16 @@ export function SceneToolDock(props: SceneToolDockProps) {
           onClick={() => run(props.onExplosionToggle)}
         />
         <MenuAction
-          label={tr(props.locale, "场景信息", "Scene information")}
-          icon={<Info size={15} />}
-          active={props.infoEnabled}
-          onClick={() => run(props.onInfoToggle)}
+          label={tr(props.locale, "性能与诊断", "Performance & diagnostics")}
+          icon={<Activity size={15} />}
+          active={props.diagnosticsOpen === true}
+          onClick={() => run(() => props.onDiagnosticsToggle?.())}
         />
         <MenuAction
           label={tr(props.locale, "工程分析与导出", "Engineering analysis & export")}
           icon={<ShieldCheck size={15} />}
           active={props.engineeringOpen}
           onClick={() => run(props.onEngineeringToggle)}
-        />
-        <MenuAction
-          label={tr(props.locale, "开发者 HUD", "Developer HUD")}
-          icon={<Activity size={15} />}
-          active={props.devHudOpen === true}
-          onClick={() => run(() => props.onDevHudToggle?.())}
         />
         <MenuAction
           label={tr(props.locale, "环境与灯光", "Environment & lighting")}
@@ -366,8 +350,6 @@ export function SceneToolDock(props: SceneToolDockProps) {
         active={
           props.behaviorOpen ||
           props.physicsOpen ||
-          props.qualityPanelOpen ||
-          props.profilerPanelOpen === true ||
           props.experimentalPanelOpen === true ||
           props.bakeBenchOpen ||
           props.xrOpen ||
@@ -391,18 +373,6 @@ export function SceneToolDock(props: SceneToolDockProps) {
           active={props.physicsOpen}
           {...(props.physicsDebugActive ? { dot: "debug" as const } : {})}
           onClick={() => run(props.onPhysicsToggle)}
-        />
-        <MenuAction
-          label={tr(props.locale, "质量遥测", "Quality telemetry")}
-          icon={<Gauge size={15} />}
-          active={props.qualityPanelOpen}
-          onClick={() => run(props.onQualityPanelToggle)}
-        />
-        <MenuAction
-          label={tr(props.locale, "性能剖析", "Profiler")}
-          icon={<Activity size={15} />}
-          active={props.profilerPanelOpen === true}
-          onClick={() => run(() => props.onProfilerPanelToggle?.())}
         />
         <MenuAction
           label={tr(props.locale, "实验性功能", "Experimental features")}

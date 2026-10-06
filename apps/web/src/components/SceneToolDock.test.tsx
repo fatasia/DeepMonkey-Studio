@@ -30,11 +30,10 @@ describe("SceneToolDock", () => {
         behaviorOpen={false}
         cameraOpen={false}
         physicsOpen={false}
-        qualityPanelOpen={false}
-        onQualityPanelToggle={onAction}
+        diagnosticsOpen={false}
+        onDiagnosticsToggle={onAction}
         xrOpen={false}
         simulationPanel={undefined}
-        infoEnabled={false}
         engineeringOpen={false}
         onFitAll={onAction}
         onSelect={onAction}
@@ -47,7 +46,6 @@ describe("SceneToolDock", () => {
         onExplosionToggle={onAction}
         onNavigationChange={onAction}
         onAvatarToggle={onAction}
-        onInfoToggle={onAction}
         onEngineeringToggle={onAction}
         onEnvironmentToggle={onAction}
         onAnimationToggle={onAction}
@@ -92,11 +90,10 @@ describe("SceneToolDock", () => {
       animationOpen: false,
       behaviorOpen: false,
       physicsOpen: false,
-      qualityPanelOpen: false,
-      onQualityPanelToggle: onAction,
+      diagnosticsOpen: false,
+      onDiagnosticsToggle: onAction,
       xrOpen: false,
       simulationPanel: undefined,
-      infoEnabled: false,
       engineeringOpen: false,
       onFitAll: onAction,
       onSelect: onAction,
@@ -109,7 +106,6 @@ describe("SceneToolDock", () => {
       onExplosionToggle: onAction,
       onNavigationChange: onAction,
       onAvatarToggle: onAction,
-      onInfoToggle: onAction,
       onEngineeringToggle: onAction,
       onEnvironmentToggle: onAction,
       onAnimationToggle: onAction,
