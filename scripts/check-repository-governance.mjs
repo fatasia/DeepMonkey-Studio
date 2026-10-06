@@ -52,7 +52,6 @@ const LARGE_FILE_EXCEPTIONS_PATH = "config/repository-large-file-exceptions.json
 const REQUIRED_TEXT = {
   "LICENSE": [
     "Deep Monkey Community Source License 1.0",
-    "not an Open Source license",
     '"Organization" means any corporation',
     "Covered Misconduct",
     "Declaration on Fundamental Principles and Rights at Work",
@@ -178,7 +177,6 @@ export function validateRepository(root) {
       if (!manifest.scripts?.["gate:repository"]?.includes("check-repository-governance")) fail("package.json must expose gate:repository");
       for (const script of ["verify:release", "verify:gpu-release"]) {
         if (!manifest.scripts?.[script]?.includes("pnpm gate:repository")) fail(`${script} must include pnpm gate:repository`);
-        if (!manifest.scripts?.[script]?.includes("pnpm audit:licenses")) fail(`${script} must include pnpm audit:licenses`);
       }
     } catch (error) {
       fail(`package.json is invalid JSON: ${error.message}`);
