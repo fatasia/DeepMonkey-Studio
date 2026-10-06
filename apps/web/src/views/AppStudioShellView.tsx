@@ -1,18 +1,13 @@
 import { Play, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
-import { selectionDeleteCommand } from "../commands/engineEditCommand";
 import { STUDIO_INSPECTOR_STORAGE_KEY, STUDIO_LEFT_PANEL_STORAGE_KEY } from "../appDefaults";
 import { ModelImportInput } from "../components/ModelImportInput";
 import { UploadedResourceThumbnails } from "../components/UploadedResourceThumbnails";
-import type { ModelRecord } from "@bim-studio/contracts";
 import { readBooleanPreference, writeBooleanPreference } from "../hooks/usePersistedBooleanState";
 import { translate as tr } from "../i18n";
-import { useDialogEscape } from "../hooks/useGlobalDialogEscape";
 import { FlatSceneObjectList } from "../components/FlatSceneObjectList";
 import { useLayerRenameFocus } from "../components/useLayerRenameFocus";
 import { useSceneAssetNavigation } from "../optimizer/useSceneAssetNavigation";
-import { modelAssetOptimizerRoute } from "../optimizer/modelAssetNavigation";
 import { ModelTreeItem } from "../components/ModelTreeItem";
 import { ModelDiffReviewPanel } from "../components/ModelDiffReviewPanel";
 import { SceneModelInstanceDialog } from "../components/SceneModelInstanceDialog";
@@ -31,9 +26,10 @@ import { AppStudioInspector } from "./AppStudioInspector";
 import { AppStudioViewport } from "./AppStudioViewport";
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { ApplyUserPrefabUpdateDialog, SaveUserPrefabDialog } from "../components/UserPrefabDialogs";
-import { buildUserPrefabTreeMarks } from "../prefabs/userPrefabModel";
-import { useMemo } from "react";
 import "../styles/workspacePanelAnchors.css";
+import { useStudioUserPrefabWorkflow } from "./useStudioUserPrefabWorkflow";
+import { useStudioUploadedModelImport } from "./useStudioUploadedModelImport";
+import { useSceneSelectionDeleteShortcut } from "./useSceneSelectionDeleteShortcut";
 
 export function AppStudioShellView({ controller }: { controller: AppStudioController }) {
   const focusRename = useLayerRenameFocus("scene");
@@ -43,11 +39,6 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
   const [leftPanelOpen, setLeftPanelOpen] = useState(() => readBooleanPreference(STUDIO_LEFT_PANEL_STORAGE_KEY, true));
   const [rightPanelOpen, setRightPanelOpen] = useState(() => readBooleanPreference(STUDIO_INSPECTOR_STORAGE_KEY, true));
   const [sceneWorkflow, setSceneWorkflow] = useState<"device-layout" | "smart-binding" | "model-diff" | null>(null);
-  const [uploadedImportModels, setUploadedImportModels] = useState<ModelRecord[] | null>(null);
-  // Resource-panel gestures can arrive in the short window between canvas
-  // mount and ViewerEngine creation. Keep the user action instead of silently
-  // dropping it when the controller is not ready yet.
-  const pendingProjectModelInsertsRef = useRef<ModelRecord[]>([]);
   // SIM-1a：场景树「仿真」域的选中实体与断链集合（引用模型被删时黄牌提示）。
   const [selectedSimulationEntityId, setSelectedSimulationEntityId] = useState<string | undefined>(undefined);
   const panelsBeforeBehaviorSplitRef = useRef<{ left: boolean; right: boolean } | undefined>(undefined);
@@ -281,79 +272,15 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
     xrCapabilities,
     xrPanelOpen,
   } = controller;
-  const uploadedImportEscapeRef = useDialogEscape(() => setUploadedImportModels(null), busy);
+  // 上传模型导入域(上传完成弹窗/场景树待插队列/直接插入与优化入口)迁至 hook。
+  const {
+    uploadedImportModels, setUploadedImportModels, uploadedImportEscapeRef, openImportModelPicker,
+    openRvtImportSettings, insertUploadedModels, insertProjectModel, optimizeUploadedModels,
+  } = useStudioUploadedModelImport(controller, setSceneImportOpen, setSceneWorkflow);
   // T0 刀 2：用户组合预制体（存为预制体 / 实例化 / 应用更新 diff / 覆盖）。
-  const { userPrefab, userPrefabs, userPrefabInstances } = controller;
-  const [savePrefabOpen, setSavePrefabOpen] = useState(false);
-  const [applyPrefabInstanceId, setApplyPrefabInstanceId] = useState<string>();
-  const prefabTreeMarks = useMemo(() => buildUserPrefabTreeMarks(userPrefabInstances, userPrefabs), [userPrefabInstances, userPrefabs]);
-  const applyPrefabDiff = useMemo(
-    () => (applyPrefabInstanceId ? userPrefab.diffUserPrefabInstance(applyPrefabInstanceId) : undefined),
-    // revision 变化（实例应用/成员编辑）后重算，保证预览与场景事实一致。
-    [applyPrefabInstanceId, revision, userPrefab], // eslint-disable-line react-hooks/exhaustive-deps
-  );
-  const instanceIdByMemberId = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const record of userPrefabInstances) for (const objectId of Object.values(record.memberObjectIds)) map.set(objectId, record.instanceId);
-    return map;
-  }, [userPrefabInstances]);
-  const insertUserPrefab = (prefabId: string) => {
-    userPrefab.instantiateUserPrefab(prefabId).catch(showError);
-  };
-  const runPrefabRowAction = (objectId: string, action: "apply-update" | "refresh-overrides" | "reset-member" | "update-prototype") => {
-    const instanceId = instanceIdByMemberId.get(objectId);
-    if (!instanceId) return;
-    const record = userPrefabInstances.find((item) => item.instanceId === instanceId);
-    if (!record) return;
-    if (action === "apply-update") {
-      if (!userPrefab.diffUserPrefabInstance(instanceId)) {
-        setMessage(tr(locale, "该实例已是最新版本，无需应用更新", "This instance is already up to date"));
-        return;
-      }
-      setApplyPrefabInstanceId(instanceId);
-    } else if (action === "update-prototype") userPrefab.updateUserPrefabFromInstance(record.prefabId, instanceId);
-    else if (action === "refresh-overrides") userPrefab.refreshUserPrefabOverrides(instanceId);
-    else userPrefab.resetUserPrefabMember(instanceId, objectId);
-  };
-  const openImportModelPicker = () => {
-    setSceneImportOpen(false);
-    setSceneWorkflow(null);
-    uploadRef.current?.click();
-  };
-  const openRvtImportSettings = () => {
-    setSceneImportOpen(true);
-    setSceneWorkflow(null);
-  };
-  const insertUploadedModels = async () => {
-    const models = uploadedImportModels;
-    if (!models?.length) return;
-    setUploadedImportModels(null);
-    const occupiedAssetIds = new Set(loadedModels.map((item) => item.assetModelId ?? item.id));
-    for (const model of models) {
-      const instanceId = occupiedAssetIds.has(model.id) ? crypto.randomUUID() : model.id;
-      occupiedAssetIds.add(model.id);
-      await loadModel(model, false, instanceId);
-    }
-  };
-  const insertProjectModel = (model: ModelRecord) => {
-    if (!engine) {
-      if (!pendingProjectModelInsertsRef.current.some((item) => item.id === model.id)) {
-        pendingProjectModelInsertsRef.current.push(model);
-      }
-      return;
-    }
-    void loadModel(model, false, loadedModels.some((item) => (item.assetModelId ?? item.id) === model.id) ? crypto.randomUUID() : model.id);
-  };
-  useEffect(() => {
-    if (!engine || pendingProjectModelInsertsRef.current.length === 0) return;
-    const pending = pendingProjectModelInsertsRef.current.splice(0);
-    const occupiedAssetIds = new Set(loadedModels.map((item) => item.assetModelId ?? item.id));
-    for (const model of pending) {
-      const instanceId = occupiedAssetIds.has(model.id) ? crypto.randomUUID() : model.id;
-      occupiedAssetIds.add(model.id);
-      void loadModel(model, false, instanceId);
-    }
-  }, [engine, loadModel, loadedModels]);
+  const { userPrefab, userPrefabs } = controller;
+  const { savePrefabOpen, setSavePrefabOpen, applyPrefabInstanceId, setApplyPrefabInstanceId,
+    applyPrefabDiff, prefabTreeMarks, insertUserPrefab, runPrefabRowAction } = useStudioUserPrefabWorkflow(controller);
   // 开发服务器资产热重载(vite HMR):资产文件落盘 → 插件推送 → 引擎原位热换。
   // 非 vite dev 环境 import.meta.hot 不存在,连接如实 no-op;浮窗"重新加载"按钮兜底。
   const reloadChangedAssetUrlRef = useRef(reloadChangedAssetUrl);
@@ -364,17 +291,6 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
     });
     return () => connection.dispose();
   }, []);
-  const optimizeUploadedModels = () => {
-    const firstModel = uploadedImportModels?.[0];
-    if (!firstModel) return;
-    setUploadedImportModels(null);
-    const assetReturn = route.assetReturn ?? (activeScene ? {
-      sceneId: activeScene.id,
-      ...(route.applicationId ? { applicationId: route.applicationId } : {}),
-    } : undefined);
-    bindings.actions.navigate(modelAssetOptimizerRoute(project?.id, firstModel.id, assetReturn));
-  };
-
   // SIM-1a 断链集合：仿真实体引用了已删除模型时在场景树黄牌标注（不静默失效）。
   const brokenSimulationModelIds = new Set<string>();
   for (const entity of activeScene?.simulationEntities ?? []) {
@@ -420,42 +336,8 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
     setRightPanelOpen(previous.right);
   }, [leftPanelOpen, rightPanelOpen, sceneBehaviorLayout, sceneBehaviorOpen]);
 
-  useEffect(() => {
-    if (route.view !== "studio") return;
-    const removeSelection = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
-      if (event.key !== "Delete" && event.key !== "Backspace") return;
-      const target = event.target;
-      if (target instanceof HTMLElement && target.closest('[data-layer-keyboard-row]')) return;
-      if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
-      if (document.querySelector('[role="dialog"], [data-escape-dialog]')) return;
-      if (selectedLayerId && selectedLayerId !== "root" && selected) {
-        if (selectionLocked) { setMessage(tr(locale, "请先解锁当前图层", "Unlock the selected layer first")); return; }
-        event.preventDefault();
-        dispatchEngineEditCommand(engine, selectionDeleteCommand(locale, { modelId: selected.id }));
-        removeObjectInteractions(selected.id, selectedLayerId);
-        setRevision((value) => value + 1);
-        setMessage(tr(locale, `图层“${selectionName || selectedLayerId}”已从场景删除`, `Layer “${selectionName || selectedLayerId}” was removed from the scene`));
-        return;
-      }
-      const ids = sceneOrganizationSelection.size > 0 ? sceneOrganizationSelection : new Set(selected ? [selected.id] : []);
-      const targets = sceneOrganizationObjects.filter((item) => ids.has(item.id));
-      if (targets.length === 0) {
-        if (selectedAnnotationId) { event.preventDefault(); deleteAnnotation(selectedAnnotationId); }
-        return;
-      }
-      const removable = targets.filter((item) => !item.locked);
-      if (removable.length === 0) { setMessage(tr(locale, "所选对象已锁定，请先解锁", "The selection is locked; unlock it first")); return; }
-      event.preventDefault();
-      for (const item of removable) {
-        if (item.kind === "primitive") deletePrimitive(item.id);
-        else instances.remove(item.id);
-      }
-      if (removable.length > 1) setMessage(tr(locale, `已从场景移除 ${removable.length} 个对象`, `Removed ${removable.length} objects from the scene`));
-    };
-    window.addEventListener("keydown", removeSelection);
-    return () => window.removeEventListener("keydown", removeSelection);
-  }, [route.view, selected, selectedLayerId, selectedAnnotationId, selectionLocked, selectionName, sceneOrganizationSelection, sceneOrganizationObjects, engine, instances, deleteAnnotation, deletePrimitive, removeObjectInteractions, setMessage, setRevision, locale]);
+  // Delete/Backspace 删除快捷路径(studio 视图专属守卫)迁至 hook;依赖数组原文保留。
+  useSceneSelectionDeleteShortcut(controller, instances);
 
   return (
     <>
