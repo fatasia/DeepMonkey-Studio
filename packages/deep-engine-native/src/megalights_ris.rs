@@ -15,18 +15,17 @@
 //! 算法自实现,与 WGSL 单源同款注释)。
 
 pub use crate::megalights_abi::{
-    pack_mega_lights, sha256_of_words, MegaLight, MegaLightKind, MegaLightsFrameConfig,
-    MegaLightsFrameInput,
-    MegaLightsFrameOutput, MegaSurfaceRow, PackedMegaLights, RisReservoir, MAX_MEGA_LIGHTS,
-    MEGA_LIGHT_ABI_VERSION, MEGA_LIGHT_KIND_AREA_RECT,
-    MEGA_LIGHT_KIND_POINT, MEGA_LIGHT_KIND_SPOT, MEGA_LIGHT_STRIDE_BYTES, MEGA_LIGHT_STRIDE_VEC4,
-    MEGA_LIGHT_WORDS, MEGALIGHTS_CLUSTER_PATH_LIGHT_BUDGET, MEGALIGHTS_DEFAULT_ALPHA_BLEND,
-    MEGALIGHTS_INVALID_LIGHT, MEGALIGHTS_RIS_CANDIDATES, MEGALIGHTS_RIS_M,
-    MEGALIGHTS_SPATIAL_NORMAL_GATE, MEGALIGHTS_SPATIAL_REUSE_RADIUS, MEGALIGHTS_TEMPORAL_DEPTH_GATE,
+    MAX_MEGA_LIGHTS, MEGA_LIGHT_ABI_VERSION, MEGA_LIGHT_KIND_AREA_RECT, MEGA_LIGHT_KIND_POINT,
+    MEGA_LIGHT_KIND_SPOT, MEGA_LIGHT_STRIDE_BYTES, MEGA_LIGHT_STRIDE_VEC4, MEGA_LIGHT_WORDS,
+    MEGALIGHTS_CLUSTER_PATH_LIGHT_BUDGET, MEGALIGHTS_DEFAULT_ALPHA_BLEND, MEGALIGHTS_INVALID_LIGHT,
+    MEGALIGHTS_RIS_CANDIDATES, MEGALIGHTS_RIS_M, MEGALIGHTS_SPATIAL_NORMAL_GATE,
+    MEGALIGHTS_SPATIAL_REUSE_RADIUS, MEGALIGHTS_TEMPORAL_DEPTH_GATE, MegaLight, MegaLightKind,
+    MegaLightsFrameConfig, MegaLightsFrameInput, MegaLightsFrameOutput, MegaSurfaceRow,
+    PackedMegaLights, RisReservoir, pack_mega_lights, sha256_of_words,
 };
 pub use crate::megalights_ies::{
-    evaluate_ies_shading_factor, MegaLightsIesPacking, IES_EXPANDED_COLUMNS,
-    IES_TABLE_ROW_STRIDE_VEC4,
+    IES_EXPANDED_COLUMNS, IES_TABLE_ROW_STRIDE_VEC4, MegaLightsIesPacking,
+    evaluate_ies_shading_factor,
 };
 
 // ---- 随机(确定性;与 WGSL deepMega* 与 TS mega* 逐位同式,u32 wrapping) ----
@@ -105,8 +104,7 @@ fn clamp(value: f64, low: f64, high: f64) -> f64 {
 
 /// range 衰减(TS megaLightRangeAttenuationCpu 同式)。
 pub fn mega_light_range_attenuation(distance_squared: f64, range: f64, decay: f64) -> f64 {
-    let falloff = 1.0
-        / f64::powf(f64::max(f64::sqrt(distance_squared), 1e-8), decay).max(0.01);
+    let falloff = 1.0 / f64::powf(f64::max(f64::sqrt(distance_squared), 1e-8), decay).max(0.01);
     if range == 0.0 {
         return falloff;
     }
@@ -166,8 +164,14 @@ pub fn mega_light_brdf(
     }
     let normal = safe_normalize(normal_view, [0.0, 0.0, 1.0]);
     let view_direction = safe_normalize(view, normal);
-    let half_vector =
-        safe_normalize([view_direction[0] + surface_to_light[0], view_direction[1] + surface_to_light[1], view_direction[2] + surface_to_light[2]], normal);
+    let half_vector = safe_normalize(
+        [
+            view_direction[0] + surface_to_light[0],
+            view_direction[1] + surface_to_light[1],
+            view_direction[2] + surface_to_light[2],
+        ],
+        normal,
+    );
     let n_dot_v = clamp(dot3(normal, view_direction), 1e-4, 1.0);
     let n_dot_h = clamp(dot3(normal, half_vector), 0.0, 1.0);
     let v_dot_h = clamp(dot3(view_direction, half_vector), 0.0, 1.0);
@@ -215,17 +219,30 @@ pub fn mega_light_brdf(
 }
 
 /// 表面解码(TS megaSurfaceDecodeCpu 同式;w 槽截断 = metallic/roughness 读位)。
-pub fn mega_surface_decode(surface: &MegaSurfaceRow) -> ([f64; 3], [f64; 3], [f64; 3], [f64; 3], f64, f64) {
+pub fn mega_surface_decode(
+    surface: &MegaSurfaceRow,
+) -> ([f64; 3], [f64; 3], [f64; 3], [f64; 3], f64, f64) {
     let position = [surface[0][0], surface[0][1], surface[0][2]];
     let normal = [surface[1][0], surface[1][1], surface[1][2]];
     let base_color = [surface[2][0], surface[2][1], surface[2][2]];
     let view_length = hypot3(position);
     let view = if view_length > 1e-8 {
-        [-position[0] / view_length, -position[1] / view_length, -position[2] / view_length]
+        [
+            -position[0] / view_length,
+            -position[1] / view_length,
+            -position[2] / view_length,
+        ]
     } else {
         [0.0, 0.0, 1.0]
     };
-    (position, normal, view, base_color, surface[0][3], surface[1][3])
+    (
+        position,
+        normal,
+        view,
+        base_color,
+        surface[0][3],
+        surface[1][3],
+    )
 }
 
 /// 单灯贡献(TS evaluateMegaLightCpu 同式;ies 缺省恒等——TS CPU oracle
@@ -250,14 +267,26 @@ pub fn evaluate_mega_light_ies(
             position[1] - light.position_view[1],
             position[2] - light.position_view[2],
         ];
-        let facing = dot3(to_surface, safe_normalize(light.direction_view, [0.0, 0.0, 1.0]));
+        let facing = dot3(
+            to_surface,
+            safe_normalize(light.direction_view, [0.0, 0.0, 1.0]),
+        );
         if !light.two_sided && facing < 0.0 {
             return [0.0; 3];
         }
         if light.range > 0.0 && hypot3(to_surface) > light.range {
             return [0.0; 3];
         }
-        return mega_light_brdf(light, position, normal, view, base_color, metallic, roughness, mega_area_light_extent_factor(light));
+        return mega_light_brdf(
+            light,
+            position,
+            normal,
+            view,
+            base_color,
+            metallic,
+            roughness,
+            mega_area_light_extent_factor(light),
+        );
     }
     let to_light = [
         light.position_view[0] - position[0],
@@ -266,7 +295,11 @@ pub fn evaluate_mega_light_ies(
     ];
     let distance = f64::max(hypot3(to_light), 1e-8);
     // surfaceToLight 提升到锥分支外(与 TS 同位:IES 钩子与锥共用同一单位向量)。
-    let surface_to_light = [to_light[0] / distance, to_light[1] / distance, to_light[2] / distance];
+    let surface_to_light = [
+        to_light[0] / distance,
+        to_light[1] / distance,
+        to_light[2] / distance,
+    ];
     let mut cone = 1.0;
     if light.kind == MegaLightKind::Spot {
         let direction = safe_normalize(light.direction_view, [0.0, 0.0, 1.0]);
@@ -275,7 +308,11 @@ pub fn evaluate_mega_light_ies(
         } else {
             1.0 / (light.inner_cone_cos - light.outer_cone_cos)
         };
-        cone = mega_light_spot_cone(-dot3(surface_to_light, direction), light.outer_cone_cos, cone_scale);
+        cone = mega_light_spot_cone(
+            -dot3(surface_to_light, direction),
+            light.outer_cone_cos,
+            cone_scale,
+        );
     }
     if cone <= 0.0 {
         return [0.0; 3];
@@ -289,7 +326,16 @@ pub fn evaluate_mega_light_ies(
         ),
         _ => 1.0,
     };
-    mega_light_brdf(light, position, normal, view, base_color, metallic, roughness, cone * ies_factor)
+    mega_light_brdf(
+        light,
+        position,
+        normal,
+        view,
+        base_color,
+        metallic,
+        roughness,
+        cone * ies_factor,
+    )
 }
 
 /// 目标权重 = luminance(全量单灯贡献)。
@@ -309,7 +355,12 @@ pub fn mega_target_weight_ies(
 }
 
 /// 胜者着色(可见性因子乘 shade 侧;缺省 1.0 = M1 恒 1 行为)。
-pub fn mega_shade_winner(lights: &[MegaLight], surface: &MegaSurfaceRow, index: usize, visibility: f64) -> [f64; 3] {
+pub fn mega_shade_winner(
+    lights: &[MegaLight],
+    surface: &MegaSurfaceRow,
+    index: usize,
+    visibility: f64,
+) -> [f64; 3] {
     mega_shade_winner_ies(lights, surface, index, visibility, None)
 }
 
@@ -322,7 +373,11 @@ pub fn mega_shade_winner_ies(
     ies: Option<&MegaLightsIesPacking<'_>>,
 ) -> [f64; 3] {
     let shade = evaluate_mega_light_ies(&lights[index], surface, ies);
-    [shade[0] * visibility, shade[1] * visibility, shade[2] * visibility]
+    [
+        shade[0] * visibility,
+        shade[1] * visibility,
+        shade[2] * visibility,
+    ]
 }
 
 /// 视深(视空间 -z;相似门用)。
@@ -333,7 +388,13 @@ pub fn mega_view_depth(surface: &MegaSurfaceRow) -> f64 {
 // ---- 蓄水池(TS mergeReservoirCpu/finishReservoirCpu 同式) ----
 
 /// 加权蓄水池合并(m 带权累积 + 单均匀值竞选)。
-pub fn merge_reservoir(reservoir: &mut RisReservoir, weight: f64, winner: u32, count: u32, uniform: f64) {
+pub fn merge_reservoir(
+    reservoir: &mut RisReservoir,
+    weight: f64,
+    winner: u32,
+    count: u32,
+    uniform: f64,
+) {
     if count == 0 || weight <= 0.0 {
         return;
     }
@@ -347,7 +408,12 @@ pub fn merge_reservoir(reservoir: &mut RisReservoir, weight: f64, winner: u32, c
 }
 
 /// 蓄水池收尾:W_Y = N × w_sum/(M × t_y)(胜者目标权重在本像素重评价)。
-pub fn finish_reservoir(reservoir: &RisReservoir, lights: &[MegaLight], surface: &MegaSurfaceRow, light_count: usize) -> f64 {
+pub fn finish_reservoir(
+    reservoir: &RisReservoir,
+    lights: &[MegaLight],
+    surface: &MegaSurfaceRow,
+    light_count: usize,
+) -> f64 {
     if reservoir.winner == MEGALIGHTS_INVALID_LIGHT || reservoir.m == 0 {
         return 0.0;
     }
@@ -360,7 +426,13 @@ pub fn finish_reservoir(reservoir: &RisReservoir, lights: &[MegaLight], surface:
 
 // ---- 趟一:K 候选 + 时域合并 ----
 
-fn temporal_previous_pixel(x: u32, y: u32, width: u32, height: u32, motion_uv: Option<&[f64]>) -> i64 {
+fn temporal_previous_pixel(
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    motion_uv: Option<&[f64]>,
+) -> i64 {
     let motion = match motion_uv {
         Some(motion) => motion,
         None => return -1,
@@ -387,14 +459,19 @@ pub fn build_reservoir_pass(input: &MegaLightsFrameInput) -> Vec<RisReservoir> {
     let height = input.config.height;
     let light_count = input.lights.len();
     let ies = input.ies;
-    let requested = input.config.candidate_count.unwrap_or(MEGALIGHTS_RIS_CANDIDATES);
+    let requested = input
+        .config
+        .candidate_count
+        .unwrap_or(MEGALIGHTS_RIS_CANDIDATES);
     let candidate_count = if input.config.exhaustive {
         f64::max(f64::from(requested), light_count as f64) as u32
     } else {
         requested
     };
     let temporal = input.config.temporal
-        && input.previous.is_some_and(|previous| previous.len() == (width * height) as usize);
+        && input
+            .previous
+            .is_some_and(|previous| previous.len() == (width * height) as usize);
     let mut reservoirs = vec![RisReservoir::default(); (width * height) as usize];
     for y in 0..height {
         for x in 0..width {
@@ -408,7 +485,10 @@ pub fn build_reservoir_pass(input: &MegaLightsFrameInput) -> Vec<RisReservoir> {
                 let candidate = if input.config.exhaustive && k < light_count as u32 {
                     k
                 } else {
-                    f64::min(f64::from(light_count as u32) - 1.0, f64::floor(stream.next() * f64::from(light_count as u32))) as u32
+                    f64::min(
+                        f64::from(light_count as u32) - 1.0,
+                        f64::floor(stream.next() * f64::from(light_count as u32)),
+                    ) as u32
                 };
                 let weight = mega_target_weight_ies(input.lights, surface, candidate as usize, ies);
                 if weight > 0.0 {
@@ -424,9 +504,15 @@ pub fn build_reservoir_pass(input: &MegaLightsFrameInput) -> Vec<RisReservoir> {
                     let depth = mega_view_depth(surface);
                     let previous_depth = mega_view_depth(previous_surface);
                     let gate = previous_depth > 0.0
-                        && (depth - previous_depth).abs() <= MEGALIGHTS_TEMPORAL_DEPTH_GATE * f64::max(depth, previous_depth);
+                        && (depth - previous_depth).abs()
+                            <= MEGALIGHTS_TEMPORAL_DEPTH_GATE * f64::max(depth, previous_depth);
                     if history.winner != MEGALIGHTS_INVALID_LIGHT && gate {
-                        let weight = mega_target_weight_ies(input.lights, surface, history.winner as usize, ies);
+                        let weight = mega_target_weight_ies(
+                            input.lights,
+                            surface,
+                            history.winner as usize,
+                            ies,
+                        );
                         // 历史胜者按**单候选**合并(2026-10-04 定案:克隆计权产生持久
                         // 像素偏置;单候选合并不偏,方差收敛交颜色 EMA)。
                         merge_reservoir(&mut reservoir, weight, history.winner, 1, stream.next());
@@ -476,28 +562,49 @@ fn spatial_unbiased_average(
             let source_surface = &surfaces[source_index as usize];
             // 相似门:法线点积 + 视深(TS spatialGateCpu 同式)。
             let source_depth = mega_view_depth(source_surface);
-            let normal_dot = dot3(normal, [source_surface[1][0], source_surface[1][1], source_surface[1][2]]);
+            let normal_dot = dot3(
+                normal,
+                [
+                    source_surface[1][0],
+                    source_surface[1][1],
+                    source_surface[1][2],
+                ],
+            );
             if normal_dot < MEGALIGHTS_SPATIAL_NORMAL_GATE || !depth_gate(depth, source_depth) {
                 continue;
             }
             // 源像素目标权重(W 公式的分母;无偏恒等式要求在**源像素**评价)。
-            let source_target = mega_target_weight_ies(lights, source_surface, source.winner as usize, ies);
+            let source_target =
+                mega_target_weight_ies(lights, source_surface, source.winner as usize, ies);
             if source_target <= 0.0 {
                 continue;
             }
-            let source_weight = f64::from(light_count as u32) * source.weight_sum / (f64::from(source.m) * source_target);
+            let source_weight = f64::from(light_count as u32) * source.weight_sum
+                / (f64::from(source.m) * source_target);
             // 源像素可见性复用(过门传递;ReSTIR DI visibility reuse 惯例)。
             let source_visibility = visibility
                 .and_then(|mask| mask.get(source_index as usize).copied())
                 .unwrap_or(1.0);
-            let shade = mega_shade_winner_full(lights, surface, source.winner as usize, f64::from(source_visibility), ies);
+            let shade = mega_shade_winner_full(
+                lights,
+                surface,
+                source.winner as usize,
+                f64::from(source_visibility),
+                ies,
+            );
             acc[0] += shade[0] * source_weight;
             acc[1] += shade[1] * source_weight;
             acc[2] += shade[2] * source_weight;
             sources += 1;
         }
     }
-    (sources > 0).then(|| [acc[0] / f64::from(sources), acc[1] / f64::from(sources), acc[2] / f64::from(sources)])
+    (sources > 0).then(|| {
+        [
+            acc[0] / f64::from(sources),
+            acc[1] / f64::from(sources),
+            acc[2] / f64::from(sources),
+        ]
+    })
 }
 
 /// 胜者着色(全量几何;spatial 分支与本像素着色共用)。
@@ -512,7 +619,10 @@ fn mega_shade_winner_full(
 }
 
 /// 趟二(TS reuseAndShadePassCpu 同式):5×5 空间值域平均 + self 回落 + 颜色 EMA。
-pub fn reuse_and_shade_pass(input: &MegaLightsFrameInput, built: &[RisReservoir]) -> MegaLightsFrameOutput {
+pub fn reuse_and_shade_pass(
+    input: &MegaLightsFrameInput,
+    built: &[RisReservoir],
+) -> MegaLightsFrameOutput {
     let width = input.config.width;
     let height = input.config.height;
     let light_count = input.lights.len();
@@ -534,7 +644,8 @@ pub fn reuse_and_shade_pass(input: &MegaLightsFrameInput, built: &[RisReservoir]
                 // 与 WGSL 穷举分支一致;无 EMA,与 TS 同序)。
                 let mut total = [0.0f64; 3];
                 for index in 0..light_count {
-                    let contribution = mega_shade_winner_ies(input.lights, surface, index, 1.0, ies);
+                    let contribution =
+                        mega_shade_winner_ies(input.lights, surface, index, 1.0, ies);
                     total[0] += contribution[0];
                     total[1] += contribution[1];
                     total[2] += contribution[2];
@@ -545,22 +656,58 @@ pub fn reuse_and_shade_pass(input: &MegaLightsFrameInput, built: &[RisReservoir]
                 continue;
             }
             let (r, g, b) = if spatial {
-                match spatial_unbiased_average(input.lights, input.surfaces, surface, built, x, y, width, height, radius, light_count, input.visibility, ies) {
+                match spatial_unbiased_average(
+                    input.lights,
+                    input.surfaces,
+                    surface,
+                    built,
+                    x,
+                    y,
+                    width,
+                    height,
+                    radius,
+                    light_count,
+                    input.visibility,
+                    ies,
+                ) {
                     Some(averaged) => (averaged[0], averaged[1], averaged[2]),
-                    None => self_reservoir_shade(input.lights, surface, &reservoir, light_count, input.visibility, pixel_index, ies),
+                    None => self_reservoir_shade(
+                        input.lights,
+                        surface,
+                        &reservoir,
+                        light_count,
+                        input.visibility,
+                        pixel_index,
+                        ies,
+                    ),
                 }
             } else {
-                self_reservoir_shade(input.lights, surface, &reservoir, light_count, input.visibility, pixel_index, ies)
+                self_reservoir_shade(
+                    input.lights,
+                    surface,
+                    &reservoir,
+                    light_count,
+                    input.visibility,
+                    pixel_index,
+                    ies,
+                )
             };
             // 颜色时域 EMA(首帧 previousColor 缺省 = 全量替换;只看 config.temporal)。
             let (r, g, b) = if input.config.temporal {
                 match input.previous_color {
                     Some(previous) => {
-                        let alpha = input.config.alpha_blend.unwrap_or(MEGALIGHTS_DEFAULT_ALPHA_BLEND);
+                        let alpha = input
+                            .config
+                            .alpha_blend
+                            .unwrap_or(MEGALIGHTS_DEFAULT_ALPHA_BLEND);
                         let pr = f64::from(previous[pixel_index * 3]);
                         let pg = f64::from(previous[pixel_index * 3 + 1]);
                         let pb = f64::from(previous[pixel_index * 3 + 2]);
-                        (pr + (r - pr) * alpha, pg + (g - pg) * alpha, pb + (b - pb) * alpha)
+                        (
+                            pr + (r - pr) * alpha,
+                            pg + (g - pg) * alpha,
+                            pb + (b - pb) * alpha,
+                        )
                     }
                     None => (r, g, b),
                 }
@@ -592,12 +739,19 @@ fn self_reservoir_shade(
     let self_visibility = visibility
         .and_then(|mask| mask.get(pixel_index).copied())
         .unwrap_or(1.0);
-    let shade = mega_shade_winner_ies(lights, surface, reservoir.winner as usize, f64::from(self_visibility), ies);
+    let shade = mega_shade_winner_ies(
+        lights,
+        surface,
+        reservoir.winner as usize,
+        f64::from(self_visibility),
+        ies,
+    );
     let weight_y = mega_target_weight_ies(lights, surface, reservoir.winner as usize, ies);
     if weight_y <= 0.0 {
         return (0.0, 0.0, 0.0);
     }
-    let scale_y = f64::from(light_count as u32) * reservoir.weight_sum / (f64::from(reservoir.m) * weight_y);
+    let scale_y =
+        f64::from(light_count as u32) * reservoir.weight_sum / (f64::from(reservoir.m) * weight_y);
     (shade[0] * scale_y, shade[1] * scale_y, shade[2] * scale_y)
 }
 
@@ -609,7 +763,12 @@ pub fn mega_lights_frame(input: &MegaLightsFrameInput) -> MegaLightsFrameOutput 
 
 /// 穷举精确参考(验收②真值端):逐灯求和 = 零方差真值(无遮挡精确和;
 /// `ies` 缺省恒等,帧内穷举腿与参考须同口径消费)。
-pub fn mega_lights_exhaustive_reference(lights: &[MegaLight], surfaces: &[MegaSurfaceRow], width: u32, height: u32) -> Vec<f32> {
+pub fn mega_lights_exhaustive_reference(
+    lights: &[MegaLight],
+    surfaces: &[MegaSurfaceRow],
+    width: u32,
+    height: u32,
+) -> Vec<f32> {
     mega_lights_exhaustive_reference_ies(lights, surfaces, width, height, None)
 }
 
@@ -685,7 +844,10 @@ pub fn resolve_direct_lighting_path(
     cluster_budget: Option<usize>,
 ) -> DirectLightingPathDecision {
     let cluster_budget = cluster_budget.unwrap_or(MEGALIGHTS_CLUSTER_PATH_LIGHT_BUDGET);
-    assert!((1..=MAX_MEGA_LIGHTS).contains(&cluster_budget), "cluster budget out of range");
+    assert!(
+        (1..=MAX_MEGA_LIGHTS).contains(&cluster_budget),
+        "cluster budget out of range"
+    );
     let local_light_count = points + spots;
     let area_count = areas;
     if force_mega_lights {
@@ -711,6 +873,3 @@ pub fn resolve_direct_lighting_path(
         area_count,
     }
 }
-
-
-

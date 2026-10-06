@@ -13,12 +13,12 @@
 //! 黄金场景 = `fixtures/megalights-native-parity-v1.json`(CPU 权威链已在
 //! [`crate::megalights_parity_tests`] 与 TS fixture 对拍;本文件只对 GPU leg)。
 
+use crate::lighting_math_wgsl::DEEP_IES_SAMPLING_WGSL;
 use crate::megalights_ies::MegaLightsIesPacking;
 use crate::megalights_ris::{
-    mega_lights_frame, MegaLight, MegaLightsFrameConfig, MegaLightsFrameInput, MegaSurfaceRow,
+    MegaLight, MegaLightsFrameConfig, MegaLightsFrameInput, MegaSurfaceRow, mega_lights_frame,
 };
 use crate::megalights_wgsl::DEEP_MEGA_LIGHTS_RIS_WGSL;
-use crate::lighting_math_wgsl::DEEP_IES_SAMPLING_WGSL;
 use serde_json::Value;
 
 const FIXTURE: &str = include_str!("../../deep-engine/fixtures/megalights-native-parity-v1.json");
@@ -73,10 +73,14 @@ fn parse_lights(fixture: &Value) -> Vec<MegaLight> {
                 half_extent: entry["halfExtent"]
                     .as_array()
                     .map(|values| {
-                        [values[0].as_f64().expect("hw"), values[1].as_f64().expect("hh")]
+                        [
+                            values[0].as_f64().expect("hw"),
+                            values[1].as_f64().expect("hh"),
+                        ]
                     })
                     .unwrap_or([0.0, 0.0]),
                 two_sided: entry["twoSided"].as_bool().unwrap_or(false),
+                ies_spot_index: entry["iesSpotIndex"].as_u64().map(|value| value as u32),
             }
         })
         .collect()
@@ -182,7 +186,13 @@ async fn gpu_device() -> (wgpu::Device, wgpu::Queue) {
         .expect("GPU device")
 }
 
-fn readback_f32(device: &wgpu::Device, queue: &wgpu::Queue, source: &wgpu::Buffer, count: usize, label: &str) -> Vec<f32> {
+fn readback_f32(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    source: &wgpu::Buffer,
+    count: usize,
+    label: &str,
+) -> Vec<f32> {
     let staging = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("megalights gpu probe readback"),
         size: (count * 4) as u64,
@@ -196,7 +206,9 @@ fn readback_f32(device: &wgpu::Device, queue: &wgpu::Queue, source: &wgpu::Buffe
     staging.map_async(wgpu::MapMode::Read, .., move |result| {
         let _ = sender.send(result);
     });
-    device.poll(wgpu::PollType::wait_indefinitely()).expect("poll");
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("poll");
     receiver
         .recv()
         .expect("map callback")
@@ -208,13 +220,32 @@ fn readback_f32(device: &wgpu::Device, queue: &wgpu::Queue, source: &wgpu::Buffe
         .collect()
 }
 
-fn buffer_init(device: &wgpu::Device, label: &str, contents: &[u8], usage: wgpu::BufferUsages) -> wgpu::Buffer {
+fn buffer_init(
+    device: &wgpu::Device,
+    label: &str,
+    contents: &[u8],
+    usage: wgpu::BufferUsages,
+) -> wgpu::Buffer {
     use wgpu::util::DeviceExt;
     device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some(label),
         contents,
         usage,
     })
+}
+
+/// fixture `inputs.iesPacked`(E02 打包 vec4 字流)→ IES 载荷视图(测试进程期存活)。
+fn fixture_ies(fixture: &Value) -> MegaLightsIesPacking<'static> {
+    let words: Vec<f32> = fixture["inputs"]["iesPacked"]
+        .as_array()
+        .expect("fixture iesPacked")
+        .iter()
+        .map(|value| value.as_f64().expect("ies word") as f32)
+        .collect();
+    let spot_count = fixture["inputs"]["iesSpotCount"]
+        .as_u64()
+        .expect("iesSpotCount") as usize;
+    MegaLightsIesPacking::new(Box::leak(words.into_boxed_slice()), spot_count)
 }
 
 /// 穷举帧 GPU leg:无 RNG,输出与 CPU 镜像词容差对拍(≤0.002,f32 vs f64 落点)。
@@ -225,6 +256,13 @@ fn exhaustive_gpu_output_tracks_cpu_mirror() {
     let lights = parse_lights(fixture);
     let surfaces = parse_surfaces(fixture);
     let packed = words(&fixture["packed"]["data"]);
+    let ies_packing = fixture_ies(fixture);
+    let ies_words: Vec<f32> = fixture["inputs"]["iesPacked"]
+        .as_array()
+        .expect("fixture iesPacked")
+        .iter()
+        .map(|value| value.as_f64().expect("ies word") as f32)
+        .collect();
     let width = fixture["inputs"]["width"].as_u64().unwrap() as u32;
     let height = fixture["inputs"]["height"].as_u64().unwrap() as u32;
     let pixel_count = (width * height) as usize;
@@ -279,10 +317,11 @@ fn exhaustive_gpu_output_tracks_cpu_mirror() {
         &motion_words,
         &reservoirs_b_init,
         &color_history_init,
+        &ies_words,
         pixel_count,
     );
 
-    // CPU 镜像同帧同配置(可见性关、temporal 开但穷举分支跳过 EMA)。
+    // CPU 镜像同帧同配置(IES 同口径;可见性关、temporal 开但穷举分支跳过 EMA)。
     let mut config = MegaLightsFrameConfig::new(width, height);
     config.exhaustive = true;
     config.temporal = true;
@@ -294,6 +333,7 @@ fn exhaustive_gpu_output_tracks_cpu_mirror() {
         motion_uv: None,
         previous_color: None,
         visibility: None,
+        ies: Some(&ies_packing),
         frame: 44,
         config,
     };
@@ -349,35 +389,129 @@ fn dispatch_two_pipelines(
     motion_words: &[f32],
     reservoirs_b_init: &[f32],
     color_history_init: &[f32],
+    ies_words: &[f32],
     pixel_count: usize,
 ) -> (Vec<f32>, Vec<f32>) {
-    let params = buffer_init(device, "params", bytemuck::cast_slice(params_words), wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
-    let lights = buffer_init(device, "lights", bytemuck::cast_slice(packed_lights), wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);
-    let surfaces = buffer_init(device, "surfaces", bytemuck::cast_slice(surfaces_words), wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);
-    let motion = buffer_init(device, "motion", bytemuck::cast_slice(motion_words), wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);
-    let reservoirs_a = buffer_init(device, "reservoirs A", bytemuck::cast_slice(&vec![0.0f32; pixel_count * 4]), wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC);
-    let reservoirs_b = buffer_init(device, "reservoirs B", bytemuck::cast_slice(reservoirs_b_init), wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC);
-    let color = buffer_init(device, "color", bytemuck::cast_slice(&vec![0.0f32; pixel_count * 4]), wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC);
-    let color_history = buffer_init(device, "color history", bytemuck::cast_slice(color_history_init), wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);
-    let ies = buffer_init(device, "ies", bytemuck::cast_slice(&[-1.0f32; 4]), wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);
+    let params = buffer_init(
+        device,
+        "params",
+        bytemuck::cast_slice(params_words),
+        wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    );
+    let lights = buffer_init(
+        device,
+        "lights",
+        bytemuck::cast_slice(packed_lights),
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+    );
+    let surfaces = buffer_init(
+        device,
+        "surfaces",
+        bytemuck::cast_slice(surfaces_words),
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+    );
+    let motion = buffer_init(
+        device,
+        "motion",
+        bytemuck::cast_slice(motion_words),
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+    );
+    let reservoirs_a = buffer_init(
+        device,
+        "reservoirs A",
+        bytemuck::cast_slice(&vec![0.0f32; pixel_count * 4]),
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+    );
+    let reservoirs_b = buffer_init(
+        device,
+        "reservoirs B",
+        bytemuck::cast_slice(reservoirs_b_init),
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+    );
+    let color = buffer_init(
+        device,
+        "color",
+        bytemuck::cast_slice(&vec![0.0f32; pixel_count * 4]),
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+    );
+    let color_history = buffer_init(
+        device,
+        "color history",
+        bytemuck::cast_slice(color_history_init),
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+    );
+    let ies = buffer_init(
+        device,
+        "ies",
+        bytemuck::cast_slice(ies_words),
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+    );
     // auto 布局按 entrypoint 反射触达面:build 趟一 = 0-5(params/pool/surfaces/
     // motion/reservoirsA/B);shade 趟二 = 0-2,4-8(不用 motion;可见性档关)。
+    // binding 8(IES)自 2026-10-06 注入切片起被 RIS 核真实消费(iesRow != 0 的灯)。
     let build_entries = [
-        wgpu::BindGroupEntry { binding: 0, resource: params.as_entire_binding() },
-        wgpu::BindGroupEntry { binding: 1, resource: lights.as_entire_binding() },
-        wgpu::BindGroupEntry { binding: 2, resource: surfaces.as_entire_binding() },
-        wgpu::BindGroupEntry { binding: 3, resource: motion.as_entire_binding() },
-        wgpu::BindGroupEntry { binding: 4, resource: reservoirs_a.as_entire_binding() },
-        wgpu::BindGroupEntry { binding: 5, resource: reservoirs_b.as_entire_binding() },
+        wgpu::BindGroupEntry {
+            binding: 0,
+            resource: params.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 1,
+            resource: lights.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 2,
+            resource: surfaces.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 3,
+            resource: motion.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 4,
+            resource: reservoirs_a.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 5,
+            resource: reservoirs_b.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 8,
+            resource: ies.as_entire_binding(),
+        },
     ];
     let shade_entries = [
-        wgpu::BindGroupEntry { binding: 0, resource: params.as_entire_binding() },
-        wgpu::BindGroupEntry { binding: 1, resource: lights.as_entire_binding() },
-        wgpu::BindGroupEntry { binding: 2, resource: surfaces.as_entire_binding() },
-        wgpu::BindGroupEntry { binding: 4, resource: reservoirs_a.as_entire_binding() },
-        wgpu::BindGroupEntry { binding: 5, resource: reservoirs_b.as_entire_binding() },
-        wgpu::BindGroupEntry { binding: 6, resource: color.as_entire_binding() },
-        wgpu::BindGroupEntry { binding: 7, resource: color_history.as_entire_binding() },
+        wgpu::BindGroupEntry {
+            binding: 0,
+            resource: params.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 1,
+            resource: lights.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 2,
+            resource: surfaces.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 4,
+            resource: reservoirs_a.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 5,
+            resource: reservoirs_b.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 6,
+            resource: color.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 7,
+            resource: color_history.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 8,
+            resource: ies.as_entire_binding(),
+        },
     ];
     let bind_group_build = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("megalights probe bindings (build)"),
@@ -390,7 +524,7 @@ fn dispatch_two_pipelines(
         entries: &shade_entries,
     });
     let (width, height) = (params_words[0] as u32, params_words[1] as u32);
-    let groups = ((width + 7) / 8, (height + 7) / 8);
+    let groups = (width.div_ceil(8), height.div_ceil(8));
     let mut encoder = device.create_command_encoder(&Default::default());
     {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -405,9 +539,17 @@ fn dispatch_two_pipelines(
         pass.dispatch_workgroups(groups.0, groups.1, 1);
     }
     queue.submit(Some(encoder.finish()));
-    device.poll(wgpu::PollType::wait_indefinitely()).expect("post-dispatch poll");
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("post-dispatch poll");
     let color_out = readback_f32(device, queue, &color, pixel_count * 4, "color");
-    let reservoirs_out = readback_f32(device, queue, &reservoirs_a, pixel_count * 4, "reservoirs A");
+    let reservoirs_out = readback_f32(
+        device,
+        queue,
+        &reservoirs_a,
+        pixel_count * 4,
+        "reservoirs A",
+    );
     (color_out, reservoirs_out)
 }
 
@@ -419,6 +561,13 @@ fn random_gpu_output_tracks_cpu_mirror_statistically() {
     let lights = parse_lights(fixture);
     let surfaces = parse_surfaces(fixture);
     let packed = words(&fixture["packed"]["data"]);
+    let ies_packing = fixture_ies(fixture);
+    let ies_words: Vec<f32> = fixture["inputs"]["iesPacked"]
+        .as_array()
+        .expect("fixture iesPacked")
+        .iter()
+        .map(|value| value.as_f64().expect("ies word") as f32)
+        .collect();
     let width = fixture["inputs"]["width"].as_u64().unwrap() as u32;
     let height = fixture["inputs"]["height"].as_u64().unwrap() as u32;
     let pixel_count = (width * height) as usize;
@@ -471,6 +620,7 @@ fn random_gpu_output_tracks_cpu_mirror_statistically() {
         &motion_words,
         &reservoirs_b_init,
         &color_history_init,
+        &ies_words,
         pixel_count,
     );
 
@@ -483,6 +633,7 @@ fn random_gpu_output_tracks_cpu_mirror_statistically() {
         motion_uv: None,
         previous_color: None,
         visibility: None,
+        ies: Some(&ies_packing),
         frame: 40,
         config,
     };
@@ -497,8 +648,14 @@ fn random_gpu_output_tracks_cpu_mirror_statistically() {
         } else {
             (gpu_words[1] as u32).wrapping_sub(1)
         };
-        assert_eq!(gpu_winner, cpu.winner, "random GPU leg pixel {pixel} winner drift");
-        assert_eq!(gpu_words[2] as u32, cpu.m, "random GPU leg pixel {pixel} m drift");
+        assert_eq!(
+            gpu_winner, cpu.winner,
+            "random GPU leg pixel {pixel} winner drift"
+        );
+        assert_eq!(
+            gpu_words[2] as u32, cpu.m,
+            "random GPU leg pixel {pixel} m drift"
+        );
     }
     // 统计腿:f32 vs f64 评价链差异 → 相对 RMSE ≤15%(能量均值;如实声明)。
     let mut total = 0.0f64;
@@ -507,7 +664,11 @@ fn random_gpu_output_tracks_cpu_mirror_statistically() {
         total += d * d;
     }
     let error = f64::sqrt(total / (pixel_count * 3) as f64);
-    let energy: f64 = expected.color.iter().map(|value| f64::from(value.abs())).sum::<f64>()
+    let energy: f64 = expected
+        .color
+        .iter()
+        .map(|value| f64::from(value.abs()))
+        .sum::<f64>()
         / (pixel_count * 3) as f64;
     assert!(
         error <= f64::max(0.05, energy * 0.15),

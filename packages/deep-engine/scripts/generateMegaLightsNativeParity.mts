@@ -282,10 +282,11 @@ const iesFactorVectors = (): IesFactorVector[] => {
 
 // ---- 胜者可见性射线场景(2026-10-06 native 可见性档切片):两级 TLAS 遮挡的
 // fixture 黄金腿。世界空间 = 视空间(viewToWorld = identity);遮挡物 = x=-0.75
-// 竖墙(y∈[2,4], z∈[-2,2]),截断部分表面→胜者灯连线:mask 由胜者分布决定,
-// 同时覆盖可见/遮挡/无效胜者(→1)三分支。mask 真值 = TS 权威 traceTlasClosest
-//(GPU 两级追踪的仲裁基准,boolean 语义无跨 libm 面);射线构造与 GPU
-// deepMegaWriteWinnerRay 同式(origin 外推 + tMax 双侧收缩,相对偏移 1e-3)。----
+// 竖墙(y∈[1.5,4.5], z∈[-2.5,2.5];边界外扩 0.5 防黄金射线擦棱边——像素级 f32/f64
+// 边界噪声会把擦边命中判成两端分歧),截断部分表面→胜者灯连线:mask 由胜者分布
+// 决定,同时覆盖可见/遮挡/无效胜者(→1)三分支。mask 真值 = TS 权威
+// traceTlasClosest(GPU 两级追踪的仲裁基准,boolean 语义无跨 libm 面);射线构造与
+// GPU deepMegaWriteWinnerRay 同式(origin 外推 + tMax 双侧收缩,相对偏移 1e-3)。----
 const MEGA_LIGHTS_VISIBILITY_RAY_BIAS_RELATIVE = 1e-3;
 
 const visibilityOccluder = {
@@ -293,10 +294,10 @@ const visibilityOccluder = {
   mask: 0xffffffff,
   worldToLocal: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0] as readonly [number, number, number, number, number, number, number, number, number, number, number, number],
   vertices: [
-    -0.75, 2.0, -2.0,
-    -0.75, 2.0, 2.0,
-    -0.75, 4.0, 2.0,
-    -0.75, 4.0, -2.0,
+    -0.75, 1.5, -2.5,
+    -0.75, 1.5, 2.5,
+    -0.75, 4.5, 2.5,
+    -0.75, 4.5, -2.5,
   ],
   indices: [0, 1, 2, 0, 2, 3],
 };

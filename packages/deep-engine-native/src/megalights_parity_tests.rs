@@ -16,18 +16,18 @@
 
 use crate::megalights_ies::MegaLightsIesPacking;
 use crate::megalights_ris::{
-    build_reservoir_pass, evaluate_mega_light, finish_reservoir, mega_lights_exhaustive_reference,
-    mega_lights_exhaustive_reference_ies, mega_lights_frame, mega_shade_winner,
-    mega_surface_decode, mega_target_weight, mega_view_depth, mega_light_range_attenuation,
-    mega_light_spot_cone, pack_mega_lights, reuse_and_shade_pass, sha256_of_words,
-    DirectLightingPath, MegaLight, MegaLightKind, MegaLightsFrameConfig, MegaLightsFrameInput,
-    MegaSurfaceRow, RisReservoir, MEGALIGHTS_INVALID_LIGHT, MEGALIGHTS_RIS_CANDIDATES,
-    MEGALIGHTS_SPATIAL_NORMAL_GATE, MEGALIGHTS_SPATIAL_REUSE_RADIUS, MEGALIGHTS_TEMPORAL_DEPTH_GATE,
-    MEGA_LIGHT_ABI_VERSION, MEGA_LIGHT_KIND_AREA_RECT, MEGA_LIGHT_KIND_POINT, MEGA_LIGHT_KIND_SPOT,
-    MEGA_LIGHT_STRIDE_BYTES, MEGA_LIGHT_WORDS,
+    DirectLightingPath, MEGA_LIGHT_ABI_VERSION, MEGA_LIGHT_KIND_AREA_RECT, MEGA_LIGHT_KIND_POINT,
+    MEGA_LIGHT_KIND_SPOT, MEGA_LIGHT_STRIDE_BYTES, MEGA_LIGHT_WORDS, MEGALIGHTS_INVALID_LIGHT,
+    MEGALIGHTS_RIS_CANDIDATES, MEGALIGHTS_SPATIAL_NORMAL_GATE, MEGALIGHTS_SPATIAL_REUSE_RADIUS,
+    MEGALIGHTS_TEMPORAL_DEPTH_GATE, MegaLight, MegaLightKind, MegaLightsFrameConfig,
+    MegaLightsFrameInput, MegaSurfaceRow, RisReservoir, build_reservoir_pass, evaluate_mega_light,
+    finish_reservoir, mega_light_range_attenuation, mega_light_spot_cone,
+    mega_lights_exhaustive_reference, mega_lights_exhaustive_reference_ies, mega_lights_frame,
+    mega_shade_winner, mega_surface_decode, mega_target_weight, mega_view_depth, pack_mega_lights,
+    reuse_and_shade_pass, sha256_of_words,
 };
-use crate::megalights_visibility::{winner_visibility_mask, MegaLightsVisibilityScene};
-use crate::ray_backend::{build_bvh, TlasInstance};
+use crate::megalights_visibility::{MegaLightsVisibilityScene, winner_visibility_mask};
+use crate::ray_backend::{TlasInstance, build_bvh};
 use serde_json::Value;
 use std::rc::Rc;
 
@@ -99,7 +99,10 @@ fn parse_lights(fixture: &Value) -> Vec<MegaLight> {
                 half_extent: entry["halfExtent"]
                     .as_array()
                     .map(|values| {
-                        [values[0].as_f64().expect("hw"), values[1].as_f64().expect("hh")]
+                        [
+                            values[0].as_f64().expect("hw"),
+                            values[1].as_f64().expect("hh"),
+                        ]
                     })
                     .unwrap_or([0.0, 0.0]),
                 two_sided: entry["twoSided"].as_bool().unwrap_or(false),
@@ -117,7 +120,9 @@ fn fixture_ies(fixture: &Value) -> MegaLightsIesPacking<'static> {
         .iter()
         .map(|value| value.as_f64().expect("ies word") as f32)
         .collect();
-    let spot_count = fixture["inputs"]["iesSpotCount"].as_u64().expect("iesSpotCount") as usize;
+    let spot_count = fixture["inputs"]["iesSpotCount"]
+        .as_u64()
+        .expect("iesSpotCount") as usize;
     MegaLightsIesPacking::new(Box::leak(words.into_boxed_slice()), spot_count)
 }
 
@@ -138,7 +143,11 @@ fn parse_surfaces(fixture: &Value) -> Vec<MegaSurfaceRow> {
 fn assert_words_within_ulp(actual: &[f32], expected: &[f32], label: &str, ulps: f64) {
     assert_eq!(actual.len(), expected.len(), "{label} word count drift");
     for (index, (actual, expected)) in actual.iter().zip(expected).enumerate() {
-        assert_eq!(actual.is_nan(), expected.is_nan(), "{label}[{index}] NaN drift");
+        assert_eq!(
+            actual.is_nan(),
+            expected.is_nan(),
+            "{label}[{index}] NaN drift"
+        );
         if actual.is_nan() {
             continue;
         }
@@ -160,6 +169,7 @@ struct FrameBorrow<'a> {
     visibility: Option<&'a [f32]>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_frame_input<'a>(
     fixture: &Value,
     frame: &Value,
@@ -181,7 +191,11 @@ fn parse_frame_input<'a>(
         previous,
         motion_uv: if with_motion { borrow.motion_uv } else { None },
         previous_color,
-        visibility: if with_visibility { borrow.visibility } else { None },
+        visibility: if with_visibility {
+            borrow.visibility
+        } else {
+            None
+        },
         ies: if with_ies { ies } else { None },
         frame: frame["frame"].as_u64().expect("frame") as u32,
         config: MegaLightsFrameConfig {
@@ -237,12 +251,27 @@ fn golden_packing_matches_ts_wordwise() {
             "packed word [{index}] slot {slot} drift {actual} vs {expected}"
         );
     }
-    assert_eq!(sha256_of_words(&packed.data), fixture["packed"]["sha256"].as_str().expect("packed sha"),
-        "sha256 哨兵:方向词 1 ulp 内的跨 libm 翻转仍会改写指纹,如实记录差异");
-    assert_eq!(packed.count, fixture["packed"]["count"].as_u64().unwrap() as usize);
-    assert_eq!(packed.point_count, fixture["packed"]["pointCount"].as_u64().unwrap() as usize);
-    assert_eq!(packed.spot_count, fixture["packed"]["spotCount"].as_u64().unwrap() as usize);
-    assert_eq!(packed.area_count, fixture["packed"]["areaCount"].as_u64().unwrap() as usize);
+    assert_eq!(
+        sha256_of_words(&packed.data),
+        fixture["packed"]["sha256"].as_str().expect("packed sha"),
+        "sha256 哨兵:方向词 1 ulp 内的跨 libm 翻转仍会改写指纹,如实记录差异"
+    );
+    assert_eq!(
+        packed.count,
+        fixture["packed"]["count"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        packed.point_count,
+        fixture["packed"]["pointCount"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        packed.spot_count,
+        fixture["packed"]["spotCount"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        packed.area_count,
+        fixture["packed"]["areaCount"].as_u64().unwrap() as usize
+    );
     assert_eq!(
         packed.ies_reference_count,
         fixture["packed"]["iesReferenceCount"].as_u64().unwrap() as usize,
@@ -257,7 +286,12 @@ fn golden_packing_matches_ts_wordwise() {
 fn ies_factor_vectors_match_ts_bit_level() {
     let fixture = fixture();
     let ies = fixture_ies(fixture);
-    for (index, vector) in fixture["iesFactorVectors"].as_array().expect("ies factor vectors").iter().enumerate() {
+    for (index, vector) in fixture["iesFactorVectors"]
+        .as_array()
+        .expect("ies factor vectors")
+        .iter()
+        .enumerate()
+    {
         let spot_index = vector["spotIndex"].as_u64().expect("spotIndex") as usize;
         let vec3 = |key: &str| -> [f64; 3] {
             let values = vector[key].as_array().expect(key);
@@ -280,7 +314,11 @@ fn ies_factor_vectors_match_ts_bit_level() {
     let packed = pack_mega_lights(&lights);
     for (index, light) in lights.iter().enumerate() {
         let expected = light.ies_spot_index.map_or(0.0f32, |row| (row + 1) as f32);
-        assert_eq!(packed.data[index * MEGA_LIGHT_WORDS + 11], expected, "ies word drift at light {index}");
+        assert_eq!(
+            packed.data[index * MEGA_LIGHT_WORDS + 11],
+            expected,
+            "ies word drift at light {index}"
+        );
     }
 }
 
@@ -294,10 +332,13 @@ fn winner_visibility_mask_matches_ts_golden() {
     let fixture = fixture();
     let visibility = &fixture["winnerVisibility"];
     let frame_index = visibility["frameIndex"].as_u64().expect("frameIndex") as usize;
-    let viewToWorld: [f32; 16] = std::array::from_fn(|slot| {
-        f32::try_from(visibility["viewToWorld"][slot].as_f64().expect("viewToWorld word")).expect("f32")
+    let view_to_world: [f32; 16] = std::array::from_fn(|slot| {
+        visibility["viewToWorld"][slot]
+            .as_f64()
+            .expect("viewToWorld word") as f32
     });
-    let ray_mask = u32::try_from(visibility["rayMask"].as_u64().expect("rayMask")).expect("u32 mask");
+    let ray_mask =
+        u32::try_from(visibility["rayMask"].as_u64().expect("rayMask")).expect("u32 mask");
     assert!(
         (visibility["biasRelative"].as_f64().expect("biasRelative")
             - crate::megalights_visibility::MEGA_LIGHTS_VISIBILITY_RAY_BIAS_RELATIVE)
@@ -310,7 +351,7 @@ fn winner_visibility_mask_matches_ts_golden() {
         .as_array()
         .expect("occluder vertices")
         .iter()
-        .map(|value| f32::try_from(value.as_f64().expect("vertex")).expect("f32"))
+        .map(|value| value.as_f64().expect("vertex") as f32)
         .collect();
     let indices: Vec<u32> = occluder["indices"]
         .as_array()
@@ -319,9 +360,12 @@ fn winner_visibility_mask_matches_ts_golden() {
         .map(|value| u32::try_from(value.as_u64().expect("index")).expect("u32"))
         .collect();
     let world_to_local: [f32; 12] = std::array::from_fn(|slot| {
-        f32::try_from(occluder["worldToLocal"][slot].as_f64().expect("worldToLocal word")).expect("f32")
+        occluder["worldToLocal"][slot]
+            .as_f64()
+            .expect("worldToLocal word") as f32
     });
-    let instance_mask = u32::try_from(occluder["mask"].as_u64().expect("occluder mask")).expect("u32");
+    let instance_mask =
+        u32::try_from(occluder["mask"].as_u64().expect("occluder mask")).expect("u32");
     let blas = build_bvh(&vertices, &indices).expect("occluder blas builds");
     let instances = vec![TlasInstance {
         id: occluder["id"].as_u64().expect("occluder id") as u32,
@@ -331,7 +375,10 @@ fn winner_visibility_mask_matches_ts_golden() {
         world_to_local,
         mask: instance_mask,
     }];
-    let scene = MegaLightsVisibilityScene { instances: &instances, ray_mask };
+    let scene = MegaLightsVisibilityScene {
+        instances: &instances,
+        ray_mask,
+    };
     // frame[frameIndex] 蓄水池重放(与 golden frames 腿同输入:IES + motion/visibility 布尔)。
     let lights = parse_lights(fixture);
     let surfaces = parse_surfaces(fixture);
@@ -343,9 +390,18 @@ fn winner_visibility_mask_matches_ts_golden() {
     };
     let ies = fixture_ies(fixture);
     let frame = &fixture["frames"].as_array().expect("frames")[frame_index];
-    let input = parse_frame_input(fixture, frame, &lights, &surfaces, None, None, &borrow, Some(&ies));
+    let input = parse_frame_input(
+        fixture,
+        frame,
+        &lights,
+        &surfaces,
+        None,
+        None,
+        &borrow,
+        Some(&ies),
+    );
     let built = build_reservoir_pass(&input);
-    let mask = winner_visibility_mask(&lights, &surfaces, &built, &viewToWorld, Some(&scene));
+    let mask = winner_visibility_mask(&lights, &surfaces, &built, &view_to_world, Some(&scene));
     let golden: Vec<f64> = visibility["maskGolden"]
         .as_array()
         .expect("maskGolden")
@@ -354,11 +410,18 @@ fn winner_visibility_mask_matches_ts_golden() {
         .collect();
     assert_eq!(mask.len(), golden.len(), "mask pixel count drift");
     for (pixel, (actual, expected)) in mask.iter().zip(&golden).enumerate() {
-        assert_eq!(f64::from(*actual), *expected, "visibility mask drift at pixel {pixel}");
+        assert_eq!(
+            f64::from(*actual),
+            *expected,
+            "visibility mask drift at pixel {pixel}"
+        );
     }
     // fail-closed 腿:同输入无场景 → 全 1(= 旧行为)。
-    let fallback = winner_visibility_mask(&lights, &surfaces, &built, &viewToWorld, None);
-    assert!(fallback.iter().all(|value| *value == 1.0), "no-scene fallback must be all visible");
+    let fallback = winner_visibility_mask(&lights, &surfaces, &built, &view_to_world, None);
+    assert!(
+        fallback.iter().all(|value| *value == 1.0),
+        "no-scene fallback must be all visible"
+    );
 }
 
 /// ABI 常量互钉(与 TS megaLights.ts/megaLightsAbi.ts 词汇)。
@@ -412,24 +475,38 @@ fn evaluation_semantics_match_ts_weight_and_shade() {
             "target weight must equal shade luminance at light {index}"
         );
         let dimmed = mega_shade_winner(&lights, &surfaces[0], index, 0.0);
-        assert_eq!(dimmed, [0.0; 3], "visibility 0 must zero shade at light {index}");
+        assert_eq!(
+            dimmed, [0.0; 3],
+            "visibility 0 must zero shade at light {index}"
+        );
         // 表面解码:视深 = -z;w 槽截断(metallic/roughness)。
         let (_, _, view, _, metallic, roughness) = mega_surface_decode(&surfaces[0]);
         assert_eq!(mega_view_depth(&surfaces[0]), -surfaces[0][0][2]);
         assert_eq!(metallic, surfaces[0][0][3]);
         assert_eq!(roughness, surfaces[0][1][3]);
         let view_length = f64::hypot(f64::hypot(view[0], view[1]), view[2]);
-        assert!((view_length - 1.0).abs() < 1e-12, "decoded view must be unit");
+        assert!(
+            (view_length - 1.0).abs() < 1e-12,
+            "decoded view must be unit"
+        );
         let _ = evaluate_mega_light(&lights[index], &surfaces[0]);
     }
     // 蓄水池收尾公式:W_Y = N·w_sum/(m·t_y)。
-    let reservoir = RisReservoir { weight_sum: 8.0, winner: 0, m: 2 };
+    let reservoir = RisReservoir {
+        weight_sum: 8.0,
+        winner: 0,
+        m: 2,
+    };
     let weight_y = mega_target_weight(&lights, &surfaces[0], 0);
     let expected = 12.0 * 8.0 / (2.0 * weight_y);
     let finished = finish_reservoir(&reservoir, &lights, &surfaces[0], lights.len());
     assert!((finished - expected).abs() <= 1e-9 * f64::max(1.0, expected.abs()));
     let invalid = finish_reservoir(
-        &RisReservoir { weight_sum: 8.0, winner: MEGALIGHTS_INVALID_LIGHT, m: 2 },
+        &RisReservoir {
+            weight_sum: 8.0,
+            winner: MEGALIGHTS_INVALID_LIGHT,
+            m: 2,
+        },
         &lights,
         &surfaces[0],
         lights.len(),
@@ -454,21 +531,38 @@ fn golden_frames_match_ts_structure_and_words() {
     };
     let mut replayed: Vec<(Vec<RisReservoir>, Vec<f32>)> = Vec::new();
     let ies = fixture_ies(fixture);
-    for (index, frame) in fixture["frames"].as_array().expect("frames").iter().enumerate() {
+    for (index, frame) in fixture["frames"]
+        .as_array()
+        .expect("frames")
+        .iter()
+        .enumerate()
+    {
         let (previous, previous_color) = if index == 0 {
             (None, None)
         } else {
             let (reservoirs, color) = &replayed[index - 1];
             (Some(reservoirs.as_slice()), Some(color.as_slice()))
         };
-        let input = parse_frame_input(fixture, frame, &lights, &surfaces, previous, previous_color, &borrow, Some(&ies));
+        let input = parse_frame_input(
+            fixture,
+            frame,
+            &lights,
+            &surfaces,
+            previous,
+            previous_color,
+            &borrow,
+            Some(&ies),
+        );
         let built = build_reservoir_pass(&input);
         let output = reuse_and_shade_pass(&input, &built);
         // 趟一蓄水池(结构位级 + f64 标量哨兵)。
         let expected_built = reservoirs(&frame["built"]);
         assert_eq!(built.len(), expected_built.len());
         for (pixel, (actual, expected)) in built.iter().zip(&expected_built).enumerate() {
-            assert_eq!(actual.winner, expected.winner, "frame {index} pixel {pixel} winner drift");
+            assert_eq!(
+                actual.winner, expected.winner,
+                "frame {index} pixel {pixel} winner drift"
+            );
             assert_eq!(actual.m, expected.m, "frame {index} pixel {pixel} m drift");
             assert!(
                 (actual.weight_sum - expected.weight_sum).abs()
@@ -481,9 +575,20 @@ fn golden_frames_match_ts_structure_and_words() {
         // 输出蓄水池 = 趟一 self 状态(趟二不改写;哨兵与 built 同款)。
         let expected_reservoirs = reservoirs(&frame["reservoirs"]);
         assert_eq!(output.reservoirs.len(), expected_reservoirs.len());
-        for (pixel, (actual, expected)) in output.reservoirs.iter().zip(&expected_reservoirs).enumerate() {
-            assert_eq!(actual.winner, expected.winner, "frame {index} pixel {pixel} output winner drift");
-            assert_eq!(actual.m, expected.m, "frame {index} pixel {pixel} output m drift");
+        for (pixel, (actual, expected)) in output
+            .reservoirs
+            .iter()
+            .zip(&expected_reservoirs)
+            .enumerate()
+        {
+            assert_eq!(
+                actual.winner, expected.winner,
+                "frame {index} pixel {pixel} output winner drift"
+            );
+            assert_eq!(
+                actual.m, expected.m,
+                "frame {index} pixel {pixel} output m drift"
+            );
             assert!(
                 (actual.weight_sum - expected.weight_sum).abs()
                     <= scalar_rel * f64::max(1.0, expected.weight_sum.abs()),
@@ -495,12 +600,17 @@ fn golden_frames_match_ts_structure_and_words() {
         // 颜色词(≤2 ulp 哨兵)。
         let expected_color = words(&frame["colorWords"]);
         assert_eq!(output.color.len(), expected_color.len());
-        assert_words_within_ulp(&output.color, &expected_color, &format!("frame {index} color"), color_ulps);
+        assert_words_within_ulp(
+            &output.color,
+            &expected_color,
+            &format!("frame {index} color"),
+            color_ulps,
+        );
         replayed.push((output.reservoirs, output.color));
     }
 }
 
-/// 穷举参考位级腿(无 RNG;逐灯求和哨兵同 color)。
+/// 穷举参考位级腿(无 RNG;逐灯求和哨兵同 color;参考与穷举帧同口径消费 IES)。
 #[test]
 fn golden_exhaustive_reference_matches_ts_words() {
     let fixture = fixture();
@@ -508,11 +618,19 @@ fn golden_exhaustive_reference_matches_ts_words() {
     let surfaces = parse_surfaces(fixture);
     let width = fixture["inputs"]["width"].as_u64().unwrap() as u32;
     let height = fixture["inputs"]["height"].as_u64().unwrap() as u32;
-    let reference = mega_lights_exhaustive_reference(&lights, &surfaces, width, height);
+    let ies = fixture_ies(fixture);
+    let reference =
+        mega_lights_exhaustive_reference_ies(&lights, &surfaces, width, height, Some(&ies));
     let expected = words(&fixture["exhaustiveReference"]["colorWords"]);
     assert_eq!(reference.len(), expected.len());
     let color_ulps = fixture["tolerance"]["colorWordUlp"].as_f64().unwrap();
     assert_words_within_ulp(&reference, &expected, "exhaustive reference", color_ulps);
+    // 无 IES 参考与带 IES 参考必须不同(fixture 场景 IES 因子非平凡——注入生效的独立证据)。
+    let identity = mega_lights_exhaustive_reference(&lights, &surfaces, width, height);
+    assert_ne!(
+        identity, reference,
+        "IES injection must perturb the golden scene (identity reference == ies reference means the factor leg is inert)"
+    );
 }
 
 /// 穷举帧(K≥N)输出恒等于穷举精确参考(⑤ 退化一致性;TS megaLightsFrameCpu 同腿)。
@@ -531,15 +649,29 @@ fn exhaustive_frame_equals_reference_within_sentinel() {
         .expect("fixture must contain an exhaustive frame");
     let owned_motion = fixture_motion(fixture);
     let owned_visibility = fixture_visibility(fixture);
-    let borrow = FrameBorrow { motion_uv: Some(&owned_motion), visibility: Some(&owned_visibility) };
+    let borrow = FrameBorrow {
+        motion_uv: Some(&owned_motion),
+        visibility: Some(&owned_visibility),
+    };
     let ies = fixture_ies(fixture);
-    let input = parse_frame_input(fixture, exhaustive_frame, &lights, &surfaces, None, None, &borrow, Some(&ies));
+    let input = parse_frame_input(
+        fixture,
+        exhaustive_frame,
+        &lights,
+        &surfaces,
+        None,
+        None,
+        &borrow,
+        Some(&ies),
+    );
     let output = mega_lights_frame(&input);
-    let reference = mega_lights_exhaustive_reference_ies(&lights, &surfaces, width, height, Some(&ies));
+    let reference =
+        mega_lights_exhaustive_reference_ies(&lights, &surfaces, width, height, Some(&ies));
     assert_eq!(output.color.len(), reference.len());
     for (index, (actual, expected)) in output.color.iter().zip(&reference).enumerate() {
         assert!(
-            (f64::from(*actual) - f64::from(*expected)).abs() <= 1e-6 * f64::max(1.0, f64::from(expected.abs())),
+            (f64::from(*actual) - f64::from(*expected)).abs()
+                <= 1e-6 * f64::max(1.0, f64::from(expected.abs())),
             "exhaustive frame vs reference drift at word {index}: {actual} vs {expected}"
         );
     }
@@ -583,7 +715,16 @@ fn seed_averaged_mean_matches_ts_authority() {
             "withVisibility": false,
             "withIes": true,
         });
-        let input = parse_frame_input(fixture, &frame, &lights, &surfaces, None, None, &borrow, Some(&ies));
+        let input = parse_frame_input(
+            fixture,
+            &frame,
+            &lights,
+            &surfaces,
+            None,
+            None,
+            &borrow,
+            Some(&ies),
+        );
         let output = mega_lights_frame(&input);
         for (index, word) in output.color.iter().enumerate() {
             mean[index] += f64::from(*word) / f64::from(seeds);
@@ -608,14 +749,29 @@ fn seed_averaged_mean_matches_ts_authority() {
 fn golden_scene_local_light_count_decides_cluster_path() {
     let fixture = fixture();
     let lights = parse_lights(fixture);
-    let points = lights.iter().filter(|light| light.kind == MegaLightKind::Point).count();
-    let spots = lights.iter().filter(|light| light.kind == MegaLightKind::Spot).count();
-    let areas = lights.iter().filter(|light| light.kind == MegaLightKind::AreaRect).count();
-    assert_eq!((points, spots, areas), (5, 4, 3), "golden scene composition drift");
+    let points = lights
+        .iter()
+        .filter(|light| light.kind == MegaLightKind::Point)
+        .count();
+    let spots = lights
+        .iter()
+        .filter(|light| light.kind == MegaLightKind::Spot)
+        .count();
+    let areas = lights
+        .iter()
+        .filter(|light| light.kind == MegaLightKind::AreaRect)
+        .count();
+    assert_eq!(
+        (points, spots, areas),
+        (5, 4, 3),
+        "golden scene composition drift"
+    );
     // 9 盏本地灯 ≤ 64 → fixture 场景本身走簇光快路径;RIS 腿由显式 force 驱动
     // (与 TS megaLightsAcceptance 的 forceMegaLights 对拍模式同款)。
-    let decision = crate::megalights_ris::resolve_direct_lighting_path(points, spots, areas, false, None);
+    let decision =
+        crate::megalights_ris::resolve_direct_lighting_path(points, spots, areas, false, None);
     assert_eq!(decision.path, DirectLightingPath::ClusterForwardPlus);
-    let forced = crate::megalights_ris::resolve_direct_lighting_path(points, spots, areas, true, None);
+    let forced =
+        crate::megalights_ris::resolve_direct_lighting_path(points, spots, areas, true, None);
     assert_eq!(forced.path, DirectLightingPath::MegalightsRis);
 }

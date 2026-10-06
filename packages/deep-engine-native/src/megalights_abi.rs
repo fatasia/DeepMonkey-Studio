@@ -204,7 +204,10 @@ fn normalize3(value: [f64; 3]) -> [f64; 3] {
 
 /// 打包进 64B/灯 灯池(尾部灯槽清零 = kind=point 全零零贡献,字节稳定可 diff)。
 pub fn pack_mega_lights(lights: &[MegaLight]) -> PackedMegaLights {
-    assert!(lights.len() <= MAX_MEGA_LIGHTS, "mega light count exceeds {MAX_MEGA_LIGHTS}");
+    assert!(
+        lights.len() <= MAX_MEGA_LIGHTS,
+        "mega light count exceeds {MAX_MEGA_LIGHTS}"
+    );
     let mut data = vec![0.0f32; lights.len().max(1) * MEGA_LIGHT_WORDS];
     let mut point_count = 0usize;
     let mut spot_count = 0usize;
@@ -268,7 +271,10 @@ pub fn pack_mega_lights(lights: &[MegaLight]) -> PackedMegaLights {
             }
         }
     }
-    assert!(data.iter().all(|word| !word.is_nan()), "mega lights packing produced NaN");
+    assert!(
+        data.iter().all(|word| !word.is_nan()),
+        "mega lights packing produced NaN"
+    );
     PackedMegaLights {
         data,
         count: lights.len(),
