@@ -36,7 +36,7 @@ import { prepareStudioDeepSwitchCandidate, type StudioDeepBridgeSwitchHost,
 
 export { t11PipelineBootstrap, t07DynamicResolutionPolicy, b4HlodClusterEnabled, g1ClusterLodEnabled,
   t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled, sdfGiEnabled, ssgiEnabled,
-  projectedTexturesEnabled, megaLightsEnabled, rayTracedShadowsEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
+  projectedTexturesEnabled, megaLightsEnabled, rayTracedShadowsEnabled, rayTracedReflectionsEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
 export type { StudioDeepWebGpuBridgeOptions, StudioRendererSwitchResult } from "./studioDeepWebGpuBridgeOptions";
 
 /**

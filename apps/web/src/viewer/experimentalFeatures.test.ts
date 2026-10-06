@@ -168,10 +168,12 @@ describe("experimental feature registry", () => {
   });
 });
 
-describe("ray-traced-reflections toggle (engine-gated, 桥接线前单文件对拍)", () => {
-  // P1 RT specular GI:URL 开关已入 toggles 单文件,桥 features 字面量接线属下一切批
-  // (清单 ray-traced-reflections evidence 如实登记)。本块锁定判定矩阵,防止接线时
-  // "面板/URL 语义漂移"(同族条款)。
+describe("ray-traced-reflections toggle (桥已接线,判定矩阵锁定)", () => {
+  // P1 RT specular GI:URL 开关在 toggles 单文件(00871f4c 批),桥 features 字面量
+  // 接线已落(studioDeepWebGpuBridgeSwitchCandidate features spread,与
+  // ray-traced-shadows 同族同款)。本块锁定判定矩阵,防止面板/URL 语义漂移
+  // (同族条款);实验面板注册表(EXPERIMENTAL_FEATURES)登记属另一切片,开关
+  // 经 URL 直达引擎,面板缺席不改变运行时语义。
   const MATRIX = ["", "?x=1", "=1", "=true", "=on", "=0", "=false", "=off", "=yes", "=TRUE", "=On"] as const;
 
   it("默认关;1/true/on 开;其余假值关(与 opt-in 家族同矩阵)", () => {
@@ -183,7 +185,7 @@ describe("ray-traced-reflections toggle (engine-gated, 桥接线前单文件对�
     }
   });
 
-  it("未注册进 EXPERIMENTAL_FEATURES(桥接线前不上面板,登记与状态一致)", () => {
+  it("未注册进 EXPERIMENTAL_FEATURES(面板登记另一切片,URL 直达语义不受影响)", () => {
     expect(EXPERIMENTAL_FEATURES.some((spec) => spec.param === "ray-traced-reflections")).toBe(false);
   });
 });

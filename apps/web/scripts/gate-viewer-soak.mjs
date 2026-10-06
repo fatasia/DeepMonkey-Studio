@@ -194,11 +194,17 @@ function assessSoak(current) {
   if (stable.some((sample) => Number.isFinite(sample.p95FrameMs) && sample.p95FrameMs > 33.3)) failures.push("至少一个长稳样本 P95 帧时间超过 33.3ms");
   // 回收守卫口径(2026-10-06 修正):settle 段(复位后画面回稳)判 3s;recreate(设备重建+冷首编译)
   // 是管线编译成本不是"画面未恢复",只记录。失败信息必须带数值,禁止静态文案。
+  // 拆段数据(rendererLifecycle.lastRecycleBreakdown)缺失必须显式失败——A2 实证:
+  // 修复前的 dist 会让采样读到 undefined,静默回退总时长既把冷回收的
+  // recreate+warmup 误判成 settle 超时,又掩盖"产物未含最新夹具代码"的事实。
   for (const sample of stable.filter((item) => item.rendererRecycled)) {
     const breakdown = sample.rendererRecycleBreakdown;
-    const settleMs = Number.isFinite(breakdown?.settleMs) ? breakdown.settleMs : sample.rendererRecycleDurationMs;
-    if (!Number.isFinite(settleMs) || settleMs > 3_000) {
-      failures.push(`第 ${sample.index} 个样本 WebGPU 回收后画面未在 3 秒内回稳(settle=${fmtMs(settleMs)} recreate=${fmtMs(breakdown?.recreateMs)} warmup=${fmtMs(breakdown?.warmupMs)} 总时长=${fmtMs(sample.rendererRecycleDurationMs)} 累计回收=${sample.rendererRecycleCount})`);
+    if (!breakdown || ![breakdown.recreateMs, breakdown.warmupMs, breakdown.settleMs].every(Number.isFinite)) {
+      failures.push(`第 ${sample.index} 个样本回收拆段数据缺失(rendererRecycleBreakdown 未发布——验收 dist 可能不含最新 ViewerVisualQa 代码;总时长=${fmtMs(sample.rendererRecycleDurationMs)} 累计回收=${sample.rendererRecycleCount})`);
+      continue;
+    }
+    if (breakdown.settleMs > 3_000) {
+      failures.push(`第 ${sample.index} 个样本 WebGPU 回收后画面未在 3 秒内回稳(settle=${fmtMs(breakdown.settleMs)} recreate=${fmtMs(breakdown.recreateMs)} warmup=${fmtMs(breakdown.warmupMs)} 总时长=${fmtMs(sample.rendererRecycleDurationMs)} 累计回收=${sample.rendererRecycleCount})`);
     }
   }
   if (stable.some((sample) => sample.pipelineWarmupStatus === "failed")) failures.push("长稳期间渲染管线预热失败");

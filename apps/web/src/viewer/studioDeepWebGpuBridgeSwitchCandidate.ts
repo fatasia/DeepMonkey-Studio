@@ -18,7 +18,7 @@ import { nextFrame, resolveAuthorWorldTransform, threePrototypeHooks,
   type BridgeModuleLoader } from "./studioDeepWebGpuBridgeSceneHelpers";
 import { markSwitchPhase, t11PipelineBootstrap, t07DynamicResolutionPolicy, b4HlodClusterEnabled, g1ClusterLodEnabled,
   t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled, debugFullRenderEnabled, sdfGiEnabled,
-  megaLightsEnabled, rayTracedShadowsEnabled, ssgiEnabled, projectedTexturesEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
+  megaLightsEnabled, rayTracedShadowsEnabled, rayTracedReflectionsEnabled, ssgiEnabled, projectedTexturesEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
 import { resolveAlphaToCoverageCreateModes, packetUsesDeepAdvancedMaterials,
   sceneUsesDeepAdvancedMaterials } from "./studioDeepAdvancedMaterials";
 import { createRequestedStudioFrameCaptureSession, createStudioFrameReadbackListener } from "./studioFrameCaptureDiagnostics";
@@ -157,6 +157,7 @@ export async function prepareStudioDeepSwitchCandidate(host: StudioDeepBridgeSwi
       const debugFullRender = debugFullRenderEnabled();
       const megaLights = megaLightsEnabled();
       const rayTracedShadows = rayTracedShadowsEnabled();
+      const rayTracedReflections = rayTracedReflectionsEnabled();
       const backend = await module.DeepWebGpuBackend.create({
         canvas, gpu: navigator.gpu,
         ...(host.projectionBridge ? { projection: host.projectionBridge, root: host.projectionRoot() } : {}),
@@ -198,6 +199,11 @@ export async function prepareStudioDeepSwitchCandidate(host: StudioDeepBridgeSwi
             ...(debugFullRender ? { debugForceFullRender: true } : {}),
             ...(megaLights ? { megaLights: true } : {}),
             ...(rayTracedShadows ? { rayTracedShadows: true } : {}),
+            // B3 RT 反射 closest-hit 帧通道（`ray-traced-reflections=1`，opt-in 默认关）：
+            // 关闭 = 通道零 dispatch、SSR 屏外填充不发生，帧逐位零变化；场景未
+            // staging/管线构造失败时引擎 fail-closed 降级并经 FrameMetrics.rtReflections
+            // 如实披露（00871f4c 生产帧挂载，本行为 URL 开关→features 的接线）。
+            ...(rayTracedReflections ? { rayTracedReflections: true } : {}),
             ...(sdfGiEnabled() ? { sdfGi: true } : {}),
             // P2 SSGI:opt-in 默认不带该字段(帧逐位零变化);与 sdf-gi 叠加合法。
             ...(ssgiEnabled() ? { ssgi: true } : {}),
