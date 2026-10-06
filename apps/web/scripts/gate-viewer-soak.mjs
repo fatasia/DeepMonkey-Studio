@@ -36,7 +36,7 @@ await new Promise((resolveReady) => server.listen(0, "127.0.0.1", resolveReady))
 const address = server.address();
 if (!address || typeof address === "string") throw new Error("无法创建长稳验收服务器");
 const origin = `http://127.0.0.1:${address.port}`;
-const browser = await chromium.launch({ executablePath: chromePath, headless: true, args: ["--js-flags=--expose-gc"] });
+const browser = await chromium.launch({ executablePath: chromePath, headless: process.env.SOAK_HEADLESS !== "0", args: ["--js-flags=--expose-gc"] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
 const cdpSession = await page.context().newCDPSession(page);
 const report = {
