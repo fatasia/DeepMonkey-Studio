@@ -10,6 +10,9 @@ import onDemandPackaging from "./on-demand-packaging.md?raw";
 import deepEngine from "./deep-engine.md?raw";
 import deepEngineSdk from "./deep-engine-sdk.md?raw";
 import engineCapabilityMatrix from "./engine-capability-matrix.md?raw";
+import realtimeGi from "./realtime-gi.md?raw";
+import rayTracing from "./ray-tracing.md?raw";
+import deep2d from "./deep-2d.md?raw";
 import engineDesignInfluences from "./engine-design-influences.md?raw";
 import engineBenchmarks from "./engine-benchmarks.md?raw";
 import aiModeling3dApi from "./ai-modeling3d-api.md?raw";
@@ -68,6 +71,10 @@ export const docsDocuments = createDocsCatalog([
   { id: "engine-benchmarks", category: "渲染引擎", order: 53, version: DOCS_VERSION, markdown: engineBenchmarks },
   // 六引擎对标 P2:公开能力矩阵页(导语文档;数据表由 EngineCapabilityMatrix 组件在 DocsCenter 内渲染,单源=contracts 登记表)。
   { id: "engine-capability-matrix", category: "渲染引擎", order: 54, version: DOCS_VERSION, markdown: engineCapabilityMatrix },
+  // 渲染能力专题:口径与 rendererCapabilityManifest 一致(supported / opt-in-default-off / harness-only 措辞区分)。
+  { id: "realtime-gi", category: "渲染引擎", order: 55, version: DOCS_VERSION, markdown: realtimeGi },
+  { id: "ray-tracing", category: "渲染引擎", order: 56, version: DOCS_VERSION, markdown: rayTracing },
+  { id: "deep-2d", category: "渲染引擎", order: 57, version: DOCS_VERSION, markdown: deep2d },
   { id: "contributing", category: "参与项目", order: 60, version: DOCS_VERSION, markdown: contributing },
   { id: "community", category: "参与项目", order: 61, version: DOCS_VERSION, markdown: community },
   { id: "open-source-assets", category: "参与项目", order: 62, version: DOCS_VERSION, markdown: openSourceAssets },

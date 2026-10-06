@@ -37,6 +37,9 @@ describe("local documentation catalog", () => {
       "engine-design-influences",
       "engine-benchmarks",
       "engine-capability-matrix",
+      "realtime-gi",
+      "ray-tracing",
+      "deep-2d",
       "contributing",
       "community",
       "open-source-assets",
@@ -117,7 +120,14 @@ describe("local documentation catalog", () => {
   });
 
   it("finds onboarding, contribution and model-import instructions", () => {
-    for (const [query, id] of [["安装与首次启动", "getting-started"], ["开发与贡献", "contributing"], ["模型导入与格式选择", "model-import"]]) {
+    for (const [query, id] of [
+      ["安装与首次启动", "getting-started"],
+      ["开发与贡献", "contributing"],
+      ["模型导入与格式选择", "model-import"],
+      ["实时全局光照", "realtime-gi"],
+      ["ReSTIR", "ray-tracing"],
+      ["Deep 2D", "deep-2d"]
+    ]) {
       expect(searchDocs(docsDocuments, query!)[0]?.document.id).toBe(id);
     }
   });
