@@ -6,6 +6,8 @@ import {
   Braces,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Database,
   LoaderCircle,
   Pencil,
@@ -66,6 +68,8 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
   const [sqlAnswer, setSqlAnswer] = useState("");
   const [sqlBusy, setSqlBusy] = useState(false);
   const [testingConnectionId, setTestingConnectionId] = useState<string>();
+  /** 连接运行监控:默认只显示一行摘要(延迟+失败+状态色点),点开才展开读/写/重连与延迟趋势。 */
+  const [connectorDetailOpen, setConnectorDetailOpen] = useState(false);
   const [writeAddress, setWriteAddress] = useState("");
   const [writeValue, setWriteValue] = useState("");
   const [writeBusy, setWriteBusy] = useState(false);
@@ -420,37 +424,48 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
             )}
             {selectedConnection && (
               <section className={`data-connector-health-panel ${selectedDiagnostics?.status ?? "idle"}`}>
-                <header>
-                  <div>
-                    <strong>{tr(locale, "连接运行监控", "Connector monitoring")}</strong>
-                    <small title={selectedConnection.name}>{selectedConnection.name}</small>
-                    <small>
-                      {selectedDiagnostics
-                        ? tr(
+                {selectedDiagnostics ? (
+                  <>
+                    <button
+                      type="button"
+                      className="data-connector-summary"
+                      aria-expanded={connectorDetailOpen}
+                      title={tr(locale, "展开或收起运行详情", "Toggle run details")}
+                      onClick={() => setConnectorDetailOpen((value) => !value)}
+                    >
+                      <i className="data-connector-dot" aria-hidden="true" />
+                      <strong title={selectedConnection.name}>{selectedConnection.name}</strong>
+                      <span>
+                        {tr(locale, "延迟", "Latency")}{" "}
+                        <b>{selectedDiagnostics.lastLatencyMs === undefined ? "—" : `${selectedDiagnostics.lastLatencyMs} ms`}</b>
+                      </span>
+                      <span className={selectedDiagnostics.totalFailures > 0 ? "is-warn" : ""}>
+                        {tr(locale, "失败", "Failures")} <b>{selectedDiagnostics.consecutiveFailures}/{selectedDiagnostics.totalFailures}</b>
+                      </span>
+                      {connectorDetailOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </button>
+                    {connectorDetailOpen && (
+                      <div className="data-connector-detail">
+                        <small>
+                          {connectorStatusLabel(selectedDiagnostics.status, locale)} ·{" "}
+                          {tr(
                             locale,
                             `${selectedDiagnostics.totalReads} 次读取 · ${selectedDiagnostics.totalWrites} 次写入 · ${selectedDiagnostics.reconnects} 次重连`,
                             `${selectedDiagnostics.totalReads} reads · ${selectedDiagnostics.totalWrites} writes · ${selectedDiagnostics.reconnects} reconnects`,
-                          )
-                        : tr(locale, "执行连接测试后开始记录", "Run a connection test to start collecting metrics")}
-                    </small>
-                  </div>
-                  <i>{connectorStatusLabel(selectedDiagnostics?.status, locale)}</i>
-                </header>
-                {selectedDiagnostics && (
-                  <div>
-                    <span>
-                      {tr(locale, "最近延迟", "Last latency")} <b>{selectedDiagnostics.lastLatencyMs ?? 0} ms</b>
-                    </span>
-                    <span>
-                      {tr(locale, "连续失败", "Consecutive failures")} <b>{selectedDiagnostics.consecutiveFailures}</b>
-                    </span>
-                    <span>
-                      {tr(locale, "总失败", "Total failures")} <b>{selectedDiagnostics.totalFailures}</b>
-                    </span>
-                    <ConnectorTrendBars samples={trendByConnection[selectedConnection!.id] ?? []} locale={locale} />
+                          )}
+                        </small>
+                        <ConnectorTrendBars samples={trendByConnection[selectedConnection.id] ?? []} locale={locale} />
+                        {selectedDiagnostics.lastError && <small title={selectedDiagnostics.lastError}>{selectedDiagnostics.lastError}</small>}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="data-connector-summary" role="status">
+                    <i className="data-connector-dot" aria-hidden="true" />
+                    <strong title={selectedConnection.name}>{selectedConnection.name}</strong>
+                    <small>{tr(locale, "执行连接测试后开始记录", "Run a connection test to start collecting metrics")}</small>
                   </div>
                 )}
-                {selectedDiagnostics?.lastError && <small title={selectedDiagnostics.lastError}>{selectedDiagnostics.lastError}</small>}
               </section>
             )}
             <div className="data-card-list">
@@ -463,6 +478,7 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
                     className="data-card-main"
                     onClick={() => {
                       setSelectedConnectionId(connection.id);
+                      setConnectorDetailOpen(false);
                       setSelectedDatasetId(datasets.find((item) => item.connectionId === connection.id)?.id);
                       setPreview(undefined);
                     }}

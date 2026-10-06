@@ -330,6 +330,81 @@
 .data-center-page .data-connector-health-panel > div span { color: var(--muted); }
 .data-center-page .data-connector-health-panel > header i { color: var(--text); }
 
+/* 连接运行监控一行摘要(2026-10-06 简化):状态色点 + 连接名 + 延迟 + 失败数 + 展开
+   箭头;详情(读/写/重连、延迟趋势、最近错误)点击后展开。色全部走语义令牌。 */
+.data-center-page .data-connector-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.data-center-page .data-connector-summary > strong {
+  flex: 0 1 auto;
+  overflow: hidden;
+  max-width: 34%;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.data-center-page .data-connector-summary > span {
+  display: inline-flex;
+  flex: none;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.data-center-page .data-connector-summary b {
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.data-center-page .data-connector-summary > span.is-warn b { color: var(--warning); }
+.data-center-page .data-connector-summary > svg { flex: none; color: var(--muted); }
+.data-center-page .data-connector-summary > small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.data-center-page .data-connector-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--text-faint);
+}
+.data-center-page .data-connector-health-panel.healthy .data-connector-dot { background: var(--success); }
+.data-center-page .data-connector-health-panel.degraded .data-connector-dot { background: var(--warning); }
+.data-center-page .data-connector-health-panel.offline .data-connector-dot { background: var(--danger); }
+.data-center-page .data-connector-detail {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line-subtle);
+}
+.data-center-page .data-connector-detail small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .data-center-page .data-connector-trend-bars i { transition: none; }
+}
+
+
 /* 连接监控迷你趋势条:延迟柱(accent 派生),带失败样本标 danger;高度按窗口内相对值。 */
 .data-center-page .data-connector-trend { display: grid; gap: 4px; grid-column: 1 / -1; }
 .data-center-page .data-connector-trend-caption { color: var(--muted); font-size: 11px; }
