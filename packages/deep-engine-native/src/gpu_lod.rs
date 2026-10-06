@@ -1,6 +1,5 @@
 use bytemuck::cast_slice;
 use deep_engine_native::{
-    gpu_cluster_lod_runtime::ClusterLodGpuRuntime,
     lod_contract::{LodDraw, PreparedGpuLod},
     mesh_abi::FrameUniform,
 };
@@ -21,9 +20,6 @@ pub struct GpuLod {
     indirect_template: Vec<u8>,
     count: u32,
     dirty: bool,
-    /// 批 C 接线:簇 LOD GPU 运行时(attach 后由帧循环自动驱动选层 dispatch;
-    /// indirect 消费与 readback 提交经 [`GpuLod::cluster_lod`] 家族)。
-    cluster: Option<ClusterLodGpuRuntime>,
 }
 
 impl GpuLod {
@@ -96,36 +92,7 @@ impl GpuLod {
             indirect_template: cast_slice(&prepared.indirect_template).to_vec(),
             count: prepared.objects.len() as u32,
             dirty: true,
-            cluster: None,
         }))
-    }
-
-    /// 批 C 接线:挂载簇 LOD GPU 运行时(挂载后 `needs_encode`/`encode` 由帧循环
-    /// 自动驱动;readback 提交走 [`GpuLod::commit_cluster_lod`])。
-    pub fn attach_cluster_lod(&mut self, runtime: ClusterLodGpuRuntime) {
-        self.cluster = Some(runtime);
-    }
-
-    /// 簇 LOD 运行时只读访问(渲染 pass 消费面:`encode_draws`)。
-    pub fn cluster_lod(&self) -> Option<&ClusterLodGpuRuntime> {
-        self.cluster.as_ref()
-    }
-
-    /// 簇 LOD 运行时可变访问(相机更新与 readback 提交)。
-    pub fn cluster_lod_mut(&mut self) -> Option<&mut ClusterLodGpuRuntime> {
-        self.cluster.as_mut()
-    }
-
-    /// 簇 LOD readback 提交(faults 零门 → 计划 → 命令字写入;见 runtime 文档)。
-    pub fn commit_cluster_lod(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-    ) -> Result<usize, String> {
-        match self.cluster.as_mut() {
-            Some(cluster) => cluster.commit_selection(device, queue),
-            None => Ok(0),
-        }
     }
 
     pub fn update_views(
@@ -148,7 +115,7 @@ impl GpuLod {
     }
 
     pub fn needs_encode(&self) -> bool {
-        self.dirty || self.cluster.as_ref().is_some_and(|cluster| cluster.needs_encode())
+        self.dirty
     }
 
     pub fn reset_history(&mut self, queue: &wgpu::Queue) {
@@ -171,11 +138,6 @@ impl GpuLod {
         for view in &self.views {
             pass.set_bind_group(0, &view.group, &[]);
             pass.dispatch_workgroups(self.count.div_ceil(64), 1, 1);
-        }
-        drop(pass);
-        // 批 C 接线:簇 LOD 选层 dispatch 同提交跟进(相机置脏时)。
-        if let Some(cluster) = &self.cluster {
-            cluster.encode(encoder);
         }
     }
 

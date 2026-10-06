@@ -140,7 +140,7 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         capability_id: "material-abi-192b",
         support: RendererCapabilitySupport::Degraded,
         reason: RendererCapabilityReasonCode::ReducedTier,
-        evidence: "mesh_abi::MATERIAL_UNIFORM_FLOATS=46(核心块 40 逐字节不变+扩展带 40..46;行型 MATERIAL_UNIFORM_ROW_FLOATS=60/240B,Web 240B advanced 布局同构,零带回退)",
+        evidence: "mesh_abi::MATERIAL_UNIFORM_FLOATS=40(160B 核心块;Web 192B 打包的扩展带零填充回退)",
     },
     NativeCapabilitySelfCheck {
         capability_id: "gi-probe-directions",
@@ -358,23 +358,17 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         reason: RendererCapabilityReasonCode::OptInDefaultOff,
         evidence: "pbr_layered.rs LAYERED_SURFACE_BLOCK_BYTES=304 逐字节镜像 TS 布局;求值响应级混合 CPU 参考;layered_*_gpu_tests",
     },
-    // C9/native 接通(2026-10-06):清漆层叠单源求值 + 扩展带消费,factor=0/
-    // 字段缺席默认关(零带回退 stock 逐位不变);anisotropy/transmission 槽位
-    // fail-closed 拒绝非零,如实随证据声明。
     NativeCapabilitySelfCheck {
         capability_id: "material-clearcoat",
-        support: RendererCapabilitySupport::Supported,
-        reason: RendererCapabilityReasonCode::OptInDefaultOff,
-        evidence: "mesh_abi::MATERIAL_UNIFORM_FLOATS=46(核心块 40 逐字节不变+消费 Web 扩展带 40..46;行型 60 float/240B)+pbr_texture::prepare_material_uniform(扩展带 6 词=TS packExtendedParameterBlock 同序)+native_mesh_v1.wgsl native_extended_shade(单源 materialEvaluateCore.wgsl deepEvaluateExtendedMaterial 清漆层叠替换主方向光直射,与 I-C23 层路径共用;全零带回退 native_lit_response 旧包逐位不变,RT 入口同换)+material_extended_cpu(TS f64 镜像)+material_parity_tests(fixture material-native-parity-v1.json:f64 ≤1e-9/词 ≤2ulp/打包词位级)+renderer::material_extended_gpu_tests 真机腿(clearcoat/sheen/组合/零带位级控制);native 子集:anisotropy.strength/transmission.factor 非零由 contract::validate 拒绝",
+        support: RendererCapabilitySupport::Unavailable,
+        reason: RendererCapabilityReasonCode::Absent,
+        evidence: "mesh_abi::MATERIAL_UNIFORM_FLOATS=40(核心块;不消费 Web 扩展带 40..46,无清漆层叠着色路径)",
     },
-    // C9/native 保守子集接通(2026-10-06):advancedParameters 闭合域打开,
-    // production mesh 路只消费 sheen(直射 Charlie lobe+直/间接能量补偿);
-    // iridescence/volume/clearcoat-IBL 未接,如实降档 reduced-tier。
     NativeCapabilitySelfCheck {
         capability_id: "material-advanced",
-        support: RendererCapabilitySupport::Degraded,
-        reason: RendererCapabilityReasonCode::ReducedTier,
-        evidence: "contract::types StockAdvancedParameters(闭合域与 TS 同构)+contract::validate validate_stock_extensions(native 子集:sheen 放行,iridescence.factor/volume.thickness 非零 fail-closed 拒绝;unlit 拒绝)+pbr_texture::prepare_material_uniform(advanced 带 48..52=sheen.rgb+roughness,TS packAdvancedParameterBlock 前 4 词同序位级)+native_mesh_v1.wgsl(deepAdvDCharlie/deepAdvVNeubelt/deepAdvIblSheen 与 Web materialAdvancedWgsl 同名同式;native_extended_shade 直射 Charlie lobe+能量补偿)+material_extended_cpu(TS materialAdvancedReference f64 镜像)+material_parity_tests(原语/能量对拍 fixture)+renderer::material_extended_gpu_tests 真机 sheen/组合/零带腿;如实降档:iridescence/volume 未接(contract 非零拒绝),clearcoat IBL 分量未接(直射替换为 T08 单源式,非 Web advanced 变体 coat-IBL 合成)",
+        support: RendererCapabilitySupport::Unavailable,
+        reason: RendererCapabilityReasonCode::Absent,
+        evidence: "runtime package native profile 拒绝 advancedParameters;mesh_abi::MATERIAL_UNIFORM_FLOATS=40(核心块,无 advanced 带与 sheen/薄膜/体积着色路径)",
     },
     NativeCapabilitySelfCheck {
         capability_id: "local-shadow-abi-16",
@@ -428,7 +422,7 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         capability_id: "virtual-geometry",
         support: RendererCapabilitySupport::Supported,
         reason: RendererCapabilityReasonCode::HarnessOnly,
-        evidence: "geometry_dag/src/lib.rs 离线编译工具链(obj.rs→meshlet_builder.rs 贪心簇划分→dag.rs 层级聚类简化 DAG 父子单射→dgc.rs .dgc 流式格式 64B 文件头+88B 段头+8 对齐 payload+逐段 CRC32C+zlib,CLI build/info/verify) + tests/golden_parity.rs 与 TS buildMeshlets/buildMeshletDag 逐位对拍(quick_sphere/synthetic50k 双 fixture 与 TS 测试同源共用) + tests/dgc_byte_golden.rs .dgc 序列化字节黄金钉版(压缩/未压缩双档字节+SHA-256 入库,门常开;TS 跨工具链 decodeDgc 对 Rust 产物 sha256 钉版对拍同源) + tests/cluster_lod_contract.rs 消费合同门(dgcClusterLodBridge 路4 映射镜像+validateClusterLodDag 不变量:节点预算/唯一 id/子层细化/根可达叶子区间并集覆盖/误差单调,反例注入证明门咬人) + src/gpu_cluster_lod_dag.rs 运行时 DAG 构建桥(geometry_dag read_dgc 单源读取以 path 依赖接入,flate2/miniz_oxide 闭包沿 85aeef75 审计;dgcClusterLodBridge 路4 映射同式:bounds word 4..6/8..10+descriptors c*4+2/3+parents O(n) 反转+NO_PARENT 孤儿保留;validateClusterLodDag 合同签核:预算 maxBatchRays/重复 id/叶层挂子/未知子/子不细化/叶覆盖区间并集去重闭合+本端前置包围盒 sanity/逐层误差严格递增;三面产物 64B 节点表+plan_nodes+层摘要+拼接顶点/索引缓冲,批 A 选层/批 B 计划零转换消费) + src/gpu_cluster_lod_dag_tests.rs(金样 .dgc 字节端到端 18 测:压缩/未压缩双档+独立 read_dgc 复读逐节点核对+word 级打包对拍+选层→计划闭环(细化臂前沿=全叶/粗化臂=全根/frontier 互验/命令字层跨度独立重算)+obj→build→write→read 独立臂+反例注入 10 例+孤儿覆盖裁决钉版) + src/gpu_cluster_lod_dag_probe_tests.rs(真机 #[ignore]:构建→64B storage 直入→选层 dispatch→MAP_READ staging 读回与 CPU 权威位级对拍+faults 零哨兵→GPU selection 喂计划前沿闭合,细化/粗化双臂 Vulkan 绿;并同族修复批 B 二 selection_compute 探针同机制读回缺陷后真机绿) + src/gpu_cluster_lod_runtime.rs 渲染器接线运行时(批 C 收官:DAG 三面产物→GPU 驻留 buffer 族(节点 storage/拼接顶点 VERTEX/拼接索引 INDEX/selection+faults+相机 uniform+indirect INDIRECT;预检 fail-closed:预算/层覆盖/逐节点三角形域/拼接表规模=逐层摘要和)+ 相机 uniform 48B 打包(TS packClusterLodCamera 词序同构,fail-closed 预算)+ 帧循环模式(needs_encode→encode 选层 dispatch+staging 拷贝→commit_selection:MAP_READ readback→faults 零门→计划→cluster_lod_command_bytes 命令字写入 indirect buffer;faults 非零=整批拒绝:计划清空+命令字清零+置脏重试,绝不静默降级)+ 渲染 pass 消费面 encode_draws(绑定驻留顶点/索引逐槽 draw_indexed_indirect,空簇 indexCount=0 no-op 槽保留)) + src/gpu_cluster_lod_runtime_tests(6 CPU 测:golden 驻留预检绿+相机 uniform 词序/fail-closed 反例+驻留预检拦三面矛盾+细化臂命令字节流逐字+粗化臂独立重算层跨度) + src/gpu_cluster_lod_runtime_gpu_probe(真机 #[ignore]:golden .dgc→驻留→细化/粗化双臂 dispatch→计划命令字与 CPU 权威逐字对拍+commit 幂等+encode_draws 真发起全部槽位 Vulkan 绿) + gpu_lod.rs 最小扩展(attach_cluster_lod/cluster_lod(_mut)/commit_cluster_lod;needs_encode 与 encode 帧循环自动驱动簇选层 dispatch,renderer 域零改动接入);如实 harness-only:GPU 选层+indirect 命令字+渲染消费面已备且真机绿,场景包→.dgc 驻留摄入与生产 pass 消费调用点(renderer/scene 侧材质实例绑定簇顶点)仍缺,现役消费通路在 web(virtualGeometryDagPages/Scheduling/Residency/Indirect + rayTracing 簇 LOD 波次选层/indirect 计划,经 dgcClusterLodBridge 桥)",
+        evidence: "geometry_dag/src/lib.rs 离线编译工具链(obj.rs→meshlet_builder.rs 贪心簇划分→dag.rs 层级聚类简化 DAG 父子单射→dgc.rs .dgc 流式格式 64B 文件头+88B 段头+8 对齐 payload+逐段 CRC32C+zlib,CLI build/info/verify) + tests/golden_parity.rs 与 TS buildMeshlets/buildMeshletDag 逐位对拍(quick_sphere/synthetic50k 双 fixture 与 TS 测试同源共用) + tests/dgc_byte_golden.rs .dgc 序列化字节黄金钉版(压缩/未压缩双档字节+SHA-256 入库,门常开;TS 跨工具链 decodeDgc 对 Rust 产物 sha256 钉版对拍同源) + tests/cluster_lod_contract.rs 消费合同门(dgcClusterLodBridge 路4 映射镜像+validateClusterLodDag 不变量:节点预算/唯一 id/子层细化/根可达叶子区间并集覆盖/误差单调,反例注入证明门咬人) + src/gpu_cluster_lod_dag.rs 运行时 DAG 构建桥(geometry_dag read_dgc 单源读取以 path 依赖接入,flate2/miniz_oxide 闭包沿 85aeef75 审计;dgcClusterLodBridge 路4 映射同式:bounds word 4..6/8..10+descriptors c*4+2/3+parents O(n) 反转+NO_PARENT 孤儿保留;validateClusterLodDag 合同签核:预算 maxBatchRays/重复 id/叶层挂子/未知子/子不细化/叶覆盖区间并集去重闭合+本端前置包围盒 sanity/逐层误差严格递增;三面产物 64B 节点表+plan_nodes+层摘要+拼接顶点/索引缓冲,批 A 选层/批 B 计划零转换消费) + src/gpu_cluster_lod_dag_tests.rs(金样 .dgc 字节端到端 18 测:压缩/未压缩双档+独立 read_dgc 复读逐节点核对+word 级打包对拍+选层→计划闭环(细化臂前沿=全叶/粗化臂=全根/frontier 互验/命令字层跨度独立重算)+obj→build→write→read 独立臂+反例注入 10 例+孤儿覆盖裁决钉版) + src/gpu_cluster_lod_dag_probe_tests.rs(真机 #[ignore]:构建→64B storage 直入→选层 dispatch→MAP_READ staging 读回与 CPU 权威位级对拍+faults 零哨兵→GPU selection 喂计划前沿闭合,细化/粗化双臂 Vulkan 绿;并同族修复批 B 二 selection_compute 探针同机制读回缺陷后真机绿);如实 harness-only:选层/计划运行时件已备,renderer 页调度/驻留/indirect 分组的帧循环消费仍缺,现役消费通路在 web(virtualGeometryDagPages/Scheduling/Residency/Indirect + rayTracing 簇 LOD 波次选层/indirect 计划,经 dgcClusterLodBridge 桥)",
     },
     NativeCapabilitySelfCheck {
         capability_id: "deep2d-visual-trio",
