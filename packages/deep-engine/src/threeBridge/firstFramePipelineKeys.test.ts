@@ -42,4 +42,17 @@ describe("first-frame pipeline key derivation", () => {
       { id: "i", geometry: "g", material: "ghost", transform: identity },
     ]))).toEqual([]);
   });
+
+  it("carries the a2c suffix for alpha-to-coverage materials (renderPacketBatches key parity)", () => {
+    const keys = firstFramePipelineMainKeys(packet([
+      { id: "a2c", baseColor: [1, 1, 1], metallic: 0, roughness: 1, alphaToCoverage: true },
+      { id: "a2c-blend", baseColor: [1, 1, 1], metallic: 0, roughness: 1, alphaToCoverage: true, alphaMode: "BLEND" },
+    ], [
+      { id: "i", geometry: "g", material: "a2c", transform: identity },
+      { id: "j", geometry: "g", material: "a2c-blend", transform: identity },
+    ]));
+    // BLEND+a2c 是 renderPacketBatches 拒绝的非法组合,这里不产生该键
+    // (无纹理 BLEND 材质走 plain 模式)。
+    expect(keys.sort()).toEqual(["plain/blend/ccw", "plain/depth/ccw/a2c"]);
+  });
 });

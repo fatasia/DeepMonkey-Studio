@@ -83,9 +83,24 @@ function serializeDescriptor(value: unknown, out: string[], path = ""): void {
   out.push(`fn:${typeof value}`);
 }
 
-/** WGSL 源指纹:源变更必失效。 */
+/** WGSL 源指纹:源变更必失效。
+ * 首帧攻坚 2026-10-07:fingerprint 在一次构建里对同一份 moduleCode 重复计算
+ * (critical 登记 + 缓存查找 + 背景排序 + 入队,×3/管线,×41 管线实测排队段
+ * ~100ms 纯 sha256),此处按源串做小容量 FIFO 记忆化——同串恒同指纹(sha256
+ * 纯函数),跨会话语义不变;容量 8 覆盖单构建全部变体,防长字符串驻留。 */
+const sourceFingerprintMemo = new Map<string, string>();
+const SOURCE_FINGERPRINT_MEMO_LIMIT = 8;
+
 export function wgslSourceFingerprint(code: string): string {
-  return `wgsl-sha256-${sha256Utf8(code)}`;
+  const memoed = sourceFingerprintMemo.get(code);
+  if (memoed !== undefined) return memoed;
+  const fingerprint = `wgsl-sha256-${sha256Utf8(code)}`;
+  if (sourceFingerprintMemo.size >= SOURCE_FINGERPRINT_MEMO_LIMIT) {
+    const oldest = sourceFingerprintMemo.keys().next().value;
+    if (oldest !== undefined) sourceFingerprintMemo.delete(oldest);
+  }
+  sourceFingerprintMemo.set(code, fingerprint);
+  return fingerprint;
 }
 
 /** 管线指纹:WGSL 源 + 完整描述符(对象取身份)。描述符漂移即指纹漂移。 */

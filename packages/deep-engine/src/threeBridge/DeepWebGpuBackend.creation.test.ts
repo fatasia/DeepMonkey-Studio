@@ -93,7 +93,8 @@ describe("DeepWebGpuBackend creation", () => {
     renderer.shadows.maxDepthTextureBytes = 32 * 1024 * 1024;
     const backend = await preparing;
     const supplied = createRuntime.mock.calls[0]![3]!;
-    expect(supplied).toEqual({ shadows: { requestedTier: "performance", maxDepthTextureBytes: 16 * 1024 * 1024 } });
+    expect(supplied).toEqual({ shadows: { requestedTier: "performance", maxDepthTextureBytes: 16 * 1024 * 1024 },
+      pipelines: { firstFrameSubset: true, firstFrameMainKeys: ["plain/depth/ccw"] } });
     expect(Object.isFrozen(supplied)).toBe(true); expect(Object.isFrozen(supplied.shadows)).toBe(true);
     expect(backend.shadowSelection).toEqual({ selectedTier: "performance", estimatedDepthTextureBytes: 8 * 1024 * 1024 });
   });
@@ -102,7 +103,9 @@ describe("DeepWebGpuBackend creation", () => {
     const target = runtime(), createRuntime = vi.fn(async () => target);
     const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
       projection: bridge(), root: mesh(), view }, { create: createRuntime });
-    expect(createRuntime.mock.calls[0]![3]).toEqual({});
+    // 首帧最小集缺省注入(投影路径 CPU 预投影推导);其余选项保持零快照。
+    expect(createRuntime.mock.calls[0]![3]).toEqual({ pipelines: {
+      firstFrameSubset: true, firstFrameMainKeys: ["plain/depth/ccw"] } });
     expect(backend.shadowSelection?.selectedTier).toBe("high");
   });
 
@@ -159,8 +162,9 @@ describe("DeepWebGpuBackend creation", () => {
       projection: bridge(), root: mesh(), view, renderer: { shadows: { requestedTier: tier,
         maxDepthTextureBytes: 300 * 1024 * 1024 } } }, { create: createRuntime });
     expect(createRuntime.mock.calls[0]![3]).toEqual({ shadows: {
-      requestedTier: tier, maxDepthTextureBytes: 300 * 1024 * 1024,
-    } });
+      requestedTier: tier, maxDepthTextureBytes: 300 * 1024 * 1024 },
+      // 投影路径缺省首帧最小集(mesh fixture 无纹理不透明 → plain/depth/ccw)。
+      pipelines: { firstFrameSubset: true, firstFrameMainKeys: ["plain/depth/ccw"] } });
     expect(backend.shadowSelection?.selectedTier).toBe(tier);
   });
 
@@ -202,39 +206,8 @@ describe("DeepWebGpuBackend creation", () => {
     expect(target.dispose).toHaveBeenCalledOnce();
   });
 
-  it("derives first-frame main pipeline keys from an independent render packet", async () => {
-    const target = runtime(), createRuntime = vi.fn(async () => target);
-    const packet = {
-      geometries: [], materials: [
-        { id: "m-texture", baseColor: [1, 1, 1] as const, metallic: 0, roughness: 1,
-          baseColorTexture: { texture: "t", texCoord: 0 as const, uvTransform: [0, 0, 0, 0, 0, 0] as const } },
-        { id: "m-plain", baseColor: [1, 1, 1] as const, metallic: 0, roughness: 1, alphaMode: "BLEND" as const, doubleSided: true },
-      ],
-      instances: [
-        { id: "i-1", geometry: "g", material: "m-texture", transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] },
-        { id: "i-2", geometry: "g", material: "m-plain", transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] },
-      ],
-    };
-    const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
-      view, renderPacket: packet,
-      renderer: { pipelines: { firstFrameSubset: true, deferDeformation: true } } }, { create: createRuntime });
-    const supplied = createRuntime.mock.calls[0]![3]!;
-    expect(supplied.pipelines!.deferDeformation).toBe(true);
-    expect(supplied.pipelines!.firstFrameMainKeys).toEqual(["material/depth/ccw", "plain/blend/double"]);
-    expect(Object.isFrozen(supplied.pipelines!.firstFrameMainKeys)).toBe(true);
-    backend.dispose();
-  });
-
-  it("keeps the full critical path when firstFrameSubset is set without a render packet", async () => {
-    const target = runtime(), createRuntime = vi.fn(async () => target);
-    await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
-      projection: bridge(), root: mesh(), view,
-      renderer: { pipelines: { firstFrameSubset: true, deferDeformation: true } } }, { create: createRuntime });
-    const supplied = createRuntime.mock.calls[0]![3]!;
-    expect(supplied.pipelines!.firstFrameMainKeys).toBeUndefined();
-    expect(supplied.pipelines!.deferDeformation).toBe(true);
-  });
-
+  // 首帧最小集引导的语义测试拆至 DeepWebGpuBackend.firstFrameSubset.test.ts
+  // (sourceSizeGate 300 行责任拆分)。
   it.each([true, false])("snapshots the C13 recovery option %s", async recovery => {
     const target = runtime(), createRuntime = vi.fn(async () => target);
     const renderer = { recovery: recovery ? { maxAttempts: 3 } : undefined };

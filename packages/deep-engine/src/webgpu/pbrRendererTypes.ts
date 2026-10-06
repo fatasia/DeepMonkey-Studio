@@ -37,7 +37,9 @@ export interface RenderView extends PbrFrameUniformView {
  * 每个开关独立可关，关闭即回到全量等待的旧时序。 */
 export interface PbrPipelineBootstrapOptions {
   /** 首帧只等待关键 main 变体；其余 main 变体在 bootstrap 校验作用域关闭后排队。
-   * 关键集合由后端从首帧包推导（firstFrameMainKeys），未推导时保持全量等待。 */
+   * 关键集合由后端从首帧包推导（firstFrameMainKeys）；独立包路径缺省启用，
+   * 投影路径在 backend.create 前 CPU 预投影推导（2026-10-07 首帧攻坚），
+   * `false` 显式退出回全量等待。 */
   readonly firstFrameSubset?: boolean;
   /** 后端推导出的首帧 main 管线键（由 threeBridge 填充；plain/ccw 恒含）。 */
   readonly firstFrameMainKeys?: readonly string[];

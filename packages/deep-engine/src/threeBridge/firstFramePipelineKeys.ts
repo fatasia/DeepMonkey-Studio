@@ -37,6 +37,11 @@ export function firstFramePipelineMainKeys(packet: RenderPacket): readonly strin
       materialMode(textured, material.normalTexture !== undefined),
       (material.alphaMode ?? "OPAQUE") === "BLEND",
       rasterMode(isMirroredTransform(instance.transform), material.doubleSided === true),
+      // 同族清剿(2026-10-07):renderPacketBatches 的批次键含 /a2c 后缀,packetDraw
+      // 按 /a2c 查表;关键集漏掉 a2c 键会让首帧 a2c 批次 fail-closed(包路径与
+      // 投影路径同族)。BLEND+a2c 的非法组合由 renderPacketBatches 拒绝,这里
+      // 同样不产生 blend×a2c 键(mainPipelineKey 的 a2c 位只在非透明档有意义)。
+      material.alphaToCoverage === true && (material.alphaMode ?? "OPAQUE") !== "BLEND",
     ));
   }
   return [...keys];
