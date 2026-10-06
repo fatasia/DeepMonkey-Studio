@@ -119,6 +119,11 @@ pub mod gpu_cluster_lod_runtime;
 pub mod gpu_cluster_lod_runtime_tests;
 /// 批 C 运行时 GPU 探针(#[ignore] 真机门;golden 双臂端到端对拍 + 渲染消费)。
 pub mod gpu_cluster_lod_runtime_gpu_probe;
+/// 场景包 → .dgc 驻留摄入(场景级聚合;TS assetClusterLodIngest 对端:逐节 from_dgc
+/// 单节链 + CPU 驻留预检 + 材质实例绑定记录;单节失败显式回退,合同违约整体 Err;
+/// 逐节 GPU 驻留构造与 pass 调用点属后续切片)。
+pub mod gpu_cluster_lod_scene;
+pub mod gpu_cluster_lod_scene_tests;
 pub mod gpu_cluster_lod_indirect;
 pub mod gpu_cluster_lod_indirect_tests;
 pub mod gpu_cluster_lod_gpu;
