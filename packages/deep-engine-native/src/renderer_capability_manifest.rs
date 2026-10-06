@@ -405,10 +405,16 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         evidence: "无 MegaLights 模块(native clustered_lighting 为逐灯簇光路径,非 RIS 采样;web M1 compute 通路见 deep-engine lighting/megaLights*)",
     },
     NativeCapabilitySelfCheck {
-        capability_id: "virtual-geometry",
+        capability_id: "projected-textures",
         support: RendererCapabilitySupport::Unavailable,
         reason: RendererCapabilityReasonCode::Absent,
-        evidence: "无 meshlet DAG 页调度/驻留/indirect 分组运行时(Brief-Nanite 离线工具链 geometry_dag 属独立切片;web M3 CPU 侧调度通路见 deep-engine virtualGeometryDagPages/Scheduling/Residency/Indirect)",
+        evidence: "packages/deep-engine-native/src/lib.rs(无投影纹理光模块)",
+    },
+    NativeCapabilitySelfCheck {
+        capability_id: "virtual-geometry",
+        support: RendererCapabilitySupport::Supported,
+        reason: RendererCapabilityReasonCode::HarnessOnly,
+        evidence: "geometry_dag/src/lib.rs 离线编译工具链(obj.rs→meshlet_builder.rs 贪心簇划分→dag.rs 层级聚类简化 DAG 父子单射→dgc.rs .dgc 流式格式 64B 文件头+88B 段头+8 对齐 payload+逐段 CRC32C+zlib,CLI build/info/verify) + tests/golden_parity.rs 与 TS buildMeshlets/buildMeshletDag 逐位对拍(quick_sphere/synthetic50k 双 fixture 与 TS 测试同源共用) + tests/dgc_byte_golden.rs .dgc 序列化字节黄金钉版(压缩/未压缩双档字节+SHA-256 入库,门常开;TS 跨工具链 decodeDgc 对 Rust 产物 sha256 钉版对拍同源) + tests/cluster_lod_contract.rs 消费合同门(dgcClusterLodBridge 路4 映射镜像+validateClusterLodDag 不变量:节点预算/唯一 id/子层细化/根可达叶子区间并集覆盖/误差单调,反例注入证明门咬人);如实 harness-only:native renderer 页调度/驻留/indirect 分组运行时仍缺,现役消费通路在 web(virtualGeometryDagPages/Scheduling/Residency/Indirect + rayTracing 簇 LOD 波次选层/indirect 计划,经 dgcClusterLodBridge 桥)",
     },
     NativeCapabilitySelfCheck {
         capability_id: "deep2d-visual-trio",

@@ -319,6 +319,16 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     native: { support: "unavailable", reason: "absent", evidence: "packages/deep-engine-native/src/lib.rs(无屏空间 GI 模块)" },
   },
   {
+    id: "projected-textures",
+    title: "投影纹理光(ProjectorLight gobo;P2 六引擎对标 three r186)",
+    webFeatureKeys: ["projectedTextures"],
+    web: {
+      support: "supported", reason: "opt-in-default-off",
+      evidence: "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:projectedTextures(默认 false,opt-in;关闭 = 运行时不构建,帧逐位零变化) + postprocess/projectedTexture.ts:ProjectedTexturePass(单投影器视锥纹理直接光单 pass 全分辨率解析求值:线性视深度重建与 SSR/ssgiReconstruct 同合同 → view→projector 矩阵采样 gobo × N·L × 距离平方衰减 × 锥边软化,加性合成;无贡献像素 textureLoad 原值透传) + postprocess/projectedTextureCpu.ts(CPU 权威镜像同式同序:解析聚光参考/白 gobo 退化一致性/锥外·投影器背后·衰减半径外贡献恰为 0/128B 参数块打包单源 packProjectedTextureParameters) + postprocess/projectedTextureWgsl.ts(生产核) + 语义裁决(projectedTextureTypes.ts 单源):投影纹理光=场景投射纹理(three r186 ProjectorLight gobo,工厂投影仪/标线语义),非反射探针投射;与 IES 分工=IES 管聚光强度角分布、投影纹理管视锥内图像投射,IES 对拍口径为白图退化收敛解析聚光公式(一致性哨兵,非跨模块逐位) + 反射链路命中点的投影纹理贡献:输出插在 SSGI 之后 SSR 之前(pbrFrameGraph projected-texture-light 节点),SSR composite 命中 UV 采色即携带投影贡献,projectedTextureChain 测试钉死 on/off 差分;屏空间对视锥外命中点无深度/法线,解析评估如实不做 + 帧图家族原子 diff(pbrFrameGraph.ts/pbrFramePlanResources.ts/pbrTimedPassIds.ts:projected-texture-light/pbrFramePlanExecutor.ts/pbrPostProcessChain.describePasses)+ FrameMetrics.projectedTextures 披露(active/fallbackReason fail-closed) + 首切片边界如实:单投影器、无阴影图(投影不被几何遮挡)、接受域为不透明主帧合成域(SSGI/SSR 同域),多投影器灯池属后续",
+    },
+    native: { support: "unavailable", reason: "absent", evidence: "packages/deep-engine-native/src/lib.rs(无投影纹理光模块)" },
+  },
+  {
     id: "fog-volumetric",
     title: "雾(Web 体积雾 march / native 屏幕空间近似)",
     webFeatureKeys: ["fog", "volumetricFog"],
@@ -666,8 +676,8 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine/src/virtualGeometryDagPages.ts:compileVirtualGeometryDagPages(MeshletDag→调度页表:页=簇,误差/球界/字节成本/父子链接,M2 -1 哨兵孤儿按根处理)+virtualGeometryScheduling.ts(屏幕误差割:投影口径与 spatial/lodValidation 同源,割反链+祖先补给请求,绘制集解析=最细已驻留祖先且回退互斥)+virtualGeometryResidency.ts(VirtualGeometryDagResidency:硬字节预算+祖先链前缀准入+LRU 最久未见驱逐(细层先于粗层)+父页级联驱逐+事务 commit/rollback,冻结相机零抖动)+virtualGeometryIndirect.ts(每驻留绘制页一条 drawIndexedIndirect 5×u32 命令,实例经 instanceCount 合批,draw 数与实例规模解耦);单测链路 DAG→页表→驻留→绘制全绿(virtualGeometryDagPages/Residency/Indirect/DagChain.test.ts)",
     },
     native: {
-      support: "unavailable", reason: "absent",
-      evidence: "packages/deep-engine-native/src/lib.rs(无 meshlet DAG 页调度/驻留/indirect 分组运行时;Brief-Nanite 离线工具链 geometry_dag 属独立切片)",
+      support: "supported", reason: "harness-only",
+      evidence: "packages/deep-engine-native/geometry_dag/src/lib.rs(离线编译工具链:obj.rs→meshlet_builder.rs 贪心簇划分→dag.rs 层级聚类简化 DAG 父子单射→dgc.rs .dgc 流式格式 64B 文件头+88B 段头+8 对齐 payload+逐段 CRC32C+zlib,CLI build/info/verify) + tests/golden_parity.rs 与 TS buildMeshlets/buildMeshletDag 逐位对拍(quick_sphere/synthetic50k 双 fixture 双端同源共用) + tests/dgc_byte_golden.rs .dgc 序列化字节黄金钉版(压缩/未压缩双档字节+SHA-256 入库,门常开) + tests/cluster_lod_contract.rs 消费合同门(dgcClusterLodBridge 路4 映射镜像+validateClusterLodDag 不变量:节点预算/唯一 id/子层细化/根可达叶子区间并集覆盖/误差单调,反例注入证明门咬人,证明产物可被本文件 web 侧簇 LOD 波次选层/indirect 计划无拒收消费,跨工具链 decodeDgc 对 Rust 产物 sha256 钉版对拍同源);如实 harness-only:native renderer 页调度/驻留/indirect 分组运行时仍缺,现役消费通路在 web(virtualGeometryDagPages/Scheduling/Residency/Indirect + rayTracing 簇 LOD,经 dgcClusterLodBridge 桥)",
     },
     sharedQualityVocabulary: true,
   },
