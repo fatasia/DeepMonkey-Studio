@@ -9,7 +9,8 @@ import { DEEP_SDF_GI_PROBE_UPDATE_WGSL, SDF_GI_PROBE_UPDATE_ENTRY,
   SDF_GI_PROBE_UPDATE_PARAMS_BYTES, SDF_GI_PROBE_UPDATE_WORKGROUP_SIZE } from "./sdfGiProbeUpdateWgsl.js";
 import { deriveSdfGiProbeLattice, sdfGiBakeInstancesFromPackets,
   type SdfGiPacketSnapshot } from "./sdfGiSceneAdapter.js";
-import { bakeSdfSceneWithRetries, probeLatticeBounds, resolveSdfGiBakeCellSize } from "./sdfGiBakePlan.js";
+import { bakeSdfSceneWithRetries, probeLatticeBounds, pruneSdfGiBakeCache,
+  resolveSdfGiBakeCellSize, sdfGiBakeContentHash } from "./sdfGiBakePlan.js";
 import { encodeSdfSceneBakeGpu, type SdfGiBakedGrid } from "./sdfSceneBakeGpu.js";
 import { SdfGiPublishRuntime, sdfGiPublishLevel } from "./sdfGiPublish.js";
 import { buildSdfGiSlots, sdfGiSlotBuffers } from "./sdfGiBakeSlots.js";
@@ -50,8 +51,10 @@ export class SdfGiProductionRuntime {
   private slots: SdfGiGpuSlots | undefined;
   private readonly bakeCache = createSdfSceneBakeCache();
   private lastBakedRevision = Number.NaN;
+  private lastBakeHash: string | undefined;
   private dispatchedWindows = 0;
-  private metricsSnapshot: SdfGiMetrics = { sdfGiBakes: 0, sdfGiBakesGpu: 0, sdfGiBakeCells: 0,
+  private metricsSnapshot: SdfGiMetrics = { sdfGiBakes: 0, sdfGiBakesGpu: 0, sdfGiBakeCacheHits: 0,
+    sdfGiBakeCells: 0,
     sdfGiProbeCount: 0, sdfGiProbesUpdated: 0, sdfGiProbeWindowOffset: 0,
     sdfGiSkyTraceDispatches: 0, sdfGiPublishDispatches: 0 };
   private pendingSnapshot: SdfGiPacketSnapshot | undefined;
@@ -119,12 +122,14 @@ export class SdfGiProductionRuntime {
     let baked = false;
     let bakeReport: SdfSceneBakeReport | undefined;
     let gpuBaked = false;
+    let bakeCacheHit = false;
     if (input.sceneRevision !== this.lastBakedRevision) {
       this.lastBakedRevision = input.sceneRevision;
       const result = this.encodeBake(encoder, timing);
       baked = result.baked;
       bakeReport = result.report;
       gpuBaked = result.gpuBaked;
+      bakeCacheHit = result.cacheHit === true;
     }
     const slots = this.slots;
     const window = planSdfGiProbeWindow(slots?.probeCount ?? 0, input.budgetProbes,
@@ -159,6 +164,7 @@ export class SdfGiProductionRuntime {
     this.metricsSnapshot = { ...this.metricsSnapshot,
       sdfGiProbesUpdated: window.count, sdfGiProbeWindowOffset: window.offset };
     return { baked, ...(bakeReport ? { bakeReport } : {}),
+      ...(bakeCacheHit ? { bakeCacheHit: true } : {}),
       probeWindow: Object.freeze({ ...window }), probeCount: slots?.probeCount ?? 0,
       published, gpuBaked };
   }
@@ -178,16 +184,26 @@ export class SdfGiProductionRuntime {
     return this.options.directionCount === 32 ? 32 : 16;
   }
 
-  /** 场景 dirty 烘焙:适配包 → GPU compute 距离场(失败/超预算回退 CPU 增量烘焙,
-   * 墙钟口径如实报告)→ 天光追踪 dispatch → 物化资源就绪。 */
+  /** 场景 dirty 烘焙:适配包 → **内容哈希命中即整体复用**(登记缺口的关闭:revision
+   * 变化但静态内容未变的帧零 dispatch 零上传,旧槽位/天光可见度/探针格原样续用)
+   * → GPU compute 距离场(失败/超预算回退 CPU 增量烘焙,墙钟口径如实报告)
+   * → 天光追踪 dispatch → 物化资源就绪。 */
   private encodeBake(encoder: GPUCommandEncoder, timing?: SdfGiPassTiming):
-    { baked: boolean; report?: SdfSceneBakeReport; gpuBaked: boolean } {
+    { baked: boolean; report?: SdfSceneBakeReport; gpuBaked: boolean; cacheHit?: boolean } {
     const snapshot = this.pendingSnapshot;
     if (!snapshot) return { baked: false, gpuBaked: false };
     const instances: readonly SdfSceneBakeInstance[] = sdfGiBakeInstancesFromPackets(snapshot);
     if (!instances.length) return { baked: false, gpuBaked: false };
     const domain = this.options.instanceDomain ?? "aabb";
     const cellSize = resolveSdfGiBakeCellSize(instances, this.options.cellSize);
+    // 烘焙哈希缓存:SHA-256(实例序 × (id+几何+变换) × cellSize × 域)与上次烘焙一致
+    // → 静态层内容未变,跳过整次烘焙(命中不更新 lastBakeHash —— 场内容仍有效)。
+    const contentHash = sdfGiBakeContentHash(instances, cellSize, domain);
+    if (contentHash === this.lastBakeHash) {
+      this.metricsSnapshot = { ...this.metricsSnapshot,
+        sdfGiBakeCacheHits: this.metricsSnapshot.sdfGiBakeCacheHits + 1 };
+      return { baked: false, gpuBaked: false, cacheHit: true };
+    }
     // GPU compute 距离场(同 encoder 写后读;三角形超预算/不支持返回 undefined)。
     let gpu: ReturnType<typeof encodeSdfSceneBakeGpu>;
     try {
@@ -200,10 +216,15 @@ export class SdfGiProductionRuntime {
       this.afterBake(encoder, gpu.grid, gpu.field, timing);
       this.metricsSnapshot = { ...this.metricsSnapshot,
         sdfGiBakesGpu: this.metricsSnapshot.sdfGiBakesGpu + 1 };
+      this.lastBakeHash = contentHash;
       return { baked: true, report: gpu.report, gpuBaked: true };
     }
-    const plan = bakeSdfSceneWithRetries(instances, { cellSize, instanceDomain: domain });
+    // CPU 回退:逐资产增量缓存透传(此前恒不传 → 报告 cachedCount 恒 0;条目 FIFO 上限)。
+    const plan = bakeSdfSceneWithRetries(instances,
+      { cellSize, instanceDomain: domain, cache: this.bakeCache });
+    pruneSdfGiBakeCache(this.bakeCache);
     this.afterBake(encoder, plan.bake.grid, undefined, timing);
+    this.lastBakeHash = contentHash;
     return { baked: true, report: plan.bake.report, gpuBaked: false };
   }
 

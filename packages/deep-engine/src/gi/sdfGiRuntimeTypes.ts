@@ -36,6 +36,8 @@ export interface SdfGiFramePlan {
   readonly baked: boolean;
   /** 烘焙报告(baked 帧携带;遥测/验收证据链)。 */
   readonly bakeReport?: import("./sdfSceneBake.js").SdfSceneBakeReport;
+  /** 本帧场景内容哈希命中,静态层整体复用上一烘焙(baked=false;零 dispatch 零上传)。 */
+  readonly bakeCacheHit?: boolean;
   /** 本帧派发的探针更新窗口(offset/count;count 0 = 跳过)。 */
   readonly probeWindow: Readonly<{ offset: number; count: number }>;
   /** 已就绪探针数(0 = 场景未烘焙,更新跳过)。 */
@@ -50,6 +52,8 @@ export interface SdfGiMetrics {
   sdfGiBakes: number;
   /** GPU compute 距离场烘焙次数(sdfSceneBakeGpu;CPU 回退帧不计入)。 */
   sdfGiBakesGpu: number;
+  /** 场景内容哈希命中跳过的烘焙次数(revision 变化但静态内容未变的帧)。 */
+  sdfGiBakeCacheHits: number;
   sdfGiBakeCells: number;
   sdfGiProbeCount: number;
   sdfGiProbesUpdated: number;
