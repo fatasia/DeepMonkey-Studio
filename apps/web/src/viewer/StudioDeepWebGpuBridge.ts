@@ -1,47 +1,38 @@
-import { DEFAULT_DISPLAY_CONTRACT } from "@bim-studio/contracts";
 import type {
   DeepWebGpuBackend,
   DeepWebGpuSyncResult,
   ThreeObjectSource,
 } from "@bim-studio/deep-engine/three-bridge";
-import type { AuthoredQualityProfile, ClusterLodSceneStaging, HdrDisplayRequest } from "@bim-studio/deep-engine/webgpu";
-import { buildClusterLodAuthorStaging, clusterLodAuthorBakeFromModule } from "../delivery/buildClusterLodAuthorStaging";
+import type { AuthoredQualityProfile, HdrDisplayRequest } from "@bim-studio/deep-engine/webgpu";
 import { publishStudioQualityTelemetry, type StudioDeepQualityTelemetrySampler } from "./StudioDeepQualityTelemetry";
 import { StudioDeepRenderView } from "./StudioDeepRenderView";
 import type { ViewerEngine } from "./ViewerEngine";
 import type { RendererBackend } from "./viewerTypes";
-import { prepareStudioRendererCandidate } from "./prepareStudioRendererCandidate";
-import { observeRecoveryCandidate, recoveredAttemptCount } from "./studioRecoveryCandidate";
+import { recoveredAttemptCount } from "./studioRecoveryCandidate";
 import { TemporalFrameSettler } from "./temporalFrameSettler";
-import { studioDeepShadowAllocation, studioDeepShadowMapSize, studioDeepShadowTier } from "./studioDeepShadowAllocation";
-import { prepareStudioDeepEnvironmentSource, isStudioDeepEnvironmentSourceCurrent,
-  type PreparedStudioDeepEnvironment } from "./studioDeepEnvironmentSource";
-import { readStudioDeepEnvironmentView } from "./studioDeepEnvironmentView";
+import type { PreparedStudioDeepEnvironment } from "./studioDeepEnvironmentSource";
 import type { StudioDeepEnvironmentSession } from "./StudioDeepEnvironmentSession";
 import type { StudioDeepShadowSession } from "./StudioDeepShadowSession";
 import type { StudioDeepPerformance } from "./StudioDeepPerformance";
 import type { StudioDeformationPoseSync } from "./studioDeformationPoseSync";
 import type { StudioDeepOutlineSync } from "./studioDeepOutlineSync";
-import { updateAuthorProjectionState } from "./authorLodSelection";
 import { sameHostCameraPose, type DeepCameraController } from "./deepCameraController";
 import type { DeepCameraInputSession } from "./deepCameraInputSession";
 import { DeepGizmoInteraction } from "./deepGizmoInteraction";
 import { createDeepCanvas, prepareAuthorInputCanvas, captureAuthorStyle, restoreAuthorStyle,
   type AuthorCanvasStyle } from "./studioDeepPresentationCanvas";
 import { collectDeepOverlayPrimitives } from "./deepOverlayPrimitiveSource";
-import { resolveAlphaToCoverageCreateModes, isAlphaToCoverageRejection, isDeepAdvancedMaterialsRejection, sceneUsesAlphaToCoverage,
-  packetUsesDeepAdvancedMaterials, sceneUsesDeepAdvancedMaterials } from "./studioDeepAdvancedMaterials";
+import { isAlphaToCoverageRejection, isDeepAdvancedMaterialsRejection } from "./studioDeepAdvancedMaterials";
 import type { FrameCaptureSession, RenderPacket } from "@bim-studio/deep-engine";
-import { createRequestedStudioFrameCaptureSession, createStudioFrameReadbackListener } from "./studioFrameCaptureDiagnostics";
 import { publishDeepPresentation, publishWebGlPresentation, releaseDeepPresentation,
   type StudioDeepBridgePresentationHost } from "./studioDeepWebGpuBridgePresentation";
 import { flowProbe, recordProbeSample, type DeepFlowProbe } from "./studioDeepWebGpuBridgeFlowProbe";
-import { cameraSnapshot, renderViewFingerprint, sameSnapshot, resolveAuthorWorldTransform, threePrototypeHooks,
+import { cameraSnapshot, renderViewFingerprint, sameSnapshot,
   nextFrame, type BridgeModuleLoader, type RuntimeSession, type DeepRenderView } from "./studioDeepWebGpuBridgeSceneHelpers";
-import { markSwitchPhase, t11PipelineBootstrap, t07DynamicResolutionPolicy, b4HlodClusterEnabled, g1ClusterLodEnabled,
-  t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled, debugFullRenderEnabled, sdfGiEnabled,
-  megaLightsEnabled, rayTracedShadowsEnabled, ssgiEnabled, projectedTexturesEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
+import { markSwitchPhase } from "./studioDeepWebGpuBridgeFeatureToggles";
 import type { StudioDeepWebGpuBridgeOptions, StudioRendererSwitchResult } from "./studioDeepWebGpuBridgeOptions";
+import { prepareStudioDeepSwitchCandidate, type StudioDeepBridgeSwitchHost,
+  type StudioDeepSwitchCandidateFrame } from "./studioDeepWebGpuBridgeSwitchCandidate";
 
 export { t11PipelineBootstrap, t07DynamicResolutionPolicy, b4HlodClusterEnabled, g1ClusterLodEnabled,
   t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled, sdfGiEnabled, ssgiEnabled,
@@ -197,191 +188,25 @@ export class StudioDeepWebGpuBridge {
     this.pending = controller;
     markSwitchPhase("deep-webgpu:switch-start");
     const canvas = createDeepCanvas(this.container);
-    let environment: PreparedStudioDeepEnvironment | undefined;
-    let shadowMapSize = 1024;
-    let frameCaptureSession: FrameCaptureSession | undefined;
-    let candidateObserver: ReturnType<typeof observeRecoveryCandidate> | undefined;
+    // 单次事务内 create 写入、尾部与 finally 读回的可变局部量(原 switchTo 闭包 let)。
+    const frame: StudioDeepSwitchCandidateFrame = { environment: undefined, shadowMapSize: 1024,
+      frameCaptureSession: undefined, candidateObserver: undefined };
+    // create/prepare 候选事务本体在 studioDeepWebGpuBridgeSwitchCandidate(本桥实例
+    // 以类型层映射传入,字段读写语义与桥内一致)。
     try {
-      const prepared = await prepareStudioRendererCandidate({
-        signal: controller.signal,
-        timeoutMs: this.options.preparationTimeoutMs ?? 30_000,
-        loadModule: async () => {
-          const module = await this.loadModule();
-          markSwitchPhase("deep-webgpu:module-ready");
-          return module;
-        },
-        create: async (module, signal) => {
-          signal.throwIfAborted();
-          // 作者包编译与 GPU 环境准备互不依赖，重叠执行以压缩切换前段；
-          // 两者都只读作者场景，顺序 await 之外的并发不引入新的写入竞争。
-          const packetTask = this.options.authorRenderPacket?.(signal);
-          environment = await prepareStudioDeepEnvironmentSource(this.viewer.scene, signal);
-          markSwitchPhase("deep-webgpu:environment-ready");
-          const postProcessing = this.viewer.getPostProcessing();
-          this.qualityProfile = postProcessing.qualityProfile ?? null;
-          // Z1 P1：阴影分配档跟随作者质量档（引擎既有 PROFILES 表映射，零契约漂移）。
-          const shadowTier = studioDeepShadowTier(this.qualityProfile);
-          const shadowTierAllocation = studioDeepShadowAllocation(shadowTier);
-          const authorRenderPacket = (await packetTask) ?? undefined;
-          // 刀 C 首帧归因:作者包编译与 environment 并行的真实完成点(此前只有
-          // environment-ready,包编译耗时长短无从归因)。
-          if (authorRenderPacket) markSwitchPhase("deep-webgpu:packet-compiled");
-          const pipelineBootstrap = t11PipelineBootstrap(authorRenderPacket !== undefined);
-          this.independentPacketPath = authorRenderPacket !== undefined;
-          this.pendingDeformationPacket = authorRenderPacket?.deformation ? authorRenderPacket : undefined;
-          this.viewer.setAuthorPacketIndependent(this.independentPacketPath);
-          if (!authorRenderPacket) updateAuthorProjectionState(this.viewer.scene, this.viewer.camera, signal);
-          else this.viewReader.setIndependentPacketBounds(authorRenderPacket);
-          // B4 簇级 HLOD(opt-in):仅独立作者包路径消费;默认关闭不改变现网行为。
-          const authorHlodClusters = b4HlodClusterEnabled() && authorRenderPacket
-            ? (await this.options.authorHlodClusters?.(signal)) ?? undefined : undefined;
-          // G1 簇级微多边形槽位(opt-in,`g1-cluster-lod=1`):作者包合并静态几何 → bake →
-          // staging 随 create 请求下发,backend 在静态包发布成功后恰注入一次渲染器槽位。
-          // bake 能力经 module.DeepWebGpuBackend 公共入口透传(rayTracing 合同层一字未动);
-          // 每种结果都落 performance.mark,开关关闭时零构建、零行为变化。
-          let clusterLodStaging: ClusterLodSceneStaging | undefined;
-          const clusterLodEnabled = g1ClusterLodEnabled();
-          if (clusterLodEnabled && authorRenderPacket) {
-            const outcome = buildClusterLodAuthorStaging(authorRenderPacket,
-              { bake: clusterLodAuthorBakeFromModule(module) });
-            if (outcome === undefined) markSwitchPhase("deep-webgpu:g1-cluster-lod-empty-scene");
-            else if (!outcome.ok) markSwitchPhase(`deep-webgpu:g1-cluster-lod-blocked-${outcome.failure.reason}`);
-            else { clusterLodStaging = outcome.value.staging; markSwitchPhase("deep-webgpu:g1-cluster-lod-staged"); }
-          }
-          // 刀 C 首帧:独立包路径 create 与 prepare 用同一 view 构造器。此前
-          // create 走 threeRenderView(不携带 editorOverlay),prepare 走
-          // renderViewDirect(恒收集 Deep 原生辅助图形顶点),两条路径构造的
-          // view 语义不同 → prepareView 的视图复用判定永不通过,每次切换都
-          // 白付一次完整首帧验证(实测 ~270ms)。同源后,视口未变时 prepare
-          // 直接复用 create 已验证的帧。
-          const view = authorRenderPacket ? this.viewReader.renderViewDirect(canvas)
-            : this.viewReader.renderView(module, canvas);
-          shadowMapSize = view.lights?.directional?.[0]?.shadow?.mapSize
-            ?? studioDeepShadowMapSize(this.viewer.scene, this.viewer.camera.layers.mask, shadowTierAllocation.shadowMapSize);
-          frameCaptureSession = createRequestedStudioFrameCaptureSession();
-          // A compiled SceneSnapshot packet is a complete Deep input. Keep the
-          // Three projection bridge out of this path so geometry, materials,
-          // hierarchy and transforms are never read from the author scene.
-          // 仅当场景含激活的 clearcoat/sheen/iridescence/transmission lobe 时才启用 advancedMaterials 着色变体(按需编译,零开销默认)。
-          const advancedMaterials = this.advancedMaterialsRequested || (authorRenderPacket
-            ? packetUsesDeepAdvancedMaterials(authorRenderPacket) : sceneUsesDeepAdvancedMaterials(this.viewer.scene));
-          // a2c 双模式判定与合同注释见 studioDeepAdvancedMaterials.resolveAlphaToCoverageCreateModes。
-          const { alphaToCoverage, a2cMaskFallback } = resolveAlphaToCoverageCreateModes({
-            requested: this.alphaToCoverageRequested, authorRenderPacket,
-            scene: this.viewer.scene, maskFallbackActive: this.a2cMaskFallbackRequested });
-          this.projectionBridge = authorRenderPacket ? undefined : new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(),
-            capabilities: { authorDeformation: true, authorLod: true, ...(advancedMaterials ? { advancedMaterials: true } : {}),
-              ...(alphaToCoverage ? { alphaToCoverage: true } : {}),
-              ...(a2cMaskFallback ? { alphaToCoverageMaskFallback: true } : {}) },
-            authorTransformResolver: source => resolveAuthorWorldTransform(this.viewer, source),
-          });
-          // T07 动态分辨率与 T25 逐 pass 计时均为 opt-in；缺省字段不进快照。
-          const resolutionScalePolicy = t07DynamicResolutionPolicy();
-          const gpuPassTiming = t25GpuPassTimingEnabled();
-          // F4 超分需动态分辨率同开(scale<1 才激活);F3 虚拟纹理独立开关。
-          const temporalUpscale = resolutionScalePolicy !== undefined && f4TemporalUpscaleEnabled();
-          const virtualTextures = f3VirtualTexturesEnabled();
-          const debugFullRender = debugFullRenderEnabled();
-          const megaLights = megaLightsEnabled();
-          const rayTracedShadows = rayTracedShadowsEnabled();
-          const backend = await module.DeepWebGpuBackend.create({
-            canvas, gpu: navigator.gpu,
-            ...(this.projectionBridge ? { projection: this.projectionBridge, root: this.projectionRoot() } : {}),
-            view, authorChunks: true,
-            ...(authorRenderPacket ? { renderPacket: authorRenderPacket } : {}),
-            ...(authorHlodClusters?.length ? { hlodClusters: authorHlodClusters } : {}),
-            ...(clusterLodStaging ? { clusterLodStaging } : {}),
-            renderer: { environment: environment.source, deformation: true, meshlets: true,
-              ...(advancedMaterials ? { advancedMaterials: true } : {}),
-              ...(alphaToCoverage ? { msaaSampleCount: 4 } : {}),
-              // F8 自动曝光零配置默认开（Z3.5 授权）：缺省参数由引擎 DEFAULT_PBR_AUTO_EXPOSURE 提供，
-              // 无可靠亮度时 fail-closed 回退固定启发式并经 FrameMetrics.autoExposure 披露。
-              autoExposure: {},
-              ...(clusterLodEnabled ? { clusterLod: true } : {}),
-              ...(resolutionScalePolicy ? { resolutionScalePolicy } : {}),
-              ...(gpuPassTiming ? { gpuPassTiming: true } : {}),
-              ...(virtualTextures ? { virtualTextures: { enabled: true } } : {}),
-              ...(this.options.recovery && replacementBudget !== 0 ? { recovery: {
-                ...this.options.recovery, ...(replacementBudget === undefined ? {} : { maxAttempts: replacementBudget }),
-              } } : {}),
-              ...(this.hdrDisplayRequest === undefined ? {} : { hdrDisplay: this.hdrDisplayRequest }),
-              ...(pipelineBootstrap ? { pipelines: pipelineBootstrap } : {}),
-              adaptiveQuality: {
-                enabled: true,
-                collectHotspots: false,
-                ...(postProcessing.qualityProfile ? { profile: postProcessing.qualityProfile } : {}),
-              },
-              // Z1 P1：级联数受引擎硬合同约束——view 携带 authored shadow 时分配必须
-              // 为 1 层且 mapSize 精确匹配（cascadedShadowResources.prepare 的 authored
-              // 约束），且 StudioDeepShadowSession 会把分配收敛回作者值；带作者阴影的
-              // 场景升多级联属引擎侧能力（主线事项，见 docs/reports）。当前档位词汇
-              //（studioDeepShadowTier）驱动无作者阴影时的兜底分配尺寸。
-              shadows: { exactProfile: { cascadeCount: 1, shadowMapSize } },
-              // features 只此一处：此前 F4 的条件 spread 与本字面量同名，后写覆盖前写，
-              // temporalUpscale 从未真正进入渲染器；合并后 opt-in 才真正生效。
-              // sdf-gi=1（Brief-GI M2/M3，opt-in 默认关）：开启后引擎构建 SDF GI 运行时，
-              // 按包场景 revision 变化自动烘焙；关闭时不带该字段，帧逐位零变化。
-              features: { ...(temporalUpscale ? { temporalUpscale: true } : {}),
-                ...(debugFullRender ? { debugForceFullRender: true } : {}),
-                ...(megaLights ? { megaLights: true } : {}),
-                ...(rayTracedShadows ? { rayTracedShadows: true } : {}),
-                ...(sdfGiEnabled() ? { sdfGi: true } : {}),
-                // P2 SSGI:opt-in 默认不带该字段(帧逐位零变化);与 sdf-gi 叠加合法。
-                ...(ssgiEnabled() ? { ssgi: true } : {}),
-                // P2 投影纹理光(three r186 ProjectorLight gobo 纹理半部):opt-in 默认不带;
-                // 开启且场景未供给投影器时同样零 dispatch(帧逐位零变化)。
-                ...(projectedTexturesEnabled() ? { projectedTextures: true } : {}),
-                environment: true, groundPlane: false,
-                groundGrid: false, screenSpaceReflection: true, volumetricFog: true,
-                toneMapping: DEFAULT_DISPLAY_CONTRACT.toneMapping.operator },
-              ...(frameCaptureSession ? { frameCapture: { session: frameCaptureSession,
-                readbacks: { requests: [{ resourceId: "present-color" as const }, { resourceId: "linear-depth" as const }] },
-                onReadbackResults: createStudioFrameReadbackListener() } } : {}) },
-            cameraLayerMask: this.viewer.camera.layers.mask, signal,
-          });
-          markSwitchPhase("deep-webgpu:scene-uploaded");
-          this.advancedMaterialsActive = advancedMaterials;
-          this.alphaToCoverageActive = alphaToCoverage;
-          this.a2cMaskFallbackActive = a2cMaskFallback;
-          if (replacementBudget !== undefined && !signal.aborted) candidateObserver = observeRecoveryCandidate(backend, signal);
-          return backend;
-        },
-        prepare: async (backend, signal) => {
-          try {
-            await nextFrame(signal);
-            if (!this.independentPacketPath) updateAuthorProjectionState(this.viewer.scene, this.viewer.camera, signal);
-            // create 期间作者仍可编辑；重新投影并验证当前相机，而非发布创建时的快照。
-            // 这不是 revision 锁：验证期间的连续动画仍由发布后的作者帧订阅追平。
-            const latestView = this.viewReader.renderViewDirect(canvas);
-            if (typeof backend.prepareView === "function") await backend.prepareView(latestView, signal);
-            else await backend.prepareScene(this.projectionRoot(), latestView, this.viewer.camera.layers.mask, signal);
-            readStudioDeepEnvironmentView(this.viewer.scene, this.viewer.usesAuthorPostProcessing());
-            if (!environment || !isStudioDeepEnvironmentSourceCurrent(this.viewer.scene, environment)) {
-              throw new Error("作者环境在候选准备期间已改变。");
-            }
-            markSwitchPhase("deep-webgpu:frame-validated");
-          } catch (error) {
-            const attempts = await candidateObserver?.retryAfter(error);
-            if (attempts !== undefined && !signal.aborted && generation === this.generation) {
-              this.recoveryCandidateFailure = { generation, attempts };
-            }
-            throw error;
-          } finally { candidateObserver?.dispose(); }
-        },
-        dispose: (backend) => backend.dispose(),
-        removeCanvas: () => canvas.remove(),
-      });
+      const prepared = await prepareStudioDeepSwitchCandidate(this as unknown as StudioDeepBridgeSwitchHost, canvas,
+        controller.signal, generation, replacementBudget, this.options.preparationTimeoutMs ?? 30_000, frame);
       if (prepared.status !== "ready") return this.result(prepared.status, prepared.error?.message);
       const backend = prepared.value;
       if (this.closed || controller.signal.aborted || generation !== this.generation) {
         try { backend.dispose(); } finally { canvas.remove(); }
         return this.result("cancelled");
       }
-      this.publishDeep(canvas, backend, environment!, shadowMapSize, frameCaptureSession);
+      this.publishDeep(canvas, backend, frame.environment!, frame.shadowMapSize, frame.frameCaptureSession);
       markSwitchPhase("deep-webgpu:published");
       return this.result("switched");
     } finally {
-      candidateObserver?.dispose();
+      frame.candidateObserver?.dispose();
       if (this.pending === controller) this.pending = undefined;
     }
   }
