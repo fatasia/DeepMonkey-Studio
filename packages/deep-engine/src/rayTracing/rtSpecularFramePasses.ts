@@ -6,8 +6,9 @@
  * uniform、无 readback、无 mapAsync、bind group 按纹理视图对象身份 LRU 缓存(与
  * RayTraceClosestFramePass.frameBindingsFor 同法;label 不是身份,禁止做缓存键)。
  *
- * - RtSpecularIndirectionPass:消费反射 closest-hit 命中记录 + GBuffer(linearDepth/
- *   viewNormal)+ 环境 brdfLut,写 rgba16float indirection(见 rtSpecularIndirectionKernel)。
+ * - RtSpecularIndirectionPass:消费反射 closest-hit 命中记录 + 遮蔽记录
+ *   ([albedo.rgb, visibility])+ GBuffer(linearDepth/viewNormal)+ 环境 brdfLut,
+ *   写 rgba16float indirection(见 rtSpecularIndirectionKernel)。
  * - RtSpecularFillPass:SSR 合成之后读 [ssrOutput, ssrTrace, rtIndirection],屏内
  *   miss 像素做 RT 替换,写 rgba16float 填充输出供 TAA(见 rtSpecularFillKernel)。
  *
@@ -36,6 +37,8 @@ export interface RtSpecularIndirectionFrameInput {
   readonly brdfLutView: GPUTextureView;
   /** 反射 closest-hit 帧通道命中记录(rgba32float storage view,本帧已写入)。 */
   readonly rtHitView: GPUTextureView;
+  /** 反射 closest-hit 帧通道遮蔽记录 [albedo.rgb, visibility](rgba32float,本帧已写入)。 */
+  readonly bounceShadingView: GPUTextureView;
   /** indirection 输出(rgba16float storage view)。 */
   readonly indirectionView: GPUTextureView;
   readonly width: number;
@@ -75,6 +78,7 @@ export class RtSpecularIndirectionPass {
       { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
       { binding: 5, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "read-only", format: "rgba32float" } },
       { binding: 6, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: "rgba16float" } },
+      { binding: 7, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "read-only", format: "rgba32float" } },
     ] });
     this.pipeline = device.createComputePipeline({ label: "rt-specular-indirection",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.layout] }),
@@ -106,7 +110,7 @@ export class RtSpecularIndirectionPass {
     }
     this.device.queue.writeBuffer(this.uniform, 0, packRtSpecularIndirectionUniform(input.params));
     const views = [input.linearDepthView, input.viewNormalView, input.brdfLutView,
-      input.rtHitView, input.indirectionView];
+      input.rtHitView, input.indirectionView, input.bounceShadingView];
     let binding = this.cached.find((entry) => entry.views.length === views.length
       && entry.views.every((view, index) => view === views[index]))?.binding;
     if (!binding) {
@@ -118,6 +122,7 @@ export class RtSpecularIndirectionPass {
         { binding: 4, resource: { buffer: this.uniform } },
         { binding: 5, resource: input.rtHitView },
         { binding: 6, resource: input.indirectionView },
+        { binding: 7, resource: input.bounceShadingView },
       ];
       if (entries.length !== RT_SPECULAR_INDIRECTION_BINDINGS.length) {
         throw new Error(`RtSpecularIndirectionPass bind group expects ${RT_SPECULAR_INDIRECTION_BINDINGS.length} entries.`);

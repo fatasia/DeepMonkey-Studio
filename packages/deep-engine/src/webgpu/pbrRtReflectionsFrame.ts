@@ -25,6 +25,7 @@ function rtReflectionsDepthViewFor(texture: GPUTexture): GPUTextureView {
 /** encodeRtReflectionsFrame 带出的帧内瞬态资源与披露指标(提交后由调用方统一 release)。 */
 export interface RtReflectionFrameContribution {
   hit: PbrTransientTextureHandle | undefined;
+  bounceShading: PbrTransientTextureHandle | undefined;
   indirectionHandle: PbrTransientTextureHandle | undefined;
   indirectionView: GPUTextureView | undefined;
   metrics: FrameMetrics["rtReflections"] | undefined;
@@ -33,22 +34,26 @@ export interface RtReflectionFrameContribution {
 /** B3 RT 反射 closest-hit 帧通道(opt-in features.rayTracedReflections,默认关 =
  * 运行时不存在,帧逐位零变化):主帧 1x depth(本帧,depth resolve 之后)重建着色点,
  * 沿镜面反射方向两级 TLAS→BLAS closest-hit,rgba32float [t,normal.xyz] 命中记录
- * 写瞬态纹理。场景复用 RT 阴影 staging 通道(未 staging = 不挂载,fail-closed 不
- * 静默假开);命中记录的生产消费(SSR 屏外合成/环境采样族)属下一切片——当前
- * 只挂载管线 + FrameMetrics.rtReflections 披露,画面零变化,视觉验收如实声明未接线。 */
+ * 写瞬态纹理;光照遮蔽档补一腿命中点→光源可见性 trace + per-instance 反照率表,
+ * rgba32float [albedo.rgb,visibility] 遮蔽记录写第二瞬态纹理。场景复用 RT 阴影
+ * staging 通道(未 staging = 不挂载,fail-closed 不静默假开)。反照率表缺省 =
+ * 中性 0.5(宿主供给钩子 host.rtReflectionsBounceAlbedos,RenderPacket 材质表接线
+ * 属宿主侧下一切片,如实登记)。 */
 export function encodeRtReflectionsFrame(host: PbrRendererFrameHost, device: GPUDevice,
   encoder: GPUCommandEncoder, size: { width: number; height: number }, view: RenderView,
   frameState: ReturnType<typeof updatePbrFrameUniforms>,
   postProcess: ReturnType<typeof resolvePbrPostProcessOverrides>,
   sceneLighting: ReturnType<typeof resolvePbrSceneLighting>): RtReflectionFrameContribution {
   let rtReflectionsHit: PbrTransientTextureHandle | undefined;
+  let rtBounceShading: PbrTransientTextureHandle | undefined;
   let rtIndirectionHandle: PbrTransientTextureHandle | undefined;
   let rtSpecularIndirectionView: GPUTextureView | undefined;
   let rtReflectionsMetrics: FrameMetrics["rtReflections"] | undefined;
   const packedScene = host.rtShadows?.packedScene;
   if (packedScene !== undefined) {
     try {
-      host.rtReflections ??= new RayTraceClosestFramePass(host.session.device, packedScene);
+      // 光照遮蔽档:反射命中后补命中点→光源可见性 + per-instance 反照率记录。
+      host.rtReflections ??= new RayTraceClosestFramePass(host.session.device, packedScene, { illumination: true });
     } catch (error) {
       // fail-closed:f16 缺 feature / WGSL 校验失败 / 超 maxInstances——禁用本帧
       // 通道并如实披露,不静默假开,不抛穿渲染循环(同 rtShadows staging 语义)。
@@ -64,10 +69,13 @@ export function encodeRtReflectionsFrame(host: PbrRendererFrameHost, device: GPU
           // BLAS 段变化:整体重建 pass(同 shadow 家族 staging 合同;构造失败回
           // 上一档 disabled 披露)。
           host.rtReflections.destroy();
-          host.rtReflections = new RayTraceClosestFramePass(host.session.device, packedScene);
+          host.rtReflections = new RayTraceClosestFramePass(host.session.device, packedScene, { illumination: true });
         }
       }
       rtReflectionsHit = host.transientTextures.acquire({ resourceId: "rt-reflection-closest",
+        format: "rgba32float", width: size.width, height: size.height, sampleCount: 1,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
+      rtBounceShading = host.transientTextures.acquire({ resourceId: "rt-reflection-bounce-shading",
         format: "rgba32float", width: size.width, height: size.height, sampleCount: 1,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
       const invVp = invertColumnMajor4x4(frameState.depthViewProjection);
@@ -80,6 +88,10 @@ export function encodeRtReflectionsFrame(host: PbrRendererFrameHost, device: GPU
       void host.rtReflections.encode(encoder, {
         depthView: rtReflectionsDepthViewFor(host.targets.depthTexture),
         hitView: rtReflectionsHit.view,
+        bounceShadingView: rtBounceShading.view,
+        lightDirectionWorld: [sceneLighting.primary.surfaceToLightWorld[0]!,
+          sceneLighting.primary.surfaceToLightWorld[1]!, sceneLighting.primary.surfaceToLightWorld[2]!],
+        ...(host.rtReflectionsBounceAlbedos === undefined ? {} : { instanceAlbedos: host.rtReflectionsBounceAlbedos }),
         width: size.width, height: size.height,
         invViewProjection: [invVp[0]!, invVp[1]!, invVp[2]!, invVp[3]!, invVp[4]!, invVp[5]!,
           invVp[6]!, invVp[7]!, invVp[8]!, invVp[9]!, invVp[10]!, invVp[11]!, invVp[12]!,
@@ -105,6 +117,7 @@ export function encodeRtReflectionsFrame(host: PbrRendererFrameHost, device: GPU
           host.rtSpecularIndirection.encode(encoder, {
             linearDepthView: host.targets.linearDepth, viewNormalView: host.targets.normal,
             brdfLutView: host.environment.current.brdf, rtHitView: rtReflectionsHit!.view,
+            bounceShadingView: rtBounceShading.view,
             indirectionView: rtIndirectionHandle.view, width: size.width, height: size.height,
             params: { width: size.width, height: size.height,
               tanHalfFov: Math.tan(frameState.projection.verticalFovRadians * 0.5),
@@ -128,6 +141,6 @@ export function encodeRtReflectionsFrame(host: PbrRendererFrameHost, device: GPU
   } else {
     rtReflectionsMetrics = { dispatched: false, reason: "scene-not-staged" };
   }
-  return { hit: rtReflectionsHit, indirectionHandle: rtIndirectionHandle,
+  return { hit: rtReflectionsHit, bounceShading: rtBounceShading, indirectionHandle: rtIndirectionHandle,
     indirectionView: rtSpecularIndirectionView, metrics: rtReflectionsMetrics };
 }

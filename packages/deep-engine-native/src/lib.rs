@@ -111,9 +111,15 @@ mod probe_gi_native_adapter_tests;
 pub mod gpu_cluster_lod_dag;
 pub mod gpu_cluster_lod_dag_tests;
 pub mod gpu_cluster_lod_dag_probe_tests;
+/// 批 C 渲染器接线运行时(六引擎对标 P1 收官件):DAG 三面产物 → GPU 驻留 buffer 族
+/// (预检 fail-closed)+ 相机 uniform 打包 + 选层 dispatch(帧循环模式)+ faults 零门
+/// → indirect 计划 → draw-indexed-indirect 命令字写入 + 渲染 pass 消费面
+/// (encode_draws;详见模块文档,GpuLod attach 接入帧循环)。
+pub mod gpu_cluster_lod_runtime;
+pub mod gpu_cluster_lod_runtime_tests;
+/// 批 C 运行时 GPU 探针(#[ignore] 真机门;golden 双臂端到端对拍 + 渲染消费)。
+pub mod gpu_cluster_lod_runtime_gpu_probe;
 pub mod gpu_cluster_lod_indirect;
-#[cfg(test)]
-mod _dbg2;
 pub mod gpu_cluster_lod_indirect_tests;
 pub mod gpu_cluster_lod_gpu;
 pub mod gpu_cluster_lod_gpu_probe_tests;
@@ -133,6 +139,12 @@ pub mod sdf_gi_wgsl;
 /// P1 质量主线(六引擎对标刀位 2):MegaLights 灯池 64B ABI 与统一灯光结构
 /// (TS megaLights.ts/megaLightsAbi.ts 互钉;打包与词流指纹)。
 pub mod megalights_abi;
+/// MegaLights IES 因子注入(2026-10-06 后继切片 1):E02 打包载荷评测端
+/// (TS iesShading.evaluateIesShadingFactor 同式;64B 灯池字 11 = 行号+1)。
+pub mod megalights_ies;
+/// MegaLights 胜者可见性射线档(2026-10-06 后继切片 2):两级 TLAS 遮挡
+/// (traceTwoLevelOccluded 同族,复用 ray_backend)+ 胜者射线构建 + fail-closed。
+pub mod megalights_visibility;
 /// P1 质量主线(六引擎对标刀位 2):native MegaLights 万灯直接光 RIS 的 CPU 权威镜像
 /// (RIS 蓄水池+时域/空间值域复用+胜者可见性+穷举参考+直射通路选择;
 /// TS megaLightsRisCpu.ts 同构)。

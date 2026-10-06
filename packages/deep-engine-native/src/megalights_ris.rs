@@ -24,6 +24,10 @@ pub use crate::megalights_abi::{
     MEGALIGHTS_INVALID_LIGHT, MEGALIGHTS_RIS_CANDIDATES, MEGALIGHTS_RIS_M,
     MEGALIGHTS_SPATIAL_NORMAL_GATE, MEGALIGHTS_SPATIAL_REUSE_RADIUS, MEGALIGHTS_TEMPORAL_DEPTH_GATE,
 };
+pub use crate::megalights_ies::{
+    evaluate_ies_shading_factor, MegaLightsIesPacking, IES_EXPANDED_COLUMNS,
+    IES_TABLE_ROW_STRIDE_VEC4,
+};
 
 // ---- 随机(确定性;与 WGSL deepMega* 与 TS mega* 逐位同式,u32 wrapping) ----
 
@@ -224,9 +228,21 @@ pub fn mega_surface_decode(surface: &MegaSurfaceRow) -> ([f64; 3], [f64; 3], [f6
     (position, normal, view, base_color, surface[0][3], surface[1][3])
 }
 
-/// 单灯贡献(TS evaluateMegaLightCpu 同式;iesFactor 缺省恒等——TS CPU oracle
-/// 同口径,真 IES 由调用方注入)。
+/// 单灯贡献(TS evaluateMegaLightCpu 同式;ies 缺省恒等——TS CPU oracle
+/// 同口径,真 IES 由 `evaluate_mega_light_ies` 注入)。
 pub fn evaluate_mega_light(light: &MegaLight, surface: &MegaSurfaceRow) -> [f64; 3] {
+    evaluate_mega_light_ies(light, surface, None)
+}
+
+/// 单灯贡献 + IES 因子注入(2026-10-06;TS evaluateMegaLightCpu 的 iesFactor 钩子
+/// 同位:因子 = evaluate_ies_shading_factor(打包字节, 行号, 打包方向, surfaceToLight),
+/// 乘在 cone 侧——目标权重与胜者着色同变,与 WGSL deepMegaContribution 一致;
+/// ies=None 或灯无行号 → 恒 1.0,与 v1 逐位一致)。
+pub fn evaluate_mega_light_ies(
+    light: &MegaLight,
+    surface: &MegaSurfaceRow,
+    ies: Option<&MegaLightsIesPacking<'_>>,
+) -> [f64; 3] {
     let (position, normal, view, base_color, metallic, roughness) = mega_surface_decode(surface);
     if light.kind == MegaLightKind::AreaRect {
         let to_surface = [
@@ -249,9 +265,10 @@ pub fn evaluate_mega_light(light: &MegaLight, surface: &MegaSurfaceRow) -> [f64;
         light.position_view[2] - position[2],
     ];
     let distance = f64::max(hypot3(to_light), 1e-8);
+    // surfaceToLight 提升到锥分支外(与 TS 同位:IES 钩子与锥共用同一单位向量)。
+    let surface_to_light = [to_light[0] / distance, to_light[1] / distance, to_light[2] / distance];
     let mut cone = 1.0;
     if light.kind == MegaLightKind::Spot {
-        let surface_to_light = [to_light[0] / distance, to_light[1] / distance, to_light[2] / distance];
         let direction = safe_normalize(light.direction_view, [0.0, 0.0, 1.0]);
         let cone_scale = if light.inner_cone_cos == light.outer_cone_cos {
             0.0
@@ -263,18 +280,48 @@ pub fn evaluate_mega_light(light: &MegaLight, surface: &MegaSurfaceRow) -> [f64;
     if cone <= 0.0 {
         return [0.0; 3];
     }
-    mega_light_brdf(light, position, normal, view, base_color, metallic, roughness, cone)
+    let ies_factor = match (ies, light.ies_spot_index) {
+        (Some(packing), Some(row)) => evaluate_ies_shading_factor(
+            packing,
+            row as usize,
+            safe_normalize(light.direction_view, [0.0, 0.0, 1.0]),
+            surface_to_light,
+        ),
+        _ => 1.0,
+    };
+    mega_light_brdf(light, position, normal, view, base_color, metallic, roughness, cone * ies_factor)
 }
 
 /// 目标权重 = luminance(全量单灯贡献)。
 pub fn mega_target_weight(lights: &[MegaLight], surface: &MegaSurfaceRow, index: usize) -> f64 {
-    let contribution = evaluate_mega_light(&lights[index], surface);
+    mega_target_weight_ies(lights, surface, index, None)
+}
+
+/// 目标权重(IES 注入版;`ies` 缺省 None = 恒 1)。
+pub fn mega_target_weight_ies(
+    lights: &[MegaLight],
+    surface: &MegaSurfaceRow,
+    index: usize,
+    ies: Option<&MegaLightsIesPacking<'_>>,
+) -> f64 {
+    let contribution = evaluate_mega_light_ies(&lights[index], surface, ies);
     0.2126 * contribution[0] + 0.7152 * contribution[1] + 0.0722 * contribution[2]
 }
 
 /// 胜者着色(可见性因子乘 shade 侧;缺省 1.0 = M1 恒 1 行为)。
 pub fn mega_shade_winner(lights: &[MegaLight], surface: &MegaSurfaceRow, index: usize, visibility: f64) -> [f64; 3] {
-    let shade = evaluate_mega_light(&lights[index], surface);
+    mega_shade_winner_ies(lights, surface, index, visibility, None)
+}
+
+/// 胜者着色(IES 注入版;可见性乘 shade 侧、IES 乘 cone 侧,与 WGSL 同位)。
+pub fn mega_shade_winner_ies(
+    lights: &[MegaLight],
+    surface: &MegaSurfaceRow,
+    index: usize,
+    visibility: f64,
+    ies: Option<&MegaLightsIesPacking<'_>>,
+) -> [f64; 3] {
+    let shade = evaluate_mega_light_ies(&lights[index], surface, ies);
     [shade[0] * visibility, shade[1] * visibility, shade[2] * visibility]
 }
 
@@ -339,6 +386,7 @@ pub fn build_reservoir_pass(input: &MegaLightsFrameInput) -> Vec<RisReservoir> {
     let width = input.config.width;
     let height = input.config.height;
     let light_count = input.lights.len();
+    let ies = input.ies;
     let requested = input.config.candidate_count.unwrap_or(MEGALIGHTS_RIS_CANDIDATES);
     let candidate_count = if input.config.exhaustive {
         f64::max(f64::from(requested), light_count as f64) as u32
@@ -362,7 +410,7 @@ pub fn build_reservoir_pass(input: &MegaLightsFrameInput) -> Vec<RisReservoir> {
                 } else {
                     f64::min(f64::from(light_count as u32) - 1.0, f64::floor(stream.next() * f64::from(light_count as u32))) as u32
                 };
-                let weight = mega_target_weight(input.lights, surface, candidate as usize);
+                let weight = mega_target_weight_ies(input.lights, surface, candidate as usize, ies);
                 if weight > 0.0 {
                     merge_reservoir(&mut reservoir, weight, candidate, 1, stream.next());
                 }
@@ -378,7 +426,7 @@ pub fn build_reservoir_pass(input: &MegaLightsFrameInput) -> Vec<RisReservoir> {
                     let gate = previous_depth > 0.0
                         && (depth - previous_depth).abs() <= MEGALIGHTS_TEMPORAL_DEPTH_GATE * f64::max(depth, previous_depth);
                     if history.winner != MEGALIGHTS_INVALID_LIGHT && gate {
-                        let weight = mega_target_weight(input.lights, surface, history.winner as usize);
+                        let weight = mega_target_weight_ies(input.lights, surface, history.winner as usize, ies);
                         // 历史胜者按**单候选**合并(2026-10-04 定案:克隆计权产生持久
                         // 像素偏置;单候选合并不偏,方差收敛交颜色 EMA)。
                         merge_reservoir(&mut reservoir, weight, history.winner, 1, stream.next());
@@ -407,6 +455,7 @@ fn spatial_unbiased_average(
     radius: i32,
     light_count: usize,
     visibility: Option<&[f32]>,
+    ies: Option<&MegaLightsIesPacking<'_>>,
 ) -> Option<[f64; 3]> {
     let mut acc = [0.0f64; 3];
     let mut sources = 0u32;
@@ -432,7 +481,7 @@ fn spatial_unbiased_average(
                 continue;
             }
             // 源像素目标权重(W 公式的分母;无偏恒等式要求在**源像素**评价)。
-            let source_target = mega_target_weight(lights, source_surface, source.winner as usize);
+            let source_target = mega_target_weight_ies(lights, source_surface, source.winner as usize, ies);
             if source_target <= 0.0 {
                 continue;
             }
@@ -441,7 +490,7 @@ fn spatial_unbiased_average(
             let source_visibility = visibility
                 .and_then(|mask| mask.get(source_index as usize).copied())
                 .unwrap_or(1.0);
-            let shade = mega_shade_winner_full(lights, surface, source.winner as usize, f64::from(source_visibility));
+            let shade = mega_shade_winner_full(lights, surface, source.winner as usize, f64::from(source_visibility), ies);
             acc[0] += shade[0] * source_weight;
             acc[1] += shade[1] * source_weight;
             acc[2] += shade[2] * source_weight;
@@ -452,8 +501,14 @@ fn spatial_unbiased_average(
 }
 
 /// 胜者着色(全量几何;spatial 分支与本像素着色共用)。
-fn mega_shade_winner_full(lights: &[MegaLight], surface: &MegaSurfaceRow, index: usize, visibility: f64) -> [f64; 3] {
-    mega_shade_winner(lights, surface, index, visibility)
+fn mega_shade_winner_full(
+    lights: &[MegaLight],
+    surface: &MegaSurfaceRow,
+    index: usize,
+    visibility: f64,
+    ies: Option<&MegaLightsIesPacking<'_>>,
+) -> [f64; 3] {
+    mega_shade_winner_ies(lights, surface, index, visibility, ies)
 }
 
 /// 趟二(TS reuseAndShadePassCpu 同式):5×5 空间值域平均 + self 回落 + 颜色 EMA。
@@ -461,6 +516,7 @@ pub fn reuse_and_shade_pass(input: &MegaLightsFrameInput, built: &[RisReservoir]
     let width = input.config.width;
     let height = input.config.height;
     let light_count = input.lights.len();
+    let ies = input.ies;
     let spatial = input.config.spatial && !input.config.exhaustive;
     let radius = MEGALIGHTS_SPATIAL_REUSE_RADIUS;
     let mut color = vec![0.0f32; (width * height * 3) as usize];
@@ -474,10 +530,11 @@ pub fn reuse_and_shade_pass(input: &MegaLightsFrameInput, built: &[RisReservoir]
             let reservoir = built[pixel_index];
             reservoirs[pixel_index] = reservoir;
             if input.config.exhaustive {
-                // 穷举对拍模式:逐灯求和(⑤ 退化一致性腿;无 EMA,与 TS 同序)。
+                // 穷举对拍模式:逐灯求和(⑤ 退化一致性腿;IES 随贡献同位消费,
+                // 与 WGSL 穷举分支一致;无 EMA,与 TS 同序)。
                 let mut total = [0.0f64; 3];
                 for index in 0..light_count {
-                    let contribution = mega_shade_winner(input.lights, surface, index, 1.0);
+                    let contribution = mega_shade_winner_ies(input.lights, surface, index, 1.0, ies);
                     total[0] += contribution[0];
                     total[1] += contribution[1];
                     total[2] += contribution[2];
@@ -488,12 +545,12 @@ pub fn reuse_and_shade_pass(input: &MegaLightsFrameInput, built: &[RisReservoir]
                 continue;
             }
             let (r, g, b) = if spatial {
-                match spatial_unbiased_average(input.lights, input.surfaces, surface, built, x, y, width, height, radius, light_count, input.visibility) {
+                match spatial_unbiased_average(input.lights, input.surfaces, surface, built, x, y, width, height, radius, light_count, input.visibility, ies) {
                     Some(averaged) => (averaged[0], averaged[1], averaged[2]),
-                    None => self_reservoir_shade(input.lights, surface, &reservoir, light_count, input.visibility, pixel_index),
+                    None => self_reservoir_shade(input.lights, surface, &reservoir, light_count, input.visibility, pixel_index, ies),
                 }
             } else {
-                self_reservoir_shade(input.lights, surface, &reservoir, light_count, input.visibility, pixel_index)
+                self_reservoir_shade(input.lights, surface, &reservoir, light_count, input.visibility, pixel_index, ies)
             };
             // 颜色时域 EMA(首帧 previousColor 缺省 = 全量替换;只看 config.temporal)。
             let (r, g, b) = if input.config.temporal {
@@ -527,6 +584,7 @@ fn self_reservoir_shade(
     light_count: usize,
     visibility: Option<&[f32]>,
     pixel_index: usize,
+    ies: Option<&MegaLightsIesPacking<'_>>,
 ) -> (f64, f64, f64) {
     if reservoir.winner == MEGALIGHTS_INVALID_LIGHT || reservoir.m == 0 {
         return (0.0, 0.0, 0.0);
@@ -534,8 +592,8 @@ fn self_reservoir_shade(
     let self_visibility = visibility
         .and_then(|mask| mask.get(pixel_index).copied())
         .unwrap_or(1.0);
-    let shade = mega_shade_winner(lights, surface, reservoir.winner as usize, f64::from(self_visibility));
-    let weight_y = mega_target_weight(lights, surface, reservoir.winner as usize);
+    let shade = mega_shade_winner_ies(lights, surface, reservoir.winner as usize, f64::from(self_visibility), ies);
+    let weight_y = mega_target_weight_ies(lights, surface, reservoir.winner as usize, ies);
     if weight_y <= 0.0 {
         return (0.0, 0.0, 0.0);
     }
@@ -549,14 +607,26 @@ pub fn mega_lights_frame(input: &MegaLightsFrameInput) -> MegaLightsFrameOutput 
     reuse_and_shade_pass(input, &built)
 }
 
-/// 穷举精确参考(验收②真值端):逐灯求和 = 零方差真值(无遮挡精确和)。
+/// 穷举精确参考(验收②真值端):逐灯求和 = 零方差真值(无遮挡精确和;
+/// `ies` 缺省恒等,帧内穷举腿与参考须同口径消费)。
 pub fn mega_lights_exhaustive_reference(lights: &[MegaLight], surfaces: &[MegaSurfaceRow], width: u32, height: u32) -> Vec<f32> {
+    mega_lights_exhaustive_reference_ies(lights, surfaces, width, height, None)
+}
+
+/// 穷举精确参考(IES 注入版;与 WGSL 穷举分支同口径)。
+pub fn mega_lights_exhaustive_reference_ies(
+    lights: &[MegaLight],
+    surfaces: &[MegaSurfaceRow],
+    width: u32,
+    height: u32,
+    ies: Option<&MegaLightsIesPacking<'_>>,
+) -> Vec<f32> {
     let mut color = vec![0.0f32; (width * height * 3) as usize];
     for pixel in 0..(width * height) as usize {
         let surface = &surfaces[pixel];
         let mut total = [0.0f64; 3];
         for index in 0..lights.len() {
-            let shade = mega_shade_winner(lights, surface, index, 1.0);
+            let shade = mega_shade_winner_ies(lights, surface, index, 1.0, ies);
             total[0] += shade[0];
             total[1] += shade[1];
             total[2] += shade[2];

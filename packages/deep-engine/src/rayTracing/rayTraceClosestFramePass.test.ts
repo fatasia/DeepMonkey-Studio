@@ -161,3 +161,83 @@ describe("reflection closest-hit frame pass", () => {
     expect(RAY_TRACE_CLOSEST_FRAME_FORMAT).toBe("rgba32float");
   });
 });
+
+describe("reflection closest-hit frame pass illumination mode (occlusion + albedo record)", () => {
+  function shadingView(): GPUTextureView {
+    return { __shadingView: true } as unknown as GPUTextureView;
+  }
+
+  function illumInput(overrides: Partial<Parameters<RayTraceClosestFramePass["encode"]>[1]> = {}) {
+    return { depthView: depthView(), hitView: hitView(), bounceShadingView: shadingView(),
+      lightDirectionWorld: [0.5, 0.8, -0.3] as const, width: 8, height: 8,
+      invViewProjection: INV, eye: [0, 0, 5] as const, tMax: 80, bias: 0.01, rayMask: 0xff, ...overrides };
+  }
+
+  it("allocates the neutral-prefilled instance albedo buffer and an 128B uniform (illumination only)", async () => {
+    const stub = deviceStub();
+    const { device, buffers } = stub;
+    const queue = (device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } }).queue;
+    const packed = packedScene(6, 4);
+    const pass = new RayTraceClosestFramePass(device, packed, { illumination: true });
+    expect(buffers).toHaveLength(8); // 5 场景 + 哨兵 + uniform + 反照率
+    expect(buffers[6]!.size).toBe(128);
+    expect(buffers[7]!.size).toBe(16); // instanceCount(1)×16B
+    expect(buffers[7]!.usage & 0x80).not.toBe(0); // STORAGE
+    // 构造期预填中性 0.5(无表供给 = 旧基线着色,如实登记)。
+    const neutralWrite = queue.writeBuffer.mock.calls.find((call: unknown[]) =>
+      call[0] === buffers[7]) as unknown[] | undefined;
+    expect(neutralWrite).toBeDefined();
+    expect(Array.from(new Float32Array(neutralWrite![2] as ArrayBuffer))).toEqual([0.5, 0.5, 0.5, 0.5]);
+    await pass.encode(encoderStub().encoder, illumInput());
+    pass.destroy();
+    expect(buffers.every((buffer) => buffer.destroy)).toBe(true);
+  });
+
+  it("binds 11 slots (9 base + shading record + albedo buffer) and caches by (depth, hit, shading)", async () => {
+    const { device, bindGroups } = deviceStub();
+    const pass = new RayTraceClosestFramePass(device, packedScene(), { illumination: true });
+    const depth = depthView(), hit = hitView(), shading = shadingView();
+    const first = encoderStub();
+    await pass.encode(first.encoder, illumInput({ depthView: depth, hitView: hit, bounceShadingView: shading }));
+    expect(first.passes[0]!.dispatches).toEqual([[1, 1, 1]]);
+    expect(bindGroups[0]!.entries.map((entry) => entry.binding)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(bindGroups[0]!.entries[9]!.resource).toBe(shading);
+    // 同视图身份复用缓存;遮蔽视图变化 = 新绑定(LRU 4)。
+    await pass.encode(encoderStub().encoder, illumInput({ depthView: depth, hitView: hit, bounceShadingView: shading }));
+    expect(bindGroups).toHaveLength(1);
+    await pass.encode(encoderStub().encoder, illumInput({ depthView: depth, hitView: hit, bounceShadingView: shadingView() }));
+    expect(bindGroups).toHaveLength(2);
+    pass.destroy();
+  });
+
+  it("fail-fast requires the shading record view and a finite light direction before any dispatch", async () => {
+    const stub = deviceStub();
+    const pass = new RayTraceClosestFramePass(stub.device, packedScene(), { illumination: true });
+    const queue = (stub.device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } }).queue;
+    const writesAfterConstruction = queue.writeBuffer.mock.calls.length;
+    const base = { depthView: depthView(), hitView: hitView(), width: 8, height: 8,
+      invViewProjection: INV, eye: [0, 0, 5] as const, tMax: 80, bias: 0.01, rayMask: 0xff };
+    await expect(pass.encode(encoderStub().encoder, base)).rejects.toThrow("bounceShadingView and lightDirectionWorld");
+    await expect(pass.encode(encoderStub().encoder, { ...base, bounceShadingView: shadingView(),
+      lightDirectionWorld: [0.5, Number.NaN, -0.3] as const })).rejects.toThrow("finite lightDirectionWorld");
+    // 构造期场景/反照率预填之外,fail-fast 编码不得再写任何缓冲(禁静默半开)。
+    expect(queue.writeBuffer.mock.calls.length).toBe(writesAfterConstruction);
+    pass.destroy();
+  });
+
+  it("validates the instance albedo table length/finiteness and forwards it per frame", async () => {
+    const stub = deviceStub();
+    const pass = new RayTraceClosestFramePass(stub.device, packedScene(), { illumination: true });
+    const queue = (stub.device as unknown as { queue: { writeBuffer: ReturnType<typeof vi.fn> } }).queue;
+    const albedos = new Float32Array([0.8, 0.2, 0.1, 1.0]);
+    await pass.encode(encoderStub().encoder, illumInput({ instanceAlbedos: albedos }));
+    const forward = queue.writeBuffer.mock.calls.find((call: unknown[]) =>
+      (call[2] as ArrayBuffer) === albedos.buffer) as unknown[] | undefined;
+    expect(forward).toBeDefined();
+    await expect(pass.encode(encoderStub().encoder,
+      illumInput({ instanceAlbedos: new Float32Array(8) }))).rejects.toThrow("instanceCount×4");
+    await expect(pass.encode(encoderStub().encoder, illumInput({
+      instanceAlbedos: new Float32Array([0.8, 0.2, Number.NaN, 1.0]) }))).rejects.toThrow("finite instanceAlbedos");
+    pass.destroy();
+  });
+});

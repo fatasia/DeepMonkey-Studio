@@ -63,16 +63,35 @@ https://github.com/user-attachments/assets/cb60822e-f2ee-41ec-ab45-943929da2f5a
 
 ## 性能实测
 
-同场景、同相机位姿、静置 120 帧公平对拍（RTX 4060，2026-10-05）。指标口径遵循行业惯例（帧时间分位与 1% Low 出自 PresentMon/CapFrameX 体系，输入与首帧对齐 Core Web Vitals 的 INP/LCP）：
+### 同场景引擎基准(四引擎同轮,2026-10-07)
+
+裸引擎 fixture:同确定性布局、同 6 形 6 色 PBR、同机位 48° FOV;每用例三角面守卫(容差 1%,本轮全部 73,842 / 614,294 零差异);3 次冷启动运行取中位;帧时间分位口径遵循 PresentMon/CapFramex 体系。RTX 4060 Laptop,Chrome + WebGPU,单位 ms。
+
+| 指标 | three.js WebGL | three.js WebGPU | Babylon.js WebGPU | Deep WebGPU |
+| --- | --- | --- | --- | --- |
+| 静置 P95(120 / 1000 物体) | 7.1 / 7.1 | 7.1 / 7.1 | 7.3 / 17.2 | 7.1 / 7.1 |
+| 动态 P95(1000 物体) | 7.1 | 7.1 | 18.2 | 14.0 |
+| 静置最大帧中位(120 物体) | 34.7 | 194.5 | 283.3 | **7.2** |
+| 首帧(1000 物体) | **77.9** | 284.6 | 868.2 | 5,638.8(冷启动管线编译,攻坚中) |
+| GPU 帧时 P50(1000 物体) | 1.0 | **0.6** | 0.7 | 2.8 |
+| 20 轮重建(1000 物体) | **3.3** | 4.5 | 467.9 | 6.6 |
+| Draw Calls(1000 物体) | 1,055 | 1,056 | 2,001 | **7**(GPU 剔除+间接绘制+合批) |
+| 重建堆增最差(1000 物体,MiB) | **0.1** | 90.9 | 21.6 | **0.6** |
+
+复现:`BIM_STUDIO_RENDER_BENCHMARK_ENGINES=three-webgl,three-webgpu,babylon-webgpu,deep-webgpu pnpm --filter @bim-studio/web benchmark:render-engines`;完整 23 列证据与守卫判定见 `test-output/render-engine-comparison/report.md`。指标全集、原生参考表协议与逐轮拦截记录见[基准程序](docs/specs/render-benchmark-program-20261007.md)。
+
+### 产品场景公平对拍(Deep vs three WebGL)
+
+同场景、同相机位姿、静置 120 帧(RTX 4060,2026-10-05):
 
 | 指标 | Deep WebGPU | three.js WebGL |
 | --- | --- | --- |
-| 帧时间 P99（静置） | **7.1 ms** | 27.7 ms |
-| 帧时间 max（静置） | **13.8 ms** | 104.1 ms |
+| 帧时间 P99(静置) | **7.1 ms** | 27.7 ms |
+| 帧时间 max(静置) | **13.8 ms** | 104.1 ms |
 | 自确定性 SSIM | 1.0 | 1.0 |
 | 黑帧 | 0 | 0 |
 
-输入延迟与首帧仍在优化，达标前不上表。1% Low FPS、卡顿率、Babylon.js / Deep WebGPU 列与原生参考表(Deep Native vs Unity)按[基准程序](docs/specs/render-benchmark-program-20261007.md)分阶段补充;引擎定性能力对照见[引擎能力对照](docs/engine-comparison.md)。
+输入延迟与首帧仍在优化,达标前不上表。1% Low FPS、卡顿率、INP/LCP 对齐与原生参考表(Deep Native vs Unity)按[基准程序](docs/specs/render-benchmark-program-20261007.md)分阶段补充;引擎定性能力对照见[引擎能力对照](docs/engine-comparison.md)。
 
 ## 完整功能列表
 

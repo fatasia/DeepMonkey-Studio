@@ -2,9 +2,10 @@
 //!
 //! RIS 采样核(单源 `packages/deep-engine/wgsl/megaLightsRis.wgsl`,经
 //! [`crate::megalights_wgsl`] 逐字节锁存)按 TS `megaLightsRuntime.ts` 同款宿主
-//! 模板组合(bindings 0-8 legacy 布局 + `deepSpotIesFactor`/`deepMegaVisibilityAt`
-//! 恒 1 注入 = M1 可见性关),在真实 wgpu 设备上 dispatch 趟一+趟二,与 native
-//! CPU 权威镜像([`crate::megalights_ris`])对拍:
+//! 模板组合(bindings 0-8 legacy 布局 + E02 IES 单源(2026-10-06 起 binding 8 装
+//! fixture `inputs.iesPacked` 真载荷)+ `deepMegaVisibilityAt` 恒 1 注入),在真实
+//! wgpu 设备上 dispatch 趟一+趟二,与 native CPU 权威镜像([`crate::megalights_ris`]
+//! IES 注入同口径)对拍:
 //! - 穷举帧(无 RNG):GPU f32 vs CPU f64 词容差 ≤0.002(与 sdf-gi GPU 词门同量级);
 //! - 随机帧:同 RNG 整数流,f32 评价与 f64 评价经蓄水池非线性放大 → 统计腿
 //!   (相对 RMSE ≤15%,如实声明;逐位一致不成立是精度域差异,非语义分歧)。
@@ -12,10 +13,12 @@
 //! 黄金场景 = `fixtures/megalights-native-parity-v1.json`(CPU 权威链已在
 //! [`crate::megalights_parity_tests`] 与 TS fixture 对拍;本文件只对 GPU leg)。
 
+use crate::megalights_ies::MegaLightsIesPacking;
 use crate::megalights_ris::{
     mega_lights_frame, MegaLight, MegaLightsFrameConfig, MegaLightsFrameInput, MegaSurfaceRow,
 };
 use crate::megalights_wgsl::DEEP_MEGA_LIGHTS_RIS_WGSL;
+use crate::lighting_math_wgsl::DEEP_IES_SAMPLING_WGSL;
 use serde_json::Value;
 
 const FIXTURE: &str = include_str!("../../deep-engine/fixtures/megalights-native-parity-v1.json");
@@ -94,7 +97,8 @@ fn parse_surfaces(fixture: &Value) -> Vec<MegaSurfaceRow> {
 }
 
 /// 宿主模板(TS composeMegaLightsShader 同构;可见性档关 = M1 注入恒 1):
-/// DeepMegaParams 16 f32 字 + bindings 0-8 + 恒 1 注入 + RIS 核 + 两 entrypoint。
+/// DeepMegaParams 16 f32 字 + bindings 0-8(IES 装 fixture 真载荷)+ E02 IES 单源 +
+/// 恒 1 可见性注入 + RIS 核 + 两 entrypoint。
 fn compose_probe_shader() -> String {
     format!(
         r#"
@@ -110,13 +114,12 @@ fn compose_probe_shader() -> String {
 @group(0) @binding(7) var<storage, read_write> deepMegaColorHistory: array<vec4<f32>>;
 @group(0) @binding(8) var<storage, read> deepIesShading: array<vec4<f32>>;
 
-// M1 注入:IES 因子恒 1(fixture 灯池 iesWord 全 0,不触达);可见性恒 1(M1 逐位)。
-fn deepSpotIesFactor(_row: u32, _surfaceToLight: vec3f, _lightDirection: vec3f) -> f32 {{
-  return 1.0;
-}}
+// 可见性恒 1(M1 逐位;可见性射线档走 megalights_visibility CPU 镜像 + TS GPU 门)。
 fn deepMegaVisibilityAt(_pixelIndex: u32) -> f32 {{
   return 1.0;
 }}
+
+{DEEP_IES_SAMPLING_WGSL}
 
 {DEEP_MEGA_LIGHTS_RIS_WGSL}
 

@@ -3,25 +3,28 @@
  * RT specular GI·一次反弹 indirection 内核:`rt_specular_indirection`。
  *
  * 消费反射 closest-hit 帧通道(rayTraceClosestFrameKernel)的 rgba32float 命中记录
- * [t, normal.xyz],把每个反射接收像素的屏外反弹估计写进 rgba16float indirection 纹理
+ * [t, normal.xyz] 与光照遮蔽记录 [albedo.rgb, visibility](illumination 档),把每个
+ * 反射接收像素的屏外反弹估计写进 rgba16float indirection 纹理
  * [radiance×fraction, fraction](miss = 全零,fraction=0 让合成端零变化):
  *
  * - 命中点辐射度 = 解析一次反弹(megaLights Lambert N·L 直接光语义,灯源 = 主方向光
  *   ——按场景灯光可用性裁决:主方向光在 resolvePbrSceneLighting 恒存在(缺省 DEFAULT
  *   兜底),ReSTIR-DI 灯池 ABI 属 lighting/ 域、其 reservoir 绑首表面像素无法在任意
- *   世界命中点求值,跨域借表属下一切片,如实记录边界);无命中表面反照率 GBuffer,
- *   用中性反照率常量 RT_SPECULAR_BOUNCE_ALBEDO。环境项 = F1 ambient 合同同源
+ *   世界命中点求值,跨域借表属下一切片,如实记录边界)。直接光项乘命中点→光源可见性
+ *   (帧通道遮蔽腿产出,遮挡侧保守归零;栈溢出同侧),反照率取命中实例材质表
+ *   (无表供给时执行器预填中性 0.5)。环境项 = F1 ambient 合同同源
  *   (scalePbrEnvironmentRadiance 后的 environmentAmbient),miss 方向=天空辐射口径。
  * - 替换权重 fraction = SSR 同一 split-sum DFG(brdfLut 采样,与 SSR trace 的
  *   ssrSpecularFraction 同式):N·V 取 GBuffer 视法线 + 线性视深度重建(SSR
  *   reconstruct 合同同式),roughness 取视法线 alpha —— 与被替换的 IBL 高光回退同权。
- * - 二反弹不做(任务边界,如实登记);命中点无阴影/遮挡遮蔽(保守偏亮,无遮蔽项)。
+ * - 二反弹不做(任务边界,如实登记);环境项不遮蔽(无 AO 项,保守侧如实登记)。
  *
  * == 布局合同 ==
  * binding 0 = linearDepth(r32float texture_2d,SSR 同源目标);1 = viewNormal
  * (rgba8unorm texture_2d,xyz 视法线 w roughness,SSR 同源);2 = brdfLut;3 = sampler;
  * 4 = params uniform(96B);5 = rtHit(texture_storage_2d<rgba32float, read>,
- * 帧通道命中记录只读);6 = rtIndirection(texture_storage_2d<rgba16float, write>)。
+ * 帧通道命中记录只读);6 = rtIndirection(texture_storage_2d<rgba16float, write>);
+ * 7 = bounceShading(texture_storage_2d<rgba32float, read>,帧通道遮蔽/反照率记录只读)。
  * 自有 uniform,不占帧 uniform 槽位(frameAbi 单源不受影响)。
  */
 
@@ -38,6 +41,7 @@ export const RT_SPECULAR_INDIRECTION_BINDINGS = Object.freeze([
   { binding: 4, name: "indirectionParams", type: "uniform" },
   { binding: 5, name: "rtHitRecord", type: "read-only-storage-texture" },
   { binding: 6, name: "rtIndirection", type: "storage-texture" },
+  { binding: 7, name: "bounceShading", type: "read-only-storage-texture" },
 ] as const);
 
 /** params uniform 字节数:vec4u + 5×vec4f = 96。 */
@@ -47,8 +51,9 @@ export const RT_SPECULAR_INDIRECTION_PARAMS_BYTES = 96;
 export const RT_SPECULAR_INDIRECTION_FORMAT: GPUTextureFormat = "rgba16float";
 
 /**
- * 中性一次反弹反照率:命中点无 GBuffer 反照率(只有命中法线),漫反射反弹取中灰
- * 0.5(摄影标准中间反射率)。估计偏保守侧:真实建材 0.2–0.8,不注入超量能量。
+ * 中性一次反弹反照率:命中实例无材质表供给时执行器预填的中灰 0.5(摄影标准中间
+ * 反射率)。估计偏保守侧:真实建材 0.2–0.8,不注入超量能量;真实表(命中点材质
+ * baseColor)经执行器 instanceAlbedos 供给后本常量只作回退。
  */
 export const RT_SPECULAR_BOUNCE_ALBEDO = 0.5;
 
@@ -90,9 +95,12 @@ export function packRtSpecularIndirectionUniform(params: RtSpecularIndirectionPa
 /** 发射一次反弹 indirection 内核源码(sha256 合同见本目录测试)。 */
 export function emitRtSpecularIndirectionKernelWgsl(): string {
   return /* wgsl */ `// RT specular GI one-bounce indirection (consumes the reflection closest-hit frame channel).
-// Per receiver pixel: record [t, normal.xyz] -> analytic one-bounce radiance at the hit
-// point, weighted by the same split-sum specular fraction the replaced IBL fallback uses.
-// Output [radiance*frac, frac]; every miss path stores zero (fail-closed: no fake energy).
+// Per receiver pixel: record [t, normal.xyz] + illumination shading record
+// [albedo.rgb, visibility] -> analytic one-bounce radiance at the hit point, weighted by
+// the same split-sum specular fraction the replaced IBL fallback uses. The direct term
+// is multiplied by the hit->light visibility traced by the frame channel; the ambient
+// term is unoccluded (no AO term, honest boundary). Output [radiance*frac, frac]; every
+// miss path stores zero (fail-closed: no fake energy).
 ${ssrBrdfFractionWgsl("brdfLut", "indirectionSampler")}
 struct IndirectionParams {
   frameSize: vec4u,
@@ -112,6 +120,7 @@ struct IndirectionParams {
 @group(0) @binding(4) var<uniform> indirectionParams: IndirectionParams;
 @group(0) @binding(5) var rtHitRecord: texture_storage_2d<rgba32float, read>;
 @group(0) @binding(6) var rtIndirection: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(7) var bounceShading: texture_storage_2d<rgba32float, read>;
 
 fn rtIndirectionStoreMiss(px: vec2u) {
   textureStore(rtIndirection, vec2<i32>(px), vec4f(0.0));
@@ -136,12 +145,16 @@ fn ${RT_SPECULAR_INDIRECTION_ENTRY_POINT}(@builtin(global_invocation_id) gid: ve
     ndc.y * linearDepth * indirectionParams.projection.x, -linearDepth);
   let incident = normalize(viewPos / linearDepth);
   let cosTheta = clamp(-dot(viewNormal, incident), 0.0, 1.0);
-  // 命中点解析一次反弹:Lambert N·L 主方向光(无衰减)+ F1 ambient 合同环境项,
-  // 中性反照率 ${RT_SPECULAR_BOUNCE_ALBEDO};命中法线已朝反射接收面定向(帧通道语义)。
+  // 命中点解析一次反弹:Lambert N·L 主方向光(直接项乘命中点→光源可见性,帧通道
+  // 遮蔽腿产出)+ F1 ambient 合同环境项(无 AO,保守侧),反照率 = 命中实例材质
+  // (无表供给 = 执行器预填中性 ${RT_SPECULAR_BOUNCE_ALBEDO});命中法线已朝反射接收面定向。
+  let shading = textureLoad(bounceShading, vec2<i32>(px));
+  let bounceAlbedo = clamp(shading.rgb, vec3f(0.0), vec3f(1.0));
   let hitNormal = record.yzw;
   let ndotl = clamp(dot(hitNormal, indirectionParams.lightDirection.xyz), 0.0, 1.0);
-  let direct = ndotl * indirectionParams.lightColorIntensity.rgb * indirectionParams.lightColorIntensity.w;
-  let oneBounce = (direct + indirectionParams.envRadiance.rgb) * ${RT_SPECULAR_BOUNCE_ALBEDO};
+  let direct = ndotl * indirectionParams.lightColorIntensity.rgb * indirectionParams.lightColorIntensity.w
+    * shading.a;
+  let oneBounce = (direct + indirectionParams.envRadiance.rgb) * bounceAlbedo;
   let fraction = rtSpecSpecularFraction(cosTheta, roughness, indirectionParams.misc.x);
   textureStore(rtIndirection, vec2<i32>(px), vec4f(oneBounce * fraction, fraction));
 }

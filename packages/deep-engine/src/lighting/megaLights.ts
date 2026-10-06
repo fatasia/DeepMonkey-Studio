@@ -356,11 +356,13 @@ const PI_FACTOR = 1 / PI;
 /**
  * 单灯贡献(聚光锥 + 面积光中心点近似全链)。`iesFactor` 钩子缺省恒等(无 IES);
  * 携带 iesSpotIndex 的灯由调用方经 iesShading.evaluateIesShadingFactor 注入真值。
- * radianceScale 供 RIS 权重回路复用(权重 = 贡献亮度,胜者着色 = 贡献 × 权重和/
- * (M×选中概率),同 Bitterli RIS 公式)。
+ * 钩子第二参 = 本灯 surfaceToLight 单位向量(与 WGSL deepSpotIesFactor 的
+ * surfaceToLightDirection 同域,2026-10-06 随 native IES 注入切片开放;原单参闭包
+ * 无消费方,签名扩展向后兼容)。radianceScale 供 RIS 权重回路复用(权重 = 贡献亮度,
+ * 胜者着色 = 贡献 × 权重和/(M×选中概率),同 Bitterli RIS 公式)。
  */
 export function evaluateMegaLightCpu(light: MegaLight, surface: MegaLightSurface,
-  iesFactor: (light: MegaLight) => number = () => 1): LightVector3 {
+  iesFactor: (light: MegaLight, surfaceToLight: LightVector3) => number = () => 1): LightVector3 {
   if (light.kind === "area") {
     const toSurface: LightVector3 = [surface.positionView[0] - light.positionView[0],
       surface.positionView[1] - light.positionView[1], surface.positionView[2] - light.positionView[2]];
@@ -372,13 +374,15 @@ export function evaluateMegaLightCpu(light: MegaLight, surface: MegaLightSurface
   const toLight: LightVector3 = [light.positionView[0] - surface.positionView[0],
     light.positionView[1] - surface.positionView[1], light.positionView[2] - surface.positionView[2]];
   const distance = Math.max(Math.hypot(...toLight), 1e-8);
+  // surfaceToLight 提升到锥分支外(与 WGSL deepMegaContribution 同位:IES 钩子与
+  // 锥共用同一单位向量;point 分支同样可消费钩子)。
+  const surfaceToLight: LightVector3 = [toLight[0] / distance, toLight[1] / distance, toLight[2] / distance];
   let cone = 1;
   if (light.kind === "spot") {
-    const surfaceToLight: LightVector3 = [toLight[0] / distance, toLight[1] / distance, toLight[2] / distance];
     const direction = safeNormalize(light.directionView ?? [0, 0, 1], [0, 0, 1]);
     const coneScale = light.innerConeCos === light.outerConeCos ? 0 : 1 / ((light.innerConeCos ?? 1) - (light.outerConeCos ?? -1));
     cone = megaLightSpotConeCpu(-dot3(surfaceToLight, direction), light.outerConeCos ?? -1, coneScale);
   }
   if (cone <= 0) return [0, 0, 0];
-  return megaLightBrdfCpu(light, surface, cone * iesFactor(light));
+  return megaLightBrdfCpu(light, surface, cone * iesFactor(light, surfaceToLight));
 }

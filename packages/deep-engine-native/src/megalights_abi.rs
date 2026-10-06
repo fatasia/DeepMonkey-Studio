@@ -4,6 +4,7 @@
 //! kind 编码、RIS 预算常数;打包与 sha256 词流指纹供 fixture 对拍与 GPU 上传
 //! 共用。采样/着色数学在 [`crate::megalights_ris`]。
 
+use crate::megalights_ies::MegaLightsIesPacking;
 use crate::shader_package::hash::sha256;
 
 /// ABI 版本(与 TS `MEGA_LIGHT_ABI_VERSION` 互钉)。
@@ -54,6 +55,9 @@ pub struct MegaLight {
     pub half_extent: [f64; 2],
     /// 面积光双面发光。
     pub two_sided: bool,
+    /// 复用既有 iesShading storage 的 spot 参数行号(2026-10-06 IES 注入切片:
+    /// 64B ABI 字 11 = 行号+1,0 = 无 IES;缺省 None 与 v1 打包逐位一致)。
+    pub ies_spot_index: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,6 +91,7 @@ impl Default for MegaLight {
             outer_cone_cos: -1.0,
             half_extent: [0.0, 0.0],
             two_sided: false,
+            ies_spot_index: None,
         }
     }
 }
@@ -158,6 +163,9 @@ pub struct MegaLightsFrameInput<'a> {
     pub previous_color: Option<&'a [f32]>,
     /// 每像素胜者可见性 mask(1=可见/0=遮挡;只乘 shade 侧)。
     pub visibility: Option<&'a [f32]>,
+    /// E02 IES 打包载荷(2026-10-06 IES 注入切片;缺省 None = 因子恒 1,
+    /// 与 v1 帧输出逐位一致)。
+    pub ies: Option<&'a MegaLightsIesPacking<'a>>,
     pub frame: u32,
     pub config: MegaLightsFrameConfig,
 }
@@ -179,6 +187,9 @@ pub struct PackedMegaLights {
     pub point_count: usize,
     pub spot_count: usize,
     pub area_count: usize,
+    /// 打包中最高引用的 ies 行号 +1(0 = 无 IES 引用;TS iesReferenceCount 同语义,
+    /// runtime 据此校验 ies 载荷闭合)。
+    pub ies_reference_count: usize,
 }
 
 /// TS Math.hypot 的 Rust 端(跨 libm 哨兵;非位级锚)。
@@ -198,12 +209,25 @@ pub fn pack_mega_lights(lights: &[MegaLight]) -> PackedMegaLights {
     let mut point_count = 0usize;
     let mut spot_count = 0usize;
     let mut area_count = 0usize;
+    let mut ies_reference_count = 0usize;
     for (index, light) in lights.iter().enumerate() {
         match light.kind {
             MegaLightKind::Point => point_count += 1,
             MegaLightKind::Spot => spot_count += 1,
             MegaLightKind::AreaRect => area_count += 1,
         }
+        // IES 行号(f32 精确整数;0 = 无;行号+1 与 TS exactFloat 同合同,越界即拒)。
+        let ies_word = match light.ies_spot_index {
+            None => 0.0f32,
+            Some(ies_index) => {
+                assert!(
+                    (ies_index as usize) < MAX_MEGA_LIGHTS && ies_index + 1 < (1 << 24),
+                    "mega light ies spot index must be an f32-exact small row index"
+                );
+                ies_reference_count = ies_reference_count.max(ies_index as usize + 1);
+                (ies_index + 1) as f32
+            }
+        };
         let base = index * MEGA_LIGHT_WORDS;
         data[base] = light.position_view[0] as f32;
         data[base + 1] = light.position_view[1] as f32;
@@ -221,7 +245,7 @@ pub fn pack_mega_lights(lights: &[MegaLight]) -> PackedMegaLights {
         data[base + 8] = direction[0] as f32;
         data[base + 9] = direction[1] as f32;
         data[base + 10] = direction[2] as f32;
-        data[base + 11] = 0.0; // iesWord:CPU 镜像链不消费 IES(缺省 0=无)。
+        data[base + 11] = ies_word;
         match light.kind {
             MegaLightKind::Point => {
                 data[base + 12] = (light.decay - 2.0) as f32;
@@ -251,6 +275,7 @@ pub fn pack_mega_lights(lights: &[MegaLight]) -> PackedMegaLights {
         point_count,
         spot_count,
         area_count,
+        ies_reference_count,
     }
 }
 

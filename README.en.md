@@ -57,7 +57,26 @@ License designation: **MIT License + Ethical Restrictions** (source-available).
 
 ## Measured performance
 
-Fair comparison on the same scene and camera pose, 120 idle frames (RTX 4060, 2026-10-05). Metric definitions follow industry conventions (frame-time percentiles and 1% Low from the PresentMon/CapFrameX school; input and load aligned to Core Web Vitals INP/LCP):
+### Same-scene engine benchmark (four engines, one round, 2026-10-07)
+
+Bare-engine fixture: identical deterministic layout, 6 shapes / 6 PBR colors, same 48° FOV camera; per-case triangle guard (1% tolerance — this round all engines report 73,842 / 614,294 with zero difference); median of 3 cold-start runs; frame-time percentiles follow the PresentMon/CapFrameX school. RTX 4060 Laptop, Chrome + WebGPU, all values in ms.
+
+| Metric | three.js WebGL | three.js WebGPU | Babylon.js WebGPU | Deep WebGPU |
+| --- | --- | --- | --- | --- |
+| Idle P95 (120 / 1000 objects) | 7.1 / 7.1 | 7.1 / 7.1 | 7.3 / 17.2 | 7.1 / 7.1 |
+| Dynamic P95 (1000 objects) | 7.1 | 7.1 | 18.2 | 14.0 |
+| Idle max-frame median (120 objects) | 34.7 | 194.5 | 283.3 | **7.2** |
+| First frame (1000 objects) | **77.9** | 284.6 | 868.2 | 5,638.8 (cold pipeline compile, being optimized) |
+| GPU frame time P50 (1000 objects) | 1.0 | **0.6** | 0.7 | 2.8 |
+| 20 rebuild cycles (1000 objects) | **3.3** | 4.5 | 467.9 | 6.6 |
+| Draw calls (1000 objects) | 1,055 | 1,056 | 2,001 | **7** (GPU culling + indirect draws + batching) |
+| Rebuild heap growth worst (1000 objects, MiB) | **0.1** | 90.9 | 21.6 | **0.6** |
+
+Reproduce: `BIM_STUDIO_RENDER_BENCHMARK_ENGINES=three-webgl,three-webgpu,babylon-webgpu,deep-webgpu pnpm --filter @bim-studio/web benchmark:render-engines`; the full 23-column evidence lives in `test-output/render-engine-comparison/report.md`. The full metric set, the native reference-table protocol, and the per-round interception log are in the [benchmark program](docs/specs/render-benchmark-program-20261007.md).
+
+### Product-scene fair comparison (Deep vs three WebGL)
+
+Same scene, same camera pose, 120 idle frames (RTX 4060, 2026-10-05):
 
 | Metric | Deep WebGPU | three.js WebGL |
 | --- | --- | --- |
@@ -66,8 +85,7 @@ Fair comparison on the same scene and camera pose, 120 idle frames (RTX 4060, 20
 | Self-determinism SSIM | 1.0 | 1.0 |
 | Black frames | 0 | 0 |
 
-Input latency and first-frame time are still being optimized and are not listed until they pass their targets. 1% Low FPS, jank rate, the Babylon.js / Deep WebGPU columns, and the native reference table (Deep Native vs Unity) are added in phases per the [benchmark program](docs/specs/render-benchmark-program-20261007.md); the qualitative engine comparison lives at [Engine comparison](docs/engine-comparison.md).
-
+Input latency and first-frame time are still being optimized and are not listed until they pass their targets. 1% Low FPS, jank rate, INP/LCP alignment, and the native reference table (Deep Native vs Unity) are added in phases per the [benchmark program](docs/specs/render-benchmark-program-20261007.md); the qualitative engine comparison lives at [Engine comparison](docs/engine-comparison.md).
 ## Complete feature list
 
 Grouped by product subsystem. Format targets, experimental modules, and capabilities that have a contract but no product entry point are not counted as available features.

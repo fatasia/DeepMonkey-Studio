@@ -1,6 +1,9 @@
 import { hasAdvancedMaterialFeatures, normalizeAdvancedMaterialParameters } from "../shader/materialAdvancedParameters.js";
 import type { RenderPacket } from "../renderPacket.js";
+import type { RenderView } from "../webgpu/pbrRenderer.js";
 import { mainPipelineKey, materialMode, rasterMode } from "../webgpu/pipelines.js";
+import type { ThreeObjectSource } from "./types.js";
+import type { ThreeProjectionBridge } from "./ThreeProjectionBridge.js";
 
 /**
  * 从独立作者包推导首帧可能绘制的 main 管线键（保守超集）。
@@ -46,4 +49,26 @@ function isMirroredTransform(transform: ArrayLike<number>): boolean {
   const g = transform[8]!, h = transform[9]!, i = transform[10]!;
   // 列主序 4×4 的左上 3×3 行列式。
   return a * (e * i - f * h) - d * (b * i - c * h) + g * (b * f - c * e) < 0;
+}
+
+/**
+ * 投影路径首帧 main 键推导(首帧攻坚 2026-10-07):对 three 场景做一次 CPU 预投影,
+ * 用与包路径完全相同的 `firstFramePipelineMainKeys` 推导首帧可能绘制的 main 键。
+ *
+ * 预投影是只读树遍历:bridge 的 `project()` 不落任何 GPU 状态,acceptance 由
+ * `acknowledge()` 落账且被 epoch 守卫 —— 本次预投影从不 acknowledge,后续
+ * `sync()` 的正式投影会自增 epoch 使其自然作废,几何/材质/纹理缓存(Map 命中)
+ * 反而被第二次投影复用。投影失败返回 undefined(fail-open 回全量等待,不抛)。
+ */
+export function projectionFirstFrameMainKeys(projection: ThreeProjectionBridge, root: ThreeObjectSource,
+  cameraLayerMask: number | undefined, view?: RenderView): readonly string[] | undefined {
+  try {
+    const projected = projection.project(root, {
+      cameraLayerMask: cameraLayerMask ?? 1,
+      ...(view ? { view } : {}),
+    });
+    return projected.ok ? firstFramePipelineMainKeys(projected.packet) : undefined;
+  } catch {
+    return undefined;
+  }
 }

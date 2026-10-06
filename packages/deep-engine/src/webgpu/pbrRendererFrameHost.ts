@@ -85,6 +85,12 @@ export interface PbrRendererFrameHost {
    * closest-hit 命中记录,写 rgba16float indirection 供 SSR 合成后屏外填充。
    */
   rtSpecularIndirection: import("../rayTracing/rtSpecularFramePasses.js").RtSpecularIndirectionPass | undefined;
+  /**
+   * RT 反射遮蔽档反照率供给钩子(可选;按命中实例原始 TLAS 下标 4 f32/实例)。宿主
+   * (app 层,RenderPacket 材质表在手方)供给后逐帧覆写执行器缓冲;缺省 = 执行器
+   * 预填中性 0.5(旧基线着色,如实登记)。长度须精确 instanceCount×4(encode 校验)。
+   */
+  rtReflectionsBounceAlbedos?: Float32Array;
   readonly deviceEpoch: RendererDeviceEpoch;
   readonly depthResolve: PbrDepthResolvePass | undefined;
   readonly diagnostics: PbrRendererDiagnostics;

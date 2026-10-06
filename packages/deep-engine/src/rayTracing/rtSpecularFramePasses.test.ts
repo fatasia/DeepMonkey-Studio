@@ -4,11 +4,11 @@ import { RT_SPECULAR_BOUNCE_ALBEDO, RT_SPECULAR_INDIRECTION_PARAMS_BYTES } from 
 import { RT_SPECULAR_FILL_PARAMS_BYTES } from "./rtSpecularFillKernel.js";
 
 /**
- * RT specular 帧执行器合同(2026-10-06 P1 质量主线切片):同步 encode(postprocess
- * 家族合同,消费点在同步帧链内禁异步括夹)、自有 uniform、bind LRU 4、无 readback;
- * 差界面(96B/16B 参数、7/6 槽绑定、视图身份缓存键)逐项钉死。GPU 侧 mock 同族惯例;
- * 真机 dispatch 语义由 scripts/rtSpecularGiGpuTest.mjs 覆盖(indirection==CPU 镜像 +
- * fill on/off 对拍)。
+ * RT specular 帧执行器合同(2026-10-06 P1 质量主线切片;同日遮蔽+反照率切片更新绑定面):
+ * 同步 encode(postprocess 家族合同,消费点在同步帧链内禁异步括夹)、自有 uniform、
+ * bind LRU 4、无 readback;差界面(96B/16B 参数、8/6 槽绑定、视图身份缓存键)逐项钉死。
+ * GPU 侧 mock 同族惯例;真机 dispatch 语义由 scripts/rtSpecularGiGpuTest.mjs 覆盖
+ * (indirection==CPU 镜像 + 遮蔽/反照率差分 + fill on/off 对拍)。
  */
 
 function deviceStub() {
@@ -59,7 +59,8 @@ function encoderStub() {
 
 function indirectionInput(width = 16, height = 8): Parameters<RtSpecularIndirectionPass["encode"]>[1] {
   return { linearDepthView: view("linear-depth"), viewNormalView: view("view-normal"), brdfLutView: view("brdf"),
-    rtHitView: view("rt-hit"), indirectionView: view("indirection"), width, height,
+    rtHitView: view("rt-hit"), bounceShadingView: view("bounce-shading"), indirectionView: view("indirection"),
+    width, height,
     params: { width, height, tanHalfFov: 0.6, aspect: 1.5, surfaceToLightWorld: [0.4, 0.8, -0.45],
       lightColor: [1, 0.96, 0.9], lightIntensity: 3.2, envRadiance: [0.05, 0.06, 0.08], fresnelF0: 0.05 } };
 }
@@ -83,13 +84,16 @@ describe("RtSpecularIndirectionPass", () => {
     pass.encode(encoder, input);
     expect(passes).toHaveLength(1);
     expect(passes[0]!.dispatches).toEqual([[2, 1, 1]]);
-    expect(f.bindGroups[0]!.entries.map((entry) => entry.binding)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    // 8 槽:0..2 GBuffer/brdf,3 采样器,4 uniform,5 命中记录,6 输出,7 遮蔽记录。
+    expect(f.bindGroups[0]!.entries.map((entry) => entry.binding)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
     // 同一视图身份二次 encode 命中缓存(不重建 bind group)。
     pass.encode(encoder, input);
     expect(f.bindGroups).toHaveLength(1);
-    // 任一视图身份变化 = 新绑定(LRU 4)。
+    // 任一视图身份变化 = 新绑定(LRU 4);遮蔽记录视图也参与缓存键(消费端逐槽对应)。
     pass.encode(encoder, { ...input, indirectionView: view("indirection-2") });
     expect(f.bindGroups).toHaveLength(2);
+    pass.encode(encoder, { ...indirectionInput(), bounceShadingView: view("bounce-shading-2") });
+    expect(f.bindGroups).toHaveLength(3);
     pass.destroy();
     expect(f.buffers[0]!.destroy).toHaveBeenCalled();
   });

@@ -1,4 +1,5 @@
 import type { LightVector3 } from "./types.js";
+import { evaluateIesShadingFactor, type PackedIesShading } from "./iesShading.js";
 import { evaluateMegaLightCpu, MEGALIGHTS_RIS_CANDIDATES, MEGALIGHTS_RIS_M,
   MEGALIGHTS_SPATIAL_REUSE_RADIUS, type MegaLight } from "./megaLights.js";
 
@@ -98,6 +99,12 @@ export interface MegaLightsFrameInput {
    * 只乘 shade 侧:self 路径乘本像素、空间分支乘源像素(ReSTIR DI visibility reuse
    * 惯例);缺省 undefined = 恒 1(M1 逐位)。目标权重保持无遮挡口径。 */
   readonly visibility?: Float32Array | undefined;
+  /** E02 IES 打包载荷(packIesShading 输出;2026-10-06 native IES 注入切片随帧链
+   * 开放)。携带 iesSpotIndex 的灯:因子 = evaluateIesShadingFactor(同一份打包字节,
+   * GPU binding 8 同源),乘在 cone 侧——目标权重与胜者着色同变(与 WGSL
+   * deepMegaContribution 的 `radiance × attenuation × cone × ies` 同位)。缺省
+   * undefined = 因子恒 1,帧输出与无 IES 逐位一致。 */
+  readonly ies?: PackedIesShading | undefined;
   readonly frame: number;
   readonly config: MegaLightsFrameConfig;
 }
@@ -132,21 +139,40 @@ export function megaSurfaceDecodeCpu(surface: readonly (number | LightVector3)[]
     metallic: (surface[0] as readonly number[])[3] ?? 0, roughness: (surface[1] as readonly number[])[3] ?? 0 };
 }
 
-function surfaceEvaluation(lights: readonly MegaLight[], surface: readonly (number | LightVector3)[], index: number): LightVector3 {
-  return evaluateMegaLightCpu(lights[index]!, megaSurfaceDecodeCpu(surface));
+/** IES 因子钩子(打包字节真值;与 WGSL deepMegaContribution 同位:方向取打包口径
+ * 的单位向量(打包时归一),surfaceToLight 由 evaluateMegaLightCpu 传入同域向量;
+ * 0.5° 网格量化吸收两端 acos/atan2 的 ULP 差异,iesShading.evaluateIesShadingFactor
+ * 权威)。 */
+function megaIesFactorOf(ies: PackedIesShading): (light: MegaLight, surfaceToLight: LightVector3) => number {
+  return (light, surfaceToLight) => {
+    if (light.iesSpotIndex === undefined) return 1;
+    const direction = light.directionView ?? [0, 0, 1];
+    const length = Math.hypot(direction[0], direction[1], direction[2]);
+    const packedDirection: LightVector3 = [direction[0]! / length, direction[1]! / length, direction[2]! / length];
+    return evaluateIesShadingFactor(ies, light.iesSpotIndex, packedDirection, surfaceToLight);
+  };
+}
+
+function surfaceEvaluation(lights: readonly MegaLight[], surface: readonly (number | LightVector3)[],
+  index: number, ies?: PackedIesShading | undefined): LightVector3 {
+  const iesFactor = ies === undefined ? undefined : megaIesFactorOf(ies);
+  return evaluateMegaLightCpu(lights[index]!, megaSurfaceDecodeCpu(surface),
+    ...(iesFactor === undefined ? [] : [iesFactor] as const));
 }
 
 /** 目标权重 = luminance(全量单灯贡献)(与 WGSL deepMegaContribution+luminance 同式同序)。 */
 export function megaTargetWeightCpu(lights: readonly MegaLight[],
-  surface: readonly (number | LightVector3)[], index: number): number {
-  return luminance(surfaceEvaluation(lights, surface, index));
+  surface: readonly (number | LightVector3)[], index: number,
+  ies?: PackedIesShading | undefined): number {
+  return luminance(surfaceEvaluation(lights, surface, index, ies));
 }
 
 /** 胜者着色(可见性因子乘 shade 侧;与 WGSL deepMegaShadeWinner 同式同位——
  * 缺省 1.0 = M1 恒 1 行为,×1.0 精确;穷举参考不走此参数,保持无遮挡精确和)。 */
 export function megaShadeWinnerCpu(lights: readonly MegaLight[],
-  surface: readonly (number | LightVector3)[], index: number, visibility = 1): LightVector3 {
-  const shade = surfaceEvaluation(lights, surface, index);
+  surface: readonly (number | LightVector3)[], index: number, visibility = 1,
+  ies?: PackedIesShading | undefined): LightVector3 {
+  const shade = surfaceEvaluation(lights, surface, index, ies);
   return [shade[0] * visibility, shade[1] * visibility, shade[2] * visibility];
 }
 
@@ -177,16 +203,17 @@ export function mergeReservoirCpu(reservoir: RisReservoir, weight: number, winne
 /** 蓄水池收尾:W_Y = N × w_sum/(M × t_y)(t_y 胜者目标权重在本像素重评价;
  * 与 WGSL deepMegaReservoirFinish 同式;趟二内联同式,本函数供外部诊断/测试复用)。 */
 export function finishReservoirCpu(reservoir: RisReservoir, lights: readonly MegaLight[],
-  surface: readonly (number | LightVector3)[], lightCount: number): number {
+  surface: readonly (number | LightVector3)[], lightCount: number,
+  ies?: PackedIesShading | undefined): number {
   if (reservoir.winner === MEGALIGHTS_INVALID_LIGHT || reservoir.m <= 0) return 0;
-  const winnerWeight = megaTargetWeightCpu(lights, surface, reservoir.winner);
+  const winnerWeight = megaTargetWeightCpu(lights, surface, reservoir.winner, ies);
   if (winnerWeight <= 0) return 0;
   return lightCount * reservoir.weightSum / (reservoir.m * winnerWeight);
 }
 
 /** 趟一:K 候选 + 时域合并(与 WGSL buildReservoirs 入口同式)。 */
 export function buildReservoirPassCpu(input: MegaLightsFrameInput): RisReservoir[] {
-  const { lights, surfaces, previous, motionUv, frame, config } = input;
+  const { lights, surfaces, previous, motionUv, frame, config, ies } = input;
   const { width, height } = config;
   const lightCount = lights.length;
   const requested = config.candidateCount ?? MEGALIGHTS_RIS_CANDIDATES;
@@ -202,7 +229,7 @@ export function buildReservoirPassCpu(input: MegaLightsFrameInput): RisReservoir
       for (let k = 0; k < candidateCount; k++) {
         // 穷举模式第 k 个候选恒 k(遍历全灯);随机模式均匀 i.i.d.
         const candidate = config.exhaustive && k < lightCount ? k : Math.min(lightCount - 1, Math.floor(stream.next() * lightCount));
-        const weight = megaTargetWeightCpu(lights, surface, candidate);
+        const weight = megaTargetWeightCpu(lights, surface, candidate, ies);
         if (weight > 0) mergeReservoirCpu(reservoir, weight, candidate, 1, stream.next());
       }
       if (temporal) {
@@ -211,7 +238,7 @@ export function buildReservoirPassCpu(input: MegaLightsFrameInput): RisReservoir
           const history = previous[previousIndex]!;
           if (history.winner !== MEGALIGHTS_INVALID_LIGHT
             && temporalGateCpu(surface, surfaces[previousIndex]!)) {
-            const weight = megaTargetWeightCpu(lights, surface, history.winner);
+            const weight = megaTargetWeightCpu(lights, surface, history.winner, ies);
             // 历史胜者按**单候选**合并(与 WGSL 同式同注释:克隆计权在胜者冻结后产生
             // 持久像素偏置,2026-10-04 定案;真 MIS 复用属 M2)。
             mergeReservoirCpu(reservoir, weight, history.winner, 1, stream.next());
@@ -247,7 +274,8 @@ export function buildReservoirPassCpu(input: MegaLightsFrameInput): RisReservoir
 function spatialUnbiasedAverageCpu(lights: readonly MegaLight[],
   surfaces: readonly (readonly (number | LightVector3)[])[], surface: readonly (number | LightVector3)[],
   built: readonly RisReservoir[], x: number, y: number, width: number, height: number,
-  radius: number, lightCount: number, visibility: Float32Array | undefined): LightVector3 | null {
+  radius: number, lightCount: number, visibility: Float32Array | undefined,
+  ies?: PackedIesShading | undefined): LightVector3 | null {
   let accR = 0, accG = 0, accB = 0, sources = 0;
   for (let offsetY = -radius; offsetY <= radius; offsetY++) {
     for (let offsetX = -radius; offsetX <= radius; offsetX++) {
@@ -258,11 +286,11 @@ function spatialUnbiasedAverageCpu(lights: readonly MegaLight[],
       if (source.winner === MEGALIGHTS_INVALID_LIGHT || source.m <= 0) continue;
       const sourceSurface = surfaces[sourceIndex]!;
       if (!spatialGateCpu(surface, sourceSurface)) continue;
-      const sourceTarget = megaTargetWeightCpu(lights, sourceSurface, source.winner);
+      const sourceTarget = megaTargetWeightCpu(lights, sourceSurface, source.winner, ies);
       if (sourceTarget <= 0) continue;
       const sourceWeight = lightCount * source.weightSum / (source.m * sourceTarget);
       // 源像素可见性复用(与 WGSL deepMegaVisibilityAt(sourceIndex) 同位;过门传递)。
-      const shade = megaShadeWinnerCpu(lights, surface, source.winner, visibility?.[sourceIndex] ?? 1);
+      const shade = megaShadeWinnerCpu(lights, surface, source.winner, visibility?.[sourceIndex] ?? 1, ies);
       accR += shade[0] * sourceWeight;
       accG += shade[1] * sourceWeight;
       accB += shade[2] * sourceWeight;
@@ -274,7 +302,7 @@ function spatialUnbiasedAverageCpu(lights: readonly MegaLight[],
 
 /** 趟二:5×5 空间值域平均 + 胜者着色(与 WGSL reuseAndShade 入口同式)。 */
 export function reuseAndShadePassCpu(input: MegaLightsFrameInput, built: readonly RisReservoir[]): MegaLightsFrameOutput {
-  const { lights, surfaces, config, previousColor, visibility } = input;
+  const { lights, surfaces, config, previousColor, visibility, ies } = input;
   const { width, height } = config;
   const lightCount = lights.length;
   const requested = config.candidateCount ?? MEGALIGHTS_RIS_CANDIDATES;
@@ -292,10 +320,11 @@ export function reuseAndShadePassCpu(input: MegaLightsFrameInput, built: readonl
       const reservoir: RisReservoir = { ...built[pixelIndex]! };
       reservoirs[pixelIndex] = reservoir;
       if (config.exhaustive === true) {
-        // 穷举对拍模式:逐灯求和(与簇光逐灯路径同式同序;⑤ 退化一致性腿)。
+        // 穷举对拍模式:逐灯求和(与簇光逐灯路径同式同序;⑤ 退化一致性腿;
+        // IES 随 deepMegaContribution 同位消费,与 WGSL 穷举分支一致)。
         let total: LightVector3 = [0, 0, 0];
         for (let index = 0; index < lights.length; index++) {
-          const c = megaShadeWinnerCpu(lights, surface, index);
+          const c = megaShadeWinnerCpu(lights, surface, index, 1, ies);
           total = [total[0] + c[0], total[1] + c[1], total[2] + c[2]];
         }
         color[pixelIndex * 3] = total[0]; color[pixelIndex * 3 + 1] = total[1]; color[pixelIndex * 3 + 2] = total[2];
@@ -303,7 +332,7 @@ export function reuseAndShadePassCpu(input: MegaLightsFrameInput, built: readonl
       }
       let r: number, g: number, b: number;
       const averaged = spatial ? spatialUnbiasedAverageCpu(lights, surfaces, surface, built,
-        x, y, width, height, radius, lightCount, visibility) : null;
+        x, y, width, height, radius, lightCount, visibility, ies) : null;
       if (averaged !== null) {
         [r, g, b] = averaged;
       } else {
@@ -311,10 +340,10 @@ export function reuseAndShadePassCpu(input: MegaLightsFrameInput, built: readonl
         // 可见性乘本像素 mask(与 WGSL deepMegaVisibilityAt(pixelIndex) 同位)。
         const selfVisibility = visibility?.[pixelIndex] ?? 1;
         const shade = reservoir.winner === MEGALIGHTS_INVALID_LIGHT || reservoir.m <= 0 ? [0, 0, 0] as LightVector3
-          : megaShadeWinnerCpu(lights, surface, reservoir.winner, selfVisibility);
+          : megaShadeWinnerCpu(lights, surface, reservoir.winner, selfVisibility, ies);
         // W_Y 重用 finish 公式(胜者目标权重在本像素重评价)。
         const weightY = reservoir.winner === MEGALIGHTS_INVALID_LIGHT || reservoir.m <= 0 ? 0
-          : megaTargetWeightCpu(lights, surface, reservoir.winner);
+          : megaTargetWeightCpu(lights, surface, reservoir.winner, ies);
         const scaleY = weightY > 0 ? lightCount * reservoir.weightSum / (reservoir.m * weightY) : 0;
         r = shade[0] * scaleY; g = shade[1] * scaleY; b = shade[2] * scaleY;
       }
@@ -365,14 +394,16 @@ function spatialGateCpu(surface: readonly (number | LightVector3)[], neighbor: r
 /**
  * 穷举精确参考(验收②真值端,2026-10-04 定案):逐灯求和 = 零方差真值;
  * 点/聚/面积中心点近似的直接光本是有限和,穷举即离线参考的 S→∞ 极限。
+ * `ies` 缺省恒等;帧内穷举腿与参考须同口径消费(与 WGSL 穷举分支一致)。
  */
 export function megaLightsExhaustiveReferenceCpu(lights: readonly MegaLight[],
-  surfaces: readonly (readonly (number | LightVector3)[])[], width: number, height: number): Float32Array {
+  surfaces: readonly (readonly (number | LightVector3)[])[], width: number, height: number,
+  ies?: PackedIesShading | undefined): Float32Array {
   const color = new Float32Array(width * height * 3);
   for (let pixel = 0; pixel < width * height; pixel++) {
     let total: LightVector3 = [0, 0, 0];
     for (let index = 0; index < lights.length; index++) {
-      const shade = megaShadeWinnerCpu(lights, surfaces[pixel]!, index);
+      const shade = megaShadeWinnerCpu(lights, surfaces[pixel]!, index, 1, ies);
       total = [total[0] + shade[0], total[1] + shade[1], total[2] + shade[2]];
     }
     color[pixel * 3] = total[0]; color[pixel * 3 + 1] = total[1]; color[pixel * 3 + 2] = total[2];

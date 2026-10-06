@@ -52,7 +52,7 @@ fn decode_base64(text: &str) -> Vec<u8> {
     out
 }
 
-fn golden_variant(name: &str) -> Vec<u8> {
+pub(crate) fn golden_variant(name: &str) -> Vec<u8> {
     let json: serde_json::Value = serde_json::from_str(GOLDEN_JSON).expect("golden json parses");
     let bytes_b64 = json["variants"][name]["bytesB64"]
         .as_str()
@@ -64,7 +64,7 @@ fn golden_variant(name: &str) -> Vec<u8> {
 }
 
 /// 相机:取 DAG 包围盒中心,沿 -z 注视;threshold 由用例给。
-fn camera_for(runtime: &ClusterLodDagRuntime, pixel_threshold: f64) -> ClusterLodCamera {
+pub(crate) fn camera_for(runtime: &ClusterLodDagRuntime, pixel_threshold: f64) -> ClusterLodCamera {
     let mut min = [f64::INFINITY; 3];
     let mut max = [f64::NEG_INFINITY; 3];
     for node in &runtime.nodes {

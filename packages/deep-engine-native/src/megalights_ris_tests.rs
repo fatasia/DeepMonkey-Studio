@@ -162,6 +162,7 @@ use crate::megalights_ris::{
             motion_uv,
             previous_color,
             visibility,
+            ies: None,
             frame,
             config,
         }
@@ -320,6 +321,7 @@ use crate::megalights_ris::{
                 motion_uv: None,
                 previous_color: None,
                 visibility: None,
+                ies: None,
                 frame,
                 config,
             };

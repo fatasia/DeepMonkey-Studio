@@ -16,7 +16,7 @@ import { ProbeClipmapPbrController, type ProbeClipmapPbrTarget } from "../webgpu
 import { DeepWebGpuProbeClipmapSession, type DeepWebGpuProbeClipmapDiagnostics } from "./DeepWebGpuProbeClipmapSession.js";
 import { CameraRelativeCoordinates, type CameraRelativeCoordinateSnapshot } from "./cameraRelativeCoordinates.js";
 import { indexObjectBindings } from "./objectBindingIndex.js";
-import { firstFramePipelineMainKeys } from "./firstFramePipelineKeys.js";
+import { firstFramePipelineMainKeys, projectionFirstFrameMainKeys } from "./firstFramePipelineKeys.js";
 import type { DeviceEvent } from "../webgpu/deviceSession.js";
 import { RendererDeviceEpoch } from "../webgpu/rendererDeviceEpoch.js";
 export type { DeepWebGpuShadowSelection } from "./deepWebGpuShadowPolicy.js";
@@ -134,11 +134,22 @@ export class DeepWebGpuBackend {
     const signal = validated.signal ?? new AbortController().signal;
     if (signal.aborted) throw abortError("Deep backend creation cancelled.");
     const rendererSettings = snapshotRendererOptions(validated.renderer ?? {});
-    // 独立包路径已知首帧内容：推导关键 main 管线键，发布只等待首帧必需变体。
-    const renderer = validated.renderPacket && rendererSettings.pipelines?.firstFrameSubset === true
+    // 首帧最小集(T11 语义推广,首帧攻坚 2026-10-07):独立包路径直接推导;投影路径
+    // 在 create 前做一次 CPU 预投影推导同形关键 main 键(预投影不 acknowledge,
+    // epoch 守卫使其被 sync 的正式投影自然作废)。发布只等待首帧必需变体,其余
+    // main/页/mask 阴影变体由既有分级门(首帧验证后 release)背景补齐 —— 与包路径
+    // 生产语义同源。`pipelines.firstFrameSubset === false` 显式退出回全量等待。
+    const firstFrameMainKeys = rendererSettings.pipelines?.firstFrameSubset === false ? undefined
+      : validated.renderPacket ? firstFramePipelineMainKeys(validated.renderPacket)
+      : validated.projection && validated.root
+        ? projectionFirstFrameMainKeys(validated.projection, validated.root,
+          validated.cameraLayerMask, validated.view)
+        : undefined;
+    const renderer = firstFrameMainKeys
       ? Object.freeze({ ...rendererSettings, pipelines: Object.freeze({
           ...rendererSettings.pipelines,
-          firstFrameMainKeys: Object.freeze(firstFramePipelineMainKeys(validated.renderPacket)),
+          firstFrameSubset: true,
+          firstFrameMainKeys: Object.freeze(firstFrameMainKeys),
         }) })
       : rendererSettings;
     const authorChunks = validated.authorChunks;

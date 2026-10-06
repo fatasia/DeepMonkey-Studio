@@ -5,18 +5,21 @@ import { emitRtSpecularIndirectionKernelWgsl, packRtSpecularIndirectionUniform,
   RT_SPECULAR_INDIRECTION_ENTRY_POINT, RT_SPECULAR_INDIRECTION_PARAMS_BYTES } from "./rtSpecularIndirectionKernel.js";
 import { emitRtSpecularFillKernelWgsl, packRtSpecularFillUniform,
   RT_SPECULAR_FILL_BINDINGS, RT_SPECULAR_FILL_ENTRY_POINT, RT_SPECULAR_FILL_PARAMS_BYTES } from "./rtSpecularFillKernel.js";
-import { rtSpecularFillCompositeCpu, rtSpecularIndirectionRecordCpu } from "./rtSpecularIndirectionCpu.js";
+import { rtSpecularFillCompositeCpu, rtSpecularIndirectionRecordCpu, RT_SPECULAR_NEUTRAL_SHADING } from "./rtSpecularIndirectionCpu.js";
 import { ssrBrdfSpecularFractionCpu } from "../postprocess/ssrBrdfFraction.js";
 
 /**
- * RT specular GI 家族合同(2026-10-06 P1 质量主线切片):
+ * RT specular GI 家族合同(2026-10-06 P1 质量主线切片;同日遮蔽+反照率切片更新钉值):
  * - 两内核 WGSL sha256 字节级钉死(同族 rayTraceClosestFrameKernel.test 惯例);
- *   有意变更必须更新钉值 + 复核 SSR 高光分数语义 + 真机对拍后入库。
+ *   有意变更必须更新钉值 + 复核 SSR 高光分数语义 + 真机对拍后入库。indirection 钉值
+ *   变更 = 增 bounceShading 遮蔽记录消费(直接项乘命中点→光源可见性,反照率取命中
+ *   实例材质;无表供给 = 执行器预填中性 0.5),fill 内核未动(钉值不变)。
  * - CPU 镜像 = 可执行规格:命中/miss 语义、SSR 优先透传、双 miss 零变化、
- *   替换换手式逐值断言;高光分数与 SSR 单源(ssrBrdfSpecularFractionCpu)对拍。
+ *   替换换手式逐值断言;高光分数与 SSR 单源(ssrBrdfSpecularFractionCpu)对拍;
+ *   遮蔽 on/off 与反照率 on/off 差分逐值断言(中性基线 == 旧公式恒等)。
  * - ABI:两 pass 只用自有 uniform(96B/16B),帧 uniform(frameAbi 单源)不借位。
  */
-const RT_SPECULAR_INDIRECTION_SHA256 = "16ca72bb59f194f36197a25de83ae28c8e5cd1573856f8b0fc8d78b79a6db634";
+const RT_SPECULAR_INDIRECTION_SHA256 = "070ece75ab9e0e57507d6e8f14b944d4ac101a720203a2bc40e0f8d5064350db";
 const RT_SPECULAR_FILL_SHA256 = "310e450813a03933171380dad50948fd17aaee07cb6b3162ac8bdbe79999d975";
 
 const baseParams = {
@@ -33,8 +36,8 @@ describe("rt specular indirection kernel generation contract", () => {
     expect(createHash("sha256").update(wgsl).digest("hex")).toBe(RT_SPECULAR_INDIRECTION_SHA256);
   });
 
-  it("binds gbuffer/brdf/record/indirection in executor order (7 slots)", () => {
-    expect(RT_SPECULAR_INDIRECTION_BINDINGS).toHaveLength(7);
+  it("binds gbuffer/brdf/record/indirection/shading in executor order (8 slots)", () => {
+    expect(RT_SPECULAR_INDIRECTION_BINDINGS).toHaveLength(8);
     RT_SPECULAR_INDIRECTION_BINDINGS.forEach((entry, index) => {
       expect(entry.binding).toBe(index);
       expect(wgsl).toContain(`@binding(${index})`);
@@ -44,6 +47,8 @@ describe("rt specular indirection kernel generation contract", () => {
     expect(wgsl).toContain("var viewNormalTex: texture_2d<f32>;");
     expect(wgsl).toContain("var rtHitRecord: texture_storage_2d<rgba32float, read>;");
     expect(wgsl).toContain("var rtIndirection: texture_storage_2d<rgba16float, write>;");
+    // 遮蔽记录(帧通道 illumination 档产出)与命中记录同族 rgba32float 只读。
+    expect(wgsl).toContain("var bounceShading: texture_storage_2d<rgba32float, read>;");
     // 自有 uniform:恰好一条 uniform buffer 绑定,不触碰帧 uniform 槽位(frameAbi 单源)。
     expect(wgsl.match(/var<uniform>/gu)).toHaveLength(1);
     expect(RT_SPECULAR_INDIRECTION_PARAMS_BYTES).toBe(96);
@@ -55,11 +60,15 @@ describe("rt specular indirection kernel generation contract", () => {
     // miss fail-closed:t<=0(帧通道 miss)/深度非正 一律写全零,不产生虚假能量。
     expect(wgsl).toContain("if (!(record.x > 0.0)) { rtIndirectionStoreMiss(px); return; }");
     expect(wgsl).toContain("if (!(linearDepth > 0.0)) { rtIndirectionStoreMiss(px); return; }");
-    // SSR 同款 N·V 重建与高光分数;解析一次反弹 = N·L 主方向光 + 环境项,中性反照率。
+    // SSR 同款 N·V 重建与高光分数;解析一次反弹 = N·L 主方向光 + 环境项。
     expect(wgsl).toContain("let cosTheta = clamp(-dot(viewNormal, incident), 0.0, 1.0);");
     expect(wgsl).toContain("rtSpecSpecularFraction(cosTheta, roughness, indirectionParams.misc.x)");
     expect(wgsl).toContain("clamp(dot(hitNormal, indirectionParams.lightDirection.xyz), 0.0, 1.0)");
-    expect(wgsl).toContain(`* ${RT_SPECULAR_BOUNCE_ALBEDO}`);
+    // 遮蔽+反照率语义:直接光项乘帧通道可见性,反照率逐通道 clamp 后乘入。
+    expect(wgsl).toContain("let shading = textureLoad(bounceShading, vec2<i32>(px));");
+    expect(wgsl).toContain("let bounceAlbedo = clamp(shading.rgb, vec3f(0.0), vec3f(1.0));");
+    expect(wgsl).toContain("* shading.a;");
+    expect(wgsl).toContain("let oneBounce = (direct + indirectionParams.envRadiance.rgb) * bounceAlbedo;");
     expect(RT_SPECULAR_BOUNCE_ALBEDO).toBe(0.5);
   });
 });
@@ -119,6 +128,9 @@ describe("indirection CPU mirror (executable spec)", () => {
     }
     expect(rtSpecularIndirectionRecordCpu([1.5, 0, 1, 0], [0, 0, 1], 0, 0, 3, 4, 8, 8, baseParams))
       .toEqual([0, 0, 0, 0]);
+    // 遮蔽档输入同 miss 语义:命中记录缺失时遮蔽记录不救活(无虚假能量)。
+    expect(rtSpecularIndirectionRecordCpu([-1, 0, 0, 0], [0, 0, 1], 0, 2, 3, 4, 8, 8, baseParams,
+      { albedo: [0.9, 0.2, 0.1], visibility: 1 })).toEqual([0, 0, 0, 0]);
   });
 
   it("matches the shared SSR specular fraction source and the one-bounce formula", () => {
@@ -142,6 +154,52 @@ describe("indirection CPU mirror (executable spec)", () => {
     const back = rtSpecularIndirectionRecordCpu([2.5, 0, -1, 0], [0, 0, 1], 0.25, 4, 3, 4, 8, 8, baseParams);
     expect(back[3]).toBeCloseTo(out[3], 12);
     expect(back[1]).toBeLessThan(out[1]);
+  });
+
+  it("neutral shading is bit-identical to the legacy visibility=1 + albedo 0.5 baseline", () => {
+    const record = [2.5, 0, 1, 0] as const;
+    const legacy = rtSpecularIndirectionRecordCpu(record, [0, 0, 1], 0.25, 4, 3, 4, 8, 8, baseParams);
+    const neutral = rtSpecularIndirectionRecordCpu(record, [0, 0, 1], 0.25, 4, 3, 4, 8, 8, baseParams,
+      RT_SPECULAR_NEUTRAL_SHADING);
+    expect(neutral).toEqual(legacy);
+    const explicitNeutral = rtSpecularIndirectionRecordCpu(record, [0, 0, 1], 0.25, 4, 3, 4, 8, 8, baseParams,
+      { albedo: [0.5, 0.5, 0.5], visibility: 1 });
+    expect(explicitNeutral).toEqual(legacy);
+  });
+
+  it("occlusion zeroes only the direct term (on/off differential, ambient term survives)", () => {
+    const record = [2.5, 0, 1, 0] as const;
+    const lit = rtSpecularIndirectionRecordCpu(record, [0, 0, 1], 0.25, 4, 3, 4, 8, 8, baseParams,
+      { albedo: [0.6, 0.5, 0.4], visibility: 1 });
+    const occluded = rtSpecularIndirectionRecordCpu(record, [0, 0, 1], 0.25, 4, 3, 4, 8, 8, baseParams,
+      { albedo: [0.6, 0.5, 0.4], visibility: 0 });
+    // fraction 不受遮蔽影响;遮挡侧 direct 项归零,只剩环境项×反照率(严格更暗)。
+    expect(occluded[3]).toBeCloseTo(lit[3], 12);
+    const ambientR = baseParams.envRadiance[0]! * 0.6;
+    expect(occluded[0]).toBeCloseTo(ambientR * occluded[3], 12);
+    expect(occluded[0]).toBeLessThan(lit[0]);
+    expect(occluded[1]).toBeLessThan(lit[1]);
+    expect(occluded[2]).toBeLessThan(lit[2]);
+    // 遮蔽不放大能量:遮挡侧 ≤ 可见侧逐通道。
+    for (let c = 0; c < 3; c++) expect(occluded[c]!).toBeLessThanOrEqual(lit[c]! + 1e-12);
+  });
+
+  it("real albedo replaces the neutral constant (albedo differential) and clamps out-of-range", () => {
+    const record = [2.5, 0, 1, 0] as const;
+    const neutral = rtSpecularIndirectionRecordCpu(record, [0, 0, 1], 0.25, 4, 3, 4, 8, 8, baseParams);
+    const real = rtSpecularIndirectionRecordCpu(record, [0, 0, 1], 0.25, 4, 3, 4, 8, 8, baseParams,
+      { albedo: [0.85, 0.3, 0.1], visibility: 1 });
+    // fraction 恒等;反照率差异直接进入预乘 rgb(暖色墙面 vs 中灰)。
+    expect(real[3]).toBeCloseTo(neutral[3], 12);
+    expect(real[0]).toBeGreaterThan(neutral[0]);
+    expect(real[1]).toBeLessThan(neutral[1]);
+    expect(real[2]).toBeLessThan(neutral[2]);
+    // 越界反照率 clamp 到 [0,1](禁注入超量能量);负值 clamp 到 0。
+    const saturated = rtSpecularIndirectionRecordCpu(record, [0, 0, 1], 0.25, 4, 3, 4, 8, 8, baseParams,
+      { albedo: [2.5, -0.3, 1], visibility: 1 });
+    const unit = rtSpecularIndirectionRecordCpu(record, [0, 0, 1], 0.25, 4, 3, 4, 8, 8, baseParams,
+      { albedo: [1, 0, 1], visibility: 1 });
+    expect(saturated).toEqual(unit);
   });
 });
 

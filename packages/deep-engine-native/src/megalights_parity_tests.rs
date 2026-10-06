@@ -14,17 +14,22 @@
 //!   uniform×total 比较边界);③f32 color 词 ≤2 ulp(f64 链 1e-9 传播后
 //!   落点翻转裕度);④打包方向词(normalize 的 hypot)≤1 ulp。
 
+use crate::megalights_ies::MegaLightsIesPacking;
 use crate::megalights_ris::{
     build_reservoir_pass, evaluate_mega_light, finish_reservoir, mega_lights_exhaustive_reference,
-    mega_lights_frame, mega_shade_winner, mega_surface_decode, mega_target_weight, mega_view_depth,
-    mega_light_range_attenuation, mega_light_spot_cone, pack_mega_lights, reuse_and_shade_pass,
-    sha256_of_words, DirectLightingPath, MegaLight, MegaLightKind, MegaLightsFrameConfig,
-    MegaLightsFrameInput, MegaSurfaceRow, RisReservoir, MEGALIGHTS_INVALID_LIGHT,
-    MEGALIGHTS_RIS_CANDIDATES, MEGALIGHTS_SPATIAL_NORMAL_GATE, MEGALIGHTS_SPATIAL_REUSE_RADIUS,
-    MEGALIGHTS_TEMPORAL_DEPTH_GATE, MEGA_LIGHT_ABI_VERSION, MEGA_LIGHT_KIND_AREA_RECT,
-    MEGA_LIGHT_KIND_POINT, MEGA_LIGHT_KIND_SPOT, MEGA_LIGHT_STRIDE_BYTES, MEGA_LIGHT_WORDS,
+    mega_lights_exhaustive_reference_ies, mega_lights_frame, mega_shade_winner,
+    mega_surface_decode, mega_target_weight, mega_view_depth, mega_light_range_attenuation,
+    mega_light_spot_cone, pack_mega_lights, reuse_and_shade_pass, sha256_of_words,
+    DirectLightingPath, MegaLight, MegaLightKind, MegaLightsFrameConfig, MegaLightsFrameInput,
+    MegaSurfaceRow, RisReservoir, MEGALIGHTS_INVALID_LIGHT, MEGALIGHTS_RIS_CANDIDATES,
+    MEGALIGHTS_SPATIAL_NORMAL_GATE, MEGALIGHTS_SPATIAL_REUSE_RADIUS, MEGALIGHTS_TEMPORAL_DEPTH_GATE,
+    MEGA_LIGHT_ABI_VERSION, MEGA_LIGHT_KIND_AREA_RECT, MEGA_LIGHT_KIND_POINT, MEGA_LIGHT_KIND_SPOT,
+    MEGA_LIGHT_STRIDE_BYTES, MEGA_LIGHT_WORDS,
 };
+use crate::megalights_visibility::{winner_visibility_mask, MegaLightsVisibilityScene};
+use crate::ray_backend::{build_bvh, TlasInstance};
 use serde_json::Value;
+use std::rc::Rc;
 
 const FIXTURE: &str = include_str!("../../deep-engine/fixtures/megalights-native-parity-v1.json");
 
@@ -98,9 +103,22 @@ fn parse_lights(fixture: &Value) -> Vec<MegaLight> {
                     })
                     .unwrap_or([0.0, 0.0]),
                 two_sided: entry["twoSided"].as_bool().unwrap_or(false),
+                ies_spot_index: entry["iesSpotIndex"].as_u64().map(|value| value as u32),
             }
         })
         .collect()
+}
+
+/// fixture `inputs.iesPacked`(E02 打包 vec4 字流)→ IES 载荷视图(测试进程期存活)。
+fn fixture_ies(fixture: &Value) -> MegaLightsIesPacking<'static> {
+    let words: Vec<f32> = fixture["inputs"]["iesPacked"]
+        .as_array()
+        .expect("fixture iesPacked")
+        .iter()
+        .map(|value| value.as_f64().expect("ies word") as f32)
+        .collect();
+    let spot_count = fixture["inputs"]["iesSpotCount"].as_u64().expect("iesSpotCount") as usize;
+    MegaLightsIesPacking::new(Box::leak(words.into_boxed_slice()), spot_count)
 }
 
 fn parse_surfaces(fixture: &Value) -> Vec<MegaSurfaceRow> {
@@ -150,11 +168,13 @@ fn parse_frame_input<'a>(
     previous: Option<&'a [RisReservoir]>,
     previous_color: Option<&'a [f32]>,
     borrow: &FrameBorrow<'a>,
+    ies: Option<&'a MegaLightsIesPacking<'a>>,
 ) -> MegaLightsFrameInput<'a> {
     let width = fixture["inputs"]["width"].as_u64().expect("width") as u32;
     let height = fixture["inputs"]["height"].as_u64().expect("height") as u32;
     let with_motion = frame["withMotion"].as_bool().unwrap_or(false);
     let with_visibility = frame["withVisibility"].as_bool().unwrap_or(false);
+    let with_ies = frame["withIes"].as_bool().unwrap_or(false);
     MegaLightsFrameInput {
         lights,
         surfaces,
@@ -162,6 +182,7 @@ fn parse_frame_input<'a>(
         motion_uv: if with_motion { borrow.motion_uv } else { None },
         previous_color,
         visibility: if with_visibility { borrow.visibility } else { None },
+        ies: if with_ies { ies } else { None },
         frame: frame["frame"].as_u64().expect("frame") as u32,
         config: MegaLightsFrameConfig {
             width,
@@ -222,6 +243,122 @@ fn golden_packing_matches_ts_wordwise() {
     assert_eq!(packed.point_count, fixture["packed"]["pointCount"].as_u64().unwrap() as usize);
     assert_eq!(packed.spot_count, fixture["packed"]["spotCount"].as_u64().unwrap() as usize);
     assert_eq!(packed.area_count, fixture["packed"]["areaCount"].as_u64().unwrap() as usize);
+    assert_eq!(
+        packed.ies_reference_count,
+        fixture["packed"]["iesReferenceCount"].as_u64().unwrap() as usize,
+        "IES 行号引用计数(64B ABI 字 11 启用后的闭合校验位)"
+    );
+}
+
+/// IES 因子向量黄金腿(2026-10-06):fixture `iesFactorVectors` 的 TS 真值
+/// (evaluateIesShadingFactor)位级对拍——因子 = f32 展开值 × f32 scale 的 f64 乘积,
+/// 双端精确;角度经 0.5° 网格量化吸收 acos/atan2 的跨 libm ULP(向量取值避开半度中点)。
+#[test]
+fn ies_factor_vectors_match_ts_bit_level() {
+    let fixture = fixture();
+    let ies = fixture_ies(fixture);
+    for (index, vector) in fixture["iesFactorVectors"].as_array().expect("ies factor vectors").iter().enumerate() {
+        let spot_index = vector["spotIndex"].as_u64().expect("spotIndex") as usize;
+        let vec3 = |key: &str| -> [f64; 3] {
+            let values = vector[key].as_array().expect(key);
+            std::array::from_fn(|slot| values[slot].as_f64().expect("component"))
+        };
+        let factor = crate::megalights_ies::evaluate_ies_shading_factor(
+            &ies,
+            spot_index,
+            vec3("lightDirection"),
+            vec3("surfaceToLight"),
+        );
+        let expected = vector["factor"].as_f64().expect("factor");
+        assert_eq!(
+            factor, expected,
+            "ies factor vector [{index}] spot {spot_index} drift {factor} vs {expected}"
+        );
+    }
+    // 载荷闭合:fixture spot 计数与打包字 11(行号+1)与灯池字位一致。
+    let lights = parse_lights(fixture);
+    let packed = pack_mega_lights(&lights);
+    for (index, light) in lights.iter().enumerate() {
+        let expected = light.ies_spot_index.map_or(0.0f32, |row| (row + 1) as f32);
+        assert_eq!(packed.data[index * MEGA_LIGHT_WORDS + 11], expected, "ies word drift at light {index}");
+    }
+}
+
+/// 胜者可见性 mask 黄金腿(2026-10-06 可见性射线档):两级 TLAS 遮挡对拍——
+/// fixture `winnerVisibility.maskGolden` 由 TS 权威 traceTlasClosest 仲裁生成
+/// (GPU 两级追踪的仲裁基准;boolean 语义无跨 libm 面),native 从同一场景重放:
+/// frame 0 胜者蓄水池 → 胜者射线(origin 外推 + tMax 双侧收缩,相对偏移 1e-3)
+/// → 两级遮挡 → mask 逐像素相等。
+#[test]
+fn winner_visibility_mask_matches_ts_golden() {
+    let fixture = fixture();
+    let visibility = &fixture["winnerVisibility"];
+    let frame_index = visibility["frameIndex"].as_u64().expect("frameIndex") as usize;
+    let viewToWorld: [f32; 16] = std::array::from_fn(|slot| {
+        f32::try_from(visibility["viewToWorld"][slot].as_f64().expect("viewToWorld word")).expect("f32")
+    });
+    let ray_mask = u32::try_from(visibility["rayMask"].as_u64().expect("rayMask")).expect("u32 mask");
+    assert!(
+        (visibility["biasRelative"].as_f64().expect("biasRelative")
+            - crate::megalights_visibility::MEGA_LIGHTS_VISIBILITY_RAY_BIAS_RELATIVE)
+            .abs()
+            < 1e-15,
+        "relative bias contract drift"
+    );
+    let occluder = &visibility["occluder"];
+    let vertices: Vec<f32> = occluder["vertices"]
+        .as_array()
+        .expect("occluder vertices")
+        .iter()
+        .map(|value| f32::try_from(value.as_f64().expect("vertex")).expect("f32"))
+        .collect();
+    let indices: Vec<u32> = occluder["indices"]
+        .as_array()
+        .expect("occluder indices")
+        .iter()
+        .map(|value| u32::try_from(value.as_u64().expect("index")).expect("u32"))
+        .collect();
+    let world_to_local: [f32; 12] = std::array::from_fn(|slot| {
+        f32::try_from(occluder["worldToLocal"][slot].as_f64().expect("worldToLocal word")).expect("f32")
+    });
+    let instance_mask = u32::try_from(occluder["mask"].as_u64().expect("occluder mask")).expect("u32");
+    let blas = build_bvh(&vertices, &indices).expect("occluder blas builds");
+    let instances = vec![TlasInstance {
+        id: occluder["id"].as_u64().expect("occluder id") as u32,
+        blas_vertices: Rc::new(vertices),
+        blas_indices: Rc::new(indices),
+        blas,
+        world_to_local,
+        mask: instance_mask,
+    }];
+    let scene = MegaLightsVisibilityScene { instances: &instances, ray_mask };
+    // frame[frameIndex] 蓄水池重放(与 golden frames 腿同输入:IES + motion/visibility 布尔)。
+    let lights = parse_lights(fixture);
+    let surfaces = parse_surfaces(fixture);
+    let owned_motion = fixture_motion(fixture);
+    let owned_visibility = fixture_visibility(fixture);
+    let borrow = FrameBorrow {
+        motion_uv: Some(&owned_motion),
+        visibility: Some(&owned_visibility),
+    };
+    let ies = fixture_ies(fixture);
+    let frame = &fixture["frames"].as_array().expect("frames")[frame_index];
+    let input = parse_frame_input(fixture, frame, &lights, &surfaces, None, None, &borrow, Some(&ies));
+    let built = build_reservoir_pass(&input);
+    let mask = winner_visibility_mask(&lights, &surfaces, &built, &viewToWorld, Some(&scene));
+    let golden: Vec<f64> = visibility["maskGolden"]
+        .as_array()
+        .expect("maskGolden")
+        .iter()
+        .map(|value| value.as_f64().expect("mask word"))
+        .collect();
+    assert_eq!(mask.len(), golden.len(), "mask pixel count drift");
+    for (pixel, (actual, expected)) in mask.iter().zip(&golden).enumerate() {
+        assert_eq!(f64::from(*actual), *expected, "visibility mask drift at pixel {pixel}");
+    }
+    // fail-closed 腿:同输入无场景 → 全 1(= 旧行为)。
+    let fallback = winner_visibility_mask(&lights, &surfaces, &built, &viewToWorld, None);
+    assert!(fallback.iter().all(|value| *value == 1.0), "no-scene fallback must be all visible");
 }
 
 /// ABI 常量互钉(与 TS megaLights.ts/megaLightsAbi.ts 词汇)。
@@ -316,6 +453,7 @@ fn golden_frames_match_ts_structure_and_words() {
         visibility: Some(&owned_visibility),
     };
     let mut replayed: Vec<(Vec<RisReservoir>, Vec<f32>)> = Vec::new();
+    let ies = fixture_ies(fixture);
     for (index, frame) in fixture["frames"].as_array().expect("frames").iter().enumerate() {
         let (previous, previous_color) = if index == 0 {
             (None, None)
@@ -323,7 +461,7 @@ fn golden_frames_match_ts_structure_and_words() {
             let (reservoirs, color) = &replayed[index - 1];
             (Some(reservoirs.as_slice()), Some(color.as_slice()))
         };
-        let input = parse_frame_input(fixture, frame, &lights, &surfaces, previous, previous_color, &borrow);
+        let input = parse_frame_input(fixture, frame, &lights, &surfaces, previous, previous_color, &borrow, Some(&ies));
         let built = build_reservoir_pass(&input);
         let output = reuse_and_shade_pass(&input, &built);
         // 趟一蓄水池(结构位级 + f64 标量哨兵)。
@@ -394,9 +532,10 @@ fn exhaustive_frame_equals_reference_within_sentinel() {
     let owned_motion = fixture_motion(fixture);
     let owned_visibility = fixture_visibility(fixture);
     let borrow = FrameBorrow { motion_uv: Some(&owned_motion), visibility: Some(&owned_visibility) };
-    let input = parse_frame_input(fixture, exhaustive_frame, &lights, &surfaces, None, None, &borrow);
+    let ies = fixture_ies(fixture);
+    let input = parse_frame_input(fixture, exhaustive_frame, &lights, &surfaces, None, None, &borrow, Some(&ies));
     let output = mega_lights_frame(&input);
-    let reference = mega_lights_exhaustive_reference(&lights, &surfaces, width, height);
+    let reference = mega_lights_exhaustive_reference_ies(&lights, &surfaces, width, height, Some(&ies));
     assert_eq!(output.color.len(), reference.len());
     for (index, (actual, expected)) in output.color.iter().zip(&reference).enumerate() {
         assert!(
@@ -432,6 +571,7 @@ fn seed_averaged_mean_matches_ts_authority() {
         motion_uv: Some(&owned_motion),
         visibility: Some(&owned_visibility),
     };
+    let ies = fixture_ies(fixture);
     let mut mean = vec![0.0f64; pixels * 3];
     for seed in 0..seeds {
         let frame = serde_json::json!({
@@ -441,8 +581,9 @@ fn seed_averaged_mean_matches_ts_authority() {
             "temporal": false,
             "withMotion": false,
             "withVisibility": false,
+            "withIes": true,
         });
-        let input = parse_frame_input(fixture, &frame, &lights, &surfaces, None, None, &borrow);
+        let input = parse_frame_input(fixture, &frame, &lights, &surfaces, None, None, &borrow, Some(&ies));
         let output = mega_lights_frame(&input);
         for (index, word) in output.color.iter().enumerate() {
             mean[index] += f64::from(*word) / f64::from(seeds);
