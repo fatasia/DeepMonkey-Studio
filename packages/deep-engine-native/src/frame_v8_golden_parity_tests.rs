@@ -192,6 +192,11 @@ fn regenerate_rust_golden_section() {
         "schema drift: regenerate the fixture first"
     );
     let raw = std::fs::read_to_string(FIXTURE_PATH).expect("fixture readable");
+    // 本测试是"从 TS 段再生成 rust 段"的维护工具;金样已处于已填状态时无占位符可填,
+    // 已填态的逐字对拍由 golden_matches_fixture 承担——如实跳过而非失败(2026-10-07)。
+    if !raw.contains("\"words\": null") {
+        return;
+    }
     let mut updated = raw;
     for case in fixture["cases"].as_array().expect("cases array") {
         let id = case["id"].as_str().expect("case id").to_owned();

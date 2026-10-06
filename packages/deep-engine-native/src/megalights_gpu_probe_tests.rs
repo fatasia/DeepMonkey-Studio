@@ -279,23 +279,26 @@ fn exhaustive_gpu_output_tracks_cpu_mirror() {
     let motion_words = vec![0.0f32; pixel_count * 4];
     let reservoirs_b_init = vec![0.0f32; pixel_count * 4];
     let color_history_init = vec![0.0f32; pixel_count * 4];
-    let params: [f32; 16] = [
-        width as f32,
-        height as f32,
-        lights.len() as f32,
-        44.0, // frameSeed = fixture 穷举帧
-        1.0,  // spatialEnabled
-        1.0,  // temporalEnabled(穷举趟二不消费 EMA,与 CPU exhaustive 分支同)
-        1.0,  // exhaustive
-        1.0,  // visibilitySlot
-        1.0,  // alphaBlend(首帧全量替换;穷举腿无 EMA)
-        0.0,  // visibilityEnabled = 关
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
+    // DeepMegaParams 的整数字段(viewport/lightCount/frameSeed/各开关)按 u32 位型入
+    // 缓冲,浮点字段按 f32 位型——此前全按 f32 位型写入,u32 读回 96.0f32≈11.2 亿,
+    // lightCount 巨大 → 穷举腿循环近似无限(TDR 设备丢失)、随机腿取灯越界(2026-10-07 真机破案)。
+    let params: [u32; 16] = [
+        width,
+        height,
+        lights.len() as u32,
+        44,               // frameSeed = fixture 穷举帧
+        1,                // spatialEnabled
+        1,                // temporalEnabled(穷举趟二不消费 EMA,与 CPU exhaustive 分支同)
+        1,                // exhaustive
+        (1.0f32).to_bits(), // visibilitySlot
+        (1.0f32).to_bits(), // alphaBlend(首帧全量替换;穷举腿无 EMA)
+        0,                // visibilityEnabled = 关
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
     ];
 
     let device_pollster = pollster::block_on(gpu_device());
@@ -383,7 +386,7 @@ fn dispatch_two_pipelines(
     queue: &wgpu::Queue,
     build: &wgpu::ComputePipeline,
     shade: &wgpu::ComputePipeline,
-    params_words: &[f32; 16],
+    params_words: &[u32; 16],
     packed_lights: &[f32],
     surfaces_words: &[f32],
     motion_words: &[f32],
@@ -523,7 +526,7 @@ fn dispatch_two_pipelines(
         layout: &shade.get_bind_group_layout(0),
         entries: &shade_entries,
     });
-    let (width, height) = (params_words[0] as u32, params_words[1] as u32);
+    let (width, height) = (params_words[0], params_words[1]);
     let groups = (width.div_ceil(8), height.div_ceil(8));
     let mut encoder = device.create_command_encoder(&Default::default());
     {
@@ -583,23 +586,24 @@ fn random_gpu_output_tracks_cpu_mirror_statistically() {
     let motion_words = vec![0.0f32; pixel_count * 4];
     let reservoirs_b_init = vec![0.0f32; pixel_count * 4];
     let color_history_init = vec![0.0f32; pixel_count * 4];
-    let params: [f32; 16] = [
-        width as f32,
-        height as f32,
-        lights.len() as f32,
-        40.0, // frameSeed = fixture 首帧
-        1.0,
-        1.0,
-        0.0, // 随机模式
-        1.0,
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
+    // 同穷举腿:整数 u32 位型 + 浮点 f32 位型(2026-10-07 真机破案修复)。
+    let params: [u32; 16] = [
+        width,
+        height,
+        lights.len() as u32,
+        40,               // frameSeed = fixture 首帧
+        1,
+        1,
+        0, // 随机模式
+        (1.0f32).to_bits(),
+        (1.0f32).to_bits(),
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
     ];
 
     let device_pollster = pollster::block_on(gpu_device());
