@@ -48,23 +48,31 @@ interface RuntimeControls {
  */
 export class WebGpuPostProcessingRuntime implements ViewerPostProcessingRuntime {
   readonly #pipeline: RenderPipeline;
+  readonly #renderer: WebGPURenderer;
   #resources: DisposableNode[] = [];
   #retiredResources: DisposableNode[][] = [];
   #controls: RuntimeControls = {};
   #variant = "";
   #width = 1;
   #height = 1;
+  #aoCapability: boolean | undefined;
 
   constructor(
     renderer: WebGPURenderer,
     private readonly scene: THREE.Scene,
     private readonly camera: THREE.PerspectiveCamera,
   ) {
+    this.#renderer = renderer;
     this.#pipeline = new RenderPipeline(renderer);
   }
 
   apply(state: ScenePostProcessingState, outlinedObjects: THREE.Object3D[]): void {
-    const plan = createWebGpuPostProcessingPlan(state, outlinedObjects.length);
+    // AO 节点(GTAO)的 WGSL 依赖 texture-gather 特性(SwiftShader/部分驱动缺失):缺失时
+    // 管线创建失败并每帧刷 GPUValidationError,AO 实际无效——按 fail-soft 退回无 AO 计划。
+    // WebGL 后端与未就绪设备不受限;仅显式声明缺特性才禁用(误杀防护)。
+    const gtaoSupported = this.#aoSupported();
+    const effectiveState = gtaoSupported ? state : { ...state, gtao: false };
+    const plan = createWebGpuPostProcessingPlan(effectiveState, outlinedObjects.length);
     // 场景切换会短暂没有轮廓目标，但节点图仍可安全复用；避免在“无目标/有目标”之间
     // 来回重建 OutlineNode，产生新的 RenderTarget 与 WebGPU 纹理。
     if (plan.variant === "scene" && this.#variant.includes("outline")) {
@@ -72,10 +80,10 @@ export class WebGpuPostProcessingRuntime implements ViewerPostProcessingRuntime 
       return;
     }
     if (plan.variant !== this.#variant) {
-      this.rebuild(state, outlinedObjects, plan);
+      this.rebuild(effectiveState, outlinedObjects, plan);
       this.#variant = plan.variant;
     }
-    this.updateParameters(state, outlinedObjects);
+    this.updateParameters(effectiveState, outlinedObjects);
   }
 
   suspend(): void {
@@ -109,6 +117,21 @@ export class WebGpuPostProcessingRuntime implements ViewerPostProcessingRuntime 
     this.#resources = [];
     this.#retiredResources = [];
     this.#controls = {};
+  }
+
+  /**
+   * AO 能力判定(three WebGPU 后端的 GTAO/SSAO TSL 节点依赖 texture-gather):
+   * 仅在首次见到 WebGPU 设备时判定一次;设备未就绪时返回 true 并保持待判定
+   * (下一次 apply 重查),避免初始化时序误杀。
+   */
+  #aoSupported(): boolean {
+    if (this.#aoCapability !== undefined) return this.#aoCapability;
+    const features = (this.#renderer as unknown as {
+      backend?: { device?: { features?: { has(feature: string): boolean } } };
+    }).backend?.device?.features;
+    if (!features) return true;
+    this.#aoCapability = features.has("texture-gather");
+    return this.#aoCapability;
   }
 
   private rebuild(
