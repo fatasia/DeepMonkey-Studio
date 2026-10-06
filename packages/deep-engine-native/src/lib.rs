@@ -97,6 +97,7 @@ mod probe_gi_native_adapter_tests;
 /// 64B 节点表打包 + indirect 计划面(批 A/B 模块零转换消费)。
 pub mod gpu_cluster_lod_dag;
 pub mod gpu_cluster_lod_dag_tests;
+pub mod gpu_cluster_lod_dag_probe_tests;
 pub mod gpu_cluster_lod_indirect;
 #[cfg(test)]
 mod _dbg2;

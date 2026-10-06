@@ -149,37 +149,41 @@ fn selection_compute_matches_cpu_authority() {
         });
         pipeline.encode_selection(&mut pass, &bind_group, node_count);
     }
-    let selection_read = selection_buffer.clone();
-    let faults_read = faults_buffer.clone();
+    let selection_read = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("cluster_selection_readback"),
+        size: 4 * nodes.len() as u64,
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let faults_read = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("cluster_faults_readback"),
+        size: 4,
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
     encoder.copy_buffer_to_buffer(&selection_buffer, 0, &selection_read, 0, 4 * nodes.len() as u64);
     encoder.copy_buffer_to_buffer(&faults_buffer, 0, &faults_read, 0, 4);
     queue.submit([encoder.finish()]);
 
-    let (sender, receiver) = std::sync::mpsc::channel();
-    selection_read
-        .slice(..)
-        .map_async(wgpu::MapMode::Read, move |result| {
+    let read_back = |label: &'static str, staging: &wgpu::Buffer| -> Vec<u32> {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        staging.slice(..).map_async(wgpu::MapMode::Read, move |result| {
             sender.send(result).unwrap();
         });
-    device.poll(wgpu::PollType::wait_indefinitely()).expect("poll");
-    receiver.recv().unwrap().expect("map");
-    let selection_words: Vec<u32> = selection_read
-        .slice(..)
-        .get_mapped_range()
-        .expect("map after poll")
-        .chunks_exact(4)
-        .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("4B")))
-        .collect();
-    drop(selection_read);
-
-    let faults: Vec<u32> = faults_read
-        .slice(..)
-        .get_mapped_range()
-        .expect("map after poll")
-        .chunks_exact(4)
-        .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("4B")))
-        .collect();
-    drop(faults_read);
+        device.poll(wgpu::PollType::wait_indefinitely()).expect("poll");
+        receiver.recv().unwrap().unwrap_or_else(|error| panic!("{label}: map failed: {error}"));
+        let words: Vec<u32> = staging
+            .slice(..)
+            .get_mapped_range()
+            .unwrap_or_else(|error| panic!("{label}: map range failed: {error}"))
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().expect("4B")))
+            .collect();
+        staging.unmap();
+        words
+    };
+    let selection_words = read_back("selection", &selection_read);
+    let faults = read_back("faults", &faults_read);
     assert_eq!(faults, vec![0], "selection faults must be zero (fail-closed sentinel unused)");
 
     assert_eq!(selection_words, cpu.selection, "GPU selection must match CPU authority word-for-word");
