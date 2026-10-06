@@ -2,8 +2,9 @@
 // 1) 生成镜像不陈旧 + 与共享夹具逐字节对拍;2) 打包 ABI 字面量与 megaLights.ts/megaLightsAbi.ts
 // 逐字互钉;3) 无 @group(绑定留宿主模板)且引用的 storage/IES 符号与宿主组合一致;
 // 4) CPU 权威镜像(megaLightsRisCpu.ts)与 WGSL 的公式家族逐式互钉(采样合同:估计器
-// N·Σt/(K·t)、历史钳、相似门、穷举模式)。Rust 半当前无消费点(rustHalf=null),
-// 夹具仍按跨宿主格式维护,后续 native 接入零格式变更。
+// N·Σt/(K·t)、历史钳、相似门、穷举模式)。Rust 半已接入(2026-10-05 P1 刀位 2:
+// deep-engine-native/src/megalights_wgsl.rs include_str! 同夹具,两半同时绿 ⇔ 双端
+// 逐字节一致);夹具跨宿主格式不变。
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import pinnedChecksum from "../../wgsl/megaLightsRis.wgsl.sha256?raw";

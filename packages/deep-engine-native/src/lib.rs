@@ -101,6 +101,25 @@ pub mod sdf_gi_trace;
 pub mod sdf_gi_probe_update;
 /// sdf-gi 三个 WGSL 计算核的单源 include_str! 消费端与双端校验和对拍(补齐 Rust 半)。
 pub mod sdf_gi_wgsl;
+/// P1 质量主线(六引擎对标刀位 2):MegaLights 灯池 64B ABI 与统一灯光结构
+/// (TS megaLights.ts/megaLightsAbi.ts 互钉;打包与词流指纹)。
+pub mod megalights_abi;
+/// P1 质量主线(六引擎对标刀位 2):native MegaLights 万灯直接光 RIS 的 CPU 权威镜像
+/// (RIS 蓄水池+时域/空间值域复用+胜者可见性+穷举参考+直射通路选择;
+/// TS megaLightsRisCpu.ts 同构)。
+pub mod megalights_ris;
+#[cfg(test)]
+#[path = "megalights_ris_tests.rs"]
+mod megalights_ris_tests;
+/// MegaLights RIS WGSL 单源 include_str! 消费端与双端校验和对拍(Rust 半;
+/// TS 半 = megaLightsRisWgslChecksum.test.ts)。
+pub mod megalights_wgsl;
+#[cfg(test)]
+#[path = "megalights_parity_tests.rs"]
+mod megalights_parity_tests;
+#[cfg(test)]
+#[path = "megalights_gpu_probe_tests.rs"]
+mod megalights_gpu_probe_tests;
 #[cfg(test)]
 #[path = "sdf_gi_parity_tests.rs"]
 mod sdf_gi_parity_tests;
