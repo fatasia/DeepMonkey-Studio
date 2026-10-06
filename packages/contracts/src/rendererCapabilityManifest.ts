@@ -95,10 +95,12 @@ export interface RendererCapabilityManifestEntry {
  * 只留可用于 fs 存在性断言的仓库相对路径。
  */
 export function rendererCapabilityEvidencePath(evidence: string): string {
-  const colon = evidence.indexOf(":");
-  const base = colon === -1 ? evidence : evidence.slice(0, colon);
-  const paren = base.indexOf("(");
-  return paren === -1 ? base : base.slice(0, paren);
+  const space = evidence.indexOf(" ");
+  const base = space === -1 ? evidence : evidence.slice(0, space);
+  const colon = base.indexOf(":");
+  const base2 = colon === -1 ? base : base.slice(0, colon);
+  const paren = base2.indexOf("(");
+  return paren === -1 ? base2 : base2.slice(0, paren);
 }
 
 /** 单端声明的结构校验:返回问题列表,空数组=合法。 */

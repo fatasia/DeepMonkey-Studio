@@ -5,32 +5,42 @@
  * esbuild bundle,场景/相机/CPU 参考/WGSL 单一来源)。
  *
  * == 浏览器腿(真实帧通道路径) ==
- * 深度 pass → RayTraceClosestFramePass(真机 closest-hit 命中记录)→ GBuffer 合成
- * (线性视深度换算核 + CPU 生成的视法线 upload)→ DFG LUT 生成核 → indirection
- * dispatch → fill dispatch(SSR 合成物 upload:trace mask 矩形区 + composite 输出)→
- * 读回。对照腿:全零 indirection(模拟特性关)的 fill 输出。
+ * 深度 pass → RayTraceClosestFramePass(illumination 档:真机 closest-hit 命中记录 +
+ * 命中点→光源可见性/反照率遮蔽记录)→ GBuffer 合成(线性视深度换算核 + CPU 生成的
+ * 视法线 upload)→ DFG LUT 生成核 → indirection dispatch → fill dispatch(SSR 合成物
+ * upload:trace mask 矩形区 + composite 输出)→ 读回。对照腿:全零 indirection
+ * (模拟特性关)的 fill 输出。
  *
  * == 门(Node 仲裁) ==
  * G1 开关零变化:全零 indirection fill 输出 == SSR 合成物上传(逐位);
  * G2 SSR 优先:mask>0 像素 on-case 输出 == SSR 合成物(逐位);
  * G3 RT 屏外替换:mask==0 且 RT 命中像素 == CPU 镜像(rtSpecularFillCompositeCpu),
  *    且 changedPixels ≥ 哨兵(屏外反射可见 = 真实收益);
- * G4 indirection 语义:fraction/radiance == CPU 镜像(容差 = DFG LUT 量化,fraction
- *    ≤ 2e-2、预乘 rgb 相对 ≤ 2%),miss 记录全零;
- * perf:evidence-only(wall-clock p50/p95,on/off 与 SSR-only 三组,不作门——与
+ * G4 indirection 语义:fraction/radiance == CPU 镜像(输入 = GPU 读回的命中记录 +
+ *    遮蔽记录;容差 = DFG LUT 量化),miss 记录全零;
+ * G6 遮蔽差分:遮挡命中(N·L>0 且 visibility=0)像素 indirection rgb 严格低于
+ *    visibility=1 基线(直接项被遮蔽腿归零,环境项存活),且遮挡/受光两族各有
+ *    哨兵量(遮蔽项真实改变着色,不是全遮挡或全无遮蔽的空转);
+ * G7 反照率差分:非中性反照率命中像素 == 真实表 CPU 镜像且 != 中性表镜像
+ *    (反照率真值进入着色;表按命中实例材质,非 0.5 中性);
+ * perf:evidence-only(wall-clock p95,on/off 与 SSR-only 三组,不作门——与
  * reflection 探针同口径,帧通道无 timestamp 写入支持)。
  */
 
 import { RayTraceClosestFramePass } from "../src/rayTracing/rayTraceClosestFramePass.js";
 import { RtSpecularFillPass, RtSpecularIndirectionPass } from "../src/rayTracing/rtSpecularFramePasses.js";
 import { RT_SPECULAR_BOUNCE_ALBEDO } from "../src/rayTracing/rtSpecularIndirectionKernel.js";
-import { rtSpecularFillCompositeCpu, rtSpecularIndirectionRecordCpu } from "../src/rayTracing/rtSpecularIndirectionCpu.js";
+import { rtSpecularFillCompositeCpu, rtSpecularIndirectionRecordCpu,
+  type RtSpecularBounceShading } from "../src/rayTracing/rtSpecularIndirectionCpu.js";
 import { invertColumnMajor4x4 } from "../src/webgpu/rtShadowFrame.js";
 import { lookAt, multiply, perspective } from "../src/webgpu/cameraMath.js";
 import { buildReflectionScene, referenceReflectionRecords, hitNormalWorld, REFLECTION_BIAS,
   REFLECTION_EYE, REFLECTION_RESOLUTION, REFLECTION_TARGET, REFLECTION_T_MAX,
   type ReflectionScene } from "./reflectionRayGpuCases.js";
 import { buildTlas, traceTlasClosest } from "../src/rayTracing/tlas.js";
+import { IncrementalTlasScene } from "../src/rayTracing/incrementalTlas.js";
+import type { RayBlasDescriptor } from "../src/rayTracing/rayBackendTypes.js";
+import type { TlasInstanceDescriptor } from "../src/rayTracing/tlas.js";
 
 export { buildReflectionScene, referenceReflectionRecords, REFLECTION_BIAS, REFLECTION_EYE,
   REFLECTION_RESOLUTION, REFLECTION_TARGET, REFLECTION_T_MAX, rtSpecularFillCompositeCpu,
@@ -38,9 +48,13 @@ export { buildReflectionScene, referenceReflectionRecords, REFLECTION_BIAS, REFL
 
 export const RT_SPECULAR_PROBE_FRESNEL_F0 = 0.05;
 export const RT_SPECULAR_PROBE_ROUGHNESS = 0.25;
-/** 探针光照/环境参数(megaLights Lambert N·L shade 语义的解析一次反弹档)。 */
+/** 探针光照/环境参数(megaLights Lambert N·L shade 语义的解析一次反弹档)。
+ * surfaceToLightWorld 单位向量(CPU 归一化;closest 通道遮蔽腿与 indirection N·L 同源)。 */
+const PROBE_LIGHT_RAW: readonly [number, number, number] = [0.2, 0.85, 0.45];
+const PROBE_LIGHT_LENGTH = Math.hypot(...PROBE_LIGHT_RAW);
 export const RT_SPECULAR_PROBE_LIGHT = {
-  surfaceToLightWorld: [0.5, 0.8, -0.3] as const,
+  surfaceToLightWorld: PROBE_LIGHT_RAW.map((value) => value / PROBE_LIGHT_LENGTH) as
+    readonly [number, number, number],
   lightColor: [1.0, 0.96, 0.9] as const,
   lightIntensity: 3.0,
   envRadiance: [0.06, 0.07, 0.09] as const,
@@ -49,17 +63,67 @@ export const RT_SPECULAR_PROBE_LIGHT = {
 export const SSR_TRACE_REGION = { x0: 0, y0: 0, x1: 64, y1: 64 } as const;
 /** 屏外反射可见哨兵下限(on/off 差分像素数;低于此值视为特性未产生真实收益)。 */
 export const RT_SPECULAR_CHANGED_PIXEL_GATE = 40;
+/** 遮蔽差分哨兵(G6):遮挡/受光两族各需至少此数的 N·L>0 命中像素。 */
+export const RT_SPECULAR_OCCLUSION_PIXEL_GATE = 40;
+/** 反照率差分哨兵(G7):非中性反照率且产生替换差异的像素下限。 */
+export const RT_SPECULAR_ALBEDO_PIXEL_GATE = 40;
 const RES = REFLECTION_RESOLUTION;
 const DFG_LUT_EDGE = 128, DFG_SAMPLES = 256;
 /** 容差(G4):DFG LUT f16 量化 + GPU 积分 vs CPU f64 解析的差吸收带。 */
 const FRACTION_TOLERANCE = 2e-2;
 const RADIANCE_RELATIVE_TOLERANCE = 2e-2;
 
+/**
+ * 探针扩展场景 = 基础三实例 + 遮光板(第 4 实例,mask bit3):挡板悬于反射命中点与
+ * 光源之间(CPU 调参:wall 命中 lit=280/occluded=201 两族平衡)。仅本探针使用,不改
+ * reflectionRayGpuCases 共享场景(B3 基线门不受扰动)。
+ */
+export function buildSpecularBlockerBlas(): RayBlasDescriptor {
+  const cx = 0.0, cy = 3.4, cz = 0.75, hx = 0.35, hy = 0.05, hz = 0.45;
+  const corners = [[cx - hx, cy - hy, cz - hz], [cx + hx, cy - hy, cz - hz], [cx + hx, cy - hy, cz + hz],
+    [cx - hx, cy - hy, cz + hz], [cx - hx, cy + hy, cz - hz], [cx + hx, cy + hy, cz - hz],
+    [cx + hx, cy + hy, cz + hz], [cx - hx, cy + hy, cz + hz]];
+  const quads = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
+  const vertices: number[] = [], indices: number[] = [];
+  quads.forEach((quad, qi) => {
+    const base = qi * 4;
+    quad.forEach(cI => vertices.push(...corners[cI]!));
+    indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+  });
+  return { id: "specular-blocker", vertices: Float32Array.from(vertices), indices: Uint32Array.from(indices) };
+}
+
+/** 基础场景 + 遮光板(TLAS 原始实例下标 3 = 反照率表下标,顺序合同)。 */
+export function buildSpecularGiScene(f16 = false): ReflectionScene {
+  const base = buildReflectionScene(f16);
+  const blocker = buildSpecularBlockerBlas();
+  const blasList = [...base.blasList, blocker];
+  const instances: readonly TlasInstanceDescriptor[] = [...base.instances,
+    { id: blocker.id, blas: blocker, worldToLocal: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0] as const, mask: 1 << 3 }];
+  const tlas = new IncrementalTlasScene(blasList, { ...(f16 ? { f16: true } : {}), sah: { binCount: 8 } });
+  tlas.updateInstances([...instances]);
+  return { blasList, instances, tlas };
+}
+
+/**
+ * 命中实例反照率表(按 TLAS 原始实例下标:0=wall 暖砖 1=mirror-box 冷蓝 2=lean-panel
+ * 黄绿 3=blocker 近白;全部偏离中性 0.5,G7 差分哨兵以此为据)。生产语义 =
+ * RenderPacket 材质 baseColor(探针内联等价;w=1 占位)。
+ */
+export const RT_SPECULAR_PROBE_INSTANCE_ALBEDOS = Float32Array.from([
+  0.82, 0.34, 0.18, 1.0,
+  0.16, 0.55, 0.78, 1.0,
+  0.62, 0.62, 0.16, 1.0,
+  0.9, 0.88, 0.85, 1.0,
+]);
+
 export interface RtSpecularGpuProbeResult {
   readonly hitRecordsBase64: string;
   readonly linearDepthBase64: string;
   /** 视法线 GBuffer 上传字节(rgba8unorm 行主序;CPU 仲裁腿同源消费)。 */
   readonly viewNormalBase64: string;
+  /** 遮蔽记录读回(rgba32float [albedo.rgb, visibility];illumination 档产出)。 */
+  readonly bounceShadingBase64: string;
   readonly indirectionBase64: string;
   readonly fillOnBase64: string;
   readonly fillOffBase64: string;
@@ -200,10 +264,12 @@ export function buildReceiverViewNormals(scene: ReflectionScene, depth: Float32A
 
 /**
  * CPU 仲裁单源:逐像素 indirection 记录与 fill 输出期望(与 GPU 同输入:GPU 读回的
- * 命中记录/线性深度 + CPU 生成的视法线上传)。
+ * 命中记录/线性深度/遮蔽记录 + CPU 生成的视法线上传)。遮蔽记录缺省(如基线腿复用)
+ * = visibility 1 + 中性反照率(旧语义,G6/G7 以显式双基线差分代替)。
  */
 export function buildRtSpecularCpuReference(hitRecords: Float32Array, linearDepth: Float32Array,
-  viewNormalBytes: Uint8Array, ssrOutput: Float64Array, trace: Float64Array):
+  viewNormalBytes: Uint8Array, ssrOutput: Float64Array, trace: Float64Array,
+  bounceShading?: Float32Array):
   { readonly indirection: Float64Array; readonly fill: Float64Array; readonly hits: number } {
   const pixels = RES * RES;
   const indirection = new Float64Array(pixels * 4);
@@ -218,9 +284,12 @@ export function buildRtSpecularCpuReference(hitRecords: Float32Array, linearDept
       const ny = (viewNormalBytes[base + 1]! / 255) * 2 - 1;
       const nz = (viewNormalBytes[base + 2]! / 255) * 2 - 1;
       const roughness = viewNormalBytes[base + 3]! / 255;
+      const shading: RtSpecularBounceShading | undefined = bounceShading === undefined ? undefined
+        : { albedo: [bounceShading[base]!, bounceShading[base + 1]!, bounceShading[base + 2]!],
+            visibility: bounceShading[base + 3]! };
       const record2 = rtSpecularIndirectionRecordCpu(record, [nx, ny, nz], roughness, linearDepth[p]!,
         x, y, RES, RES, { tanHalfFov: Math.tan(50 * Math.PI / 360), aspect: 1,
-          ...RT_SPECULAR_PROBE_LIGHT, fresnelF0: RT_SPECULAR_PROBE_FRESNEL_F0 });
+          ...RT_SPECULAR_PROBE_LIGHT, fresnelF0: RT_SPECULAR_PROBE_FRESNEL_F0 }, shading);
       indirection.set(record2, base);
       if (record2[3] > 0) hits++;
       const outRgb: readonly [number, number, number] = [ssrOutput[base]!, ssrOutput[base + 1]!, ssrOutput[base + 2]!];
@@ -369,8 +438,8 @@ async function readbackF32(device: GPUDevice, texture: GPUTexture, bytesPerPixel
 export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResult> {
   const errors: string[] = [];
   const empty: RtSpecularGpuProbeResult = { hitRecordsBase64: "", linearDepthBase64: "",
-    viewNormalBase64: "", indirectionBase64: "", fillOnBase64: "", fillOffBase64: "",
-    ssrOutputBase64: "", traceBase64: "",
+    viewNormalBase64: "", bounceShadingBase64: "", indirectionBase64: "", fillOnBase64: "",
+    fillOffBase64: "", ssrOutputBase64: "", traceBase64: "",
     wallMs: { indirection: 0, fillOn: 0, ssrOnly: 0 }, stackOverflows: -1, adapter: null, features: [], errors };
   if (!("gpu" in navigator) || navigator.gpu === undefined) {
     return { ...empty, errors: ["WebGPU is not available in this context."] };
@@ -394,7 +463,7 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
       invViewProjection[7]!, invViewProjection[8]!, invViewProjection[9]!, invViewProjection[10]!,
       invViewProjection[11]!, invViewProjection[12]!, invViewProjection[13]!, invViewProjection[14]!,
       invViewProjection[15]!] as const;
-    const scene = buildReflectionScene(false);
+    const scene = buildSpecularGiScene(false);
     const depthTexture = await renderSceneDepth(device, scene, viewProjection);
     // 线性视深度换算(探针 GBuffer;SSR reconstruct 合同输入)。
     const linearTexture = device.createTexture({ size: [RES, RES], format: "r32float",
@@ -430,9 +499,11 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
       pass.dispatchWorkgroups(Math.ceil(DFG_LUT_EDGE / 8), Math.ceil(DFG_LUT_EDGE / 8)); pass.end();
       device.queue.submit([encoder.finish()]);
     }
-    // closest-hit 命中记录(真机帧通道)。
-    const closest = new RayTraceClosestFramePass(device, scene.tlas.packed);
+    // closest-hit 命中记录 + 遮蔽记录(真机帧通道,illumination 档)。
+    const closest = new RayTraceClosestFramePass(device, scene.tlas.packed, { illumination: true });
     const hitTexture = device.createTexture({ size: [RES, RES], format: "rgba32float",
+      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC });
+    const bounceShadingTexture = device.createTexture({ size: [RES, RES], format: "rgba32float",
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC });
     const depthReadback = new Float32Array(await readbackF32(device, depthTexture, 4));
     // 视法线 GBuffer(CPU 单源生成后 upload;仲裁腿复用同一函数与字节)。
@@ -467,25 +538,35 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
     const fillOff = makeStorageTexture("rgba16float");
     const indirectionPass = new RtSpecularIndirectionPass(device);
     const fillPass = new RtSpecularFillPass(device);
-    // 帧编码:on = closest → indirection → fill;计时取 warmup 后最小值链(evidence-only)。
-    const encodeFrame = async (indirection: GPUTexture, fill: GPUTexture,
-      dispatchIndirection: boolean): Promise<void> => {
-      const encoder = device.createCommandEncoder();
-      await closest.encode(encoder, { depthView: depthTexture.createView(), hitView: hitTexture.createView(),
+    // 帧编码:on = closest(illumination)→ indirection → fill;计时取 warmup 后最小值链
+    // (evidence-only)。遮蔽记录由 closest 每帧重写(单缓冲,同 encoder 内读写有序)。
+    const closestEncode = (encoder: GPUCommandEncoder): void => {
+      void closest.encode(encoder, { depthView: depthTexture.createView(), hitView: hitTexture.createView(),
+        bounceShadingView: bounceShadingTexture.createView(),
+        lightDirectionWorld: RT_SPECULAR_PROBE_LIGHT.surfaceToLightWorld,
+        instanceAlbedos: RT_SPECULAR_PROBE_INSTANCE_ALBEDOS,
         width: RES, height: RES, invViewProjection: invViewProjectionTuple, eye: REFLECTION_EYE, tMax: REFLECTION_T_MAX,
         bias: REFLECTION_BIAS, rayMask: 0xff });
-      // 特性关 = 无 indirection dispatch(零纹理保持零;fill 双 miss 逐位透传)。
-      if (dispatchIndirection) { indirectionPass.encode(encoder, {
+    };
+    const indirectionEncode = (encoder: GPUCommandEncoder, indirection: GPUTexture): void => {
+      indirectionPass.encode(encoder, {
         linearDepthView: linearTexture.createView(), viewNormalView: normalTexture.createView(),
         brdfLutView: dfgTexture.createView(), rtHitView: hitTexture.createView(),
-        bounceShadingView: hitTexture.createView(),
+        bounceShadingView: bounceShadingTexture.createView(),
         indirectionView: indirection.createView(), width: RES, height: RES,
         params: { width: RES, height: RES, tanHalfFov: Math.tan(50 * Math.PI / 360), aspect: 1,
           surfaceToLightWorld: [...RT_SPECULAR_PROBE_LIGHT.surfaceToLightWorld],
           lightColor: [...RT_SPECULAR_PROBE_LIGHT.lightColor],
           lightIntensity: RT_SPECULAR_PROBE_LIGHT.lightIntensity,
           envRadiance: [...RT_SPECULAR_PROBE_LIGHT.envRadiance],
-          fresnelF0: RT_SPECULAR_PROBE_FRESNEL_F0 } }); }
+          fresnelF0: RT_SPECULAR_PROBE_FRESNEL_F0 } });
+    };
+    const encodeFrame = async (indirection: GPUTexture, fill: GPUTexture,
+      dispatchIndirection: boolean): Promise<void> => {
+      const encoder = device.createCommandEncoder();
+      closestEncode(encoder);
+      // 特性关 = 无 indirection dispatch(零纹理保持零;fill 双 miss 逐位透传)。
+      if (dispatchIndirection) indirectionEncode(encoder, indirection);
       fillPass.encode(encoder, { ssrOutputView: ssrOutputTexture.createView(),
         ssrTraceView: traceTexture.createView(), indirectionView: indirection.createView(),
         outputView: fill.createView(), width: RES, height: RES });
@@ -509,32 +590,20 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
     await encodeFrame(indirectionOff, fillOff, false);
     const wallIndirection = await timed(async () => {
       const encoder = device.createCommandEncoder();
-      await closest.encode(encoder, { depthView: depthTexture.createView(), hitView: hitTexture.createView(),
-        width: RES, height: RES, invViewProjection: invViewProjectionTuple, eye: REFLECTION_EYE, tMax: REFLECTION_T_MAX,
-        bias: REFLECTION_BIAS, rayMask: 0xff });
-      indirectionPass.encode(encoder, {
-        linearDepthView: linearTexture.createView(), viewNormalView: normalTexture.createView(),
-        brdfLutView: dfgTexture.createView(), rtHitView: hitTexture.createView(),
-        bounceShadingView: hitTexture.createView(),
-        indirectionView: indirectionOn.createView(), width: RES, height: RES,
-        params: { width: RES, height: RES, tanHalfFov: Math.tan(50 * Math.PI / 360), aspect: 1,
-          surfaceToLightWorld: [...RT_SPECULAR_PROBE_LIGHT.surfaceToLightWorld],
-          lightColor: [...RT_SPECULAR_PROBE_LIGHT.lightColor],
-          lightIntensity: RT_SPECULAR_PROBE_LIGHT.lightIntensity,
-          envRadiance: [...RT_SPECULAR_PROBE_LIGHT.envRadiance],
-          fresnelF0: RT_SPECULAR_PROBE_FRESNEL_F0 } });
+      closestEncode(encoder);
+      indirectionEncode(encoder, indirectionOn);
       device.queue.submit([encoder.finish()]);
     }, 3, 20);
     const wallFillOn = await timed(() => encodeFrame(indirectionOn, fillOn, true), 3, 20);
     const wallSsrOnly = await timed(async () => {
       const encoder = device.createCommandEncoder();
-      await closest.encode(encoder, { depthView: depthTexture.createView(), hitView: hitTexture.createView(),
-        width: RES, height: RES, invViewProjection: invViewProjectionTuple, eye: REFLECTION_EYE, tMax: REFLECTION_T_MAX,
-        bias: REFLECTION_BIAS, rayMask: 0xff });
+      closestEncode(encoder);
       device.queue.submit([encoder.finish()]);
     }, 3, 20);
-    const [hitRecords, linearDepth, indirectionReadback, fillOnReadback, fillOffReadback] = await Promise.all([
+    const [hitRecords, linearDepth, bounceShadingReadback, indirectionReadback, fillOnReadback, fillOffReadback]
+      = await Promise.all([
       readbackF32(device, hitTexture, 16), readbackF32(device, linearTexture, 4),
+      readbackF32(device, bounceShadingTexture, 16),
       readbackF32(device, indirectionOn, 8), readbackF32(device, fillOn, 8), readbackF32(device, fillOff, 8)]);
     const hitF32 = new Float32Array(hitRecords), linearF32 = new Float32Array(linearDepth);
     let hitCount = 0, positiveLinear = 0, depthMin = Infinity, depthMax = -Infinity;
@@ -557,11 +626,14 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
     sentinel.set(new Uint32Array(sentinelStaging.getMappedRange()));
     sentinelStaging.unmap(); sentinelStaging.destroy();
     for (const pass of [closest, indirectionPass, fillPass]) pass.destroy();
-    for (const texture of [depthTexture, linearTexture, dfgTexture, hitTexture, normalTexture,
-      ssrOutputTexture, traceTexture, indirectionOn, indirectionOff, fillOn, fillOff]) texture.destroy();
+    for (const texture of [depthTexture, linearTexture, dfgTexture, hitTexture, bounceShadingTexture,
+      normalTexture, ssrOutputTexture, traceTexture, indirectionOn, indirectionOff, fillOn, fillOff]) {
+      texture.destroy();
+    }
     device.destroy();
     return { hitRecordsBase64: toBase64(hitRecords), linearDepthBase64: toBase64(linearDepth),
       viewNormalBase64: toBase64(normals.bytes.buffer as ArrayBuffer),
+      bounceShadingBase64: toBase64(bounceShadingReadback),
       indirectionBase64: toBase64(indirectionReadback), fillOnBase64: toBase64(fillOnReadback),
       fillOffBase64: toBase64(fillOffReadback), ssrOutputBase64: toBase64(synthetic.output),
       traceBase64: toBase64(synthetic.trace),
