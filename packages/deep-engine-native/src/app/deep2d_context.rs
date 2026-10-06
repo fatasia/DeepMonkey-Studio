@@ -131,8 +131,7 @@ mod tests {
                 color: [0.0, 0.0, 0.0, 0.45],
                 corner_radius: None,
             }),
-            ..LayoutBoxVisual::default()
-};
+        };
         let header_visual = LayoutBoxVisual {
             background: Some(Deep2dPaint::LinearGradient(LinearGradientPaint {
                 start: [0.0, 0.0],
@@ -150,8 +149,7 @@ mod tests {
             })),
             corner_radius: 8.0,
             shadow: None,
-            ..LayoutBoxVisual::default()
-};
+        };
         let mut tree = LayoutTree::new(
             LayoutNode::box_node(LayoutStyle {
                 direction: deep_engine_native::deep2d::layout::LayoutDirection::Column,
@@ -184,8 +182,7 @@ mod tests {
                 background: Some(Deep2dPaint::Solid([0.95, 0.62, 0.18, 1.0])),
                 corner_radius: 6.0,
                 shadow: None,
-                ..LayoutBoxVisual::default()
-}),
+            }),
         )
         .expect("icon");
         // 文本占位:固定尺寸灰盒(字形排布留给 platform_text 接缝)。
@@ -195,8 +192,7 @@ mod tests {
                 background: Some(Deep2dPaint::Solid([0.22, 0.25, 0.3, 1.0])),
                 corner_radius: 4.0,
                 shadow: None,
-                ..LayoutBoxVisual::default()
-}),
+            }),
         )
         .expect("text placeholder");
         let _ = header;

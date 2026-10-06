@@ -332,9 +332,7 @@ impl ListBuilder {
             dash_offset: None,
             corner_radius: None,
             shadow: None,
-                    blend: None,
-            backdrop_blur: None,
-}));
+        }));
     }
 }
 

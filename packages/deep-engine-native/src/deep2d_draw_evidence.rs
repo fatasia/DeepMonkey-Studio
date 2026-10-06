@@ -111,7 +111,6 @@ mod tests {
         count: u32,
     ) -> PreparedDeep2dChunk {
         PreparedDeep2dChunk {
-            blend: 0,
             layer_index,
             kind,
             first_vertex: 0,

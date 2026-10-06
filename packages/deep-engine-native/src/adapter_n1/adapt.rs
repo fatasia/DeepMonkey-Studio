@@ -132,9 +132,7 @@ pub(super) fn adapt_svg(input: &SvgInputV1, budget: &super::N1Budget) -> Result<
             dash_offset: None,
             corner_radius: None,
             shadow: None,
-                    blend: None,
-            backdrop_blur: None,
-}));
+        }));
     }
     finish(delta, N1InputKind::Svg, input.paths.len(), budget)
 }
