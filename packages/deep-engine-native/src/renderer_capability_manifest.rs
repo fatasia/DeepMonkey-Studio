@@ -148,11 +148,14 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         reason: RendererCapabilityReasonCode::ReducedTier,
         evidence: "probe_gi_abi 96B 布局合同 + renderer::native_gi_producer 直光种子;无 32 方向辐射内核",
     },
+    // P1 质量主线(六引擎对标刀位 1,2026-10-06):native SDF-GI 链入库——CPU 权威
+    // 镜像与生产 WGSL 单源齐备,真机 GPU 门过;生产 renderer 帧循环接线为后继切片,
+    // 如实 harness-only(与 auto-exposure/spatial-aa 同款登记)。
     NativeCapabilitySelfCheck {
         capability_id: "sdf-gi",
-        support: RendererCapabilitySupport::Unavailable,
-        reason: RendererCapabilityReasonCode::Absent,
-        evidence: "无场景 SDF 烘焙/天光圆锥追踪/探针 SH 更新通路(probe_gi_abi 仅 96B 布局合同+直光种子)",
+        support: RendererCapabilitySupport::Supported,
+        reason: RendererCapabilityReasonCode::HarnessOnly,
+        evidence: "src/sdf_gi_scene.rs(场景 SDF 体积烘焙 CPU 权威镜像:triangleDistance 精确距离+rayX 奇偶定号+逐实例域+min 合成+探针 lattice 推导,TS sdfSceneBake/sdfGrid 逐式同构) + src/sdf_gi_trace.rs(天光圆锥追踪 visibility+hitDistance 双输出+Fibonacci 方向集) + src/sdf_gi_probe_update.rs(L1 SH 投影/bounce 能量哨兵/时域滤波/命中统计归约/窗口计划,记录直供 probe_gi_abi 96B) + src/sdf_gi_wgsl.rs(三个 WGSL 计算核 include_str 单源+校验和双端 Rust 半);对拍 src/sdf_gi_parity_tests.rs 与 TS 权威 fixture 位级(f32 词逐字+SHA-256:1872 cells/24 探针/384 lanes/双帧记录流/初值,唯二跨 libm 哨兵 coneTan≤4ulp 与 targetEnergy≤1e-9) + 真机 src/sdf_gi_gpu_probe_tests.rs(RTX 4060/Vulkan:非翻转 cells 距离逐位 mean=max=0,trace/update 全词逐位 0 误差,烘焙符号翻转 64/1872=3.4%≤5% 预算=WGSL 退化射线文档化限制);如实 harness-only:生产 renderer 帧循环接线后继切片,烘焙哈希缓存子集缺(TS cached 状态恒 0)",
     },
     NativeCapabilitySelfCheck {
         capability_id: "contact-shadows",

@@ -162,8 +162,8 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:sdfGi(默认 false,opt-in;关闭 = 运行时不构建,既有帧逐位零变化) + gi/sdfSceneBake.ts:bakeSdfSceneGrid(CPU 增量烘焙,保留为回退与验收参考) + gi/sdfSceneBakeGpu.ts + wgsl/sdfBakeSceneGrid.wgsl(M3 GPU compute 距离场:每 lane=场景 cell 点到三角形精确距离 min + +X 射线奇偶定号,CPU 同式;实例烘焙域逐三角形携带 round 舍入界;距离场 storage buffer 直供天光追踪零拷贝;真机 60,192 cells 稳态烘焙帧墙钟 4.4ms vs CPU 584.8ms,距离抽样 mean 误差 1.6e-4/max 0.15(一格距,域界 round 差异)/符号翻转 0.28%(退化射线,无排序去重,如实) + gi/sdfGiSkyVisibility 同 M2 天光圆锥追踪 + wgsl/sdfGiProbeUpdate.wgsl 同 M2 探针 SH 更新(96B ABI,F5 words[12..23] 绝不写) + gi/sdfGiPublish.ts + wgsl/sdfGiPublish.wgsl(M3 探针消费物化核:每帧 update 窗口后把探针场物化为主 pass 探针 clipmap 采样纹理(volume=rgba16float[dx,dy,dz] texel=record vec4[0];moments=rgba32float[dx,dy,dz×4] lane0=vec4[1].xyz+valid,lane1..3 恒零=SH 缺失;metadata=packProbeLevels 单层),pbrRendererFrames 同步 setProbeClipmap 发布 + F1 clipmap 停驱——pbrShader ambient 项 mix(environmentIrradiance,gi.rgb,gi.a) 真实消费探针记录;真机对拍 volume texel vs CPU 记录镜像零失配(f16 量化内 max 6.1e-5)、moments lane0 逐位零失配;像素验收开启后 changedCount=6100>0(变化区空间集中,质心画面内,中心行采样 0.08→0.02 门内暗化可见);M3 仍 degraded 子项如实:变化区为探针域内子域而非全场景(分区 darkened 计数未命中,候选根因 realMoments 判据/Chebyshev 权重域,见 docs/handoffs/gi-depth-handoff.md),逐 pass 计时登记(PBR_TIMED_PASS_IDS 原子 diff)仍暂存,SSGDI 动态直接层 GPU 核不消费(CPU 域保留) + gi/sdfGiDayNight.ts 昼夜 harness(逐帧 p99≤3/255)",
     },
     native: {
-      support: "unavailable", reason: "absent",
-      evidence: "packages/deep-engine-native/src/lib.rs(无场景 SDF 烘焙/圆锥追踪/探针 SH 更新通路;probe_gi_abi.rs 仅 96B 布局合同+直光种子 producer)",
+      support: "supported", reason: "harness-only",
+      evidence: "packages/deep-engine-native/src/sdf_gi_scene.rs(P1 质量主线六引擎对标刀位 1:场景 SDF 体积烘焙 CPU 权威镜像 — triangleDistance 精确距离+rayX 奇偶定号+逐实例域+min 合成+探针 lattice 推导,与本文件 web 侧 sdfSceneBake/sdfGrid 逐式同构,f64 中间量+fround 落点) + packages/deep-engine-native/src/sdf_gi_trace.rs(天光圆锥追踪 visibility+hitDistance 双输出+Fibonacci 方向集) + packages/deep-engine-native/src/sdf_gi_probe_update.rs(L1 SH 投影/bounce 能量哨兵/时域滤波/命中统计归约/窗口计划,记录直供 probe_gi_abi 96B) + packages/deep-engine-native/src/sdf_gi_wgsl.rs(wgsl/sdfSkyVisibilityTrace·sdfGiProbeUpdate·sdfBakeSceneGrid 三核 include_str 单源+校验和双端 Rust 半);对拍 packages/deep-engine-native/src/sdf_gi_parity_tests.rs 与 TS 权威 fixture(fixtures/sdf-gi-native-parity-v1.json,生成器 packages/deep-engine/scripts/generateSdfGiNativeParity.mts)位级 f32 词逐字+SHA-256(1872 cells/24 探针/384 lanes/双帧记录流/初值;唯二跨 libm 哨兵 coneTan≤4ulp 与 targetEnergy≤1e-9,如实) + 真机 packages/deep-engine-native/src/sdf_gi_gpu_probe_tests.rs RTX 4060/Vulkan(非翻转 cells 距离逐位 mean=max=0,trace/update 全词逐位 0 误差,烘焙符号翻转 64/1872=3.4%≤5% 预算=WGSL 退化射线文档化限制);如实 harness-only:生产 renderer 帧循环接线后继切片,烘焙哈希缓存子集缺(CPU cached 状态恒 0)",
     },
     sharedQualityVocabulary: true,
   },
@@ -229,18 +229,23 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     },
   },
   {
-    // B3 光追双通道·reflection 二通道(2026-10-06 生产帧挂载):PbrRendererFeatures
-    // rayTracedReflections 键 + pbrRendererFrames 帧内懒构造(场景复用 RT 阴影 staging
-    // 通道)+ FrameMetrics.rtReflections 披露。如实登记:命中记录的生产消费(SSR 屏外
-    // 合成/环境采样族)未接线——当前开关只挂载管线与 dispatch,画面零变化;URL 开关
-    // (ray-traced-reflections=1)待桥 features 字面量单行接线(桥文件本批禁碰);
-    // 真机对拍门 scripts/reflectionRayGpuTest.mjs PASSED(test-output/reflection-ray-gpu-*)。
+    // B3 光追双通道·reflection 二通道 + P1 RT specular GI 生产消费接线(2026-10-06):
+    // 帧编排挂载 closest-hit 通道(features.rayTracedReflections,场景复用 RT 阴影
+    // staging)+ 一次反弹 indirection(命中点解析辐射度 = 主方向光 N·L + F1 ambient
+    // 合同环境项 × 中性反照率 0.5,SSR 同款 split-sum 高光分数;ReSTIR-DI 灯池跨域
+    // 借表属下一切片,二反弹不做,如实登记边界)+ SSR 合成后屏外填充(trace.a==0 且
+    // RT 命中像素以 SSR composite 同式 out×(1-α)+rgb 替换 IBL 高光回退,SSR 命中逐位
+    // 透传,双 miss 零变化)。URL 开关 ray-traced-reflections 已入
+    // studioDeepWebGpuBridgeFeatureToggles 单文件(+toggles 测试);桥 features 字面量
+    // 接线仍待桥批次(面板注册表未含该参数,不冒充可点)。真机门
+    // scripts/rtSpecularGiGpuTest.mjs(indirection==CPU 镜像 + fill on/off 差分哨兵)
+    // 与既有 scripts/reflectionRayGpuTest.mjs(PASSED,test-output/reflection-ray-gpu-*)。
     id: "ray-traced-reflections",
-    title: "反射 closest-hit 帧通道(帧内联 BVH;B3 光追双通道)",
+    title: "反射 closest-hit 帧通道 + 一次反弹镜面 GI(帧内联 BVH;B3/P1)",
     webFeatureKeys: ["rayTracedReflections"],
     web: {
       support: "supported", reason: "opt-in-default-off",
-      evidence: "packages/deep-engine/src/rayTracing/rayTraceClosestFrameKernel.ts(depth 重建着色点+深度差分法线,沿镜面反射方向两级 TLAS→BLAS closest-hit,rgba32float [t,normal.xyz] 记录,miss=[-1,0,0,0];执行器同目录 rayTraceClosestFramePass.ts 场景五缓冲持久+增量 TLAS+bind LRU;pbrRendererFrames 帧内懒构造+瞬态命中纹理,场景复用 rtShadows.packedScene;真机门 scripts/reflectionRayGpuTest.mjs)",
+      evidence: "packages/deep-engine/src/rayTracing/rayTraceClosestFrameKernel.ts(两级 TLAS→BLAS closest-hit,rgba32float [t,normal.xyz],miss=[-1,0,0,0];执行器同目录 rayTraceClosestFramePass.ts)+ rtSpecularIndirectionKernel.ts/rtSpecularFillKernel.ts(一次反弹 indirection 与 SSR 合成后屏外填充,WGSL sha256 钉死,CPU 镜像 rtSpecularIndirectionCpu.ts 单源)+ rtSpecularFramePasses.ts(自有 96B/16B uniform,帧 uniform 满载不借位)+ pbrRendererFrames 帧内懒构造 + pbrPostProcessChain encodeFinal 消费(缺省输入 = 链路逐位零变化;真机门 scripts/rtSpecularGiGpuTest.mjs)",
     },
     native: { support: "unavailable", reason: "absent", evidence: "packages/deep-engine-native/src/lib.rs(native 无 compute BVH 反射通道;与 ray-traced-shadows 同口径)" },
   },

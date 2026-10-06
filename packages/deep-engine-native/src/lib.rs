@@ -90,6 +90,23 @@ pub mod probe_gi_wgsl;
 pub mod native_mesh_wgsl;
 #[cfg(test)]
 mod probe_gi_native_adapter_tests;
+/// P1 质量主线(六引擎对标刀位 1):native SDF-GI 链——场景级 SDF 体积烘焙
+/// (CPU 权威镜像,TS sdfSceneBake/sdfGrid 同构)+ 探针 lattice 推导。
+pub mod sdf_gi_scene;
+/// 天光圆锥追踪(visibility+hitDistance 双输出)+ Fibonacci 方向集
+/// (TS sdfSkyVisibility/probeOcclusionDirection 同构)。
+pub mod sdf_gi_trace;
+/// 探针 SH 更新链(L1 SH 投影/目标场/bounce 哨兵/时域滤波/命中统计归约/窗口计划;
+/// TS probeShUpdate/probeSkyVisibilitySh/sdfGiPacking 同构;记录直供 probe_gi_abi)。
+pub mod sdf_gi_probe_update;
+/// sdf-gi 三个 WGSL 计算核的单源 include_str! 消费端与双端校验和对拍(补齐 Rust 半)。
+pub mod sdf_gi_wgsl;
+#[cfg(test)]
+#[path = "sdf_gi_parity_tests.rs"]
+mod sdf_gi_parity_tests;
+#[cfg(test)]
+#[path = "sdf_gi_gpu_probe_tests.rs"]
+mod sdf_gi_gpu_probe_tests;
 pub mod ray_backend;
 pub mod ray_tracing_capability;
 pub mod replay;
