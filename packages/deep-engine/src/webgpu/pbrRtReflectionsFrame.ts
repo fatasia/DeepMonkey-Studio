@@ -30,6 +30,12 @@ export interface RtReflectionFrameContribution {
   metrics: FrameMetrics["rtReflections"] | undefined;
 }
 
+/** B3 RT 反射 closest-hit 帧通道(opt-in features.rayTracedReflections,默认关 =
+ * 运行时不存在,帧逐位零变化):主帧 1x depth(本帧,depth resolve 之后)重建着色点,
+ * 沿镜面反射方向两级 TLAS→BLAS closest-hit,rgba32float [t,normal.xyz] 命中记录
+ * 写瞬态纹理。场景复用 RT 阴影 staging 通道(未 staging = 不挂载,fail-closed 不
+ * 静默假开);命中记录的生产消费(SSR 屏外合成/环境采样族)属下一切片——当前
+ * 只挂载管线 + FrameMetrics.rtReflections 披露,画面零变化,视觉验收如实声明未接线。 */
 export function encodeRtReflectionsFrame(host: PbrRendererFrameHost, device: GPUDevice,
   encoder: GPUCommandEncoder, size: { width: number; height: number }, view: RenderView,
   frameState: ReturnType<typeof updatePbrFrameUniforms>,
