@@ -131,7 +131,7 @@ interface SectionRecord {
  * DAG → `.dgc` 字节流(与 Rust write_dgc 逐位一致;压缩档依赖 zlib 实现确定性,
  * 未压缩档与 zlib 无关、永久锁定)。产物必须经 decodeDgc 回路签核后才可驻留。
  */
-export function encodeDgc(dag: DgcEncodableDag, options: DgcEncodeOptions = {}): Uint8Array {
+export function encodeDgc(dag: DgcEncodableDag, options: DgcEncodeOptions = {}): Uint8Array<ArrayBuffer> {
   const compress = options.compress ?? true;
   const levelCount = dag.levels.length;
   if (levelCount === 0) throw new DgcFormatError("dgc encoder: cannot serialize an empty DAG.");
