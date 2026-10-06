@@ -103,7 +103,9 @@ fn stroke_line(
             dash_offset: None,
             corner_radius: None,
             shadow: None,
-        }));
+                    blend: None,
+            backdrop_blur: None,
+}));
 }
 
 /// Filled rectangle via a closed path (same pattern as legend focus rings).
@@ -148,7 +150,9 @@ fn stroke_rect(
             dash_offset: None,
             corner_radius: None,
             shadow: None,
-        }));
+                    blend: None,
+            backdrop_blur: None,
+}));
 }
 
 /// Appends axis lines, ticks and tick labels for every axis that visible

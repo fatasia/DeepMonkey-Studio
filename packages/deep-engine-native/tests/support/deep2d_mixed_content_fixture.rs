@@ -103,7 +103,9 @@ pub(crate) fn base_list() -> Deep2dDisplayList {
                 dash_offset: None,
                 corner_radius: None,
                 shadow: None,
-                }),
+                            blend: None,
+            backdrop_blur: None,
+}),
             Deep2dCommand::Image(ImageCommand {
                 id: "draw:tile".into(),
                 z_order: 1,

@@ -118,6 +118,8 @@ struct CacheInner {
     /// logical_height) bits; identical canvas size reuses the upload.
     frame_resources: HashMap<u64, Arc<FrameResources>>,
     path_pipelines: HashMap<wgpu::TextureFormat, Arc<CachedPathPipelines>>,
+    /// 刀 4 固定函数混合管线族(非 normal 模式),键 (format, blend)。
+    path_blend_pipelines: HashMap<(wgpu::TextureFormat, u32), Arc<CachedPathPipelines>>,
     dynamic_pipelines: HashMap<wgpu::TextureFormat, Arc<CachedDynamicPipelines>>,
     atlas_pipelines: HashMap<wgpu::TextureFormat, Arc<CachedAtlasPipelines>>,
     atlas_textures: Bounded<ResidentAtlas>,
@@ -139,6 +141,7 @@ impl Deep2dGpuAssetCache {
                 path_paint_layout: None,
                 frame_resources: HashMap::new(),
                 path_pipelines: HashMap::new(),
+                path_blend_pipelines: HashMap::new(),
                 dynamic_pipelines: HashMap::new(),
                 atlas_pipelines: HashMap::new(),
                 atlas_textures: Bounded::new(MAX_ATLAS_TEXTURES),
@@ -227,6 +230,27 @@ impl Deep2dGpuAssetCache {
         inner.stats.path_pipeline_creates += 1;
         let cached = Arc::new(create());
         inner.path_pipelines.insert(format, Arc::clone(&cached));
+        cached
+    }
+
+    /// 刀 4 非 normal 混合模式的路径管线家族(pipeline + no-op stencil
+    /// 变体),键 (format, blend)。命中/创建计入 path_pipeline_* 统计。
+    pub fn path_blend_pipelines(
+        &self,
+        format: wgpu::TextureFormat,
+        blend: u32,
+        create: impl FnOnce() -> CachedPathPipelines,
+    ) -> Arc<CachedPathPipelines> {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.path_blend_pipelines.contains_key(&(format, blend)) {
+            inner.stats.path_pipeline_hits += 1;
+            return Arc::clone(inner.path_blend_pipelines.get(&(format, blend)).unwrap());
+        }
+        inner.stats.path_pipeline_creates += 1;
+        let cached = Arc::new(create());
+        inner
+            .path_blend_pipelines
+            .insert((format, blend), Arc::clone(&cached));
         cached
     }
 

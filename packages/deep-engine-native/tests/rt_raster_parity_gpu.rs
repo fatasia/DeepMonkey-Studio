@@ -89,7 +89,11 @@ mod dashboard_video_gpu;
 #[path = "../src/deep2d_atlas_gpu.rs"]
 mod deep2d_atlas_gpu; // deep2d_atlas_gpu.rs 被 player_picking/publication_verification 等引用
 #[path = "../src/deep2d_gpu.rs"]
-mod deep2d_gpu; // deep2d_gpu.rs 被 player_picking/publication_verification 等引用
+mod deep2d_gpu;
+#[path = "../src/deep2d_frame_context.rs"]
+mod deep2d_frame_context;
+#[path = "../src/deep2d_backdrop_gpu.rs"]
+mod deep2d_backdrop_gpu; // deep2d_gpu.rs 被 player_picking/publication_verification 等引用
 #[path = "../src/deep2d_dynamic_gpu.rs"]
 mod deep2d_dynamic_gpu; // 刀 3:deep2d_gpu.rs 引用
 #[path = "../src/deep2d_gpu_cache.rs"]

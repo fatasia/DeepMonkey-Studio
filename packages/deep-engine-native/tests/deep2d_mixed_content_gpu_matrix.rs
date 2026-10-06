@@ -11,6 +11,10 @@
 mod deep2d_atlas_gpu;
 #[path = "../src/deep2d_gpu.rs"]
 mod deep2d_gpu;
+#[path = "../src/deep2d_frame_context.rs"]
+mod deep2d_frame_context;
+#[path = "../src/deep2d_backdrop_gpu.rs"]
+mod deep2d_backdrop_gpu;
 #[path = "../src/deep2d_dynamic_gpu.rs"]
 mod deep2d_dynamic_gpu; // 刀 3:deep2d_gpu.rs 引用
 // deep2d_gpu.rs 的 Windows 绘制签名引用本模块（#[path] 重组装的 bin 侧模块族）。

@@ -8,6 +8,7 @@ fn prepared(parts: &[(usize, f32)]) -> PreparedDeep2d {
         let first_vertex = vertices.len() as u32;
         vertices.extend(vec![[*value; 9]; *count]);
         chunks.push(PreparedDeep2dPathChunk {
+            blend: 0,
             first_vertex,
             vertex_count: *count as u32,
             z_order: index as i32,
@@ -17,6 +18,7 @@ fn prepared(parts: &[(usize, f32)]) -> PreparedDeep2d {
     }
     let count = vertices.len();
     PreparedDeep2d {
+        backdrop_chunks: Vec::new(),
         logical_width: 128.0,
         logical_height: 64.0,
         vertices,
@@ -27,6 +29,7 @@ fn prepared(parts: &[(usize, f32)]) -> PreparedDeep2d {
         images: vec![],
         glyphs: vec![],
         summary: PreparedDeep2dSummary {
+            backdrop_commands: 0,
             commands: parts.len(),
             path_segments: 0,
             fill_triangles: count / 3,
