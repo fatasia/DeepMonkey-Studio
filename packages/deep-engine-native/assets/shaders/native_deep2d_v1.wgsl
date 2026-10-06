@@ -241,3 +241,13 @@ fn fragment_main(input: VertexOutput) -> @location(0) vec4f {
   }
   return paint_color(entry, input.local);
 }
+
+// 刀 4 fixed-function blend family: multiply/screen pipelines bind this
+// entry point, which premultiplies the (straight) fragment output before the
+// blend stage — the exact precondition of `paint_data::blend_composite` for
+// those modes. normal/darken/lighten/overwrite keep `fragment_main`.
+@fragment
+fn fragment_main_premultiplied(input: VertexOutput) -> @location(0) vec4f {
+  let color = fragment_main(input);
+  return vec4f(color.rgb * color.a, color.a);
+}

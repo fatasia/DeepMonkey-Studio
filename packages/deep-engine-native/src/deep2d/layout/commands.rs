@@ -205,9 +205,12 @@ fn path_command(
     rect: LayoutRect,
     visual: &LayoutBoxVisual,
 ) -> PathCommand {
-    // 校验链要求 shadow 必须伴随命令 cornerRadius 字段;无阴影时圆角为 0
-    // 不需要该字段(直角矩形零圆角与缺省同像素)。
-    let corner_radius = if visual.corner_radius > 0.0 || visual.shadow.is_some() {
+    // 校验链要求 shadow/backdropBlur 必须伴随命令 cornerRadius 字段;均无时
+    // 圆角为 0 不需要该字段(直角矩形零圆角与缺省同像素)。
+    let corner_radius = if visual.corner_radius > 0.0
+        || visual.shadow.is_some()
+        || visual.backdrop_blur.is_some()
+    {
         Some(visual.corner_radius)
     } else {
         None
@@ -232,6 +235,8 @@ fn path_command(
         dash_offset: None,
         corner_radius,
         shadow: visual.shadow,
+        blend: visual.blend,
+        backdrop_blur: visual.backdrop_blur,
     }
 }
 

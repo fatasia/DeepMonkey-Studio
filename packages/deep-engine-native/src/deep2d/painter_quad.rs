@@ -96,11 +96,15 @@ pub(super) fn append_quad(
     let fill_color = command.fill.as_ref().and_then(super::Deep2dPaint::solid_color);
     let stroke_color = command.stroke;
     if command.fill.is_none() && stroke_color.is_none() && shadow.is_none() {
-        return Err(issue(
-            Deep2dPainterIssueCode::UnsupportedStyle,
-            command_path,
-            "Quad commands require fill, stroke or shadow paint.",
-        ));
+        // 刀 4:纯 backdrop 命令(毛玻璃)没有 fill/stroke/shadow,底色由
+        // backdrop 捕获链绘制;无 blur 时仍 fail-closed。
+        if command.backdrop_blur.is_none() {
+            return Err(issue(
+                Deep2dPainterIssueCode::UnsupportedStyle,
+                command_path,
+                "Quad commands require fill, stroke or shadow paint.",
+            ));
+        }
     }
     if size[0] <= 0.0 || size[1] <= 0.0 {
         return Err(issue(

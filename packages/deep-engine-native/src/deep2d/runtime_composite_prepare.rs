@@ -64,6 +64,15 @@ pub(super) fn prepare(
             vertex[0] += layer.translation[0] as f32;
             vertex[1] += layer.translation[1] as f32;
         }
+        // 刀 4 backdrop 底色参数随合成层平移(与顶点同规则);索引偏移
+        // 在 chunk 循环里按已接收数量计算,先于 chunk 处理完成登记。
+        let backdrop_offset = output.path.backdrop_chunks.len();
+        output.path.backdrop_chunks.extend(part.path.backdrop_chunks.iter().map(|backdrop| {
+            let mut backdrop = *backdrop;
+            backdrop.rect[0] += layer.translation[0] as f32;
+            backdrop.rect[1] += layer.translation[1] as f32;
+            backdrop
+        }));
         for mut chunk in part.chunks {
             chunk.layer_index = Some(layer_index);
             chunk.clip_rect = match chunk.clip_rect {
@@ -97,6 +106,11 @@ pub(super) fn prepare(
                     *edge_first = edge_first
                         .checked_add(edge_offset)
                         .ok_or("composite edge overflow")?;
+                }
+                PreparedDeep2dChunkKind::Backdrop { index } => {
+                    // backdrop 块的底色参数在 path.backdrop_chunks:索引按
+                    // 已接收数量偏移,矩形随合成层平移(与顶点同规则)。
+                    *index = index.checked_add(backdrop_offset).ok_or("composite backdrop overflow")?;
                 }
             }
             output.chunks.push(chunk);
@@ -166,6 +180,10 @@ pub(super) fn combined_summary(
                 incoming.path.stroke_triangles,
             )?,
             vertices: add(current.path.vertices, incoming.path.vertices)?,
+            backdrop_commands: add(
+                current.path.backdrop_commands,
+                incoming.path.backdrop_commands,
+            )?,
             dynamic_commands: add(
                 current.path.dynamic_commands,
                 incoming.path.dynamic_commands,

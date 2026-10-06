@@ -5,8 +5,8 @@
 use super::types::Deep2dIssueCode;
 use super::validate::{MAX_DRAW_VALUE, Validator};
 use super::{
-    BoxShadow, DEEP_2D_DISPLAY_LIST_BUDGETS, Deep2dPaint, GradientStop, LinearGradientPaint,
-    RadialGradientPaint,
+    BackdropBlur, BoxShadow, DEEP2D_MAX_BACKDROP_RADIUS, DEEP_2D_DISPLAY_LIST_BUDGETS,
+    Deep2dPaint, GradientStop, LinearGradientPaint, RadialGradientPaint,
 };
 
 impl Validator {
@@ -92,6 +92,21 @@ impl Validator {
             self.corner_radius(radius, &format!("{path}.cornerRadius"));
         }
     }
+
+    pub(super) fn backdrop_blur(&mut self, blur: &BackdropBlur, path: &str) {
+        // radius=0 是无效命令(零半径模糊无意义),与 command_types 注释 "must be positive" 同口径。
+        if !blur.radius.is_finite()
+            || !(0.0 < blur.radius && blur.radius <= DEEP2D_MAX_BACKDROP_RADIUS)
+        {
+            self.add(
+                Deep2dIssueCode::InvalidNumber,
+                format!("{path}.radius"),
+                format!(
+                    "Backdrop blur radius must be a finite positive number of at most {DEEP2D_MAX_BACKDROP_RADIUS}."
+                ),
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -121,6 +136,8 @@ mod tests {
             dash_offset: None,
             corner_radius: None,
             shadow: None,
+            blend: None,
+            backdrop_blur: None,
         }
     }
 
@@ -241,5 +258,65 @@ mod tests {
         });
         let result = validate_display_list(&list_with(command));
         assert_eq!(result.issues[0].code, Deep2dIssueCode::InvalidStructure);
+    }
+
+    #[test]
+    fn backdrop_blur_budget_and_structure_fail_closed() {
+        // Backdrop-only quads (no fill/stroke/shadow) are the frosted glass.
+        let mut glass = base_command(None);
+        glass.corner_radius = Some(8.0);
+        glass.backdrop_blur = Some(BackdropBlur { radius: 8.0 });
+        let result = validate_display_list(&list_with(glass));
+        assert!(result.valid, "{:?}", result.issues);
+
+        // Backdrop blur is box-shaped and requires cornerRadius.
+        let mut command = base_command(Some(Deep2dPaint::Solid([1.0, 0.0, 0.0, 1.0])));
+        command.backdrop_blur = Some(BackdropBlur { radius: 8.0 });
+        let result = validate_display_list(&list_with(command));
+        assert!(result
+            .issues
+            .iter()
+            .any(|issue| issue.code == Deep2dIssueCode::InvalidStructure));
+
+        // Negative / zero / oversized radius fails closed.
+        for radius in [-1.0, 0.0, DEEP2D_MAX_BACKDROP_RADIUS * 2.0, f64::NAN] {
+            let mut command = base_command(Some(Deep2dPaint::Solid([1.0, 0.0, 0.0, 1.0])));
+            command.corner_radius = Some(4.0);
+            command.backdrop_blur = Some(BackdropBlur { radius });
+            let result = validate_display_list(&list_with(command));
+            assert!(
+                result
+                    .issues
+                    .iter()
+                    .any(|issue| issue.code == Deep2dIssueCode::InvalidNumber),
+                "radius {radius} must fail"
+            );
+        }
+
+        // Per-frame command budget.
+        let mut commands = Vec::new();
+        for index in 0..=super::super::DEEP2D_MAX_BACKDROP_COMMANDS_PER_FRAME {
+            let mut command = base_command(Some(Deep2dPaint::Solid([1.0, 0.0, 0.0, 1.0])));
+            command.id = format!("glass-{index}");
+            command.corner_radius = Some(4.0);
+            command.backdrop_blur = Some(BackdropBlur { radius: 4.0 });
+            commands.push(crate::deep2d::Deep2dCommand::Path(command));
+        }
+        let list = Deep2dDisplayList {
+            schema_version: 1,
+            id: "backdrop-budget".into(),
+            revision: 1,
+            logical_width: 100.0,
+            logical_height: 100.0,
+            scale_factor: 1.0,
+            resources: vec![crate::deep2d::Deep2dResource::Path(rect_resource())],
+            atlases: Vec::new(),
+            commands,
+        };
+        let result = validate_display_list(&list);
+        assert!(result
+            .issues
+            .iter()
+            .any(|issue| issue.code == Deep2dIssueCode::BudgetExceeded));
     }
 }

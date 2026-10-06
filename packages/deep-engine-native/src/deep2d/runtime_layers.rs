@@ -1,6 +1,6 @@
 use super::{
-    Deep2dComposition, Deep2dRect, PreparedDeep2dChunk, PreparedDeep2dChunkKind,
-    PreparedDeep2dPathChunk, PreparedDynamicPathChunk,
+    Deep2dComposition, Deep2dRect, PreparedBackdropChunk, PreparedDeep2dChunk,
+    PreparedDeep2dChunkKind, PreparedDeep2dPathChunk, PreparedDynamicPathChunk,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -22,6 +22,8 @@ struct Candidate {
     first_vertex: u32,
     vertex_count: u32,
     clip_rect: Option<Deep2dRect>,
+    /// 刀 4 固定函数混合模式;合并禁止跨模式。
+    blend: u32,
 }
 
 pub(super) fn build_chunks(
@@ -29,10 +31,22 @@ pub(super) fn build_chunks(
     paths: &[PreparedDeep2dPathChunk],
     atlases: &[PreparedAtlasItem],
     dynamics: &[PreparedDynamicPathChunk],
+    backdrops: &[PreparedBackdropChunk],
 ) -> Vec<PreparedDeep2dChunk> {
-    let mut candidates = paths
+    let mut candidates = backdrops
         .iter()
-        .map(|path| Candidate {
+        .enumerate()
+        .map(|(index, backdrop)| Candidate {
+            z_order: backdrop.z_order,
+            source_index: backdrop.source_index,
+            kind_order: 0,
+            kind: PreparedDeep2dChunkKind::Backdrop { index },
+            first_vertex: 0,
+            vertex_count: 0,
+            clip_rect: backdrop.clip_rect,
+            blend: super::paint_data::DEEP2D_BLEND_NORMAL,
+        })
+        .chain(paths.iter().map(|path| Candidate {
             z_order: path.z_order,
             source_index: path.source_index,
             kind_order: 0,
@@ -40,7 +54,8 @@ pub(super) fn build_chunks(
             first_vertex: path.first_vertex,
             vertex_count: path.vertex_count,
             clip_rect: path.clip_rect,
-        })
+            blend: path.blend,
+        }))
         .chain(dynamics.iter().map(|dynamic| Candidate {
             z_order: dynamic.z_order,
             source_index: dynamic.source_index,
@@ -53,6 +68,7 @@ pub(super) fn build_chunks(
             first_vertex: dynamic.cover_first,
             vertex_count: dynamic.cover_count,
             clip_rect: dynamic.clip_rect,
+            blend: super::paint_data::DEEP2D_BLEND_NORMAL,
         }))
         .chain(atlases.iter().map(|atlas| Candidate {
             z_order: atlas.z_order,
@@ -64,6 +80,7 @@ pub(super) fn build_chunks(
             first_vertex: atlas.first_vertex,
             vertex_count: atlas.vertex_count,
             clip_rect: atlas.clip_rect,
+            blend: super::paint_data::DEEP2D_BLEND_NORMAL,
         }))
         .collect::<Vec<_>>();
     match composition {
@@ -78,10 +95,16 @@ pub(super) fn build_chunks(
     for candidate in candidates {
         // 刀 3 动态块永不合并:每个块自带 stencil bracket(clear→cover→fill),
         // 相邻合并会破坏逐块模板隔离。
-        let mergeable = !matches!(candidate.kind, PreparedDeep2dChunkKind::DynamicPath { .. });
+        // 刀 4:动态块(backdrop bracket 同理)永不合并;静态块混合模式
+        // 不同也永不合并(固定函数 blend 状态是逐管线家族的)。
+        let mergeable = !matches!(
+            candidate.kind,
+            PreparedDeep2dChunkKind::DynamicPath { .. } | PreparedDeep2dChunkKind::Backdrop { .. }
+        );
         if mergeable && let Some(chunk) = chunks.last_mut().filter(|chunk| {
             chunk.kind == candidate.kind
                 && chunk.clip_rect == candidate.clip_rect
+                && chunk.blend == candidate.blend
                 && chunk.first_vertex + chunk.vertex_count == candidate.first_vertex
         }) {
             chunk.vertex_count += candidate.vertex_count;
@@ -92,6 +115,7 @@ pub(super) fn build_chunks(
                 first_vertex: candidate.first_vertex,
                 vertex_count: candidate.vertex_count,
                 clip_rect: candidate.clip_rect,
+                blend: candidate.blend,
             });
         }
     }

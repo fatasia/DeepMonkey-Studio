@@ -438,6 +438,12 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         reason: RendererCapabilityReasonCode::Full,
         evidence: "deep2d/painter_dynamic.rs(滑窗 8 帧内 ≥3 变更自动分路;资格 gate;预算回落计数)+ painter_cache_prepare 路由 + native_deep2d_dynamic_cover_v1.wgsl + deep2d_dynamic_gpu.rs(clear→cover→fill 三连,Stencil8;nonzero 前向增/背向减,evenodd 双向 Invert 翻 LSB)+ paint_reference dynamic 分支同语义 oracle + deep2d_dynamic_gpu_tests N 帧/fill-rule donut/渐变/scissor/混帧/composite 真 GPU 对拍(内部零分歧,逐像素 worst=0);如实:动态命令 stroke 维持 CPU 展开、边缘为 1× 硬边(与既有静态路一致)",
     },
+    NativeCapabilitySelfCheck {
+        capability_id: "deep2d-blend-backdrop",
+        support: RendererCapabilitySupport::Supported,
+        reason: RendererCapabilityReasonCode::Full,
+        evidence: "deep2d/command_types.rs(PathCommand.blend GPUI 词汇子集+backdrop_blur,legacy wire 逐字节兼容)+ src/deep2d/backdrop.rs(五 tap 高斯 sweep+to_u8_rgba round-half-up CPU 镜像)+ deep2d/validate_paint.rs(radius>0≤64 fail-closed)+ GPU 探针族(sweep 解析断言/serde wire 双向/fail-closed 负例;blend 合成臂 CPU oracle 同式)",
+    },
 ];
 
 #[cfg(test)]

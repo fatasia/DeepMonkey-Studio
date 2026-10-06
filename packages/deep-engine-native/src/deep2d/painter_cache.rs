@@ -78,6 +78,9 @@ struct Entry {
     /// and patched into the vertex slot ids on every cache hit so reuse stays
     /// correct when the frame's paint set changes.
     paints: Vec<Deep2dPaintData>,
+    /// 刀 4 毛玻璃:解析 quad 的资源空间 AABB(backdropBlur 命令专属),
+    /// 命中帧直接复用——见证(style+resource)一致则矩形逐位一致。
+    backdrop_rect: Option<[[f64; 2]; 2]>,
     segments: usize,
     fill_triangles: usize,
     stroke_triangles: usize,

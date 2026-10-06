@@ -755,6 +755,19 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     // 符号翻转,≠0 判定不变);evenodd 双向 Invert 翻转 LSB、fill 测
     // LSB==1——双向 Increment 在多重覆盖区(洞正下方 3 次覆盖)奇偶失效,
     // 真机实测 4 像素内部分歧后修正。
+    id: "deep2d-blend-backdrop",
+    title: "deep2D 混合模式与背景模糊(GPUI 对齐第四件)",
+    webFeatureKeys: [],
+    web: {
+      support: "unavailable", reason: "absent",
+      evidence: "packages/deep-engine/src/deep2dDisplayList.ts(wire schema 无 blend/backdropBlur 字段;web 无 deep2d 渲染通路)",
+    },
+    native: {
+      support: "supported", reason: "full",
+      evidence: "packages/deep-engine-native/src/deep2d/command_types.rs(PathCommand.blend GPUI 词汇子集+backdrop_blur,legacy wire 逐字节兼容)+ src/deep2d/backdrop.rs(五 tap 高斯 sweep+CPU 镜像 to_u8_rgba round-half-up)+ deep2d/validate_paint.rs(radius>0≤64 fail-closed)+ GPU 探针族(sweep 解析断言/serde wire 双向/fail-closed 负例;blend 合成臂 CPU oracle 同式)",
+    },
+  },
+  {
     id: "deep2d-dynamic-path-fill",
     title: "deep2D 动态路径 stencil-then-cover 实时填充(滑窗自动分路;fill 域)",
     webFeatureKeys: [],

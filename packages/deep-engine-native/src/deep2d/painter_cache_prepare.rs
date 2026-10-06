@@ -136,6 +136,7 @@ impl Deep2dPathCache {
             self.stats.hits += 1;
             self.order.insert((entry.touched, command.id.clone()));
             let first = output.vertices.len();
+            let backdrop_rect = entry.backdrop_rect;
             output.vertices.extend_from_slice(&entry.vertices);
             // 渐变/圆角顶点引用存储槽:按本帧注册表重登记并回填槽号,
             // 保证缓存命中在任何 paint 组合下都与现算逐字节一致。
@@ -157,14 +158,14 @@ impl Deep2dPathCache {
             output.summary.path_segments += entry.segments;
             output.summary.fill_triangles += entry.fill_triangles;
             output.summary.stroke_triangles += entry.stroke_triangles;
-            return Ok(PathPrepareRoute::Static);
+            return Ok(PathPrepareRoute::Static { backdrop_rect });
         }
         self.stats.misses += 1;
         let recently_evicted = entry.is_none() && self.recently_evicted.remove(command.id.as_str());
         self.stats
             .miss_reasons
             .record(miss_reason(entry, document, clips_intact, command, resource, recently_evicted));
-        self.prepare_static(
+        let backdrop_rect = self.prepare_static(
             command,
             resource,
             resource_path,
@@ -176,7 +177,7 @@ impl Deep2dPathCache {
             &style,
             document,
         )?;
-        Ok(PathPrepareRoute::Static)
+        Ok(PathPrepareRoute::Static { backdrop_rect })
     }
 
     /// 静态路由:CPU 细分 + 条目存储(命中返回后不会走到这里)。
@@ -194,10 +195,10 @@ impl Deep2dPathCache {
         paths: &std::collections::HashMap<&str, (usize, &PathResource)>,
         style: &PathCommand,
         document: EntryWitness,
-    ) -> Result<(), Deep2dPainterIssue> {
+    ) -> Result<Option<[[f64; 2]; 2]>, Deep2dPainterIssue> {
         let first = output.vertices.len();
         let before = output.summary;
-        prepare_path(
+        let backdrop_rect = prepare_path(
             command,
             resource,
             resource_path,
@@ -251,7 +252,7 @@ impl Deep2dPathCache {
             + command.id.len() * 2
             + std::mem::size_of::<Entry>();
         if bytes > self.max_bytes || self.max_entries == 0 {
-            return Ok(());
+            return Ok(backdrop_rect);
         }
         let entry = Entry {
             style: style.clone(),
@@ -260,6 +261,7 @@ impl Deep2dPathCache {
             witness: document,
             vertices: entry_vertices,
             paints: entry_paints,
+            backdrop_rect,
             segments: output.summary.path_segments - before.path_segments,
             fill_triangles: output.summary.fill_triangles - before.fill_triangles,
             stroke_triangles: output.summary.stroke_triangles - before.stroke_triangles,
@@ -267,7 +269,7 @@ impl Deep2dPathCache {
             touched: self.tick,
         };
         self.store(command.id.clone(), entry);
-        Ok(())
+        Ok(backdrop_rect)
     }
 
     /// 刀 3 动态路由:展平(仅线性化)+ fence 发射 + cover 顶点;描边部分
@@ -367,7 +369,7 @@ impl Deep2dPathCache {
             camera_scale_bits: camera.scale_bits,
             resource_epoch: self.resource_epoch,
         };
-        self.prepare_static(
+        let backdrop_rect = self.prepare_static(
             command,
             resource,
             resource_path,
@@ -379,7 +381,7 @@ impl Deep2dPathCache {
             &style,
             document,
         )?;
-        Ok(PathPrepareRoute::Static)
+        Ok(PathPrepareRoute::Static { backdrop_rect })
     }
 }
 

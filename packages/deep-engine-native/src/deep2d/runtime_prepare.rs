@@ -30,6 +30,10 @@ impl PreparedDeep2dAtlas {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreparedDeep2dChunkKind {
     Path,
+    /// 刀 4 毛玻璃 bracket 块:`index` 指 `path.backdrop_chunks`(绘制序
+    /// capture→blur→底色 quad);first_vertex/vertex_count 不用(底色
+    /// quad 由 backdrop 专用管线从自身资源发射)。永不参与 chunk 合并。
+    Backdrop { index: usize },
     Atlas { atlas_index: usize },
     /// 刀 3 stencil 动态块:first_vertex/vertex_count 指 cover 顶点区间
     /// (path 流),edge 区间在 `dynamic_edges`。永不参与 chunk 合并。
@@ -48,6 +52,9 @@ pub struct PreparedDeep2dChunk {
     pub first_vertex: u32,
     pub vertex_count: u32,
     pub clip_rect: Option<Deep2dRect>,
+    /// 刀 4 固定函数混合模式(`DEEP2D_BLEND_*`,0 = normal):按块选择
+    /// blend 管线家族;合并禁止跨模式(atlas/dynamic 恒为 normal)。
+    pub blend: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -183,7 +190,13 @@ pub(super) fn prepare_impl(
                     Deep2dAtlasKind::Image => image_quads += 1,
                 }
             }
-            let chunks = build_chunks(Deep2dComposition::ZOrdered, &path.chunks, &atlas_items, &path.dynamic_chunks);
+            let chunks = build_chunks(
+        Deep2dComposition::ZOrdered,
+        &path.chunks,
+        &atlas_items,
+        &path.dynamic_chunks,
+        &path.backdrop_chunks,
+    );
             let summary = PreparedDeep2dRuntimeSummary {
                 path: path.summary,
                 atlases: atlases.len(),
@@ -276,7 +289,13 @@ pub(super) fn prepare_impl(
                     Deep2dAtlasKind::Image => image_quads += 1,
                 }
             }
-            let chunks = build_chunks(package.composition, &path.chunks, &atlas_items, &path.dynamic_chunks);
+            let chunks = build_chunks(
+            package.composition,
+            &path.chunks,
+            &atlas_items,
+            &path.dynamic_chunks,
+            &path.backdrop_chunks,
+        );
             let atlas_batches = chunks
                 .iter()
                 .filter(|chunk| matches!(chunk.kind, PreparedDeep2dChunkKind::Atlas { .. }))

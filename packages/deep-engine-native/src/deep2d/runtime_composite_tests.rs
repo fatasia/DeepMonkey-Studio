@@ -167,6 +167,7 @@ fn composite_accumulation_checks_exact_limits_before_appending() {
             dynamic_commands: 0,
             dynamic_edges: 0,
             dynamic_fallbacks: 0,
+            backdrop_commands: 0,
         },
         atlases: 0,
         atlas_bytes: 0,

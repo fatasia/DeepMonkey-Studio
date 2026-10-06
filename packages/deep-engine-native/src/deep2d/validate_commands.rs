@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use super::command_types::DEEP2D_MAX_BACKDROP_COMMANDS_PER_FRAME;
 use super::runtime_types::Deep2dAtlas;
 use super::types::Deep2dRect;
 use super::validate::{MAX_DRAW_VALUE, ResourceKind, Validator};
@@ -15,10 +16,16 @@ impl Validator {
         let mut command_ids = HashSet::new();
         let mut total_text_code_units = 0usize;
         let mut total_baked_glyphs = 0usize;
+        let mut total_backdrops = 0usize;
         for (index, command) in commands.iter().enumerate() {
             let path = format!("commands[{index}]");
             let id = match command {
-                Deep2dCommand::Path(value) => &value.id,
+                Deep2dCommand::Path(value) => {
+                    if value.backdrop_blur.is_some() {
+                        total_backdrops += 1;
+                    }
+                    &value.id
+                }
                 Deep2dCommand::Text(value) => &value.id,
                 Deep2dCommand::Image(value) => &value.id,
             };
@@ -59,6 +66,16 @@ impl Validator {
                 format!(
                     "Display list exceeds {} baked glyphs.",
                     DEEP_2D_DISPLAY_LIST_BUDGETS.commands
+                ),
+            );
+        }
+        if total_backdrops > DEEP2D_MAX_BACKDROP_COMMANDS_PER_FRAME {
+            self.add(
+                Deep2dIssueCode::BudgetExceeded,
+                "commands",
+                format!(
+                    "Display list exceeds {} backdrop-blur commands per frame.",
+                    DEEP2D_MAX_BACKDROP_COMMANDS_PER_FRAME
                 ),
             );
         }

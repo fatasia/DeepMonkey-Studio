@@ -76,6 +76,8 @@ fn fill_command(id: &str, z_order: i32, path_id: &str, fill_rule: Option<FillRul
         dash_offset: None,
         corner_radius: None,
         shadow: None,
+        blend: None,
+        backdrop_blur: None,
     })
 }
 

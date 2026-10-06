@@ -52,6 +52,9 @@ pub(super) fn emit_stroke(
         return Ok(());
     };
     let opacity = command.opacity.unwrap_or(1.0) as f32;
+    // 刀 4:混合模式不在这里预乘——premultiply(multiply/screen)由管线
+    // 家族选中的 WGSL `fragment_main_premultiplied` 入口在输出端统一折叠,
+    // 顶点色/描边色保持 straight,与 CPU oracle 的 blend_composite 同规。
     let dashed_storage;
     let stroked = match command.dash.as_deref() {
         Some(pattern) => {
@@ -89,7 +92,7 @@ pub(super) fn prepare_path(
     paths: &HashMap<&str, (usize, &PathResource)>,
     registry: &mut PaintRegistry,
     output: &mut PreparedDeep2d,
-) -> Result<(), Deep2dPainterIssue> {
+) -> Result<Option<[[f64; 2]; 2]>, Deep2dPainterIssue> {
     if command.dash.is_some() && command.stroke.is_none() {
         return Err(issue(
             Deep2dPainterIssueCode::UnsupportedDash,
@@ -134,10 +137,14 @@ pub(super) fn prepare_path(
             path,
         );
     }
+    // 刀 4 blend:混合模式在 chunk 上随顶点区间走(prepare_impl 登记),
+    // 管线家族按 chunk blend 选择;顶点色保持 straight,premultiply 由
+    // premul 管线入口在 fragment 输出端统一折叠(CPU oracle 同规)。
     if let Some(paint) = &command.fill {
         // Solid fills keep the v1 fast path: paint slot 0 renders from the
         // vertex color, no storage entry, byte-identical geometry pipeline.
-        let (slot, vertex_color) = register_fill_paint(command, paint, scale_factor, registry, path)?;
+        let (slot, vertex_color) =
+            register_fill_paint(command, paint, scale_factor, registry, path)?;
         let vertices = match command.fill_rule {
             None => {
                 let mut vertices = Vec::new();
@@ -175,10 +182,12 @@ pub(super) fn prepare_path(
         output.vertices.extend(vertices);
     }
     emit_stroke(command, &linear, &clip_sets, scale_factor, output, path)?;
-    Ok(())
+    Ok(None)
 }
 
-/// Rounded-rect quad: validates the rect shape and emits the six SDF vertices.
+/// Rounded-rect quad: validates the rect shape and emits the six SDF
+/// vertices. Returns the resource-space AABB when the command carries a
+/// backdrop blur (刀 4 frosted glass needs the canvas-space rect upstream).
 #[allow(clippy::too_many_arguments)]
 fn prepare_quaded(
     command: &PathCommand,
@@ -189,7 +198,7 @@ fn prepare_quaded(
     registry: &mut PaintRegistry,
     output: &mut PreparedDeep2d,
     path: &str,
-) -> Result<(), Deep2dPainterIssue> {
+) -> Result<Option<[[f64; 2]; 2]>, Deep2dPainterIssue> {
     if linear.subpaths.len() != 1 {
         return Err(issue(
             Deep2dPainterIssueCode::UnsupportedGeometry,
@@ -215,5 +224,5 @@ fn prepare_quaded(
     output.vertices.truncate(first_vertex as usize);
     output.vertices.extend(vertices);
     output.summary.fill_triangles += clipped / 3;
-    Ok(())
+    Ok(command.backdrop_blur.is_some().then_some([min, max]))
 }

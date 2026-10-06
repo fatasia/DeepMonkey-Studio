@@ -139,11 +139,17 @@ pub(crate) fn resource_content_hash(resource: &PathResource) -> u64 {
     hasher.finish()
 }
 
-/// stencil 分路资格:有 fill、非解析 SDF quad、无多边形剪刀。
+/// stencil 分路资格:有 fill、非解析 SDF quad、无多边形剪刀、非
+/// multiply/screen 等固定函数混合(动态 cover 走共享 fill 管线,混合
+/// 模式仅静态块携带;non-normal blend 命令回落 CPU 细分保语义)。
 pub(crate) fn stencil_eligible(command: &PathCommand) -> bool {
     command.fill.is_some()
         && command.corner_radius.is_none()
         && command.clip_path_ids.is_none()
+        && !command
+            .blend
+            .is_some_and(|blend| blend != super::Deep2dBlendMode::Normal)
+        && command.backdrop_blur.is_none()
 }
 
 /// 动态填充的生效 fill rule;wire 缺省(None)按 canvas 惯例取 nonzero。

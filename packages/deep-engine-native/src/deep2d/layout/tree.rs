@@ -6,7 +6,7 @@
 
 use super::style::LayoutStyle;
 use super::LAYOUT_BUDGETS;
-use crate::deep2d::{BoxShadow, Deep2dPaint};
+use crate::deep2d::{BackdropBlur, BoxShadow, Deep2dBlendMode, Deep2dPaint};
 
 /// arena 下标;`Node::ROOT` 是 0 号(构造时的根)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -41,6 +41,12 @@ pub struct LayoutBoxVisual {
     pub corner_radius: f64,
     /// 刀 1 盒阴影;需与圆角并存(命令校验链要求 cornerRadius 字段存在)。
     pub shadow: Option<BoxShadow>,
+    /// 刀 4 固定函数混合模式(缺省 = normal;动态 gate 排除非 normal,
+    /// 布局产出的盒命令恒为静态块)。
+    pub blend: Option<Deep2dBlendMode>,
+    /// 刀 4 毛玻璃背景模糊(盒形 SDF 掩罩);缺省无。命令校验链要求
+    /// cornerRadius 字段存在,命令产出时由 backdrop 是否存在自动补齐。
+    pub backdrop_blur: Option<BackdropBlur>,
 }
 
 /// 叶子内容。`Box` 无内容测量(尺寸只来自样式);

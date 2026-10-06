@@ -6,6 +6,7 @@ mod painter_cache;
 pub mod layout;
 pub use painter_cache::{Deep2dPathCache, Deep2dPathCacheStats};
 mod base64_encode;
+mod backdrop;
 mod paint_data;
 mod paint_registry;
 mod painter_atlas;
@@ -89,16 +90,23 @@ pub const DEEP_2D_DISPLAY_LIST_BUDGETS: Deep2dBudgets = Deep2dBudgets {
     paints: 4_096,
 };
 pub use command_types::*;
+pub use backdrop::{
+    backdrop_blur_sweep, backdrop_capture_region, backdrop_downsample, backdrop_sample_bilinear,
+    to_u8_rgba,
+};
 pub use hit_index::{Deep2dHitEntry, Deep2dHitIndex, Deep2dHitKind, build_hit_index};
 pub use paint_data::{
-    DEEP2D_MAX_GRADIENT_STOPS, DEEP2D_PAINT_KIND_LINEAR, DEEP2D_PAINT_KIND_QUAD,
-    DEEP2D_PAINT_KIND_RADIAL, DEEP2D_PAINT_KIND_SOLID, Deep2dPaintData, Deep2dPaintStop,
-    gradient_stops_color, paint_color, quad_fragment, sd_rounded_box,
+    DEEP2D_BLEND_DARKEN, DEEP2D_BLEND_LIGHTEN, DEEP2D_BLEND_MULTIPLY, DEEP2D_BLEND_NORMAL,
+    DEEP2D_BLEND_OVERWRITE, DEEP2D_BLEND_SCREEN, DEEP2D_MAX_GRADIENT_STOPS,
+    DEEP2D_PAINT_KIND_LINEAR, DEEP2D_PAINT_KIND_QUAD, DEEP2D_PAINT_KIND_RADIAL,
+    DEEP2D_PAINT_KIND_SOLID, Deep2dPaintData, Deep2dPaintStop, blend_composite,
+    blend_premultiplies, clamp_corner_radius, gradient_stops_color, paint_color,
+    quad_fragment, sdf_coverage, sd_rounded_box,
 };
 pub use painter::{
-    Deep2dPainterError, Deep2dPainterIssue, Deep2dPainterIssueCode, PathVertex, PreparedDeep2d,
-    PreparedDeep2dGlyph, PreparedDeep2dPathChunk, PreparedDeep2dSummary, PreparedDynamicPathChunk,
-    prepare_display_list, prepare_display_list_cached,
+    Deep2dPainterError, Deep2dPainterIssue, Deep2dPainterIssueCode, PathVertex, PreparedBackdropChunk,
+    PreparedDeep2d, PreparedDeep2dGlyph, PreparedDeep2dPathChunk, PreparedDeep2dSummary,
+    PreparedDynamicPathChunk, prepare_display_list, prepare_display_list_cached,
 };
 pub use painter_dynamic::{
     DYNAMIC_CHANGES_THRESHOLD, DYNAMIC_WINDOW_FRAMES, MAX_DYNAMIC_FILL_EDGES_PER_COMMAND,

@@ -73,6 +73,8 @@ pub struct PreparedDeep2dSummary {
     pub dynamic_edges: usize,
     /// 因预算/资格不满足而回落静态 CPU 细分的动态候选数。
     pub dynamic_fallbacks: usize,
+    /// 刀 4:本帧 backdrop 模糊命令数(每命令一次捕获链)。
+    pub backdrop_commands: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -81,6 +83,26 @@ pub struct PreparedDeep2dPathChunk {
     pub source_index: usize,
     pub first_vertex: u32,
     pub vertex_count: u32,
+    pub clip_rect: Option<Deep2dRect>,
+    /// Per-chunk blend mode (fixed-function pipeline family selector).
+    /// Chunks never merge across different modes.
+    pub blend: u32,
+}
+
+/// 刀 4 backdrop 模糊块:捕获链与模糊底色绘制的全部参数。rect 是命令
+/// 变换后的 canvas 空间 AABB(物理映射由帧 uniform 完成);合成层平移时
+/// 与顶点同规则平移。每块在绘制序里强制 bracket:capture→blur passes→
+/// 底色 quad,永不与相邻 chunk 合并。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PreparedBackdropChunk {
+    pub z_order: i32,
+    pub source_index: usize,
+    /// Canvas-space AABB `[x, y, width, height]` of the blurred rect.
+    pub rect: [f32; 4],
+    /// Corner radius already clamped to the half extents (SDF mask).
+    pub corner_radius: f32,
+    /// Separable `[1,4,6,4,1]/16` sweep count on the half-res capture.
+    pub iterations: u32,
     pub clip_rect: Option<Deep2dRect>,
 }
 
@@ -134,6 +156,8 @@ pub struct PreparedDeep2d {
     pub dynamic_edges: Vec<[f32; 2]>,
     /// 刀 3:动态命令块(与 chunks 同 z 序,由 runtime 层合并排序)。
     pub dynamic_chunks: Vec<PreparedDynamicPathChunk>,
+    /// 刀 4:backdrop 模糊块(与 chunks 同 z 序;bracket 语义见类型注释)。
+    pub backdrop_chunks: Vec<PreparedBackdropChunk>,
     pub images: Vec<PreparedDeep2dImage>,
     pub glyphs: Vec<PreparedDeep2dGlyph>,
     pub summary: PreparedDeep2dSummary,
@@ -147,9 +171,13 @@ pub(super) struct PathPrepareFrame<'a> {
 
 /// 缓存准备的路由结果:静态(CPU 细分顶点已入 `vertices`)或动态
 /// (stencil 发射完成,区间由本层补齐 z/clip/源索引元数据后登记)。
+/// `backdrop_rect` 携带解析 quad 的本地空间 AABB(刀 4 毛玻璃):仅在
+/// 命令带 `backdropBlur` 时非 None,由上层换算成 canvas AABB 登记。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum PathPrepareRoute {
-    Static,
+    Static {
+        backdrop_rect: Option<[[f64; 2]; 2]>,
+    },
     Dynamic(DynamicEmission),
 }
 
@@ -226,6 +254,7 @@ pub(super) fn prepare_impl(
         chunks: Vec::new(),
         dynamic_edges: Vec::new(),
         dynamic_chunks: Vec::new(),
+        backdrop_chunks: Vec::new(),
         images: Vec::new(),
         glyphs: Vec::new(),
         summary: PreparedDeep2dSummary {
@@ -237,6 +266,7 @@ pub(super) fn prepare_impl(
             dynamic_commands: 0,
             dynamic_edges: 0,
             dynamic_fallbacks: 0,
+            backdrop_commands: 0,
         },
     };
     let frame = PathPrepareFrame {
@@ -273,11 +303,63 @@ pub(super) fn prepare_impl(
                         &mut registry,
                         &mut output,
                     )
-                    .map(|()| PathPrepareRoute::Static)
+                    .map(|backdrop_rect| PathPrepareRoute::Static { backdrop_rect })
                 };
                 match result {
                     Ok(route) => match route {
-                        PathPrepareRoute::Static => {
+                        PathPrepareRoute::Static {
+                            backdrop_rect: rect,
+                        } => {
+                            if let Some([min, max]) = rect {
+                                // Resource-space corners -> canvas-space AABB
+                                // (the command transform may rotate/scale).
+                                let corners = [
+                                    super::painter_math::transform_point(min, command.transform),
+                                    super::painter_math::transform_point(
+                                        [max[0], min[1]],
+                                        command.transform,
+                                    ),
+                                    super::painter_math::transform_point(max, command.transform),
+                                    super::painter_math::transform_point(
+                                        [min[0], max[1]],
+                                        command.transform,
+                                    ),
+                                ];
+                                let mut rect_min = [f64::INFINITY; 2];
+                                let mut rect_max = [f64::NEG_INFINITY; 2];
+                                for corner in corners {
+                                    for axis in 0..2 {
+                                        rect_min[axis] = rect_min[axis].min(corner[axis]);
+                                        rect_max[axis] = rect_max[axis].max(corner[axis]);
+                                    }
+                                }
+                                let half = [
+                                    ((rect_max[0] - rect_min[0]) * 0.5) as f32,
+                                    ((rect_max[1] - rect_min[1]) * 0.5) as f32,
+                                ];
+                                let radius = command.corner_radius.unwrap_or(0.0);
+                                let clamped =
+                                    super::paint_data::clamp_corner_radius(radius as f32, half);
+                                output.summary.backdrop_commands += 1;
+                                output.backdrop_chunks.push(PreparedBackdropChunk {
+                                    z_order: command.z_order,
+                                    source_index: index,
+                                    rect: [
+                                        (rect_min[0] + rect_max[0]) as f32 * 0.5 - half[0],
+                                        (rect_min[1] + rect_max[1]) as f32 * 0.5 - half[1],
+                                        half[0] * 2.0,
+                                        half[1] * 2.0,
+                                    ],
+                                    corner_radius: clamped,
+                                    iterations: super::command_types::backdrop_blur_iterations(
+                                        command
+                                            .backdrop_blur
+                                            .expect("backdrop chunk requires blur")
+                                            .radius,
+                                    ),
+                                    clip_rect: command.clip_rect,
+                                });
+                            }
                             if output.vertices.len() as u32 > first_vertex {
                                 output.chunks.push(PreparedDeep2dPathChunk {
                                     z_order: command.z_order,
@@ -285,6 +367,10 @@ pub(super) fn prepare_impl(
                                     first_vertex,
                                     vertex_count: output.vertices.len() as u32 - first_vertex,
                                     clip_rect: command.clip_rect,
+                                    blend: command
+                                        .blend
+                                        .unwrap_or(super::Deep2dBlendMode::Normal)
+                                        .as_u32(),
                                 });
                             }
                         }
@@ -307,6 +393,9 @@ pub(super) fn prepare_impl(
                                     first_vertex: first,
                                     vertex_count: count,
                                     clip_rect: command.clip_rect,
+                                    // 刀 4:动态命令的 CPU 展开描边保持 normal
+                                    // 混合(动态命令资格 gate 已排除 blend)。
+                                    blend: super::paint_data::DEEP2D_BLEND_NORMAL,
                                 });
                             }
                             debug_assert_eq!(before_dynamic + 1, output.dynamic_chunks.len());

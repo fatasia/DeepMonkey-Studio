@@ -16,6 +16,88 @@ pub const DEEP2D_PAINT_KIND_LINEAR: u32 = 1;
 pub const DEEP2D_PAINT_KIND_RADIAL: u32 = 2;
 pub const DEEP2D_PAINT_KIND_QUAD: u32 = 3;
 
+/// Blend-mode chunk encoding (mirrors `Deep2dBlendMode::as_u32`). Chunks
+/// carry the mode and select a fixed-function blend pipeline family; the
+/// paint storage entry layout stays untouched (byte-compatible).
+pub const DEEP2D_BLEND_NORMAL: u32 = 0;
+pub const DEEP2D_BLEND_MULTIPLY: u32 = 1;
+pub const DEEP2D_BLEND_SCREEN: u32 = 2;
+pub const DEEP2D_BLEND_DARKEN: u32 = 3;
+pub const DEEP2D_BLEND_LIGHTEN: u32 = 4;
+pub const DEEP2D_BLEND_OVERWRITE: u32 = 5;
+
+/// Fixed-function mapping needs a premultiplied fragment output for exactly
+/// these modes: the WGSL `fragment_main_premultiplied` entry point (selected
+/// by the pipeline family) multiplies rgb by alpha before the blend stage.
+pub fn blend_premultiplies(mode: u32) -> bool {
+    mode == DEEP2D_BLEND_MULTIPLY || mode == DEEP2D_BLEND_SCREEN
+}
+
+/// CPU mirror of the per-mode fixed-function blend pipeline, straight-alpha
+/// space end-to-end. `source` is the fragment output (straight color, exactly
+/// what `fragment_main` evaluates); for multiply/screen the GPU pipeline
+/// premultiplies it in-shader before the fixed-function stage, mirrored here
+/// by folding `* sa` into the premultiplied terms. `destination` is the
+/// straight-alpha target color in `[0, 1]`. The RGB operation mirrors the
+/// pipeline color component exactly (on the premultiplied output where
+/// marked):
+/// - normal  `{SrcAlpha, OneMinusSrcAlpha, Add}`
+/// - overwrite `{One, Zero, Add}`
+/// - multiply `{Dst, OneMinusSrcAlpha, Add}` on premult output
+///   = `s.a*s.rgb*d + d*(1 - s.a)`
+/// - screen  `{One, OneMinusSrc, Add}` on premult output
+///   = `s.a*s.rgb + d*(1 - s.a*s.rgb)`
+/// - darken  `{One, One, Min}`, lighten `{One, One, Max}`
+/// Alpha is `{One, OneMinusSrcAlpha, Add}` (normal over) for every mode
+/// except overwrite, whose alpha stage is `{One, Zero, Add}` (the pipeline
+/// replaces the target wholesale, rgb AND a). Multiply/screen are exact on
+/// opaque backdrops and follow the same fixed-function approximation as
+/// upstream GPUI where the backdrop is translucent.
+pub fn blend_composite(mode: u32, source: [f32; 4], destination: [f32; 4]) -> [f32; 4] {
+    let [sr, sg, sb, sa] = source;
+    let alpha = if mode == DEEP2D_BLEND_OVERWRITE {
+        sa
+    } else {
+        sa + destination[3] * (1.0 - sa)
+    };
+    let rgb = match mode {
+        DEEP2D_BLEND_MULTIPLY => {
+            // Premultiplied fragment output rgb = s.rgb * s.a.
+            let [pr, pg, pb] = [sr * sa, sg * sa, sb * sa];
+            [
+                pr * destination[0] + destination[0] * (1.0 - sa),
+                pg * destination[1] + destination[1] * (1.0 - sa),
+                pb * destination[2] + destination[2] * (1.0 - sa),
+            ]
+        }
+        DEEP2D_BLEND_SCREEN => {
+            let [pr, pg, pb] = [sr * sa, sg * sa, sb * sa];
+            [
+                pr + destination[0] * (1.0 - pr),
+                pg + destination[1] * (1.0 - pg),
+                pb + destination[2] * (1.0 - pb),
+            ]
+        }
+        DEEP2D_BLEND_DARKEN => [
+            sr.min(destination[0]),
+            sg.min(destination[1]),
+            sb.min(destination[2]),
+        ],
+        DEEP2D_BLEND_LIGHTEN => [
+            sr.max(destination[0]),
+            sg.max(destination[1]),
+            sb.max(destination[2]),
+        ],
+        DEEP2D_BLEND_OVERWRITE => [sr, sg, sb],
+        _ => [
+            sr * sa + destination[0] * (1.0 - sa),
+            sg * sa + destination[1] * (1.0 - sa),
+            sb * sa + destination[2] * (1.0 - sa),
+        ],
+    };
+    [rgb[0], rgb[1], rgb[2], alpha]
+}
+
 /// One gradient stop padded to a 32-byte WGSL row
 /// (`{ offset: f32, pad: vec3f, color: vec4f }`).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -485,4 +567,70 @@ mod tests {
         let back: Deep2dPaintData = *bytemuck::from_bytes(bytes);
         assert_eq!(back, entry);
     }
+
+    #[test]
+    fn blend_composite_matches_the_fixed_function_state() {
+        let dst = [0.6f32, 0.4, 0.2, 1.0];
+        // Opaque source: multiply = s*d per channel.
+        let opaque = [1.0f32, 0.5, 0.0, 1.0];
+        let out = blend_composite(DEEP2D_BLEND_MULTIPLY, opaque, dst);
+        for channel in 0..3 {
+            assert!((out[channel] - opaque[channel] * dst[channel]).abs() < 1e-6);
+        }
+        // CSS multiply on an opaque backdrop also preserves the backdrop
+        // where the source is white (s = 1 keeps d).
+        let white = [1.0f32, 1.0, 1.0, 1.0];
+        let out = blend_composite(DEEP2D_BLEND_MULTIPLY, white, dst);
+        for channel in 0..3 {
+            assert!((out[channel] - dst[channel]).abs() < 1e-6);
+        }
+        // Premultiplied screen: s' + d*(1 - s') sends white sources to white.
+        let out = blend_composite(DEEP2D_BLEND_SCREEN, white, dst);
+        for channel in 0..3 {
+            assert!((out[channel] - 1.0).abs() < 1e-6);
+        }
+        let dark = [0.2f32, 0.2, 0.2, 1.0];
+        let out = blend_composite(DEEP2D_BLEND_SCREEN, dark, dst);
+        for channel in 0..3 {
+            let expected = dark[channel] + dst[channel] * (1.0 - dark[channel]);
+            assert!((out[channel] - expected).abs() < 1e-6);
+        }
+        // darken/lighten are the exact per-channel min/max on opaque dst.
+        let src = [0.9f32, 0.1, 0.5, 1.0];
+        let out = blend_composite(DEEP2D_BLEND_DARKEN, src, dst);
+        for channel in 0..3 {
+            assert_eq!(out[channel], src[channel].min(dst[channel]));
+        }
+        let out = blend_composite(DEEP2D_BLEND_LIGHTEN, src, dst);
+        for channel in 0..3 {
+            assert_eq!(out[channel], src[channel].max(dst[channel]));
+        }
+        // overwrite replaces rgb+alpha; normal matches the classic over.
+        let translucent = [1.0f32, 0.0, 0.0, 0.5];
+        let out = blend_composite(DEEP2D_BLEND_OVERWRITE, translucent, dst);
+        assert_eq!(out, [1.0, 0.0, 0.0, 0.5]);
+        let out = blend_composite(DEEP2D_BLEND_NORMAL, translucent, dst);
+        assert!((out[0] - 0.8).abs() < 1e-6);
+        assert!((out[1] - 0.2).abs() < 1e-6);
+        assert!((out[3] - 1.0).abs() < 1e-6);
+        // Semi-transparent multiply: exact on an opaque backdrop
+        // (premult s' = s.a*s.rgb drives the CSS formula).
+        let out = blend_composite(DEEP2D_BLEND_MULTIPLY, translucent, dst);
+        for channel in 0..3 {
+            let expected =
+                translucent[channel] * translucent[3] * dst[channel] + dst[channel] * (1.0 - translucent[3]);
+            assert!((out[channel] - expected).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn blend_premultiplies_only_multiply_and_screen() {
+        assert!(!blend_premultiplies(DEEP2D_BLEND_NORMAL));
+        assert!(blend_premultiplies(DEEP2D_BLEND_MULTIPLY));
+        assert!(blend_premultiplies(DEEP2D_BLEND_SCREEN));
+        assert!(!blend_premultiplies(DEEP2D_BLEND_DARKEN));
+        assert!(!blend_premultiplies(DEEP2D_BLEND_LIGHTEN));
+        assert!(!blend_premultiplies(DEEP2D_BLEND_OVERWRITE));
+    }
+
 }

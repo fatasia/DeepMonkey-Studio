@@ -31,12 +31,25 @@ impl Validator {
             &format!("{path}.pathId"),
             resources,
         );
-        if command.fill.is_none() && command.stroke.is_none() {
+        if command.fill.is_none() && command.stroke.is_none() && command.backdrop_blur.is_none() {
             self.add(
                 Deep2dIssueCode::EmptyPaint,
                 path,
-                "Path command requires fill or stroke.",
+                "Path command requires fill, stroke or backdropBlur paint.",
             );
+        }
+        if let Some(blur) = &command.backdrop_blur {
+            self.backdrop_blur(blur, &format!("{path}.backdropBlur"));
+            // The blur base is masked by the analytic rounded-box SDF, so the
+            // command must be an analytic quad (cornerRadius present; a 0
+            // radius keeps the box sharp).
+            if command.corner_radius.is_none() {
+                self.add(
+                    Deep2dIssueCode::InvalidStructure,
+                    format!("{path}.backdropBlur"),
+                    "Backdrop blur is box-shaped and requires cornerRadius.",
+                );
+            }
         }
         if let Some(paint) = &command.fill {
             self.paint(paint, &format!("{path}.fill"));

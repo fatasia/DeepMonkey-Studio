@@ -6,9 +6,16 @@
 //! 对拍纪律:插值与公式全部 f32,与 GPU 一致;像素中心采样;直通 alpha
 //! 混合与 ALPHA_BLENDING 管线状态一致。
 
-use crate::deep2d::paint_data::{DEEP2D_PAINT_KIND_QUAD, paint_color, quad_fragment};
+use crate::deep2d::backdrop::{
+    backdrop_blur_sweep, backdrop_capture_region, backdrop_downsample, backdrop_sample_bilinear,
+};
+use crate::deep2d::paint_data::{
+    DEEP2D_BLEND_NORMAL, DEEP2D_PAINT_KIND_QUAD, blend_composite, paint_color, quad_fragment,
+    sdf_coverage, sd_rounded_box,
+};
 use crate::deep2d::{
-    FillRule, LetterboxMapping, PathVertex, PreparedDeep2d, PreparedDynamicPathChunk,
+    FillRule, LetterboxMapping, PathVertex, PreparedBackdropChunk, PreparedDeep2d,
+    PreparedDynamicPathChunk,
 };
 
 /// Chunk boundary shim (first_vertex/vertex_count) so the rasterizer can
@@ -46,26 +53,32 @@ pub fn rasterize_prepared(
     // Draw sequence: static path chunks + dynamic chunks interleaved by
     // (z_order, source_index), matching the ZOrdered build_chunks sort.
     let mut sequence: Vec<DrawItem<'_>> = prepared
-        .chunks
+        .backdrop_chunks
         .iter()
-        .map(|chunk| DrawItem::Static {
+        .map(|chunk| DrawItem::Backdrop { chunk })
+        .chain(prepared.chunks.iter().map(|chunk| DrawItem::Static {
             z_order: chunk.z_order,
             source_index: chunk.source_index,
+            blend: chunk.blend,
             chunk: PreparedChunkShim {
                 first_vertex: chunk.first_vertex,
                 vertex_count: chunk.vertex_count,
             },
-        })
+        }))
         .chain(prepared.dynamic_chunks.iter().map(|chunk| DrawItem::Dynamic {
             z_order: chunk.z_order,
             source_index: chunk.source_index,
             chunk,
         }))
         .collect();
-    if prepared.chunks.is_empty() && prepared.dynamic_chunks.is_empty() {
+    if prepared.chunks.is_empty()
+        && prepared.dynamic_chunks.is_empty()
+        && prepared.backdrop_chunks.is_empty()
+    {
         sequence.push(DrawItem::Static {
             z_order: 0,
             source_index: 0,
+            blend: DEEP2D_BLEND_NORMAL,
             chunk: PreparedChunkShim {
                 first_vertex: 0,
                 vertex_count: prepared.vertices.len() as u32,
@@ -82,7 +95,10 @@ pub fn rasterize_prepared(
             z_order,
             source_index,
             ..
-        } => (*z_order, *source_index),
+        }
+        | DrawItem::Backdrop { chunk: PreparedBackdropChunk { z_order, source_index, .. } } => {
+            (*z_order, *source_index)
+        }
     });
     for item in &sequence {
         // Adjacent triangles within one command share edges; a pixel center
@@ -92,14 +108,17 @@ pub fn rasterize_prepared(
         // blend normally across chunks.
         let mut written = vec![false; pixels.len()];
         match item {
-            DrawItem::Static { chunk, .. } => {
+            DrawItem::Static { chunk, blend, .. } => {
                 if chunk.vertex_count == 0 {
                     continue;
                 }
-                rasterize_static_chunk(prepared, chunk, &mapping, &mut pixels, &mut written);
+                rasterize_static_chunk(prepared, chunk, *blend, &mapping, &mut pixels, &mut written);
             }
             DrawItem::Dynamic { chunk, .. } => {
                 rasterize_dynamic_chunk(prepared, chunk, &mapping, &mut pixels, &mut written);
+            }
+            DrawItem::Backdrop { chunk } => {
+                rasterize_backdrop_chunk(chunk, &mapping, &mut pixels, &mut written);
             }
         }
     }
@@ -110,6 +129,8 @@ enum DrawItem<'a> {
     Static {
         z_order: i32,
         source_index: usize,
+        /// 刀 4:块级固定函数混合模式(DEEP2D_BLEND_*)。
+        blend: u32,
         chunk: PreparedChunkShim,
     },
     Dynamic {
@@ -117,11 +138,16 @@ enum DrawItem<'a> {
         source_index: usize,
         chunk: &'a PreparedDynamicPathChunk,
     },
+    /// 刀 4 毛玻璃 bracket:capture→blur→底色(SDF 掩罩,normal 混合)。
+    Backdrop {
+        chunk: &'a PreparedBackdropChunk,
+    },
 }
 
 fn rasterize_static_chunk(
     prepared: &PreparedDeep2d,
     chunk: &PreparedChunkShim,
+    blend: u32,
     mapping: &LetterboxMapping,
     pixels: &mut [[u8; 4]],
     written: &mut [bool],
@@ -171,10 +197,32 @@ fn rasterize_static_chunk(
                     weights,
                 );
                 let shaded = shade(prepared, slot, local, color);
-                pixels[index] = blend_over(pixels[index], shaded);
+                pixels[index] = blend_pixel(pixels[index], shaded, blend);
             }
         }
     }
+}
+
+/// 刀 4:按块混合模式合成一个像素。normal 保持既有 f64 over(与
+/// ALPHA_BLENDING 既有管线的 0 分歧门一致);其余模式走
+/// `blend_composite`(固定函数状态的 CPU 镜像)后量化。
+fn blend_pixel(destination: [u8; 4], source: [f32; 4], blend: u32) -> [u8; 4] {
+    if blend == DEEP2D_BLEND_NORMAL {
+        return blend_over(destination, source);
+    }
+    let below = [
+        f32::from(destination[0]) / 255.0,
+        f32::from(destination[1]) / 255.0,
+        f32::from(destination[2]) / 255.0,
+        f32::from(destination[3]) / 255.0,
+    ];
+    let blended = blend_composite(blend, source, below);
+    [
+        (blended[0] * 255.0).round().clamp(0.0, 255.0) as u8,
+        (blended[1] * 255.0).round().clamp(0.0, 255.0) as u8,
+        (blended[2] * 255.0).round().clamp(0.0, 255.0) as u8,
+        (blended[3] * 255.0).round().clamp(0.0, 255.0) as u8,
+    ]
 }
 
 /// 刀 3 stencil 动态块的 CPU 镜像:fence 边带(每边 6 顶点 = 两个三角形,
@@ -373,6 +421,105 @@ fn blend_over(destination: [u8; 4], source: [f32; 4]) -> [u8; 4] {
     ]
 }
 
+
+/// 刀 4 毛玻璃 backdrop 块的 CPU 镜像:取当前像素缓冲为捕获源(与 GPU
+/// copy_texture_to_texture 同语义),共享 `backdrop_capture_region` 定区域,
+/// 半分辨率下采样 + `iterations` 次可分离扫,再以圆角盒 SDF 掩罩逐像素
+/// 双线性采样画底色(normal 混合)。
+fn rasterize_backdrop_chunk(
+    chunk: &PreparedBackdropChunk,
+    mapping: &LetterboxMapping,
+    pixels: &mut [[u8; 4]],
+    written: &mut [bool],
+) {
+    let width = mapping.physical[0] as u32;
+    let height = mapping.physical[1] as u32;
+    let (origin, region) = backdrop_capture_region(
+        chunk.rect,
+        mapping.scale,
+        mapping.offset,
+        [width, height],
+        chunk.iterations,
+    );
+    // Capture: 当前合成结果在矩形+padding 区域内的像素。
+    let mut source = vec![[0u8; 4]; (region[0] * region[1]) as usize];
+    for y in 0..region[1] {
+        for x in 0..region[0] {
+            source[(y * region[0] + x) as usize] =
+                pixels[((origin[1] + y) * width + origin[0] + x) as usize];
+        }
+    }
+    let half = [(region[0] + 1) / 2, (region[1] + 1) / 2];
+    let mut ping = vec![[0u8; 4]; (half[0] * half[1]) as usize];
+    let mut pong = vec![[0u8; 4]; (half[0] * half[1]) as usize];
+    let half_size = backdrop_downsample(&source, region, &mut pong);
+    for _ in 0..chunk.iterations {
+        backdrop_blur_sweep(&pong, half_size, true, &mut ping);
+        backdrop_blur_sweep(&ping, half_size, false, &mut pong);
+    }
+    // Base draw:物理矩形内逐像素(与 GPU 像素中心采样一致),SDF 掩罩 +
+    // 双线性采样 + normal 混合。GPU 侧底色 quad 由三角光栅化覆盖同一矩形。
+    let scale = mapping.scale;
+    let rect_x0 = f64::from(chunk.rect[0]) * scale + mapping.offset[0];
+    let rect_y0 = f64::from(chunk.rect[1]) * scale + mapping.offset[1];
+    let rect_x1 = (f64::from(chunk.rect[0]) + f64::from(chunk.rect[2])) * scale + mapping.offset[0];
+    let rect_y1 = (f64::from(chunk.rect[1]) + f64::from(chunk.rect[3])) * scale + mapping.offset[1];
+    let min_x = (rect_x0.floor().max(0.0) as u32).min(width.saturating_sub(1));
+    let min_y = (rect_y0.floor().max(0.0) as u32).min(height.saturating_sub(1));
+    let max_x = (rect_x1.ceil().min(f64::from(width - 1)).max(0.0)) as u32;
+    let max_y = (rect_y1.ceil().min(f64::from(height - 1)).max(0.0)) as u32;
+    // 块级 scissor(GPU 走 set_scissor_rect,同一 clip_rect)。
+    let clip = chunk.clip_rect.map(|clip| {
+        [
+            (f64::from(clip.x) * scale + mapping.offset[0]).floor().max(0.0),
+            (f64::from(clip.y) * scale + mapping.offset[1]).floor().max(0.0),
+            ((f64::from(clip.x) + f64::from(clip.width)) * scale + mapping.offset[0])
+                .ceil()
+                .min(f64::from(width)),
+            ((f64::from(clip.y) + f64::from(clip.height)) * scale + mapping.offset[1])
+                .ceil()
+                .min(f64::from(height)),
+        ]
+    });
+    let aa = scale as f32;
+    let half_extents = [chunk.rect[2] * 0.5, chunk.rect[3] * 0.5];
+    for y in min_y..=max_y {
+        for x in min_x..=max_x {
+            if let Some([cx0, cy0, cx1, cy1]) = clip
+                && (f64::from(x) < cx0
+                    || f64::from(y) < cy0
+                    || f64::from(x) + 1.0 > cx1
+                    || f64::from(y) + 1.0 > cy1)
+            {
+                continue;
+            }
+            let index = (y * width + x) as usize;
+            if written[index] {
+                continue;
+            }
+            let center = [f64::from(x) + 0.5, f64::from(y) + 0.5];
+            let logical = mapping.physical_to_logical(center);
+            let local = [
+                (logical[0] as f32) - chunk.rect[0] - half_extents[0],
+                (logical[1] as f32) - chunk.rect[1] - half_extents[1],
+            ];
+            let d = sd_rounded_box(local, half_extents, chunk.corner_radius);
+            let coverage = sdf_coverage(d, aa);
+            if coverage <= 0.0 {
+                continue;
+            }
+            let coord = [
+                ((center[0] - f64::from(origin[0])) * 0.5) as f32,
+                ((center[1] - f64::from(origin[1])) * 0.5) as f32,
+            ];
+            let blurred = backdrop_sample_bilinear(&pong, half_size, coord);
+            let shaded = [blurred[0], blurred[1], blurred[2], blurred[3] * coverage];
+            written[index] = true;
+            pixels[index] = blend_over(pixels[index], shaded);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,6 +556,7 @@ mod tests {
             vertices,
             paints: entries,
             chunks: Vec::new(),
+            backdrop_chunks: Vec::new(),
             dynamic_edges: Vec::new(),
             dynamic_chunks: Vec::new(),
             images: Vec::new(),
@@ -422,6 +570,7 @@ mod tests {
                 dynamic_commands: 0,
                 dynamic_edges: 0,
                 dynamic_fallbacks: 0,
+                backdrop_commands: 0,
             },
         }
     }
