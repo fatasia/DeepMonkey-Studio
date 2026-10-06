@@ -13,8 +13,12 @@
  * - 与 IES 的分工:IES 描述聚光灯**强度角分布**(IESProfile 采样),投影纹理描述
  *   **视锥内的图像投射**;白图退化(全 1 gobo + edgeSoften=0)时本 pass 照度收敛到
  *   解析聚光公式 color×intensity×N·L×atten,该一致性由解析参考测试钉死。
- * 首切片边界(如实):单投影器;无阴影图(投影不被几何遮挡,标记线场景可接受);
- * 接受域 = 不透明主帧合成域(SSGI/SSR 同域,透明粒子不参与);多投影器灯池属后续。
+ * 首切片边界(如实):无阴影图(投影不被几何遮挡,标记线场景可接受);接受域 =
+ * 不透明主帧合成域(SSGI/SSR 同域,透明粒子不参与)。
+ * 多投影器灯池(2026-10-06 后继切片,≤4):ProjectedTextureSource.frames 携带
+ * 1..4 枚已解析投影器帧(每帧自带 gobo),参数块 544B(4×128B 子块+count+surface),
+ * 核内槽序 0..3 手展开累加;单投影器 = count 1 退化路径(与旧 128B 单投影器逐位
+ * 同构)。灯池超出 4 fail-closed 拒绝(打包/解析双端同判据)。
  */
 
 export const PROJECTED_TEXTURE_COLOR_FORMAT = "rgba16float" as const satisfies GPUTextureFormat;
@@ -79,6 +83,12 @@ export interface ProjectedTextureSource {
   readonly depthEncoding: "linear-view-depth-positive";
   readonly normalSpace: "view";
   readonly colorEncoding: "linear-hdr";
+  /**
+   * 多投影器灯池(≤4;缺省 = 单投影器退化路径):1..4 枚已解析投影器帧,槽序即
+   * 累加序。frames[0] 必须与本结构扁平字段逐项一致(gobo 同一 view;矩阵/位置/
+   * 强度/颜色/范围/软化相等),不一致 fail-closed 拒绝(单一事实源)。
+   */
+  readonly frames?: readonly ProjectedTextureFrame[];
 }
 
 export interface ProjectedTextureOptions {

@@ -29,6 +29,12 @@ export interface RenderView extends PbrFrameUniformView {
    * fallbackReason 披露),帧逐位零变化。
    */
   readonly projectedTextures?: import("../postprocess/projectedTextureTypes.js").ProjectedTextureLight;
+  /**
+   * 多投影器灯池(≤4,2026-10-06 后继切片):供给时覆盖单投影器字段(池语义,
+   * 逐灯解析后核内槽序累加);超 4 灯 fail-closed 丢弃该帧灯池并披露。灯池内单灯
+   * 校验失败仅剔除该灯(fallbackReason 如实),其余灯照常贡献。
+   */
+  readonly projectedTextureLights?: readonly import("../postprocess/projectedTextureTypes.js").ProjectedTextureLight[];
   readonly width: number; readonly height: number; readonly pixelRatio: number;
   readonly lights?: WorldClusteredLights; readonly lodBudget?: LodFrameBudget;
 }

@@ -177,6 +177,17 @@ export function projectedTextureRadianceCpu(input: ProjectedTextureCpuInput, fra
 /** Full-frame CPU mirror (tests, parity gates, and the real-GPU capture reference). */
 export function applyProjectedTextureCpu(input: ProjectedTextureCpuInput, frame: ProjectedTextureCpuFrame,
   options: ProjectedTextureCpuOptions): ProjectedTextureCpuResult {
+  return applyProjectedTextureCpuMulti(input, [frame], options);
+}
+
+/** 多投影器累加 CPU 镜像(槽序 0..N 逐位对应 WGSL 手展开累加序;单投影器与
+ * applyProjectedTextureCpu 逐位一致——加性贡献首项 0 + c1 不改 f32 位型)。 */
+export function applyProjectedTextureCpuMulti(input: ProjectedTextureCpuInput,
+  frames: readonly ProjectedTextureCpuFrame[], options: ProjectedTextureCpuOptions):
+  ProjectedTextureCpuResult {
+  if (frames.length < 1 || frames.length > PROJECTED_TEXTURE_MAX_PROJECTORS) {
+    throw new RangeError(`Projected texture light pool must hold 1..${PROJECTED_TEXTURE_MAX_PROJECTORS} projectors, got ${frames.length}.`);
+  }
   if (!Number.isFinite(options.verticalFovRadians) || options.verticalFovRadians <= 0
     || options.verticalFovRadians >= Math.PI) {
     throw new RangeError("Projected texture verticalFovRadians must be in (0, pi).");
@@ -191,12 +202,30 @@ export function applyProjectedTextureCpu(input: ProjectedTextureCpuInput, frame:
     const pixel = y * input.width + x;
     const depth = input.depth[pixel] ?? 0;
     const base = pixel * 3;
-    const contribution = projectedTextureRadianceCpu(input, frame, x, y, depth, tanHalfFov, aspect);
-    output[base] = (input.color[base] ?? 0) + contribution[0];
-    output[base + 1] = (input.color[base + 1] ?? 0) + contribution[1];
-    output[base + 2] = (input.color[base + 2] ?? 0) + contribution[2];
+    // 槽序累加(与 WGSL 同序):先逐槽累加贡献,再 + 基色(WGSL color + contribution
+    // 同序;f32 加法交换律下与单投影器 legacy color+c1 逐位一致)。
+    let r = 0, g = 0, b = 0;
+    if (depth > 0) {
+      for (const frame of frames) {
+        const contribution = projectedTextureRadianceCpu(input, frame, x, y, depth, tanHalfFov, aspect);
+        r += contribution[0]; g += contribution[1]; b += contribution[2];
+      }
+    }
+    output[base] = r + (input.color[base] ?? 0);
+    output[base + 1] = g + (input.color[base + 1] ?? 0);
+    output[base + 2] = b + (input.color[base + 2] ?? 0);
   }
   return { width: input.width, height: input.height, output };
+}
+
+/** 投影器灯池帧解析(渲染循环侧):逐灯 resolveProjectedTextureFrame,
+ * >4 fail-closed 上抛(与打包同判据,不静默截断);空池上抛。 */
+export function resolveProjectedTextureFrames(lights: readonly ProjectedTextureLight[],
+  worldToView: ArrayLike<number>): ProjectedTextureFrame[] {
+  if (lights.length < 1 || lights.length > PROJECTED_TEXTURE_MAX_PROJECTORS) {
+    throw new RangeError(`Projected texture light pool must hold 1..${PROJECTED_TEXTURE_MAX_PROJECTORS} projectors, got ${lights.length}.`);
+  }
+  return lights.map(light => resolveProjectedTextureFrame(light, worldToView));
 }
 
 /**
@@ -207,6 +236,16 @@ export function applyProjectedTextureCpu(input: ProjectedTextureCpuInput, frame:
  * Layout mirrors the WGSL `ProjectedTextureParams` struct field by field.
  */
 export const PROJECTED_TEXTURE_PARAMETER_BYTES = 128;
+
+/**
+ * 多投影器灯池(2026-10-06 后继切片,关闭登记「单投影器、多投影器灯池属后续」):
+ * 参数块数组化为 ≤4 个 128B 投影器子块 + count + surface(544B,storage 单块),
+ * 核内槽序 0..3 手展开累加(免 binding_array 扩展特性,仓库无先例不用)。
+ * 单投影器 = count 1 的退化路径,与既有 128B 打包逐位同构。
+ */
+export const PROJECTED_TEXTURE_MAX_PROJECTORS = 4;
+export const PROJECTED_TEXTURE_PROJECTOR_SLOT_BYTES = 128;
+export const PROJECTED_TEXTURE_PARAMETERS_MULTI_BYTES = 544;
 
 export function packProjectedTextureParameters(frame: Omit<ProjectedTextureFrame, "gobo">,
   width: number, height: number, verticalFovRadians: number): ArrayBuffer {
@@ -221,5 +260,31 @@ export function packProjectedTextureParameters(frame: Omit<ProjectedTextureFrame
   floats.set([frame.color[0], frame.color[1], frame.color[2], frame.range], 20);
   floats.set([frame.edgeSoften, Math.tan(verticalFovRadians * 0.5), width / height, 0], 24);
   uints.set([width, height], 28);
+  return buffer;
+}
+
+/** 多投影器灯池打包(544B 单块):4 × 128B 子块(未用槽全零)+ count + surface。
+ * 子块字段布局与 packProjectedTextureParameters 逐字节同构;count = 帧数(1..4,
+ * 越界 fail-closed 上抛,不静默截断)。 */
+export function packProjectedTextureParametersMulti(
+  frames: readonly Omit<ProjectedTextureFrame, "gobo">[], width: number, height: number,
+  verticalFovRadians: number): ArrayBuffer {
+  if (frames.length < 1 || frames.length > PROJECTED_TEXTURE_MAX_PROJECTORS) {
+    throw new RangeError(`Projected texture light pool must hold 1..${PROJECTED_TEXTURE_MAX_PROJECTORS} projectors, got ${frames.length}.`);
+  }
+  const buffer = new ArrayBuffer(PROJECTED_TEXTURE_PARAMETERS_MULTI_BYTES);
+  const floats = new Float32Array(buffer), uints = new Uint32Array(buffer);
+  for (let slot = 0; slot < frames.length; slot++) {
+    const frame = frames[slot]!;
+    if (frame.viewToProjector.length !== 16) throw new Error("Projected texture viewToProjector must carry 16 floats.");
+    const words = (slot * PROJECTED_TEXTURE_PROJECTOR_SLOT_BYTES) / 4;
+    floats.set(frame.viewToProjector as readonly number[], words);
+    floats.set([frame.positionView[0], frame.positionView[1], frame.positionView[2], frame.intensity], words + 16);
+    floats.set([frame.color[0], frame.color[1], frame.color[2], frame.range], words + 20);
+    floats.set([frame.edgeSoften, Math.tan(verticalFovRadians * 0.5), width / height, 0], words + 24);
+    uints.set([width, height], words + 28);
+  }
+  uints.set([frames.length, 0, 0, 0], 512 / 4);
+  uints.set([width, height], 528 / 4);
   return buffer;
 }

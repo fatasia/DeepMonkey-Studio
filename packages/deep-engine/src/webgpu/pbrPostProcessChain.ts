@@ -83,9 +83,12 @@ export interface PbrPostProcessInput {
   /**
    * P2 投影纹理光帧输入(features.projectedTextures 且场景供给投影器时由渲染器
    * resolve 供给;缺省 = 链路逐位零变化)。消费点在 SSR 之前(SSR 命中 UV 采色
-   * 携带投影贡献,反射链路命中点的投影纹理贡献)。
+   * 携带投影贡献,反射链路命中点的投影纹理贡献)。多投影器灯池(≤4)优先:
+   * projectedTextureFrames 提供时覆盖单投影器 projectedTextures(灯池语义,
+   * 核内槽序累加);两者都缺 = 无投影器 dispatch。
    */
   readonly projectedTextures?: ProjectedTextureFrame;
+  readonly projectedTextureFrames?: readonly ProjectedTextureFrame[];
   readonly adaptiveQuality?: Readonly<AdaptiveQualityKnobs>;
   /**
    * 对象级描边帧输入。仅当 packet 含 outline 实例时由渲染器提供;缺省(绝大多数帧)时
@@ -293,17 +296,22 @@ export class PbrPostProcessChain {
         ...(input.passTiming ? { passTiming: input.passTiming } : {}) });
       marched = bounced.texture; effectPasses += bounced.passCount;
     }
-    // P2 投影纹理光(opt-in input.projectedTextures;缺省 = 分支不进,链逐位透传):
-    // 解析直接光加性层,插在 SSGI 之后、SSR 之前——SSR composite 在命中 UV 采色时
-    // 自然携带投影贡献(反射链路命中点的投影纹理贡献,projectedTextureChain 测试
-    // 钉死差分);TAA 在后顺带时域稳定。场景未供给投影器时 features 开也无 dispatch。
-    if (this.features.projectedTextures && this.projectedTexture && input.projectedTextures) {
+    // P2 投影纹理光(opt-in input.projectedTextures / projectedTextureFrames;缺省 =
+    // 分支不进,链逐位透传):解析直接光加性层,插在 SSGI 之后、SSR 之前——SSR
+    // composite 在命中 UV 采色时自然携带投影贡献(反射链路命中点的投影纹理贡献,
+    // projectedTextureChain 测试钉死差分);TAA 在后顺带时域稳定。场景未供给投影器时
+    // features 开也无 dispatch。多投影器灯池(≤4)优先,单投影器 = 池 count 1 退化。
+    const projectedFrames = input.projectedTextureFrames
+      ?? (input.projectedTextures ? [input.projectedTextures] : undefined);
+    if (this.features.projectedTextures && this.projectedTexture && projectedFrames) {
+      const [primary] = projectedFrames;
       const lit = this.projectedTexture.encode(encoder, {
         color: marched, depth: targets.linearDepthTexture, normal: targets.normalTexture,
-        gobo: input.projectedTextures.gobo, viewToProjector: input.projectedTextures.viewToProjector,
-        positionView: input.projectedTextures.positionView, intensity: input.projectedTextures.intensity,
-        lightColor: input.projectedTextures.color, range: input.projectedTextures.range,
-        edgeSoften: input.projectedTextures.edgeSoften, revision,
+        gobo: primary!.gobo, viewToProjector: primary!.viewToProjector,
+        positionView: primary!.positionView, intensity: primary!.intensity,
+        lightColor: primary!.color, range: primary!.range,
+        edgeSoften: primary!.edgeSoften, revision,
+        frames: projectedFrames,
         depthEncoding: "linear-view-depth-positive", normalSpace: "view", colorEncoding: "linear-hdr",
       }, { verticalFovRadians, ...(input.passTiming ? { passTiming: input.passTiming } : {}) });
       marched = lit.texture; effectPasses += lit.passCount;

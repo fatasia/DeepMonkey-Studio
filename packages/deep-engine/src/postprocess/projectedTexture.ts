@@ -3,14 +3,15 @@ import { createAdmittedBuffer } from "../webgpu/resourceAdmission.js";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
 import type { PbrTransientTextureHandle, PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
 import { PROJECTED_TEXTURE_WORKGROUP_SIZE, PROJECTED_TEXTURE_LIGHT_WGSL } from "./projectedTextureWgsl.js";
-import { packProjectedTextureParameters } from "./projectedTextureCpu.js";
+import { packProjectedTextureParametersMulti, PROJECTED_TEXTURE_MAX_PROJECTORS,
+  PROJECTED_TEXTURE_PARAMETERS_MULTI_BYTES } from "./projectedTextureCpu.js";
 import { PROJECTED_TEXTURE_COLOR_FORMAT, PROJECTED_TEXTURE_DEPTH_FORMAT, PROJECTED_TEXTURE_INPUT_COLOR_FORMAT,
-  PROJECTED_TEXTURE_NORMAL_FORMAT, type ProjectedTextureOptions, type ProjectedTextureResult,
-  type ProjectedTextureSource } from "./projectedTextureTypes.js";
+  PROJECTED_TEXTURE_NORMAL_FORMAT, type ProjectedTextureFrame, type ProjectedTextureOptions,
+  type ProjectedTextureResult, type ProjectedTextureSource } from "./projectedTextureTypes.js";
 
-const PARAMETER_BYTES = 128;
 interface PooledBindings {
-  readonly color: GPUTexture; readonly depth: GPUTexture; readonly normal: GPUTexture; readonly gobo: GPUTextureView;
+  readonly color: GPUTexture; readonly depth: GPUTexture; readonly normal: GPUTexture;
+  readonly gobos: readonly GPUTextureView[];
   readonly output: GPUTexture;
   readonly binding: GPUBindGroup;
 }
@@ -20,6 +21,9 @@ interface PooledBindings {
  * SSGI 之后、SSR 之前——SSR composite 在命中 UV 采色即携带投影贡献,反射链路命中点
  * 的投影纹理贡献由此成立)。单 pass 全分辨率解析求值;全 transient pool 路径(生产
  * 帧池恒在;构造要求 pool,拒绝隐式自有分配)。features 关闭时运行时不构建。
+ * 多投影器灯池(2026-10-06 后继切片,≤4):source.frames(1..4 枚解析帧)驱动
+ * 544B 参数块 + 4 个 gobo 槽(binding 3/7/8/9,未用槽绑槽 0 gobo,count 守卫);
+ * 缺省单投影器 = count 1 退化路径,帧逐位不变。
  */
 export class ProjectedTexturePass {
   private readonly layout: GPUBindGroupLayout;
@@ -39,9 +43,13 @@ export class ProjectedTexturePass {
       { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "unfilterable-float" } },
       { binding: 2, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "unfilterable-float" } },
       { binding: 3, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "float" } },
-      { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage", minBindingSize: PARAMETER_BYTES } },
+      { binding: 4, visibility: GPUShaderStage.COMPUTE,
+        buffer: { type: "read-only-storage", minBindingSize: PROJECTED_TEXTURE_PARAMETERS_MULTI_BYTES } },
       { binding: 5, visibility: GPUShaderStage.COMPUTE, sampler: { type: "filtering" } },
       { binding: 6, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: PROJECTED_TEXTURE_COLOR_FORMAT } },
+      { binding: 7, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "float" } },
+      { binding: 8, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "float" } },
+      { binding: 9, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "float" } },
     ] });
     this.pipeline = device.createComputePipeline({ label: "Deep projected texture light pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.layout] }),
@@ -51,6 +59,7 @@ export class ProjectedTexturePass {
   encode(encoder: GPUCommandEncoder, source: ProjectedTextureSource, options: ProjectedTextureOptions): ProjectedTextureResult {
     this.assertUsable();
     if (!this.pool.frameOpen) throw new Error("Projected texture transient textures require an open frame scope.");
+    const frames = validateFrames(source);
     const request = validateRequest(this.session.device, source, options);
     if (this.pooledEpoch !== this.pool.epoch) {
       this.pooledEpoch = this.pool.epoch; this.pooledBindings = []; this.pooledSource = undefined;
@@ -59,7 +68,7 @@ export class ProjectedTexturePass {
     if (previous && source.revision < previous.revision) throw new Error("Stale projected texture source revision.");
     if (previous && source.revision === previous.revision
       && (source.depth !== previous.depth || source.normal !== previous.normal || source.color !== previous.color
-        || source.gobo !== previous.gobo)) {
+        || source.gobo !== previous.gobo || !framesMatch(frames, validateFrames(previous)))) {
       throw new Error("Projected texture source textures changed without a revision.");
     }
     const handles: PbrTransientTextureHandle[] = [];
@@ -69,8 +78,15 @@ export class ProjectedTexturePass {
         height: request.height, sampleCount: 1, format: PROJECTED_TEXTURE_COLOR_FORMAT,
         usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
       handles.push(output);
+      // 4 个 gobo 槽:frames[i].gobo,缺槽绑槽 0(内核 count 守卫不采样)。
+      const goboSlots = [frames[0]!.gobo];
+      for (let slot = 1; slot < PROJECTED_TEXTURE_MAX_PROJECTORS; slot++) {
+        goboSlots.push(frames[slot]?.gobo ?? frames[0]!.gobo);
+      }
       let bindings = this.pooledBindings.find(item => item.color === source.color && item.depth === source.depth
-        && item.normal === source.normal && item.gobo === source.gobo && item.output === output.texture);
+        && item.normal === source.normal && item.output === output.texture
+        && item.gobos.length === goboSlots.length
+        && item.gobos.every((view, index) => view === goboSlots[index]));
       if (!bindings) {
         const binding = this.session.device.createBindGroup({ label: "Deep projected texture bindings",
           layout: this.layout, entries: [
@@ -80,17 +96,22 @@ export class ProjectedTexturePass {
               dimension: "2d", baseMipLevel: 0, mipLevelCount: 1 }) },
             { binding: 2, resource: source.normal.createView({ format: PROJECTED_TEXTURE_NORMAL_FORMAT,
               dimension: "2d", baseMipLevel: 0, mipLevelCount: 1 }) },
-            { binding: 3, resource: source.gobo },
+            { binding: 3, resource: goboSlots[0]! },
             { binding: 4, resource: { buffer: this.parameters() } },
             { binding: 5, resource: this.sampler() },
-            { binding: 6, resource: output.view }] });
-        bindings = { color: source.color, depth: source.depth, normal: source.normal, gobo: source.gobo,
-          output: output.texture, binding };
+            { binding: 6, resource: output.view },
+            { binding: 7, resource: goboSlots[1]! },
+            { binding: 8, resource: goboSlots[2]! },
+            { binding: 9, resource: goboSlots[3]! },
+          ] });
+        bindings = { color: source.color, depth: source.depth, normal: source.normal,
+          gobos: goboSlots, output: output.texture, binding };
         this.pooledBindings.push(bindings);
         if (this.pooledBindings.length > 4) this.pooledBindings.shift();
       }
       this.session.device.queue.writeBuffer(this.parameters(), 0,
-        packProjectedTextureParameters(toCpuFrame(source), request.width, request.height, options.verticalFovRadians));
+        packProjectedTextureParametersMulti(frames.map(toPackedFrame), request.width, request.height,
+          options.verticalFovRadians));
       options.passTiming?.beginMarker(encoder, "projected-texture-light");
       const dispatch = encoder.beginComputePass({ label: "Deep projected texture light" });
       dispatch.setPipeline(this.pipeline); dispatch.setBindGroup(0, bindings.binding);
@@ -112,7 +133,7 @@ export class ProjectedTexturePass {
 
   private parameters(): GPUBuffer {
     return this.pooledParameters ??= createAdmittedBuffer(this.session,
-      { label: "Deep projected texture parameters", size: PARAMETER_BYTES,
+      { label: "Deep projected texture parameters", size: PROJECTED_TEXTURE_PARAMETERS_MULTI_BYTES,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
   }
   private sampler(): GPUSampler {
@@ -127,13 +148,48 @@ export class ProjectedTexturePass {
   }
 }
 
-function toCpuFrame(source: ProjectedTextureSource): {
-  viewToProjector: readonly number[]; positionView: readonly [number, number, number];
-  intensity: number; color: readonly [number, number, number]; range: number; edgeSoften: number;
-} {
-  if (source.viewToProjector.length !== 16) throw new Error("Projected texture viewToProjector must carry 16 floats.");
-  return { viewToProjector: Array.from(source.viewToProjector), positionView: source.positionView,
-    intensity: source.intensity, color: source.lightColor, range: source.range, edgeSoften: source.edgeSoften };
+/** 扁平字段 → 打包帧(frames 缺省时单投影器退化路径)。 */
+function toPackedFrame(frame: ProjectedTextureFrame): Omit<ProjectedTextureFrame, "gobo"> {
+  return { viewToProjector: frame.viewToProjector, positionView: frame.positionView,
+    intensity: frame.intensity, color: frame.color, range: frame.range, edgeSoften: frame.edgeSoften };
+}
+
+/** 灯池帧解析(单一事实源校验):frames 缺省 = 单投影器退化;提供时 1..4 枚且
+ * frames[0] 与扁平字段逐项一致,不一致 fail-closed 拒绝。每帧标量做有限性/值域校验。 */
+function validateFrames(source: ProjectedTextureSource): readonly ProjectedTextureFrame[] {
+  const frames = source.frames ?? [{ gobo: source.gobo, viewToProjector: Array.from(source.viewToProjector),
+    positionView: source.positionView, intensity: source.intensity, color: source.lightColor,
+    range: source.range, edgeSoften: source.edgeSoften }];
+  if (frames.length < 1 || frames.length > PROJECTED_TEXTURE_MAX_PROJECTORS) {
+    throw new Error(`Projected texture light pool must hold 1..${PROJECTED_TEXTURE_MAX_PROJECTORS} projectors, got ${frames.length}.`);
+  }
+  for (const frame of frames) {
+    if (frame.viewToProjector.length !== 16) throw new Error("Projected texture viewToProjector must carry 16 floats.");
+    if (![...frame.viewToProjector, ...frame.positionView, ...frame.color, frame.intensity, frame.range,
+      frame.edgeSoften].every(value => Number.isFinite(value))) {
+      throw new Error("Projected texture frame parameters must be finite.");
+    }
+    if (frame.intensity < 0 || frame.range <= 0 || frame.edgeSoften < 0 || frame.edgeSoften > 0.5
+      || frame.color.some(channel => channel < 0)) {
+      throw new Error("Projected texture frame parameters out of range.");
+    }
+    if (!frame.gobo) throw new Error("Projected texture frame requires a gobo view.");
+  }
+  const [primary] = frames;
+  const flatMatches = primary!.gobo === source.gobo
+    && primary!.viewToProjector.length === source.viewToProjector.length
+    && primary!.viewToProjector.every((value, index) => value === source.viewToProjector[index])
+    && primary!.positionView.every((value, index) => value === source.positionView[index])
+    && primary!.color.every((value, index) => value === source.lightColor[index])
+    && primary!.intensity === source.intensity && primary!.range === source.range
+    && primary!.edgeSoften === source.edgeSoften;
+  if (!flatMatches) throw new Error("Projected texture pool frames[0] must match the flat single-projector fields.");
+  return frames;
+}
+
+/** 帧 gobo 身份对拍(revision 未变时灯池 gobo 不得换绑)。 */
+function framesMatch(left: readonly ProjectedTextureFrame[], right: readonly ProjectedTextureFrame[]): boolean {
+  return left.length === right.length && left.every((frame, index) => frame.gobo === right[index]!.gobo);
 }
 
 function validateRequest(device: GPUDevice, source: ProjectedTextureSource, options: ProjectedTextureOptions): Request {

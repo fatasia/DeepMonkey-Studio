@@ -14,7 +14,7 @@ import { pickScene, pickingUnavailable, type PickOptions, type PickResult } from
 import { spherePacket } from "./spherePacket.js";
 import { CameraFrameHistory } from "./cameraFrameHistory.js";
 import { PbrPostProcessChain, type PbrPostProcessInput } from "./pbrPostProcessChain.js";
-import { resolveProjectedTextureFrame } from "../postprocess/projectedTextureCpu.js";
+import { resolveProjectedTexturePool } from "./pbrProjectedTexturePool.js";
 import { resolvePbrPostProcessOverrides } from "./pbrPostProcessOverrides.js";
 import { PbrTransparencyPass } from "./pbrTransparencyPass.js";
 import { viewProjectionFrustum } from "./pbrFrusta.js";
@@ -538,19 +538,31 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     }
     // The chain owns override resolution. Keep the resolved snapshot above for
     // capture planning, but do not feed it back as if it were author input.
-    // P2 投影纹理光(features.projectedTextures 且场景供给投影器时):帧内解析视空间
-    // 矩阵供后链加性层(SSR 前);校验失败 fail-closed 丢弃该帧投影器并披露,不炸帧。
+    // P2 投影纹理光(features.projectedTextures 且场景供给投影器时):帧内解析视空间矩阵供
+    // 后链加性层(SSR 前),校验失败 fail-closed 丢弃并披露不炸帧;多投影器灯池(≤4,
+    // 2026-10-06 后继切片)优先,逐灯解析单灯剔除(解析见 pbrProjectedTexturePool.ts);
+    // 单投影器字段 = 池 count 1 退化路径。
     let projectedTextureInput: PbrPostProcessInput["projectedTextures"] | undefined;
+    let projectedTexturePool: PbrPostProcessInput["projectedTextureFrames"] | undefined;
     let projectedTextureMetrics: FrameMetrics["projectedTextures"] | undefined;
-    if (host.features.projectedTextures && view.projectedTextures && !directClear) {
+    if (host.features.projectedTextures && !directClear
+      && (view.projectedTextureLights !== undefined || view.projectedTextures !== undefined)) {
       try {
-        projectedTextureInput = resolveProjectedTextureFrame(view.projectedTextures, frameState.worldToView);
-        projectedTextureMetrics = { active: true, projectors: 1 };
+        const pool = resolveProjectedTexturePool(view.projectedTextureLights
+          ?? [view.projectedTextures as NonNullable<RenderView["projectedTextures"]>],
+          frameState.worldToView);
+        if (pool.frames.length > 0) {
+          projectedTexturePool = pool.frames;
+          projectedTextureInput = pool.frames[0]!;
+          projectedTextureMetrics = { active: true, projectors: pool.frames.length,
+            ...(pool.fallbackReason ? { fallbackReason: pool.fallbackReason } : {}) };
+        } else {
+          projectedTextureMetrics = { active: false, projectors: 0, fallbackReason: pool.fallbackReason ?? "empty projector pool" };
+        }
       } catch (error) {
         projectedTextureMetrics = { active: false, projectors: 0, fallbackReason: (error as Error).message };
       }
-    }
-    const postProcessInput: PbrPostProcessInput = { encoder, targets: host.targets, revision: history.revision,
+    }    const postProcessInput: PbrPostProcessInput = { encoder, targets: host.targets, revision: history.revision,
       ...(postProcess.volumetricFog && postProcess.volumetricFogProfile.godRaysStrength !== undefined
         ? { godRays: { ...pbrGodRaysFrame(sceneLighting.primary, frameState.worldToView),
           shadows: virtualShadowActive && host.virtualShadows ? host.virtualShadows.godRaysSource()
@@ -573,7 +585,11 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       // 缺省 = 链路逐位零变化)。
       ...(rtReflectionsFrame?.indirectionView ? { rtSpecular: { indirection: rtReflectionsFrame.indirectionView } } : {}),
       // P2 投影纹理光:resolve 成功才供给(链内在 SSR 前;缺省 = 链路逐位零变化)。
-      ...(projectedTextureInput ? { projectedTextures: projectedTextureInput } : {}),
+      // 灯池(≤4)优先;单投影器输入同时作池 frames[0](单一事实源,链侧逐项对拍)。
+      ...(projectedTextureInput
+        ? { projectedTextures: projectedTextureInput,
+          ...(projectedTexturePool ? { projectedTextureFrames: projectedTexturePool } : {}) }
+        : {}),
       surfaceWidth: size.width, surfaceHeight: size.height,
       ...(host.adaptiveQuality ? { adaptiveQuality: host.adaptiveQuality.state().knobs } : {}),
       ...(passTiming ? { passTiming } : {}) };
