@@ -55,11 +55,24 @@ https://github.com/user-attachments/assets/cb60822e-f2ee-41ec-ab45-943929da2f5a
 
 ## 功能亮点
 
-- **围绕工程对象工作的 AI**：助手读到的是场景、构件、数据集、语义指标和视觉事件这些带稳定 ID 的对象，而不是一张截图。只读查询、工业分析和场景修改各走受限通道；写入先出差异，经确认才执行，失败可回滚。
-- **高性能自研图形引擎**：默认由 Deep WebGPU 渲染（TypeScript 内核、Rust `wgpu` 原生执行器、WASM；设备不支持 WebGPU 时自动回落 Three.js WebGL 作者基线），两侧共用一份显示合约，并有逐像素对拍门。增量编译、GPU 剔除与间接绘制、LOD/流送、实例化和资源驻留控制开销，质量档与降级原因可见。
-- **从脚本到引擎后端都可扩展**：Scene/Server SDK、版本化 contracts、插件能力注册表、`studio.*` 脚本 API、MCP、Unity Bridge 和渲染后端适配层允许独立扩展，不必修改整个平台。
-- **工业创作、数据与仿真在同一个工程里**：2D 看板、3D 场景、设备拓扑和交互共用一份工程；数据层支持三十余类连接，视觉 AI 事件可以驱动场景；Plant Lite、PPR Lite、机器人、虚拟调试和运营研究直接在编辑器内运行。
-- **一次制作，多端交付**：Three WebView、Deep WebGPU、Deep Native 和 Rust WASM 共用发布合同，输出 Web、Windows、WASM 与 Android 运行包，并在交付前检查能力、资源和兼容性。
+- **AI 直接读写工程对象**：助手面对的是带稳定 ID 的场景、构件、数据集与语义对象，不是截图问答。修改先出差异，确认后执行，失败可回滚，全程留审计。
+- **自研 WebGPU 引擎**：TypeScript 内核 + Rust/wgpu 原生执行器 + WASM 一套合约；GPU 剔除、间接绘制、LOD 流送、实例化与资源驻留，帧成本可观测；与 Three.js 基线共用显示合约，逐像素对拍防回退。
+- **工业格式本地离线导入**：IFC、STEP、IGES、JT、X_T、DWG、OpenUSD、URDF、glTF 等格式在浏览器与本地队列完成转换，不依赖云服务，不安装 CAD 软件；RVT 走自研 Revit 转换链。
+- **一个工程装下工业全栈**：32 类数据连接、2D 看板、3D 场景、设备拓扑、语义本体、视觉 AI 事件，与产线仿真、虚拟调试、机器人工作站、PPR 工艺共用一套合同。
+- **一次制作，多端交付**：同一份发布合同输出 Web、只读 Viewer、Windows、WASM 和 Android 包，发布前自动体检能力、资源与兼容性。
+
+## 性能实测
+
+同场景、同相机位姿、静置 120 帧公平对拍（RTX 4060，2026-10-05）。指标口径遵循行业惯例（帧时间分位与 1% Low 出自 PresentMon/CapFrameX 体系，输入与首帧对齐 Core Web Vitals 的 INP/LCP）：
+
+| 指标 | Deep WebGPU | three.js WebGL |
+| --- | --- | --- |
+| 帧时间 P99（静置） | **7.1 ms** | 27.7 ms |
+| 帧时间 max（静置） | **13.8 ms** | 104.1 ms |
+| 自确定性 SSIM | 1.0 | 1.0 |
+| 黑帧 | 0 | 0 |
+
+输入延迟与首帧仍在优化，达标前不上表。1% Low FPS、卡顿率、Babylon.js / Deep WebGPU 列与原生参考表(Deep Native vs Unity)按[基准程序](docs/specs/render-benchmark-program-20261007.md)分阶段补充;引擎定性能力对照见[引擎能力对照](docs/engine-comparison.md)。
 
 ## 完整功能列表
 
@@ -107,7 +120,7 @@ https://github.com/user-attachments/assets/cb60822e-f2ee-41ec-ab45-943929da2f5a
 - 模型动画面板里的“根运动”开关会把动画根节点的位移和旋转应用到模型实例上（旋转以实例原点为枢轴），带累计位移/转角读数和“复位”按钮。开关只在当前会话有效，姿态改动会按普通编辑保存，保存前建议先复位，界面有提示。
 - 骨骼与 IK：编辑骨骼姿态，为效应骨添加单链 IK，设置模型坐标下的目标、链长和迭代次数。
 - 固定、动态和运动学刚体，质量、摩擦、弹性、初速度、重力和角色控制；旋转关节可连接世界或另一刚体，带角度限位和速度马达；碰撞体可线框显示。
-- 物理基于 Rapier，宿主用 `FixedStepClock` 以 60 Hz 固定步长推进：同一段帧时间序列得到同一条逐 tick 轨迹（单测覆盖 30–144 fps 及抖动帧率），追赶超过 12 步时才丢弃并计数。当前没有渲染插值，行为脚本与物理仍是两条各自的时钟。
+- 物理基于 Rapier，以 60 Hz 固定步长确定性推进：同一段帧时间序列得到同一条逐 tick 轨迹（30–144 fps 与抖动帧率有单测锁定），追赶超过 12 步才丢弃并计数。暂无渲染插值，行为脚本与物理仍是两条时钟。
 
 ### 环境、效果与出图
 
@@ -140,7 +153,7 @@ https://github.com/user-attachments/assets/cb60822e-f2ee-41ec-ab45-943929da2f5a
 
 - 原生管理 32 类连接：PostgreSQL、MySQL、MariaDB、TiDB、Doris、StarRocks、SQL Server、Oracle、ClickHouse、TDengine、MongoDB、Elasticsearch、InfluxDB、Prometheus、CSV、Excel，HTTP、WebSocket、MQTT、AMQP、Kafka、CoAP，OPC UA、Modbus、BACnet、S7、EtherNet/IP、SNMP、TCP、UDP、串口，以及内置演示数据。
 - 可视化数据管线提供数据源、清洗、公式、聚合、字段映射、预览、调试、重试、刷新策略、实时事件和历史回放；凭据只留在服务端。
-- 数据中心交互按信息密度做了一轮精修：连接向导分四步、每步有就绪/加载/失败三态；连接监控带趋势条；数据预览表三态（加载/空/错误）并虚拟滚动；字段列表附统计徽章。
+- 连接向导分四步，每步有就绪/加载/失败三态；连接监控带趋势条；数据预览表区分加载/空/错误三态并虚拟滚动；字段列表附统计徽章。
 - 数据集可直接绑定 2D 组件、3D 对象和 AI 能力；支持参数化直接绑定、设备信号规则、记录表单、受权限控制的数据回写和执行回执。
 - 语义模型统一管理指标、维度、参数、过滤和版本；看板绑定确认后的语义口径，版本变化不会静默漂移。
 - 本体包描述对象类型、关系类型、动作类型和事件类型，对象属性可绑定数据集、管线、场景树、API 或手工录入。本体包按草稿、评审、发布、退役流转，保留版本并支持回滚；存在未确认的属性时不能发布。动作带效果类别（读取、分析、内部写入、外部写入、控制）和四级风险，并可查看关系图。
@@ -148,7 +161,7 @@ https://github.com/user-attachments/assets/cb60822e-f2ee-41ec-ab45-943929da2f5a
 
 ### 脚本、交互与自动化
 
-- 专业脚本编辑器基于 Monaco，提供语法高亮、补全、类型检查、诊断、格式化、搜索、依赖管理、Git 版本记录与恢复。TypeScript 语言服务只打包一份 worker，构建产物总量因此减少约 9.6 MB（约 75.7 MB 降到 66.1 MB）。
+- 专业脚本编辑器基于 Monaco，提供语法高亮、补全、类型检查、诊断、格式化、搜索、依赖管理、Git 版本记录与恢复。
 - 场景、模型、构件、预制体、看板组件和拓扑共用事件系统，覆盖加载、点击、双击、右键、悬停、动画、碰撞和路径节点事件。
 - 交互动作包括显隐、颜色、透明度、定位、动画、预制体动作、页面/场景导航、相机切换、消息、数据写入和 Unity 动作；可视化流程检查实际目标与参数。
 - 行为脚本有每帧的 `onUpdate` 和固定 1/60 s 的 `onFixedUpdate`，每帧最多补 5 个固定步，溢出会计数；运行轨迹可以回放。
@@ -229,6 +242,16 @@ https://github.com/user-attachments/assets/cb60822e-f2ee-41ec-ab45-943929da2f5a
 | 工程工具 | pnpm workspace、TypeScript、Vitest、Node Test Runner、Cargo Test |
 
 ## 快速开始
+
+三条命令跑起来（只需 Git + Node.js 24+，不需要 PostgreSQL / MinIO / Docker）：
+
+```bash
+git clone https://github.com/fatasia/DeepMonkey-Studio && cd DeepMonkey-Studio
+corepack enable && corepack prepare pnpm@11.18.0 --activate && pnpm install --frozen-lockfile
+pnpm run init   # 初始化示例工程并启动,浏览器打开 http://localhost:5173(默认账号 admin/admin)
+```
+
+启动缺配置时先 `cp .env.example .env`（Windows PowerShell：`Copy-Item .env.example .env`）。完整环境矩阵、桌面客户端与生产部署见下文。
 
 ### 1. 环境依赖
 
@@ -435,6 +458,7 @@ pnpm run init          # 初始化系统元数据并启动 Web/API
 ## 文档
 
 - [视觉 AI 上手](docs/vision-quickstart.md) · [格式支持说明](docs/converter-plugin-and-format-support.md)
+- [引擎能力对照](docs/engine-comparison.md) · [渲染基准程序](docs/specs/render-benchmark-program-20261007.md)
 - [从零开发与原生部署](docs/native-deployment.md) · [部署指南](docs/deployment.md) · [场景文件格式](docs/scene-format.md)
 - [功能清单](docs/capabilities.md) · [路线图](ROADMAP.md) · [更新记录](CHANGELOG.md)
 - [文档索引](docs/README.md)

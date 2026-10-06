@@ -49,11 +49,24 @@ License designation: **MIT License + Ethical Restrictions** (source-available).
 
 ## Highlights
 
-- **AI that works on engineering objects:** The assistant reads scenes, components, datasets, semantic metrics, and vision events through stable IDs, not a screenshot. Read-only queries, industrial analysis, and scene edits each go through a restricted channel; writes show a diff first, run only after confirmation, and roll back on failure.
-- **Our own high-performance graphics engine:** Three.js WebGL remains the authoring baseline. Deep WebGPU (a TypeScript kernel, a Rust `wgpu` native executor, and WASM) is used according to scene capabilities, both sides share one display contract, and a pixel-comparison gate checks them against each other. Incremental compilation, GPU culling and indirect draws, LOD and streaming, instancing, and resource residency control the cost, and quality levels and fallback reasons are visible.
-- **Extensible from scripts to engine backends:** Scene/Server SDKs, versioned contracts, a plugin capability registry, the `studio.*` script API, MCP, Unity Bridge, and render backend adapters allow independent extensions without changing the entire platform.
-- **Industrial authoring, data, and simulation in one project:** 2D dashboards, 3D scenes, device topologies, and interactions share a single project. The data layer supports more than thirty connection types, vision AI events can drive the scene, and Plant Lite, PPR Lite, robotics, virtual commissioning, and operational studies run inside the editor.
-- **Create once, deliver across platforms:** Three WebView, Deep WebGPU, Deep Native, and Rust WASM share a publication contract. Produce Web, Windows, WASM, and Android runtime packages with capability, resource, and compatibility checks before delivery.
+- **AI that reads and writes engineering objects:** the assistant works with stable-ID scenes, components, datasets, and semantic objects — not screenshot Q&A. Edits show a diff first, run after confirmation, roll back on failure, and stay audited end to end.
+- **Our own WebGPU engine:** a TypeScript kernel plus a Rust/`wgpu` native executor and WASM on one contract. GPU culling, indirect draws, LOD streaming, instancing, and resource residency keep frame cost observable; a pixel-comparison gate shares one display contract with the Three.js baseline.
+- **Industrial formats, imported locally and offline:** IFC, STEP, IGES, JT, X_T, DWG, OpenUSD, URDF, glTF, and more convert in the browser and the local queue — no cloud services, no CAD install. RVT goes through our own Revit conversion chain.
+- **One project for the whole industrial stack:** 32 data connection types, 2D dashboards, 3D scenes, device topologies, semantic ontology, and vision AI events share a contract with line simulation, virtual commissioning, robotics workcells, and PPR process planning.
+- **Create once, deliver everywhere:** one publication contract outputs Web, a read-only Viewer, Windows, WASM, and Android packages, with automatic capability, resource, and compatibility checks before delivery.
+
+## Measured performance
+
+Fair comparison on the same scene and camera pose, 120 idle frames (RTX 4060, 2026-10-05). Metric definitions follow industry conventions (frame-time percentiles and 1% Low from the PresentMon/CapFrameX school; input and load aligned to Core Web Vitals INP/LCP):
+
+| Metric | Deep WebGPU | three.js WebGL |
+| --- | --- | --- |
+| Frame time P99 (idle) | **7.1 ms** | 27.7 ms |
+| Frame time max (idle) | **13.8 ms** | 104.1 ms |
+| Self-determinism SSIM | 1.0 | 1.0 |
+| Black frames | 0 | 0 |
+
+Input latency and first-frame time are still being optimized and are not listed until they pass their targets. 1% Low FPS, jank rate, the Babylon.js / Deep WebGPU columns, and the native reference table (Deep Native vs Unity) are added in phases per the [benchmark program](docs/specs/render-benchmark-program-20261007.md); the qualitative engine comparison lives at [Engine comparison](docs/engine-comparison.md).
 
 ## Complete feature list
 
@@ -103,7 +116,7 @@ Grouped by product subsystem. Format targets, experimental modules, and capabili
 - The "Root motion" switch in the model animation panel applies the animation root's translation and rotation to the model instance (rotation pivots about the instance origin), with a readout of accumulated displacement and rotation and a "Reset" button. The switch lasts only for the current session, and the pose change is saved as an ordinary edit, so reset before saving; the panel warns you about it.
 - Skeleton and IK: edit bone poses, add a single-chain IK to an end-effector bone, and set the target in model coordinates, the chain length, and the iteration count.
 - Fixed, dynamic, and kinematic rigid bodies with mass, friction, restitution, initial velocity, gravity, and character control. A revolute joint can connect to the world or another body, with angle limits and a velocity motor, and colliders can be shown as wireframes.
-- Physics runs on Rapier, and the host steps it at a fixed 60 Hz with `FixedStepClock`: the same frame-time sequence yields the same per-tick trajectory (covered by tests from 30 to 144 fps and with jittery frame rates), and steps are dropped, and counted, only when catching up would exceed 12 steps. There is no render interpolation yet, and behavior scripts still run on their own clock, separate from physics.
+- Physics runs on Rapier and is stepped deterministically at a fixed 60 Hz: the same frame-time sequence yields the same per-tick trajectory (locked by tests from 30 to 144 fps and with jittery frame rates), and steps are dropped, and counted, only when catching up would exceed 12 steps. No render interpolation yet; behavior scripts and physics still run on separate clocks.
 
 ### Environment, effects, and rendering
 
@@ -136,7 +149,7 @@ Grouped by product subsystem. Format targets, experimental modules, and capabili
 
 - 32 connection types are managed natively: PostgreSQL, MySQL, MariaDB, TiDB, Doris, StarRocks, SQL Server, Oracle, ClickHouse, TDengine, MongoDB, Elasticsearch, InfluxDB, Prometheus, CSV, and Excel; HTTP, WebSocket, MQTT, AMQP, Kafka, and CoAP; OPC UA, Modbus, BACnet, S7, EtherNet/IP, SNMP, TCP, UDP, and serial; plus built-in demo data.
 - Visual data pipelines provide sources, cleaning, formulas, aggregation, field mapping, previews, debugging, retries, refresh policies, live events, and historical replay. Credentials stay on the server.
-- The data center workbench is polished for information density: the connection wizard has four steps, each with ready/loading/failure states; connection monitoring carries a trend strip; the data preview table has loading/empty/error states with virtualized scrolling; and field lists carry statistics badges.
+- The connection wizard has four steps, each with ready/loading/failure states; connection monitoring carries a trend strip; the data preview table distinguishes loading/empty/error states with virtualized scrolling; and field lists carry statistics badges.
 - Datasets bind directly to 2D components, 3D objects, and AI capabilities. Parametric direct binding, device signal rules, record forms, permission-controlled data writeback, and execution receipts are supported.
 - Semantic models manage metrics, dimensions, parameters, filters, and versions together. Dashboards bind to confirmed metric definitions; version changes do not silently alter their meaning.
 - An ontology package describes object types, relation types, action types, and event types, and object properties can be bound to a dataset, pipeline, scene tree, API, or manual entry. Packages move through draft, review, published, and retired, keep their versions, and can be rolled back; a package with unconfirmed properties cannot be published. Actions carry an effect class (read, analyze, internal write, external write, control) and one of four risk levels, and a relation graph view is available.
@@ -144,7 +157,7 @@ Grouped by product subsystem. Format targets, experimental modules, and capabili
 
 ### Scripts, interactions, and automation
 
-- The professional script editor is built on Monaco and provides syntax highlighting, completion, type checks, diagnostics, formatting, search, dependency management, and Git-backed version history and recovery. Only one copy of the TypeScript language-service worker is bundled, which cut the build output by about 9.6 MB (roughly 75.7 MB down to 66.1 MB).
+- The professional script editor is built on Monaco and provides syntax highlighting, completion, type checks, diagnostics, formatting, search, dependency management, and Git-backed version history and recovery.
 - Scenes, models, components, prefabs, dashboard widgets, and topologies share an event system covering load, click, double-click, right-click, hover, animation, collision, and path-node events.
 - Actions include visibility, color, opacity, location, animation, prefab actions, page/scene navigation, camera switching, messages, data writes, and Unity actions. Visual workflows check real targets and parameters.
 - Behavior scripts have a per-frame `onUpdate` and a fixed 1/60 s `onFixedUpdate`, with at most 5 fixed steps caught up per frame and overflow counted. Run traces can be replayed.
@@ -225,6 +238,16 @@ Grouped by product subsystem. Format targets, experimental modules, and capabili
 | Engineering | pnpm workspace, TypeScript, Vitest, Node Test Runner, Cargo Test |
 
 ## Quick start
+
+Three commands to run (Git + Node.js 24+ only; no PostgreSQL / MinIO / Docker needed):
+
+```bash
+git clone https://github.com/fatasia/DeepMonkey-Studio && cd DeepMonkey-Studio
+corepack enable && corepack prepare pnpm@11.18.0 --activate && pnpm install --frozen-lockfile
+pnpm run init   # initializes the sample project and starts it at http://localhost:5173 (admin/admin)
+```
+
+If startup complains about missing configuration, run `cp .env.example .env` first (PowerShell: `Copy-Item .env.example .env`). Full environment matrix, desktop client, and production deployment below.
 
 ### 1. Requirements
 
@@ -431,6 +454,7 @@ Health checks, backup/restore, upgrade cautions and the image provenance note (M
 ## Documentation
 
 - [Vision AI quick start](docs/vision-quickstart.md) · [Format support](docs/converter-plugin-and-format-support.md)
+- [Engine comparison](docs/engine-comparison.md) · [Benchmark program](docs/specs/render-benchmark-program-20261007.md)
 - [Native development and deployment](docs/native-deployment.md) · [Deployment guide](docs/deployment.md) · [Scene format](docs/scene-format.md)
 - [Feature inventory](docs/capabilities.md) · [Roadmap](ROADMAP.md) · [Changelog](CHANGELOG.md)
 - [Documentation index](docs/README.md)
