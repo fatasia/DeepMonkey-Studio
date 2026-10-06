@@ -222,7 +222,8 @@ pub fn plan_cluster_lod_indirect(
         });
     }
     for (level, summary) in levels.iter().enumerate() {
-        if summary.index_count > usize::MAX || summary.vertex_count > usize::MAX {
+        // usize 溢出在 Rust 层不可达(分配器上限先触发);保留负数/越界校验于 TS 侧。
+        if summary.index_count == 0 && summary.vertex_count == 0 && nodes.iter().any(|n| n.triangle_count > 0) {
             return Err(ClusterLodPlanError::LevelSummaryInvalid { level });
         }
     }

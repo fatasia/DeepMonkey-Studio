@@ -140,6 +140,17 @@ pub fn evaluate_extended_material_direct(
     tangent_in: Option<[f64; 3]>,
     radiance: [f64; 3],
 ) -> ([f64; 3], [f64; 3], [f64; 3], [f64; 3], [f64; 3]) {
+    // TS normalizeExtendedMaterialParameters:扩展参数先 fround(float32 语义)
+    // 再进求值;表面输入(metallic/roughness/baseColor)按 TS 原样使用。
+    let fround = |value: f64| f32::from_bits((value as f32).to_bits()) as f64;
+    let params = ExtendedInputs {
+        ior: fround(params.ior),
+        clearcoat_factor: fround(params.clearcoat_factor),
+        clearcoat_roughness: fround(params.clearcoat_roughness),
+        anisotropy_strength: fround(params.anisotropy_strength),
+        anisotropy_rotation: fround(params.anisotropy_rotation),
+        transmission_factor: fround(params.transmission_factor),
+    };
     let normal = safe_normalize(normal_in, [0.0, 1.0, 0.0]);
     let view = safe_normalize(view_in, [0.0, 0.0, 1.0]);
     let light = safe_normalize(light_in, [0.0, 1.0, 0.0]);
@@ -308,7 +319,7 @@ fn direct_dfg_table() -> &'static [[f32; 2]; 256] {
             let (a, b) = pair.split_once(",").expect("dfg pair");
             table[index] = [
                 a.trim().parse::<f32>().expect("dfg x"),
-                b.trim().trim_end_matches(')').trim().parse::<f32>().expect("dfg y"),
+                b.split(')').next().expect("dfg y").trim().parse::<f32>().expect("dfg y"),
             ];
             index += 1;
         }
@@ -368,7 +379,7 @@ pub fn direct_multiscattering_energy(f0: [f64; 3], dfg_view: [f32; 2], dfg_light
 pub fn brdf_with_dielectric_f0(
     n: [f64; 3], v: [f64; 3], l: [f64; 3], base: [f64; 3], metal: f64, rough: f64, dielectric: f64,
 ) -> [f64; 3] {
-    const WGSL_PI: f64 = 3.141_592_65;
+    const WGSL_PI: f64 = core::f64::consts::PI;
     let fresnel = |cosine: f64, f0: [f64; 3]| -> [f64; 3] {
         let factor = ((-5.55473 * cosine - 6.98316) * cosine).exp2();
         std::array::from_fn(|axis| f0[axis] * (1.0 - factor) + factor)
