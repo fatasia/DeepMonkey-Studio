@@ -594,12 +594,23 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     // 灯数超 MAX_MEGA_LIGHTS(65535)即抛(fail-closed,不静默错光)。
     if (megaLightsPlanned) {
       host.megaLights ??= new MegaLightsFrameController(host.session);
+      // M2 生产帧 TLAS 供给收口(2026-10-05):复用 RT 阴影 staging 通道
+      // (rtShadows.packedScene,00871f4c 访问器先例)——可见性 trace 消费同一两级
+      // 世界空间 TLAS(packTlasScene 同形,bvhTraverseTlas 家族同源),同对象引用
+      // 逐帧零重传(runtime staging 身份合同)。未 staging(features 关/场景未供给/
+      // staging 降级)= 不带 visibility 上下文 → 控制器 fail-closed 可见性恒 1(帧
+      // 输出与旧行为逐位一致);原因经 FrameMetrics.megaLights.visibilitySource 与
+      // rayTracedShadowStatus 双通道披露,不静默假开。
+      const megaLightsVisibilityScene = host.rtShadows?.packedScene;
       host.megaLights.encodeFrame({ encoder, width: size.width, height: size.height,
         colorView: host.targets.hdr,
         depthTexture: host.targets.depthTexture,
         depthViewProjection: frameState.depthViewProjection,
         worldToView: frameState.worldToView,
-        lights: transformWorldLightsToView(sceneLighting.clustered, frameState.worldToView) });
+        lights: transformWorldLightsToView(sceneLighting.clustered, frameState.worldToView),
+        ...(megaLightsVisibilityScene !== undefined ? { visibility: {
+          scene: megaLightsVisibilityScene,
+          viewToWorld: invertColumnMajor4x4(frameState.worldToView), rayMask: 0xffffffff } } : {}) });
     }
     // B3 RT 反射 closest-hit 帧通道(opt-in features.rayTracedReflections,默认关 =
     // 运行时不存在,帧逐位零变化):主帧 1x depth(本帧,depth resolve 之后)重建着色点,

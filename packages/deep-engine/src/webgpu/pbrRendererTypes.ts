@@ -266,7 +266,10 @@ export interface FrameMetrics {
   /**
    * B2 MegaLights M2 遥测(features.megaLights 开启且控制器已构建时出现):
    * dispatchedFrames 累计、lastLightCount/lastReason 为最近一次路径决策依据
-   * (≤64 灯帧 reason=within-cluster-budget 且零 dispatch)。
+   * (≤64 灯帧 reason=within-cluster-budget 且零 dispatch)。visibilitySource 披露
+   * 胜者可见性射线供给:rt-shadow-tlas = 复用 RT 阴影 staging 场景且本帧 trace
+   * dispatch;off = 无供给(fail-closed 可见性恒 1,原因查 rayTracedShadowStatus);
+   * unsupported = 可见性档构建失败(visibilityFallbackReason 如实披露,不重试)。
    */
   readonly megaLights?: import("../lighting/megaLightsFrameController.js").MegaLightsFrameMetrics;
   /**
