@@ -92,6 +92,11 @@ pub mod native_mesh_wgsl;
 mod probe_gi_native_adapter_tests;
 /// P1 质量主线(六引擎对标刀位 1):native SDF-GI 链——场景级 SDF 体积烘焙
 /// (CPU 权威镜像,TS sdfSceneBake/sdfGrid 同构)+ 探针 lattice 推导。
+/// `.dgc` 字节 → native 簇 LOD DAG 运行时构建(批 C):read_dgc 单源读取 →
+/// 路 4 映射(dgcClusterLodBridge 同式)→ validateClusterLodDag 合同签核 →
+/// 64B 节点表打包 + indirect 计划面(批 A/B 模块零转换消费)。
+pub mod gpu_cluster_lod_dag;
+pub mod gpu_cluster_lod_dag_tests;
 pub mod gpu_cluster_lod_indirect;
 #[cfg(test)]
 mod _dbg2;

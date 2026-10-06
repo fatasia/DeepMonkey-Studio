@@ -12,6 +12,12 @@ publish = false
 [dependencies]
 bytemuck = "=1.25.2"
 cosmic-text = { version = "=0.19.0", default-features = false, features = ["std", "swash"] }
+# 簇 LOD 运行时(批 C):.dgc 读取唯一权威(geometry_dag::read_dgc)以 path 依赖接入,
+# 与 TS decodeDgc 跨工具链 sha256 钉版同源(dgc_byte_golden 门)。开源依赖审计:
+# geometry_dag 传递依赖 thiserror =2.0.20(已是本 lock 存量)与 flate2 =1.1.10
+# (rust_backend → miniz_oxide/adler2/crc32fast,geometry_dag/Cargo.lock 同版本集,
+# 85aeef75 字节黄金钉版时已审计;版本经 geometry_dag/Cargo.toml 等号钉死,不引新大版本)。
+geometry_dag = { path = "geometry_dag" }
 pollster = "=1.0.1"
 rapier3d = { version = "=0.35.3", default-features = true, features = ["enhanced-determinism"] }
 serde = { version = "=1.0.228", features = ["derive"] }
