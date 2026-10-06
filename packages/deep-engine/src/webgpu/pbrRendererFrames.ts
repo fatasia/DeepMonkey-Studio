@@ -15,6 +15,7 @@ import { spherePacket } from "./spherePacket.js";
 import { CameraFrameHistory } from "./cameraFrameHistory.js";
 import { PbrPostProcessChain, type PbrPostProcessInput } from "./pbrPostProcessChain.js";
 import { resolveProjectedTexturePool } from "./pbrProjectedTexturePool.js";
+import { releaseRtReflectionFrameContribution } from "./pbrRtReflectionsFrame.js";
 import { resolvePbrPostProcessOverrides } from "./pbrPostProcessOverrides.js";
 import { PbrTransparencyPass } from "./pbrTransparencyPass.js";
 import { viewProjectionFrustum } from "./pbrFrusta.js";
@@ -708,9 +709,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     if (clusterLod && clusterLodSupported) void clusterLod.ingest().catch(error => clusterLod.noteIngestFailure(error));
     // TAA 已在 submit 前读取响应掩码；队列有序保证提交后释放可安全回池复用。
     if (particleReactive) { host.transientTextures.release(particleReactive); particleReactive = undefined; }
-    if (rtReflectionsFrame?.hit) { host.transientTextures.release(rtReflectionsFrame.hit); rtReflectionsFrame.hit = undefined; }
-    if (rtReflectionsFrame?.bounceShading) { host.transientTextures.release(rtReflectionsFrame.bounceShading); rtReflectionsFrame.bounceShading = undefined; }
-    if (rtReflectionsFrame?.indirectionHandle) { host.transientTextures.release(rtReflectionsFrame.indirectionHandle); rtReflectionsFrame.indirectionHandle = undefined; }
+    releaseRtReflectionFrameContribution(host, rtReflectionsFrame);
     host.targets.commitFrame();
     if (host.frameCapture && captureOpen) host.lastFrameReadback = host.frameCapture.collectReadbacksAfterSubmit();
     // A2C-P1 探针:submit 已落队,读回异步结算后冻结判定(下一帧起经 FrameMetrics 披露)。
@@ -785,9 +784,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       host.postProcess.cancelFrame(history.revision);
       host.transparency.cancelFrame();
       if (particleReactive) { host.transientTextures.release(particleReactive); particleReactive = undefined; }
-    if (rtReflectionsFrame?.hit) { host.transientTextures.release(rtReflectionsFrame.hit); rtReflectionsFrame.hit = undefined; }
-      if (rtReflectionsFrame?.bounceShading) { host.transientTextures.release(rtReflectionsFrame.bounceShading); rtReflectionsFrame.bounceShading = undefined; }
-      if (rtReflectionsFrame?.indirectionHandle) { host.transientTextures.release(rtReflectionsFrame.indirectionHandle); rtReflectionsFrame.indirectionHandle = undefined; }
+      releaseRtReflectionFrameContribution(host, rtReflectionsFrame);
       host.targets.failFrame();
       host.a2cProbe?.cancelFrame();
       host.packets.cancelDeformationFrame();

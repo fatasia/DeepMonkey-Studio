@@ -49,17 +49,30 @@ export function rtSpecularReconstructViewPosition(x: number, y: number, width: n
 }
 
 /**
+ * 二反弹输入(2026-10-06 后继切片,保守单跳):第二命中记录 [t2, normal2]
+ * (closest 帧通道 secondBounce 档产出;miss t2<=0 = 无额外能量)与第二遮蔽记录
+ * [albedo2, visibility2](缺省 = 旧基线 visibility=1 + 中性反照率)。
+ */
+export interface RtSpecularSecondBounce {
+  readonly record: readonly [number, number, number, number];
+  readonly shading?: RtSpecularBounceShading;
+}
+
+/**
  * 一次反弹 indirection 记录(单像素):命中记录 [t, normal.xyz](miss t<=0 → 全零)、
  * 遮蔽记录 [albedo.rgb, visibility](缺省 = 旧基线 visibility=1 + 中性反照率)、
  * GBuffer 视法线 [x,y,z]∈[-1,1] 与 roughness∈[0,1]、线性视深度 →
  * [radiance×fraction(r,g,b), fraction]。与 WGSL 同式:直接光项乘可见性后加环境项,
  * 逐通道乘 clamp 后反照率,再统一乘高光分数(预乘,合成端直接换手)。
+ * secondBounce 给定且其记录命中(t2>0)时按 Lambert 中继累加二跳:第一命中点反照率
+ * ×(第二命中点同式解析辐射)——与 WGSL secondBounce 档同式同加法序。
  */
 export function rtSpecularIndirectionRecordCpu(record: readonly [number, number, number, number],
   viewNormal: readonly [number, number, number], roughness: number, linearDepth: number,
   pixelX: number, pixelY: number, width: number, height: number,
   params: RtSpecularIndirectionCpuParams,
-  shading: RtSpecularBounceShading = RT_SPECULAR_NEUTRAL_SHADING): readonly [number, number, number, number] {
+  shading: RtSpecularBounceShading = RT_SPECULAR_NEUTRAL_SHADING,
+  secondBounce?: RtSpecularSecondBounce): readonly [number, number, number, number] {
   if (!(record[0]! > 0) || !(linearDepth > 0)) return [0, 0, 0, 0];
   // 与 WGSL rtSpecSafeNormal 同式:解码后归一化(长度退化回退 +z,fail-closed 同侧)。
   const normalLength = Math.hypot(viewNormal[0], viewNormal[1], viewNormal[2]);
@@ -89,9 +102,28 @@ export function rtSpecularIndirectionRecordCpu(record: readonly [number, number,
   const directR = ndotl * params.lightColor[0]! * params.lightIntensity * visibility;
   const directG = ndotl * params.lightColor[1]! * params.lightIntensity * visibility;
   const directB = ndotl * params.lightColor[2]! * params.lightIntensity * visibility;
-  const oneBounceR = (directR + params.envRadiance[0]!) * albedo[0]!;
-  const oneBounceG = (directG + params.envRadiance[1]!) * albedo[1]!;
-  const oneBounceB = (directB + params.envRadiance[2]!) * albedo[2]!;
+  let oneBounceR = (directR + params.envRadiance[0]!) * albedo[0]!;
+  let oneBounceG = (directG + params.envRadiance[1]!) * albedo[1]!;
+  let oneBounceB = (directB + params.envRadiance[2]!) * albedo[2]!;
+  if (secondBounce !== undefined && secondBounce.record[0]! > 0) {
+    const shading2 = secondBounce.shading ?? RT_SPECULAR_NEUTRAL_SHADING;
+    const albedo2 = [
+      Math.min(1, Math.max(0, shading2.albedo[0]!)),
+      Math.min(1, Math.max(0, shading2.albedo[1]!)),
+      Math.min(1, Math.max(0, shading2.albedo[2]!)),
+    ];
+    const visibility2 = Math.min(1, Math.max(0, shading2.visibility));
+    const ndotl2 = Math.min(1, Math.max(0,
+      secondBounce.record[1]! * params.surfaceToLightWorld[0]!
+        + secondBounce.record[2]! * params.surfaceToLightWorld[1]!
+        + secondBounce.record[3]! * params.surfaceToLightWorld[2]!));
+    const direct2R = ndotl2 * params.lightColor[0]! * params.lightIntensity * visibility2;
+    const direct2G = ndotl2 * params.lightColor[1]! * params.lightIntensity * visibility2;
+    const direct2B = ndotl2 * params.lightColor[2]! * params.lightIntensity * visibility2;
+    oneBounceR += albedo[0]! * ((direct2R + params.envRadiance[0]!) * albedo2[0]!);
+    oneBounceG += albedo[1]! * ((direct2G + params.envRadiance[1]!) * albedo2[1]!);
+    oneBounceB += albedo[2]! * ((direct2B + params.envRadiance[2]!) * albedo2[2]!);
+  }
   const fraction = ssrBrdfSpecularFractionCpu(cosTheta, clampedRoughness, params.fresnelF0);
   return [oneBounceR * fraction, oneBounceG * fraction, oneBounceB * fraction, fraction];
 }

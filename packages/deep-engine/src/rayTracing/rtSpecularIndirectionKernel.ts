@@ -44,6 +44,13 @@ export const RT_SPECULAR_INDIRECTION_BINDINGS = Object.freeze([
   { binding: 7, name: "bounceShading", type: "read-only-storage-texture" },
 ] as const);
 
+/** 二反弹档 binding 合同(基线 8 槽 + 第二命中/遮蔽记录只读;顺序同执行器 entries)。 */
+export const RT_SPECULAR_INDIRECTION_SECOND_BOUNCE_BINDINGS = Object.freeze([
+  ...RT_SPECULAR_INDIRECTION_BINDINGS,
+  { binding: 8, name: "rtHitRecord2", type: "read-only-storage-texture" },
+  { binding: 9, name: "bounceShading2", type: "read-only-storage-texture" },
+] as const);
+
 /** params uniform 字节数:vec4u + 5×vec4f = 96。 */
 export const RT_SPECULAR_INDIRECTION_PARAMS_BYTES = 96;
 
@@ -92,8 +99,36 @@ export function packRtSpecularIndirectionUniform(params: RtSpecularIndirectionPa
   return data;
 }
 
-/** 发射一次反弹 indirection 内核源码(sha256 合同见本目录测试)。 */
-export function emitRtSpecularIndirectionKernelWgsl(): string {
+/** 发射一次反弹 indirection 内核源码(sha256 合同见本目录测试)。
+ * secondBounce(2026-10-06 后继切片,保守单跳):额外消费第二命中记录 [t2, normal2]
+ * (binding 8)与第二遮蔽记录 [albedo2, visibility2](binding 9)——第一命中点沿
+ * 其镜面反射方向二跳 closest-hit(closest 帧通道 secondBounce 档产出),记录 2 的
+ * 解析一次反弹辐射乘第一命中点反照率(Lambert 中继)后累加进 indirection 辐射;
+ * 记录 2 miss/零遮蔽 = 无额外能量(与一次反弹档逐位一致)。默认 false = 源码与
+ * 既有 sha 钉值逐字节一致。 */
+export function emitRtSpecularIndirectionKernelWgsl(options: { secondBounce?: boolean } = {}): string {
+  const secondBounce = options.secondBounce === true;
+  const secondBounceBindings = secondBounce
+    ? `
+@group(0) @binding(8) var rtHitRecord2: texture_storage_2d<rgba32float, read>;
+@group(0) @binding(9) var bounceShading2: texture_storage_2d<rgba32float, read>;`
+    : "";
+  const secondBounceBody = secondBounce
+    ? `
+  // 二反弹累积(保守单跳):第二命中点解析一次反弹辐射(与首跳同式同分支序)
+  // × 第一命中点反照率(Lambert 中继;能量有界 albedo≤1,无 Russian roulette,
+  // 不做完整路径追踪 —— 任务边界如实)。记录 2 miss = 不进分支,输出与一次反弹
+  // 档逐位一致。
+  let record2 = textureLoad(rtHitRecord2, vec2<i32>(px));
+  if (record2.x > 0.0) {
+    let shading2 = textureLoad(bounceShading2, vec2<i32>(px));
+    let albedo2 = clamp(shading2.rgb, vec3f(0.0), vec3f(1.0));
+    let ndotl2 = clamp(dot(record2.yzw, indirectionParams.lightDirection.xyz), 0.0, 1.0);
+    let direct2 = ndotl2 * indirectionParams.lightColorIntensity.rgb
+      * indirectionParams.lightColorIntensity.w * shading2.a;
+    oneBounce = oneBounce + bounceAlbedo * ((direct2 + indirectionParams.envRadiance.rgb) * albedo2);
+  }`
+    : "";
   return /* wgsl */ `// RT specular GI one-bounce indirection (consumes the reflection closest-hit frame channel).
 // Per receiver pixel: record [t, normal.xyz] + illumination shading record
 // [albedo.rgb, visibility] -> analytic one-bounce radiance at the hit point, weighted by
@@ -101,7 +136,7 @@ export function emitRtSpecularIndirectionKernelWgsl(): string {
 // is multiplied by the hit->light visibility traced by the frame channel; the ambient
 // term is unoccluded (no AO term, honest boundary). Output [radiance*frac, frac]; every
 // miss path stores zero (fail-closed: no fake energy).
-${ssrBrdfFractionWgsl("brdfLut", "indirectionSampler")}
+${secondBounce ? "// Second-bounce variant: accumulates the analytic one-bounce radiance of the second\n// hit (single conservative extra hop) relayed through the first hit albedo.\n" : ""}${ssrBrdfFractionWgsl("brdfLut", "indirectionSampler")}
 struct IndirectionParams {
   frameSize: vec4u,
   // x=tanHalfFov, y=aspect (SSR linear-view-depth reconstruction contract).
@@ -120,7 +155,7 @@ struct IndirectionParams {
 @group(0) @binding(4) var<uniform> indirectionParams: IndirectionParams;
 @group(0) @binding(5) var rtHitRecord: texture_storage_2d<rgba32float, read>;
 @group(0) @binding(6) var rtIndirection: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(7) var bounceShading: texture_storage_2d<rgba32float, read>;
+@group(0) @binding(7) var bounceShading: texture_storage_2d<rgba32float, read>;${secondBounceBindings}
 
 fn rtIndirectionStoreMiss(px: vec2u) {
   textureStore(rtIndirection, vec2<i32>(px), vec4f(0.0));
@@ -154,7 +189,7 @@ fn ${RT_SPECULAR_INDIRECTION_ENTRY_POINT}(@builtin(global_invocation_id) gid: ve
   let ndotl = clamp(dot(hitNormal, indirectionParams.lightDirection.xyz), 0.0, 1.0);
   let direct = ndotl * indirectionParams.lightColorIntensity.rgb * indirectionParams.lightColorIntensity.w
     * shading.a;
-  let oneBounce = (direct + indirectionParams.envRadiance.rgb) * bounceAlbedo;
+  ${secondBounce ? "var" : "let"} oneBounce = (direct + indirectionParams.envRadiance.rgb) * bounceAlbedo;${secondBounceBody}
   let fraction = rtSpecSpecularFraction(cosTheta, roughness, indirectionParams.misc.x);
   textureStore(rtIndirection, vec2<i32>(px), vec4f(oneBounce * fraction, fraction));
 }

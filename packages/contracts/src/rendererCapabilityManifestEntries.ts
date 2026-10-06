@@ -124,7 +124,12 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     // 帧编排挂载 closest-hit 通道(features.rayTracedReflections,场景复用 RT 阴影
     // staging)+ 一次反弹 indirection(命中点解析辐射度 = 主方向光 N·L + F1 ambient
     // 合同环境项 × 中性反照率 0.5,SSR 同款 split-sum 高光分数;ReSTIR-DI 灯池跨域
-    // 借表属下一切片,二反弹不做,如实登记边界)+ SSR 合成后屏外填充(trace.a==0 且
+    // 借表属下一切片)+ 二反弹(2026-10-06 后继切片,保守单跳:closest illumination
+    // 档 secondBounce 变体在第一命中点沿其镜面反射方向再补一腿 closest-hit,第二命中
+    // 记录 [t2,normal2]+第二遮蔽记录 [albedo2,visibility2](binding 11/12)→
+    // indirection secondBounce 档(binding 8/9)按首命中反照率 Lambert 中继累加第二
+    // 命中点同式解析辐射,记录 2 miss/遮挡 = 无额外能量与一次反弹档逐位一致;不做
+    // 完整路径追踪,新变体 f32/f16 sha256 钉死,基线两档钉值不动)+ SSR 合成后屏外填充(trace.a==0 且
     // RT 命中像素以 SSR composite 同式 out×(1-α)+rgb 替换 IBL 高光回退,SSR 命中逐位
     // 透传,双 miss 零变化)。URL 开关 ray-traced-reflections 已入
     // studioDeepWebGpuBridgeFeatureToggles 单文件(+toggles 测试);桥 features 字面量
@@ -136,7 +141,7 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     webFeatureKeys: ["rayTracedReflections"],
     web: {
       support: "supported", reason: "opt-in-default-off",
-      evidence: "packages/deep-engine/src/rayTracing/rayTraceClosestFrameKernel.ts(两级 TLAS→BLAS closest-hit,rgba32float [t,normal.xyz],miss=[-1,0,0,0];执行器同目录 rayTraceClosestFramePass.ts)+ rtSpecularIndirectionKernel.ts/rtSpecularFillKernel.ts(一次反弹 indirection 与 SSR 合成后屏外填充,WGSL sha256 钉死,CPU 镜像 rtSpecularIndirectionCpu.ts 单源)+ rtSpecularFramePasses.ts(自有 96B/16B uniform,帧 uniform 满载不借位)+ pbrRendererFrames 帧内懒构造 + pbrPostProcessChain encodeFinal 消费(缺省输入 = 链路逐位零变化;真机门 scripts/rtSpecularGiGpuTest.mjs)",
+      evidence: "packages/deep-engine/src/rayTracing/rayTraceClosestFrameKernel.ts(两级 TLAS→BLAS closest-hit,rgba32float [t,normal.xyz],miss=[-1,0,0,0];illumination 遮蔽档 + secondBounce 二反弹档=第一命中点镜面方向单跳第二 closest-hit,第二命中/遮蔽记录 binding 11/12;执行器同目录 rayTraceClosestFramePass.ts)+ rtSpecularIndirectionKernel.ts/rtSpecularFillKernel.ts(一次反弹 indirection 与 SSR 合成后屏外填充,WGSL sha256 钉死;secondBounce 档 binding 8/9 消费第二记录按首命中反照率 Lambert 中继累加,CPU 镜像 rtSpecularIndirectionCpu.ts 单源含二跳累加式)+ rtSpecularFramePasses.ts(自有 96B/16B uniform,帧 uniform 满载不借位)+ pbrRendererFrames 帧内懒构造(瞬态纹理释放统一走 pbrRtReflectionsFrame.releaseRtReflectionFrameContribution)+ pbrPostProcessChain encodeFinal 消费(缺省输入 = 链路逐位零变化;真机门 scripts/rtSpecularGiGpuTest.mjs,真机二跳 GPU 腿待下一轮串行)",
     },
     native: { support: "unavailable", reason: "absent", evidence: "packages/deep-engine-native/src/lib.rs(native 无 compute BVH 反射通道;与 ray-traced-shadows 同口径)" },
   },

@@ -59,6 +59,13 @@ export const RAY_TRACE_CLOSEST_FRAME_ILLUMINATION_BINDINGS = Object.freeze([
   { binding: 10, name: "instanceAlbedos", type: "read-only-storage" },
 ] as const);
 
+/** 二反弹档 binding 合同(光照遮蔽档 + 第二命中/遮蔽记录;顺序同执行器 entries)。 */
+export const RAY_TRACE_CLOSEST_FRAME_SECOND_BOUNCE_BINDINGS = Object.freeze([
+  ...RAY_TRACE_CLOSEST_FRAME_ILLUMINATION_BINDINGS,
+  { binding: 11, name: "reflectionHit2", type: "storage-texture" },
+  { binding: 12, name: "bounceShading2", type: "storage-texture" },
+] as const);
+
 export interface RayTraceClosestFrameKernelOptions {
   /** f16 压缩节点档(需 shader-f16 feature;默认 false)。 */
   readonly f16?: boolean;
@@ -69,6 +76,13 @@ export interface RayTraceClosestFrameKernelOptions {
    * indirection 消费。默认 false = 遍历体逐字节与基线一致(f32/f16 sha 钉值不变)。
    */
   readonly illumination?: boolean;
+  /**
+   * 二反弹档(2026-10-06 后继切片;需 illumination):第一命中点沿其镜面反射方向
+   * 再补一腿 closest-hit(保守单跳,不做完整路径追踪),第二命中记录 [t2, normal2]
+   * (binding 11)与第二遮蔽记录 [albedo2, visibility2](binding 12)供 indirection
+   * 二反弹累积消费。默认 false = 光照遮蔽档逐字节不变(其 sha 钉值不变)。
+   */
+  readonly secondBounce?: boolean;
 }
 
 /** params uniform 字节数(基线档):mat4x4(64)+vec4f(16)+vec4f(16)+vec4u(16)=112。 */
@@ -134,15 +148,21 @@ const RAY_TRACE_ILLUMINATION_INTERSECT_ADAPTER_WGSL = /* wgsl */ `fn intersectTr
 /** 发射帧循环反射 closest-hit 内核源码;f32/f16 两档各自确定性(sha256 合同见本测试)。 */
 export function emitRayTraceClosestFrameKernelWgsl(options: RayTraceClosestFrameKernelOptions = {}): string {
   // 基线档(illumination 缺省)逐字节与 2026-10-05 B3 基线一致(f32/f16 sha 钉值不变);
-  // 光照遮蔽档只做加法:额外注释/绑定/遮蔽片段/遮蔽腿,不改动基线遍历语义。
+  // 光照遮蔽档只做加法:额外注释/绑定/遮蔽片段/遮蔽腿,不改动基线遍历语义;
+  // 二反弹档同理只做加法(第二命中腿 + 两条记录存储,不动既有腿)。
   const illumination = options.illumination === true;
+  const secondBounce = illumination && options.secondBounce === true;
   const illumHeader = illumination
     ? `// Illumination variant (P1 RT specular GI slice): after the reflection closest-hit, a
 // second leg traces visibility from the hit point toward the primary light
 // (traceTwoLevelOccluded, same fail-closed side as the shadow kernel) and the hit
 // material albedo is fetched from a per-instance table. The extra rgba32float record
 // [albedo.rgb, visibility] feeds the one-bounce indirection consumer.
-`
+${secondBounce ? `// Second-bounce variant (conservative single extra hop, no full path tracing): the first
+// hit point traces one more closest ray along its mirrored reflection direction; the
+// second hit/shading records [t2, normal2] / [albedo2, visibility2] feed the indirection
+// second-bounce accumulation.
+` : ""}`
     : "";
   const illumStructField = illumination
     ? `  // 光照遮蔽档:表面→光源单位方向(命中点遮蔽腿;pack 128B 布局合同)。
@@ -152,7 +172,9 @@ export function emitRayTraceClosestFrameKernelWgsl(options: RayTraceClosestFrame
   const illumBindings = illumination
     ? `
 @group(0) @binding(9) var bounceShading: texture_storage_2d<rgba32float, write>;
-@group(0) @binding(10) var<storage, read> instanceAlbedos: array<vec4f>;`
+@group(0) @binding(10) var<storage, read> instanceAlbedos: array<vec4f>;${secondBounce ? `
+@group(0) @binding(11) var reflectionHit2: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(12) var bounceShading2: texture_storage_2d<rgba32float, write>;` : ""}`
     : "";
   const illumFragments = illumination
     ? `${RAY_TRACE_ILLUMINATION_INTERSECT_ADAPTER_WGSL}${BVH_BLAS_OCCLUDED_WGSL}${TLAS_OCCLUDED_WGSL}`
@@ -160,7 +182,9 @@ export function emitRayTraceClosestFrameKernelWgsl(options: RayTraceClosestFrame
   const frameStoreMiss = illumination
     ? `fn frameStoreMiss(px: vec2u) {
   textureStore(reflectionHit, px, vec4f(${RAY_TRACE_CLOSEST_FRAME_MISS_T}.0, 0.0, 0.0, 0.0));
-  textureStore(bounceShading, px, vec4f(0.0));
+  textureStore(bounceShading, px, vec4f(0.0));${secondBounce ? `
+  textureStore(reflectionHit2, px, vec4f(${RAY_TRACE_CLOSEST_FRAME_MISS_T}.0, 0.0, 0.0, 0.0));
+  textureStore(bounceShading2, px, vec4f(0.0));` : ""}
 }`
     : `fn frameStoreMiss(px: vec2u) {
   textureStore(reflectionHit, px, vec4f(${RAY_TRACE_CLOSEST_FRAME_MISS_T}.0, 0.0, 0.0, 0.0));
@@ -185,7 +209,40 @@ export function emitRayTraceClosestFrameKernelWgsl(options: RayTraceClosestFrame
       params.eyeAndMax.w, params.frameMeta.x, &shadowOverflow);
     visibility = select(1.0, 0.0, occluded || shadowOverflow != 0u);
   }
-  textureStore(bounceShading, px, vec4f(bounceAlbedo, visibility));`
+  textureStore(bounceShading, px, vec4f(bounceAlbedo, visibility));${secondBounce ? `
+
+  // 二反弹腿(保守单跳):第一命中点沿其镜面反射方向(手动反射式,与首腿同式同
+  // 分支序)再补一腿 closest-hit;miss/栈溢出 fail-closed 写 miss 记录与零遮蔽
+  // (无虚假能量;全局哨兵由遍历片段内置 atomicAdd 累计,此处只消费局部标志)。
+  let reflectDir2 = reflectDir - 2.0 * dot(reflectDir, hit.normal) * hit.normal;
+  let hitPosition1 = origin + reflectDir * hit.t;
+  let origin2 = hitPosition1 + reflectDir2 * params.biasAndPad.x;
+  let inv2 = vec3f(1.0 / reflectDir2.x, 1.0 / reflectDir2.y, 1.0 / reflectDir2.z);
+  var hit2: TraverseHit;
+  var overflow2: u32 = 0u;
+  let found2 = traceTwoLevelClosest(origin2, reflectDir2, inv2, params.eyeAndMax.w,
+    params.frameMeta.x, &hit2, &overflow2);
+  if (found2 == 0u || overflow2 != 0u) {
+    textureStore(reflectionHit2, px, vec4f(${RAY_TRACE_CLOSEST_FRAME_MISS_T}.0, 0.0, 0.0, 0.0));
+    textureStore(bounceShading2, px, vec4f(0.0));
+  } else {
+    textureStore(reflectionHit2, px, vec4f(hit2.t, hit2.normal.x, hit2.normal.y, hit2.normal.z));
+    var albedo2 = vec3f(0.5, 0.5, 0.5);
+    if (hit2.instanceIndex < params.frameMeta.w) {
+      albedo2 = clamp(instanceAlbedos[hit2.instanceIndex].rgb, vec3f(0.0), vec3f(1.0));
+    }
+    var visibility2 = 1.0;
+    if (dot(lightDir, lightDir) > 0.5) {
+      let hitPosition2 = hitPosition1 + reflectDir2 * hit2.t;
+      let shadowOrigin2 = hitPosition2 + lightDir * params.biasAndPad.x;
+      let shadowInv2 = vec3f(1.0 / lightDir.x, 1.0 / lightDir.y, 1.0 / lightDir.z);
+      var shadowOverflow2: u32 = 0u;
+      let occluded2 = traceTwoLevelOccluded(shadowOrigin2, lightDir, shadowInv2,
+        params.eyeAndMax.w, params.frameMeta.x, &shadowOverflow2);
+      visibility2 = select(1.0, 0.0, occluded2 || shadowOverflow2 != 0u);
+    }
+    textureStore(bounceShading2, px, vec4f(albedo2, visibility2));
+  }` : ""}`
     : "";
   return /* wgsl */ `// Reflection closest-hit ray record (frame-inline GBuffer variant).
 // Complementary channel to the shadow occlusion kernel: same depth reconstruction,

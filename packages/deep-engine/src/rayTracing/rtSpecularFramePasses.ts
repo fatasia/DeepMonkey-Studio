@@ -18,7 +18,8 @@
  */
 
 import { emitRtSpecularIndirectionKernelWgsl, packRtSpecularIndirectionUniform,
-  RT_SPECULAR_INDIRECTION_BINDINGS, RT_SPECULAR_INDIRECTION_ENTRY_POINT,
+  RT_SPECULAR_INDIRECTION_BINDINGS, RT_SPECULAR_INDIRECTION_SECOND_BOUNCE_BINDINGS,
+  RT_SPECULAR_INDIRECTION_ENTRY_POINT,
   RT_SPECULAR_INDIRECTION_PARAMS_BYTES, type RtSpecularIndirectionParams } from "./rtSpecularIndirectionKernel.js";
 import { emitRtSpecularFillKernelWgsl, packRtSpecularFillUniform,
   RT_SPECULAR_FILL_BINDINGS, RT_SPECULAR_FILL_ENTRY_POINT,
@@ -39,6 +40,10 @@ export interface RtSpecularIndirectionFrameInput {
   readonly rtHitView: GPUTextureView;
   /** 反射 closest-hit 帧通道遮蔽记录 [albedo.rgb, visibility](rgba32float,本帧已写入)。 */
   readonly bounceShadingView: GPUTextureView;
+  /** 二反弹档:第二命中记录 [t2, normal2](pass 构造 secondBounce 时必填,缺省即抛)。 */
+  readonly rtHit2View?: GPUTextureView;
+  /** 二反弹档:第二遮蔽记录 [albedo2, visibility2](pass 构造 secondBounce 时必填,缺省即抛)。 */
+  readonly bounceShading2View?: GPUTextureView;
   /** indirection 输出(rgba16float storage view)。 */
   readonly indirectionView: GPUTextureView;
   readonly width: number;
@@ -56,20 +61,35 @@ export interface RtSpecularFillFrameInput {
   readonly height: number;
 }
 
+export interface RtSpecularIndirectionPassOptions {
+  /**
+   * 二反弹档(2026-10-06 后继切片,保守单跳;默认 false = 一次反弹档逐字节不变):
+   * 消费第二命中/遮蔽记录(closest 帧通道 secondBounce 档产出,binding 8/9),
+   * 第二命中点解析辐射 × 第一命中点反照率中继累加进 indirection。
+   */
+  readonly secondBounce?: boolean;
+}
+
 export class RtSpecularIndirectionPass {
   private readonly pipeline: GPUComputePipeline;
   private readonly uniform: GPUBuffer;
   private readonly sampler: GPUSampler;
   private readonly layout: GPUBindGroupLayout;
+  private readonly secondBounce: boolean;
   private cached: Array<{
     readonly views: readonly GPUTextureView[];
     readonly binding: GPUBindGroup;
   }> = [];
 
-  constructor(private readonly device: GPUDevice) {
+  constructor(private readonly device: GPUDevice, options: RtSpecularIndirectionPassOptions = {}) {
+    this.secondBounce = options.secondBounce === true;
     // 显式绑定布局:auto 布局把 texture_2d<f32> 推成可过滤采样,而 linearDepth 是
     // r32float(只 textureLoad,不可过滤)——显式 unfilterable-float 才能绑定(同 SSR
     // traceLayout 惯例);storage 读/写纹理与 uniform 同布局逐槽显式。
+    const secondBounceLayoutEntries: GPUBindGroupLayoutEntry[] = [
+      { binding: 8, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "read-only", format: "rgba32float" } },
+      { binding: 9, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "read-only", format: "rgba32float" } },
+    ];
     this.layout = device.createBindGroupLayout({ label: "rt-specular-indirection-layout", entries: [
       { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "unfilterable-float" } },
       { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "float" } },
@@ -79,11 +99,12 @@ export class RtSpecularIndirectionPass {
       { binding: 5, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "read-only", format: "rgba32float" } },
       { binding: 6, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: "rgba16float" } },
       { binding: 7, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "read-only", format: "rgba32float" } },
+      ...(this.secondBounce ? secondBounceLayoutEntries : []),
     ] });
     this.pipeline = device.createComputePipeline({ label: "rt-specular-indirection",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.layout] }),
       compute: { module: device.createShaderModule({ label: "rt-specular-indirection",
-        code: emitRtSpecularIndirectionKernelWgsl() }),
+        code: emitRtSpecularIndirectionKernelWgsl({ secondBounce: this.secondBounce }) }),
         entryPoint: RT_SPECULAR_INDIRECTION_ENTRY_POINT } });
     this.uniform = device.createBuffer({ label: "rt-specular-indirection-params",
       size: RT_SPECULAR_INDIRECTION_PARAMS_BYTES,
@@ -109,8 +130,12 @@ export class RtSpecularIndirectionPass {
       throw new Error("RtSpecularIndirectionPass requires finite light/env/f0 params.");
     }
     this.device.queue.writeBuffer(this.uniform, 0, packRtSpecularIndirectionUniform(input.params));
+    if (this.secondBounce && (input.rtHit2View === undefined || input.bounceShading2View === undefined)) {
+      throw new Error("RtSpecularIndirectionPass secondBounce mode requires rtHit2View and bounceShading2View.");
+    }
     const views = [input.linearDepthView, input.viewNormalView, input.brdfLutView,
-      input.rtHitView, input.indirectionView, input.bounceShadingView];
+      input.rtHitView, input.indirectionView, input.bounceShadingView,
+      ...(this.secondBounce ? [input.rtHit2View!, input.bounceShading2View!] : [])];
     let binding = this.cached.find((entry) => entry.views.length === views.length
       && entry.views.every((view, index) => view === views[index]))?.binding;
     if (!binding) {
@@ -123,9 +148,15 @@ export class RtSpecularIndirectionPass {
         { binding: 5, resource: input.rtHitView },
         { binding: 6, resource: input.indirectionView },
         { binding: 7, resource: input.bounceShadingView },
+        ...(this.secondBounce ? [
+          { binding: 8, resource: input.rtHit2View! },
+          { binding: 9, resource: input.bounceShading2View! },
+        ] : []),
       ];
-      if (entries.length !== RT_SPECULAR_INDIRECTION_BINDINGS.length) {
-        throw new Error(`RtSpecularIndirectionPass bind group expects ${RT_SPECULAR_INDIRECTION_BINDINGS.length} entries.`);
+      const expectedBindings = this.secondBounce ? RT_SPECULAR_INDIRECTION_SECOND_BOUNCE_BINDINGS
+        : RT_SPECULAR_INDIRECTION_BINDINGS;
+      if (entries.length !== expectedBindings.length) {
+        throw new Error(`RtSpecularIndirectionPass bind group expects ${expectedBindings.length} entries.`);
       }
       binding = this.device.createBindGroup({ label: "rt-specular-indirection",
         layout: this.layout, entries });

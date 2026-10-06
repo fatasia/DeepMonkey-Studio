@@ -13,6 +13,7 @@
 import { RAY_BACKEND_LIMITS } from "./rayBackendTypes.js";
 import { emitRayTraceClosestFrameKernelWgsl, packRayTraceClosestFrameUniform,
   RAY_TRACE_CLOSEST_FRAME_BINDINGS, RAY_TRACE_CLOSEST_FRAME_ILLUMINATION_BINDINGS,
+  RAY_TRACE_CLOSEST_FRAME_SECOND_BOUNCE_BINDINGS,
   RAY_TRACE_CLOSEST_FRAME_ENTRY_POINT, RAY_TRACE_CLOSEST_FRAME_ILLUMINATION_PARAMS_BYTES,
   RAY_TRACE_CLOSEST_FRAME_PARAMS_BYTES, type RayTraceClosestFrameParams } from "./rayTraceClosestFrameKernel.js";
 import { RT_SPECULAR_BOUNCE_ALBEDO } from "./rtSpecularIndirectionKernel.js";
@@ -28,6 +29,9 @@ export interface RayTraceClosestFramePassOptions {
   readonly f16?: boolean;
   /** 光照遮蔽档:遮蔽腿 + 反照率记录(默认 false = 基线行为逐字节不变)。 */
   readonly illumination?: boolean;
+  /** 二反弹档(需 illumination;默认 false = 光照遮蔽档逐字节不变):第二命中腿 +
+   * 第二命中/遮蔽记录存储(binding 11/12),供 indirection 二反弹累积消费。 */
+  readonly secondBounce?: boolean;
 }
 
 export interface RayTraceClosestFrameInput {
@@ -50,6 +54,10 @@ export interface RayTraceClosestFrameInput {
   readonly bounceShadingView?: GPUTextureView;
   /** 光照遮蔽档:表面→光源单位世界方向(必填,缺省即抛)。 */
   readonly lightDirectionWorld?: readonly [number, number, number];
+  /** 二反弹档:第二命中记录 [t2, normal2](rgba32float storage 视图,必填即抛)。 */
+  readonly hit2View?: GPUTextureView;
+  /** 二反弹档:第二遮蔽记录 [albedo2, visibility2](rgba32float storage 视图,必填即抛)。 */
+  readonly bounceShading2View?: GPUTextureView;
   /**
    * 光照遮蔽档:per-instance 反照率表(按命中实例原始下标 4 f32/实例;可选——缺省
    * 保持构造期预填的中性反照率)。给出时必须精确 instanceCount×4 且全有限。
@@ -66,6 +74,8 @@ interface CachedFrameBindings {
   readonly depthView: GPUTextureView;
   readonly hitView: GPUTextureView;
   readonly bounceShadingView: GPUTextureView | undefined;
+  readonly hit2View: GPUTextureView | undefined;
+  readonly bounceShading2View: GPUTextureView | undefined;
   readonly binding: GPUBindGroup;
 }
 
@@ -80,11 +90,16 @@ export class RayTraceClosestFramePass {
   /** 光照遮蔽档:per-instance 反照率缓冲(instanceCount×16B,构造期预填中性 0.5)。 */
   private readonly instanceAlbedoBuffer: GPUBuffer | undefined;
   private readonly illumination: boolean;
+  private readonly secondBounce: boolean;
   private frameBindings: CachedFrameBindings[] = [];
 
   constructor(private readonly device: GPUDevice, packed: TlasPackedScene, options: RayTraceClosestFramePassOptions = {}) {
     this.packed = packed;
     this.illumination = options.illumination === true;
+    this.secondBounce = this.illumination && options.secondBounce === true;
+    if (options.secondBounce === true && !this.illumination) {
+      throw new Error("RayTraceClosestFramePass secondBounce requires the illumination variant.");
+    }
     if (options.f16 === true && !device.features.has("shader-f16")) {
       throw new Error("RayTraceClosestFramePass f16 variant requires the shader-f16 adapter feature.");
     }
@@ -94,7 +109,8 @@ export class RayTraceClosestFramePass {
     device.pushErrorScope("validation");
     this.pipeline = device.createComputePipeline({ label: "ray-trace-closest-frame", layout: "auto",
       compute: { module: device.createShaderModule({ label: "ray-trace-closest-frame",
-        code: emitRayTraceClosestFrameKernelWgsl({ f16: options.f16 === true, illumination: this.illumination }) }),
+        code: emitRayTraceClosestFrameKernelWgsl({ f16: options.f16 === true, illumination: this.illumination,
+          secondBounce: this.secondBounce }) }),
         entryPoint: RAY_TRACE_CLOSEST_FRAME_ENTRY_POINT } });
     this.validated = device.popErrorScope().then((error) => {
       if (error) throw new Error(`Reflection closest-hit frame WGSL validation failed: ${error.message}`);
@@ -155,6 +171,9 @@ export class RayTraceClosestFramePass {
       if (input.bounceShadingView === undefined || input.lightDirectionWorld === undefined) {
         throw new Error("RayTraceClosestFramePass illumination mode requires bounceShadingView and lightDirectionWorld.");
       }
+      if (this.secondBounce && (input.hit2View === undefined || input.bounceShading2View === undefined)) {
+        throw new Error("RayTraceClosestFramePass secondBounce mode requires hit2View and bounceShading2View.");
+      }
       if (![...input.lightDirectionWorld].every(Number.isFinite)) {
         throw new Error("RayTraceClosestFramePass requires a finite lightDirectionWorld.");
       }
@@ -177,7 +196,8 @@ export class RayTraceClosestFramePass {
       ...(this.illumination ? { lightDirectionWorld: input.lightDirectionWorld!,
         albedoCount: this.packed.instanceCount } : {}) };
     this.device.queue.writeBuffer(this.uniform, 0, packRayTraceClosestFrameUniform(params));
-    const binding = this.frameBindingsFor(input.depthView, input.hitView, input.bounceShadingView);
+    const binding = this.frameBindingsFor(input.depthView, input.hitView, input.bounceShadingView,
+      input.hit2View, input.bounceShading2View);
     const pass = encoder.beginComputePass({ label: "ray-trace-closest-frame" });
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, binding);
@@ -201,9 +221,11 @@ export class RayTraceClosestFramePass {
   }
 
   private frameBindingsFor(depthView: GPUTextureView, hitView: GPUTextureView,
-    bounceShadingView: GPUTextureView | undefined): GPUBindGroup {
+    bounceShadingView: GPUTextureView | undefined, hit2View: GPUTextureView | undefined,
+    bounceShading2View: GPUTextureView | undefined): GPUBindGroup {
     const cached = this.frameBindings.find((entry) => entry.depthView === depthView
-      && entry.hitView === hitView && entry.bounceShadingView === bounceShadingView);
+      && entry.hitView === hitView && entry.bounceShadingView === bounceShadingView
+      && entry.hit2View === hit2View && entry.bounceShading2View === bounceShading2View);
     if (cached) return cached.binding;
     const entries: GPUBindGroupEntry[] = [
       ...this.sceneBuffers.map((buffer, index) => ({ binding: index, resource: { buffer } })),
@@ -216,15 +238,20 @@ export class RayTraceClosestFramePass {
       entries.push({ binding: 9, resource: bounceShadingView! },
         { binding: 10, resource: { buffer: this.instanceAlbedoBuffer! } });
     }
+    if (this.secondBounce) {
+      entries.push({ binding: 11, resource: hit2View! },
+        { binding: 12, resource: bounceShading2View! });
+    }
     // binding 合同核验(构造期一次性;防 kernel/执行器漂移)。
-    const expected = this.illumination ? RAY_TRACE_CLOSEST_FRAME_ILLUMINATION_BINDINGS
-      : RAY_TRACE_CLOSEST_FRAME_BINDINGS;
+    const expected = this.secondBounce ? RAY_TRACE_CLOSEST_FRAME_SECOND_BOUNCE_BINDINGS
+      : this.illumination ? RAY_TRACE_CLOSEST_FRAME_ILLUMINATION_BINDINGS
+        : RAY_TRACE_CLOSEST_FRAME_BINDINGS;
     if (entries.length !== expected.length) {
       throw new Error(`RayTraceClosestFramePass bind group expects ${expected.length} entries.`);
     }
     const binding = this.device.createBindGroup({ label: "ray-trace-closest-frame",
       layout: this.pipeline.getBindGroupLayout(0), entries });
-    this.frameBindings.push({ depthView, hitView, bounceShadingView, binding });
+    this.frameBindings.push({ depthView, hitView, bounceShadingView, hit2View, bounceShading2View, binding });
     if (this.frameBindings.length > MAX_CACHED_BINDINGS) this.frameBindings.shift();
     return binding;
   }
