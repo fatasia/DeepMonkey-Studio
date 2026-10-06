@@ -95,6 +95,7 @@ captureProcessOutput(api.stdout, apiLogs);
 captureProcessOutput(api.stderr, apiLogs);
 let browser;
 let closeUnityRuntime;
+let page;
 const report = {
   createdAt: new Date().toISOString(),
   productOrigin,
@@ -116,8 +117,16 @@ let injectingBehaviorWorkerFailure = false;
 try {
   await waitForHealth(`${apiOrigin}/health`, api);
   browser = await chromium.launch({ executablePath: chromePath, headless: true });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  // 撤销/重做链的 debug 观测环:产品在 flush/undo/redo 打 console.debug;等待失败时
+  // 倒出最近条目,把"真竞态"与"记账吸收误伤"区分开,不靠猜。
+  const sceneHistoryDebugRing = [];
   page.on("console", (message) => {
+    const text = message.text();
+    if (text.includes("[scene-history]")) {
+      sceneHistoryDebugRing.push(text);
+      if (sceneHistoryDebugRing.length > 40) sceneHistoryDebugRing.shift();
+    }
     if (message.type() !== "error") return;
     const source = message.location().url;
     const entry = source ? `${message.text()} · ${source}` : message.text();
@@ -216,9 +225,25 @@ try {
   const scene = application.scenes?.find((candidate) => candidate.name === "产线在线验收场景") ?? application.scenes?.[0];
   if (!scene?.id || !application.metadata?.id) throw new Error("创建场景后未返回有效应用与场景标识");
   // P2-2(6d575687)后“创建并进入”强制落三维编辑器；先等三维视口就绪，再切“二维”进入看板工作台。
+  // Deep 激活后首段时间线更慢：场景快照就绪前点“二维”会被产品契约拦下（提示“待载入完成后
+  // 保存”），真实用户会稍候重试。门按同一契约在等待窗口内重试点击；被拦截时记录 toast 文本，
+  // 超窗仍失败则带归因信息抛出，不静默放宽。
   await page.locator(".app-shell .viewport").waitFor({ state: "visible", timeout: 30_000 });
-  await page.getByRole("button", { name: "二维", exact: true }).click();
-  await page.locator(".dashboard-workspace").waitFor({ state: "visible" });
+  const dashboardWorkspace = page.locator(".dashboard-workspace");
+  let dashboardBlockedToast = "";
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    if (await dashboardWorkspace.isVisible().catch(() => false)) break;
+    const errorToast = page.locator(".toast.error");
+    if (await errorToast.isVisible().catch(() => false)) {
+      dashboardBlockedToast = await errorToast.innerText().catch(() => dashboardBlockedToast);
+    }
+    // 已切到二维(竞态窗口)时按钮会 disabled;短超时吞掉该轮点击,循环头的可见性检查兜底。
+    await page.getByRole("button", { name: "二维", exact: true }).click({ timeout: 5_000 }).catch(() => {});
+    await dashboardWorkspace.waitFor({ state: "visible", timeout: 5_000 }).catch(() => {});
+  }
+  if (!(await dashboardWorkspace.isVisible().catch(() => false))) {
+    throw new Error(`二维工作台未在重试窗口内打开${dashboardBlockedToast ? `，产品拦截提示：${dashboardBlockedToast}` : ""}`);
+  }
   await page.getByText("正在载入场景数据").waitFor({ state: "hidden", timeout: 30_000 });
   recordStep(report, "create-scene-and-open-dashboard", page.url());
   report.pageAudits.push(await auditPage(page, "dashboard-editor"));
@@ -399,12 +424,13 @@ try {
   recordStep(report, "switch-2d-3d-script-workspace", { url: page.url(), draftPreserved: true });
   const sceneEditorUrl = `${productOrigin}/studio/${encodeURIComponent(project.id)}/applications/${encodeURIComponent(application.metadata.id)}/scenes/${encodeURIComponent(scene.id)}`;
   await page.goto(sceneEditorUrl, { waitUntil: "networkidle" });
-  await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
-  // 前面工作区的编辑可能留下本地恢复副本;直连场景编辑器时先"稍后处理"恢复对话框。
-  const recoveryBackdrop = page.locator(".workspace-recovery-backdrop");
-  if (await recoveryBackdrop.isVisible().catch(() => false)) {
-    await recoveryBackdrop.getByRole("button", { name: "稍后处理" }).click();
-    await recoveryBackdrop.waitFor({ state: "hidden" });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ state: "visible", timeout: 30_000 });
+  // 前面工作区的编辑可能留下本地恢复副本;直连场景编辑器时先处置恢复对话框。
+  // 副本读取与应用身份都是异步就位,首个对话框关闭后同类副本可能再次弹出
+  // (Deep 下加载更慢,时序更晚),单发点击不再够:按既有循环处置同族处理。
+  await dismissRecoveryDialogs(page);
+  if (await page.locator(".workspace-recovery-backdrop").isVisible().catch(() => false)) {
+    throw new Error("恢复对话框未在循环处置后关闭，存在重复复活的产品路径");
   }
   // 从规则数据生成 GeoJSON 设备方盒，并同时创建可绑定数据的模型标签。
   // 批量设备布局已收纳进"更多场景工具"菜单;导入模型直连文件选择器(不再有导入面板)。
@@ -495,32 +521,38 @@ try {
   const firstDeviceRow = page.locator(".scene-object-row").filter({ hasText: "设备 001" }).filter({ hasText: "基础元素" }).first();
   const objectCountBeforeDelete = await page.locator(".scene-object-row").filter({ hasText: "基础元素" }).count();
   const labelCountBeforeDelete = await page.locator(".scene-object-row .annotation-badge").count();
+  // 对象计数断言统一走带诊断的等待:超时即抛出实际计数/历史按钮态/提示条文本,
+  // 让"真竞态"与"页面变慢"可归因;断言本身不放宽。
+  const expectSceneObjectCounts = async (label, objects, labels) => {
+    try {
+      await page.waitForFunction(({ objects, labels }) => {
+        const currentObjects = [...document.querySelectorAll(".scene-object-row")].filter((element) => element.textContent?.includes("基础元素")).length;
+        return currentObjects === objects && document.querySelectorAll(".scene-object-row .annotation-badge").length === labels;
+      }, { objects, labels }, { timeout: 30_000 });
+    } catch {
+      const observed = await page.evaluate(() => ({
+        objects: [...document.querySelectorAll(".scene-object-row")].filter((element) => element.textContent?.includes("基础元素")).length,
+        labels: document.querySelectorAll(".scene-object-row .annotation-badge").length,
+        historyButtons: [...document.querySelectorAll(".scene-history-controls button")].map((button) => ({ disabled: button.disabled, title: button.getAttribute("title") })),
+        message: [...document.querySelectorAll(".toast")].map((toast) => toast.textContent?.trim()).filter(Boolean),
+      }));
+      throw new Error(`${label} 未在 30 秒内达成：期望 基础元素=${objects}/标签=${labels}，实际 ${JSON.stringify({ ...observed, sceneHistory: sceneHistoryDebugRing.slice(-14) })}`);
+    }
+  };
   // 行级操作已收纳进行内"更多操作"菜单;先展开再删。
   await firstDeviceRow.locator(".scene-row-menu > summary").click();
   // 菜单弹层带外侧 dismiss,Playwright 悬停预检会触发关闭;force 跳过可动性检查直点。
   await firstDeviceRow.getByTitle("删除基础元素").click({ force: true });
-  await page.waitForFunction(({ objects, labels }) => {
-    const currentObjects = [...document.querySelectorAll(".scene-object-row")].filter((element) => element.textContent?.includes("基础元素")).length;
-    return currentObjects === objects - 1 && document.querySelectorAll(".scene-object-row .annotation-badge").length === labels - 1;
-  }, { objects: objectCountBeforeDelete, labels: labelCountBeforeDelete });
+  await expectSceneObjectCounts("删除设备 001", objectCountBeforeDelete - 1, labelCountBeforeDelete - 1);
   const undoSceneButton = page.locator(".scene-history-controls button").nth(0);
   const redoSceneButton = page.locator(".scene-history-controls button").nth(1);
   await page.waitForFunction(() => !(document.querySelector(".scene-history-controls button")?.disabled));
   await undoSceneButton.click();
-  await page.waitForFunction(({ objects, labels }) => {
-    const currentObjects = [...document.querySelectorAll(".scene-object-row")].filter((element) => element.textContent?.includes("基础元素")).length;
-    return currentObjects === objects && document.querySelectorAll(".scene-object-row .annotation-badge").length === labels;
-  }, { objects: objectCountBeforeDelete, labels: labelCountBeforeDelete });
+  await expectSceneObjectCounts("撤销删除", objectCountBeforeDelete, labelCountBeforeDelete);
   await redoSceneButton.click();
-  await page.waitForFunction(({ objects, labels }) => {
-    const currentObjects = [...document.querySelectorAll(".scene-object-row")].filter((element) => element.textContent?.includes("基础元素")).length;
-    return currentObjects === objects - 1 && document.querySelectorAll(".scene-object-row .annotation-badge").length === labels - 1;
-  }, { objects: objectCountBeforeDelete, labels: labelCountBeforeDelete });
+  await expectSceneObjectCounts("重做删除", objectCountBeforeDelete - 1, labelCountBeforeDelete - 1);
   await undoSceneButton.click();
-  await page.waitForFunction(({ objects, labels }) => {
-    const currentObjects = [...document.querySelectorAll(".scene-object-row")].filter((element) => element.textContent?.includes("基础元素")).length;
-    return currentObjects === objects && document.querySelectorAll(".scene-object-row .annotation-badge").length === labels;
-  }, { objects: objectCountBeforeDelete, labels: labelCountBeforeDelete });
+  await expectSceneObjectCounts("二次撤销", objectCountBeforeDelete, labelCountBeforeDelete);
   report.pageAudits.push(await auditPage(page, "scene-undo-redo"));
   await page.screenshot({ path: resolve(outputRoot, "02e-scene-undo-redo.png"), fullPage: true });
   const recoveryDraftRemaining = await readBrowserRecoveryDraft(page, recoveryIdentity);
@@ -543,7 +575,7 @@ try {
   await page.getByRole("button", { name: "保存项目" }).click();
   await insertSaveResponse;
   await page.reload({ waitUntil: "networkidle" });
-  await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ state: "visible", timeout: 30_000 });
   // 离线保存测试的场景恢复副本(内容服务器已有,丢弃)与行为工作区的应用级恢复副本
   // (稍后处理保留)都可能在 reload 后弹出,逐个处置后再继续。
   const staleRecovery = page.locator('section[aria-label="恢复未保存工作"]');
@@ -581,7 +613,7 @@ try {
     throw new Error(`保存冲突未返回当前版本：${JSON.stringify(staleSaveBody)}`);
   }
   await page.reload({ waitUntil: "networkidle" });
-  await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ state: "visible", timeout: 30_000 });
   await showFlatSceneObjects(page);
   await page.locator(".asset-row").filter({ hasText: "online-flow-triangle.gltf" }).locator(".mini-button").first().waitFor({ state: "visible", timeout: 30_000 });
   await page.locator(".scene-object-row").filter({ hasText: "设备 001" }).first().waitFor({ state: "visible" });
@@ -749,6 +781,13 @@ try {
   if (failures.length > 0) throw new Error(`在线流程浏览器门禁失败：\n- ${failures.join("\n- ")}`);
   console.log(`[online-flow] 通过：登录 → 项目 → 2D → 模型上传/三维加载/保存恢复 → 浏览 → 发布 → 公开读取；报告 ${resolve(outputRoot, "report.json")}`);
 } catch (reason) {
+  // 失败现场证据:Deep 激活后页面变慢,超时类失败必须留下 URL/可见文本/截图才能归因,
+  // 与 gate-asset-material-flow 的 catch 同族。
+  if (page && !page.isClosed()) {
+    report.failureUrl = page.url();
+    report.failureVisibleText = (await page.locator("body").innerText().catch(() => "")).slice(0, 4_000);
+    await page.screenshot({ path: resolve(outputRoot, "failure.png"), fullPage: true }).catch(() => undefined);
+  }
   report.apiLogs = apiLogs.slice(-80);
   report.failure = reason instanceof Error ? reason.message : String(reason);
   writeFileSync(resolve(outputRoot, "report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");

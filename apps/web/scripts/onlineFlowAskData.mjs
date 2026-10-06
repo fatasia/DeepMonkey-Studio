@@ -34,8 +34,11 @@ export async function seedAskDataDataset({ page, apiOrigin, projectId, report })
 
 /** 在真实 AI 面板中执行受控问数，结果必须来自 capability 读链并携带证据指纹。 */
 export async function verifyAskDataBrowser({ page, assistantPanel, dataset, report, screenshotPath }) {
-  // 问数据入口已从按钮收敛为"提问范围"模式下拉的选项。
-  await assistantPanel.getByLabel("提问范围").selectOption({ label: "问数据" });
+  // 问数据入口已从按钮收敛为"提问范围"模式下拉;该下拉是 AiModeSelect 的 details 弹层
+  // (2026-10-06 UI 修复),不是原生 select:点触发器展开,再点目标选项(role=option)。
+  const scopeSelect = assistantPanel.locator("details.ai-scope-select");
+  await scopeSelect.locator("summary").click();
+  await scopeSelect.getByRole("option", { name: "问数据" }).click();
   const quickQuery = assistantPanel.locator(".ask-data-quick");
   await quickQuery.waitFor({ state: "visible" });
   await quickQuery.getByLabel("数据集").selectOption(dataset.id);

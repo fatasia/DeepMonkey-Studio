@@ -16,6 +16,22 @@ const apiEntry = resolve(repositoryRoot, "apps/api/dist/index.js");
 const webDistRoot = resolve(webRoot, "dist");
 const chromePath = process.env.BIM_STUDIO_CHROME_PATH ?? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 
+/** 两类恢复对话框会在草稿存在时随时弹出并拦截点击;交互前统一处置(与 gate-online-flow 同族)。 */
+async function dismissRecoveryDialogs(page) {
+  const sceneDialog = page.locator('section[aria-label="恢复未保存工作"]');
+  const appDialog = page.locator('section[aria-label="恢复应用修改"]');
+  for (let round = 0; round < 4; round++) {
+    if (await sceneDialog.isVisible().catch(() => false)) {
+      await sceneDialog.getByRole("button", { name: "丢弃副本" }).click();
+      await sceneDialog.waitFor({ state: "hidden", timeout: 15_000 }).catch(() => {});
+    } else if (await appDialog.isVisible().catch(() => false)) {
+      await appDialog.getByRole("button", { name: "稍后处理" }).click();
+      await appDialog.waitFor({ state: "hidden", timeout: 15_000 }).catch(() => {});
+    } else break;
+    await page.waitForTimeout(300);
+  }
+}
+
 if (!existsSync(apiEntry) || !existsSync(webDistRoot)) throw new Error("缺少生产产物，请先执行 pnpm build");
 if (!existsSync(chromePath)) throw new Error(`Chrome 不存在：${chromePath}`);
 rmSync(outputRoot, { recursive: true, force: true });
@@ -98,7 +114,15 @@ try {
     const expectedEditorAbort = failure === "net::ERR_ABORTED"
       && request.method() === "POST"
       && /\/api\/editor-scene-driver\/[^/]+\/(?:next|snapshot-request)$/.test(new URL(request.url()).pathname);
-    if (!expectedEditorAbort) report.requestFailures.push(`${request.method()} ${request.url()} · ${failure}`);
+    // Renderer preparation cancellation aborts the candidate's in-flight asset
+    // fetch (a newer scene revision supersedes the preparing Deep candidate).
+    // That is the product cancelling stale work; asset responses that actually
+    // fail still surface via console/network errors, so this only exempts the
+    // abort error class on project asset GETs.
+    const expectedAssetAbort = failure === "net::ERR_ABORTED"
+      && request.method() === "GET"
+      && new URL(request.url()).pathname.startsWith("/assets/projects/");
+    if (!expectedEditorAbort && !expectedAssetAbort) report.requestFailures.push(`${request.method()} ${request.url()} · ${failure}`);
   });
 
   await loginAndCreateProject(page, productOrigin, report);
@@ -235,7 +259,8 @@ async function createSceneAndOpenEditor(page, origin, projectId) {
   const scene = application.scenes.find((item) => item.name === "材质验收场景") ?? application.scenes[0];
   const url = `${origin}/studio/${projectId}/applications/${application.metadata.id}/scenes/${scene.id}`;
   await page.goto(url, { waitUntil: "networkidle" });
-  await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ state: "visible", timeout: 30_000 });
+  await dismissRecoveryDialogs(page);
   const autoSave = page.getByLabel("自动保存");
   if (await autoSave.isChecked()) await autoSave.uncheck();
   return { url, projectId, applicationId: application.metadata.id, sceneId: scene.id };
@@ -262,11 +287,21 @@ async function loadModel(page, projectId, modelFixture, report, editor) {
   const card = page.locator(`.project-resource-card[data-model-id="${model.id}"]`);
   await card.waitFor({ state: "visible", timeout: 30_000 });
   await card.getByRole("button", { name: new RegExp(`添加到原场景.*${escapeRegExp(model.name ?? modelFixture.name)}`) }).click();
-  await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ state: "visible", timeout: 30_000 });
+  await dismissRecoveryDialogs(page);
   const rows = page.locator(".asset-row");
   const row = rows.filter({ hasText: modelFixture.fileName }).or(rows.filter({ hasText: modelFixture.name })).first();
   await row.waitFor({ state: "visible", timeout: 30_000 });
-  await row.locator(".asset-main").click();
+  // 草稿自动保存的恢复弹窗会在画布就绪后数百毫秒内落地;先让其弹出再处置,点击被拦则重试一轮。
+  await page.waitForTimeout(400);
+  await dismissRecoveryDialogs(page);
+  try {
+    await row.locator(".asset-main").click({ timeout: 5_000 });
+  } catch (error) {
+    if (!String(error).includes("intercepts pointer events")) throw error;
+    await dismissRecoveryDialogs(page);
+    await row.locator(".asset-main").click();
+  }
   report.modelId = model.id;
   report.modelFileName = modelFixture.fileName;
   report.modelDisplayName = modelFixture.name;
@@ -278,7 +313,8 @@ function escapeRegExp(value) { return String(value).replace(/[.*+?^${}()|[\]\\]/
 
 async function verifyNatureDrag(page, projectId, report, editor) {
   await page.goto(editor.url, { waitUntil: "networkidle" });
-  await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ state: "visible", timeout: 30_000 });
+  await dismissRecoveryDialogs(page);
   const deadline = Date.now() + 60_000;
   let nature;
   while (Date.now() < deadline) {
@@ -294,7 +330,8 @@ async function verifyNatureDrag(page, projectId, report, editor) {
   // the resource browser receives the authoritative ready model/manifest and
   // exposes the native draggable row instead of the stale queued snapshot.
   await page.reload({ waitUntil: "networkidle" });
-  await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ state: "visible", timeout: 30_000 });
+  await dismissRecoveryDialogs(page);
   // The author WebGL engine is created asynchronously after the canvas mounts;
   // let that lifecycle settle before dispatching a model gesture.
   await page.waitForTimeout(2_000);
@@ -380,7 +417,8 @@ async function auditResponsiveAudit(page, id) {
 async function applyAppearanceResources(page, editor, report, outputRoot) {
   const rows = page.locator(".asset-row");
   const modelRow = page.locator(".model-tree-item").filter({ hasText: report.modelFileName }).first();
-  await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ state: "visible", timeout: 30_000 });
+  await dismissRecoveryDialogs(page);
   await page.waitForTimeout(2_000);
   report.debugRowsAfterReload = await page.locator(".model-tree-item").evaluateAll(items => items.map(item => ({ id: item.getAttribute("data-model-id"), text: item.textContent })));
   await modelRow.scrollIntoViewIfNeeded();
@@ -419,7 +457,8 @@ async function applyAppearanceResources(page, editor, report, outputRoot) {
 
 async function verifyReloadedAppearance(page, editor, report, outputRoot) {
   await page.reload({ waitUntil: "networkidle" });
-  await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ state: "visible", timeout: 30_000 });
+  await dismissRecoveryDialogs(page);
   await page.waitForTimeout(2_000);
   if (await page.locator(".asset-row").count() === 0) {
     const organizationToggle = page.getByRole("button", { name: "场景图层与编组" });

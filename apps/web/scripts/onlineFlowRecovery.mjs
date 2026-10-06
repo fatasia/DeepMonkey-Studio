@@ -76,8 +76,22 @@ export async function verifyOfflineWorkspaceRecovery({ page, report, identity })
   const restoreSave = page.waitForResponse((response) => response.url().endsWith("/workspace") && response.request().method() === "PUT" && response.status() === 200);
   await page.getByRole("button", { name: "保存项目" }).click();
   await restoreSave;
-  const remaining = await readBrowserRecoveryDraft(page, identity);
-  if (remaining) throw new Error(`断网恢复后正式保存未清理本地副本(remaining.savedAt=${remaining.savedAt}, scene.prims=${remaining.scene?.primitives?.length})`);
+  // PUT 响应到达与 IndexedDB 副本删除之间存在毫秒级窗口(saveScene 在 PUT 后的同步链里
+  // 才执行 deleteWorkspaceRecoveryDraft);断言必须读"清理完成"的稳态,读到清理中的瞬间
+  // 不是缺陷。有界轮询 3 秒,仍残留才判失败——残留=真实产品竞态(saveScene 守卫提前
+  // return/saveScene 异常/500ms 副本 effect 复活),由 toast 证据归因。
+  let remaining = await readBrowserRecoveryDraft(page, identity);
+  for (let attempt = 0; attempt < 20 && remaining; attempt += 1) {
+    await page.waitForTimeout(150);
+    remaining = await readBrowserRecoveryDraft(page, identity);
+  }
+  if (remaining) {
+    // 竞态归因:正式保存成功后副本仍残留,只有三类来源——saveScene 在 PUT 后的守卫
+    // 提前 return(不 delete)/saveScene catch(错误 toast)/保存-删除后 500ms 副本
+    // effect 复活。toast 文本能区分三者,不盲改产品。
+    const toasts = await page.locator(".toast").allInnerTexts().catch(() => []);
+    throw new Error(`断网恢复后正式保存未清理本地副本(remaining.savedAt=${remaining.savedAt}, scene.prims=${remaining.scene?.primitives?.length}, toasts=${JSON.stringify(toasts)})`);
+  }
   report.faultChecks.push({ id: "offline-reconnect-workspace-recovery", expected: "local draft + reconnect save", actual: "passed" });
 }
 
