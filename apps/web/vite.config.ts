@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 /// <reference types="vitest/config" />
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+import { assetHotReloadPlugin } from "./vite/assetHotReloadPlugin";
 
 export default defineConfig(({ mode }) => {
   const projectRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -23,7 +24,7 @@ export default defineConfig(({ mode }) => {
     throw new Error(`HTTPS certificate not found. Expected ${keyPath} and ${certificatePath}`);
   }
   return {
-    plugins: [react()],
+    plugins: [react(), assetHotReloadPlugin()],
     test: {
       // scripts/*.test.mjs 是 node:test 门禁脚本（真实浏览器长跑），不归 vitest 收集。
       exclude: ["**/node_modules/**", "**/dist/**", "scripts/**"],

@@ -54,6 +54,26 @@ describe("resource browser submission routes", () => {
     expect(onInsertProjectModel).toHaveBeenCalledExactlyOnceWith(model);
     expect(elements.filter(item => item.props.onDrop).map(item => item.props.className)).toEqual(["scene-resource-drop-target"]);
   });
+  it("offers a reload action on ready project models and keeps it absent without a manifest", () => {
+    const ready = { id: "ready", name: "Ready", format: "glb", status: "ready", manifest: { geometryUrl: "/a.glb" } };
+    const pending = { id: "pending", name: "Pending", format: "rvt", status: "processing" };
+    const onInsertProjectModel = vi.fn();
+    const onReloadProjectModel = vi.fn();
+    const props = { locale: "zh-CN", projectModels: [ready, pending], onInsertProjectModel, onReloadProjectModel, onImportModel: vi.fn(), onInsertPrefab: vi.fn() } as unknown as Parameters<typeof SceneResourceBrowser>[0];
+    state.values = ["", "project", false];
+    const tree = SceneResourceBrowser(props);
+    const row = walk(tree).find(item => item.props["data-model-id"] === "ready")!;
+    const buttons = walk(row).filter(item => item.type === "button");
+    expect(buttons).toHaveLength(2);
+    const reload = buttons.find(item => item.props["aria-label"] === "重新加载 Ready")!;
+    expect(reload).toBeDefined();
+    expect(reload.props.title).toContain("失败保留原资产");
+    reload.props.onClick();
+    expect(onReloadProjectModel).toHaveBeenCalledExactlyOnceWith(ready);
+    expect(onInsertProjectModel).not.toHaveBeenCalled();
+    const pendingRow = walk(tree).find(item => item.props["data-model-id"] === "pending")!;
+    expect(walk(pendingRow).filter(item => item.type === "button")).toHaveLength(1);
+  });
   it("offers user prefabs drag and double-click instantiation through the single insert route", () => {
     const onInsertUserPrefab = vi.fn();
     const prefab = { id: "userprefab:1", name: "工位", category: "产线", version: 2, objects: [{}, {}] };

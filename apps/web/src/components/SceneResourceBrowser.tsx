@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Boxes, LoaderCircle, Package, Plus, Search, Trash2, Upload } from "lucide-react";
+import { Boxes, LoaderCircle, Package, Plus, RotateCw, Search, Trash2, Upload } from "lucide-react";
 import type { SceneOutlinerPanelProps } from "./SceneOutlinerPanel";
 import { translate as tr } from "../i18n";
 import { INDUSTRIAL_PREFAB_CATALOG } from "../prefabs/industrialPrefabCatalog";
@@ -7,7 +7,7 @@ import { IndustrialPrefabThumbnail } from "./IndustrialPrefabThumbnail";
 import { useSceneResourceDrag } from "./useSceneResourceDrag";
 import { useAssetLibraryCatalog } from "./useAssetLibraryCatalog";
 
-export function SceneResourceBrowser(props: Pick<SceneOutlinerPanelProps, "locale" | "projectAssets" | "projectModels" | "projectId" | "onLibraryImported" | "onImportModel" | "onInsertProjectModel" | "onInsertPrefab" | "userPrefabs" | "onInsertUserPrefab" | "onDeleteUserPrefab">) {
+export function SceneResourceBrowser(props: Pick<SceneOutlinerPanelProps, "locale" | "projectAssets" | "projectModels" | "projectId" | "onLibraryImported" | "onImportModel" | "onInsertProjectModel" | "onReloadProjectModel" | "onInsertPrefab" | "userPrefabs" | "onInsertUserPrefab" | "onDeleteUserPrefab">) {
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<"platform" | "prefab" | "project">(() => props.projectId ? "platform" : (props.projectModels?.length || props.projectAssets?.length) ? "project" : "prefab");
   const [showAll, setShowAll] = useState(false);
@@ -96,7 +96,14 @@ export function SceneResourceBrowser(props: Pick<SceneOutlinerPanelProps, "local
             : <span className={`scene-resource-icon resource-${resource.source}`}><Boxes size={16} /></span>}
         <div><strong title={resource.name}>{resource.name}</strong><small>{resource.kind} · {resource.fileName}</small></div>
         {resource.source === "prefab" ? <button type="button" onClick={() => props.onInsertPrefab(resource.definition)} title={tr(props.locale, "插入并选中可配置预制体", "Insert and select configurable prefab")}>{tr(props.locale, "插入", "Insert")}</button>
-          : resource.source === "model" ? <button type="button" onClick={() => props.onInsertProjectModel(resource.model)} title={tr(props.locale, "将项目模型载入当前场景", "Load project model into this scene")}>{tr(props.locale, "载入", "Load")}</button>
+          : resource.source === "model" ? <span className="scene-resource-row-actions">
+              {props.onReloadProjectModel && resource.model.status === "ready" && resource.model.manifest
+                ? <button type="button" title={tr(props.locale, `重新加载“${resource.name}”的运行中实例（文件内容变化后原位热更新；失败保留原资产）`, `Reload running instances of “${resource.name}” (hot-swap after file changes; the old asset is kept on failure)`)}
+                    aria-label={tr(props.locale, `重新加载 ${resource.name}`, `Reload ${resource.name}`)}
+                    onClick={() => props.onReloadProjectModel?.(resource.model)}><RotateCw size={13} /></button>
+                : null}
+              <button type="button" onClick={() => props.onInsertProjectModel(resource.model)} title={tr(props.locale, "将项目模型载入当前场景", "Load project model into this scene")}>{tr(props.locale, "载入", "Load")}</button>
+            </span>
             : <span className="scene-resource-use-hint">{tr(props.locale, "属性中应用", "Use in inspector")}</span>}
       </article>)}</div>
       {!normalizedQuery && resources.length > visibleResources.length && <button className="scene-resource-more" type="button" onClick={() => setShowAll(true)}>{tr(props.locale, `显示全部 ${resources.length} 项`, `Show all ${resources.length}`)}</button>}

@@ -44,6 +44,7 @@ import { createSceneOrganizationCommands } from "./sceneOrganizationCommands";
 import { layoutSceneSelection, type SceneSelectionLayoutAxis, type SceneSelectionLayoutMode } from "./sceneSelectionLayout";
 import { createIndustrialPrefabInstance, industrialPrefabPrimitiveVisual } from "../prefabs/industrialPrefabInstance";
 import { waitForOptimizerModel } from "../optimizer/modelOptimizerAssets";
+import { createAssetHotReloadService } from "../studio/assetHotReload";
 
 function isModelLoadSuperseded(reason: unknown): boolean {
   return reason instanceof Error && reason.name === "ModelLoadSupersededError";
@@ -197,6 +198,53 @@ export function createSceneEditorController(context: SceneEditorControllerContex
       await refreshProject();
       setMessage(`${model.name} 已删除`);
       setRevision((value) => value + 1);
+    } catch (reason) {
+      showError(reason);
+    }
+  }
+
+  /** 运行中资产热重载(浮窗按钮/开发文件监听共用)。引擎替换事务失败即保留原资产,这里只披露结果。 */
+  function describeAssetReloadFailure(modelName: string, failures: readonly string[]): string {
+    return `${modelName} 热重载失败，已保留原资产：${failures[0] ?? "未知错误"}`;
+  }
+
+  async function reloadProjectModelAsset(model: ModelRecord) {
+    if (!engine || !project) return;
+    const service = createAssetHotReloadService(engine, project.models);
+    setBusy(true);
+    try {
+      const report = await service.reloadModelAssetInstances(model);
+      if (report.status === "unused") {
+        setMessage(tr(locale, `“${model.name}”未在当前场景使用，无需重载`, `“${model.name}” is not used in this scene; nothing to reload`));
+      } else if (report.status === "updated" && report.failures.length === 0) {
+        setMessage(tr(locale, `“${model.name}”已热更新（${report.updated} 个实例），变换、材质与动画引用已保留`,
+          `“${model.name}” hot-reloaded (${report.updated} instance(s)); transform, material and animation references retained`));
+      } else if (report.status === "updated") {
+        setMessage(tr(locale, `“${model.name}”已部分热更新（${report.updated} 个实例），失败实例保留原资产：${report.failures[0]}`,
+          `“${model.name}” partially hot-reloaded (${report.updated} instance(s)); failed instances kept: ${report.failures[0]}`));
+      } else {
+        setMessage(describeAssetReloadFailure(model.name, report.failures));
+      }
+    } catch (reason) {
+      showError(reason);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** 开发文件监听(vite HMR)回调:按变更 URL 分派模型实例重载或纹理全局刷新。 */
+  async function reloadChangedAssetUrl(assetUrl: string) {
+    if (!engine || !project) return;
+    const service = createAssetHotReloadService(engine, project.models);
+    try {
+      const report = await service.reloadAssetByUrl(assetUrl);
+      if (report.status === "unused") return;
+      const name = assetUrl.slice(assetUrl.lastIndexOf("/") + 1);
+      if (report.status === "updated" && report.failures.length === 0) {
+        setMessage(tr(locale, `资产“${name}”已热更新（${report.updated} 处引用）`, `Asset “${name}” hot-reloaded (${report.updated} reference(s))`));
+      } else {
+        setMessage(describeAssetReloadFailure(name, report.failures));
+      }
     } catch (reason) {
       showError(reason);
     }
@@ -650,6 +698,8 @@ export function createSceneEditorController(context: SceneEditorControllerContex
     loadModel,
     uploadModels,
     deleteModel,
+    reloadProjectModelAsset,
+    reloadChangedAssetUrl,
     beginPrimitivePlacement,
     insertIndustrialPrefab,
     createDeviceLayout,

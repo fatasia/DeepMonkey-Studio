@@ -25,6 +25,7 @@ import { SceneSimulationEntitiesSection } from "../components/SceneSimulationEnt
 import { SceneOutlinerPanel } from "../components/SceneOutlinerPanel";
 import { AppWorkspaceTopbar } from "./AppWorkspaceTopbar";
 import { mergeConfirmedSceneAssetBindings } from "../studio/sceneAssetBindings";
+import { connectDevAssetHotReload } from "../studio/devAssetHotReloadBridge";
 import type { AppStudioController } from "./AppStudioShell";
 import { AppStudioInspector } from "./AppStudioInspector";
 import { AppStudioViewport } from "./AppStudioViewport";
@@ -150,6 +151,8 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
     postProcessing,
     project,
     refreshProject,
+    reloadChangedAssetUrl,
+    reloadProjectModelAsset,
     renameSceneGroup,
     removeCameraView,
     removeLight,
@@ -351,6 +354,16 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
       void loadModel(model, false, instanceId);
     }
   }, [engine, loadModel, loadedModels]);
+  // 开发服务器资产热重载(vite HMR):资产文件落盘 → 插件推送 → 引擎原位热换。
+  // 非 vite dev 环境 import.meta.hot 不存在,连接如实 no-op;浮窗"重新加载"按钮兜底。
+  const reloadChangedAssetUrlRef = useRef(reloadChangedAssetUrl);
+  reloadChangedAssetUrlRef.current = reloadChangedAssetUrl;
+  useEffect(() => {
+    const connection = connectDevAssetHotReload(detail => {
+      for (const url of detail.urls) void reloadChangedAssetUrlRef.current(url);
+    });
+    return () => connection.dispose();
+  }, []);
   const optimizeUploadedModels = () => {
     const firstModel = uploadedImportModels?.[0];
     if (!firstModel) return;
@@ -531,6 +544,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
           onRvtConversionModeChange={setRvtConversionMode}
           onRevitVersionChange={setRvtRevitVersion}
           onInsertProjectModel={insertProjectModel}
+          onReloadProjectModel={reloadProjectModelAsset}
           onInsertPrefab={insertIndustrialPrefab}
           userPrefabs={userPrefabs}
           onInsertUserPrefab={insertUserPrefab}

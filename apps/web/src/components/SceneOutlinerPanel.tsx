@@ -58,6 +58,8 @@ export interface SceneOutlinerPanelProps {
   onRvtConversionModeChange: (mode: RvtConversionMode) => void;
   onRevitVersionChange: (version: string) => void;
   onInsertProjectModel: (model: ModelRecord) => void;
+  /** 项目资源行“重新加载”:运行中实例原位重取同素材(fail-closed,失败保留旧资产)。 */
+  onReloadProjectModel?: ((model: ModelRecord) => void) | undefined;
   onInsertPrefab: (definition: IndustrialPrefabDefinition) => void;
   /** 用户组合预制体（T0 刀 2）：库列表 + 插入/删除动作。 */
   userPrefabs?: UserPrefabDefinition[] | undefined;

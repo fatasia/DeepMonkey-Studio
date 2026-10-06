@@ -27,6 +27,7 @@ import {
   updateModelScreenVideo,
 } from "./modelScreenTexture";
 import { ViewerEngineRuntime } from "./viewerEngineRuntime";
+import { cacheBustedUrl } from "./assetReloadUrls";
 
 /** 构件索引与材质状态管理；指针层只处理命中和交互分发。 */
 export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
@@ -275,6 +276,8 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
         if (material.userData[metadataKey] !== requestedUrl) return;
         const texture = source.clone();
         texture.userData.studioManagedTextureUrl = requestedUrl;
+        // 热重载按同 URL 重取时需要复原色彩空间;记录在 userData,不入场景快照。
+        texture.userData.studioManagedTextureSrgb = srgb;
         // 加载期间用户仍可能继续微调 UV，挂载时读取最新状态，避免旧异步结果回写覆盖。
         applyMaterialTextureTransform(texture, readMaterialTextureTransform(material.userData));
         this.disposeManagedMaterialTexture(material[slot]);
@@ -385,6 +388,71 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
     });
     this.materialTextureSources.set(key, request);
     return request;
+  }
+
+  private static readonly MANAGED_TEXTURE_SLOTS: readonly MaterialTextureSlot[] = ["map", "normalMap", "emissiveMap", "aoMap", "roughnessMap", "metalnessMap"];
+  private static textureRefreshFailureMessage(srgb: boolean, error: unknown): string {
+    const reason = error instanceof Error ? error.message : String(error);
+    return `${srgb ? "sRGB" : "linear"} 纹理重取失败：${reason}`;
+  }
+
+  /**
+   * 纹理热重载:对运行中全部 managed 纹理(经材质命令以 URL 挂载,userData 带来源)
+   * 按干净 URL 匹配并以击穿后的 URL 重取,原位换装。挂载后 userData 写回干净 URL,
+   * 场景快照与撤销语义零漂移;取数失败保留旧纹理(fail-closed),失败在报告中披露。
+   * 材质图(Tier-2)运行时同样落到 managed 纹理,本路径一并覆盖。
+   */
+  async refreshManagedTextures(url: string, bustToken: string | number): Promise<{ url: string; refreshed: number; failures: readonly string[] }> {
+    if (!url) return { url, refreshed: 0, failures: [] };
+    const targets = new Map<THREE.MeshStandardMaterial, Map<MaterialTextureSlot, boolean>>();
+    for (const model of this.models.values()) {
+      model.object.traverse(child => {
+        if (!(child instanceof THREE.Mesh)) return;
+        for (const source of this.materialsForMesh(child)) {
+          const material = source as THREE.MeshStandardMaterial;
+          const slots = targets.get(material) ?? (() => { const created = new Map<MaterialTextureSlot, boolean>(); targets.set(material, created); return created; })();
+          for (const slot of ViewerEngineObjectState.MANAGED_TEXTURE_SLOTS) {
+            const texture = material[slot];
+            if (texture?.userData?.studioManagedTextureUrl !== url) continue;
+            slots.set(slot, texture.userData.studioManagedTextureSrgb === true);
+          }
+        }
+      });
+    }
+    if (targets.size === 0) return { url, refreshed: 0, failures: [] };
+    const failures: string[] = [];
+    let refreshed = 0;
+    for (const srgb of [true, false]) {
+      const group: Array<{ material: THREE.MeshStandardMaterial; slots: MaterialTextureSlot[] }> = [];
+      for (const [material, slots] of targets) {
+        const matching = [...slots.entries()].filter(([, isSrgb]) => isSrgb === srgb).map(([slot]) => slot);
+        if (matching.length > 0) group.push({ material, slots: matching });
+      }
+      if (group.length === 0) continue;
+      try {
+        const source = await this.loadMaterialTextureSource(cacheBustedUrl(url, bustToken), srgb);
+        for (const { material, slots } of group) {
+          for (const slot of slots) {
+            const texture = source.clone();
+            if (srgb) texture.colorSpace = THREE.SRGBColorSpace;
+            texture.userData.studioManagedTextureUrl = url;
+            texture.userData.studioManagedTextureSrgb = srgb;
+            applyMaterialTextureTransform(texture, readMaterialTextureTransform(material.userData));
+            this.disposeManagedMaterialTexture(material[slot]);
+            material[slot] = texture;
+            material.needsUpdate = true;
+            refreshed += 1;
+          }
+        }
+      } catch (error) {
+        failures.push(ViewerEngineObjectState.textureRefreshFailureMessage(srgb, error));
+      }
+    }
+    if (refreshed > 0) {
+      this.markShadowMapDirty();
+      for (const material of targets.keys()) material.needsUpdate = true;
+    }
+    return { url, refreshed, failures };
   }
 
   protected disposeManagedMaterialTexture(texture: THREE.Texture | null): void {

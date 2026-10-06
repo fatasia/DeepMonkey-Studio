@@ -16,6 +16,7 @@ import { assertRobotReplacementCompatible, readLiveRobotPose } from "./robotPose
 import { loadSharedGltf, sharedGltfLoadState } from "./sharedGltfAssets";
 import { loadingFailureOutcome, loadingTimeline } from "./loadingTimeline";
 import { loadGltfWithMetadata } from "./gltfMetadataLoad";
+import { manifestWithCacheBust } from "./assetReloadUrls";
 
 /** Loading 职责层。 */
 export abstract class ViewerEngineLoading extends ViewerEngineRobot {
@@ -43,6 +44,31 @@ export abstract class ViewerEngineLoading extends ViewerEngineRobot {
       this.replacementSequence = (this.replacementSequence ?? 0) + 1;
       return this.modelLoads.run(`replace:${instanceId}:${manifest.modelId}:${this.replacementSequence}`, epoch,
         () => this.loadManifestOnce({ ...manifest, modelId: instanceId }, epoch, manifest.modelId, current, canCommit));
+    }
+  /**
+   * 资产热重载:同一项目素材的文件内容在磁盘上变化后,对运行中实例原位重取。
+   * 与 replaceModelManifest 共用替换事务(状态捕获/原子提交/失败回滚),差异只在:
+   *  - 允许同 assetModelId(replace 对同资产短路是"换素材"语义,重载是"重取同素材");
+   *  - 取数 URL 逐项击穿缓存(浏览器 HTTP 缓存/共享池/纹理源缓存都以完整 URL 为键),
+   *    bust 只作用于本次取数,场景快照与 assetModelId 身份保持原值;
+   *  - 直连 gltfLoader(replacing 分支),天然绕开共享池的旧字节。
+   * 结构不兼容/动画缺失/加载失败时保留原实例(fail-closed),由调用方披露。
+   */
+  async reloadModelAsset(instanceId: string, manifest: ModelManifest, canCommit?: () => boolean): Promise<LoadedSceneModel> {
+      const current = this.models.get(instanceId);
+      if (!current || current.kind !== "model") throw new Error("场景实例已不存在，无法热重载");
+      if ((current.assetModelId ?? current.id) !== manifest.modelId) return this.replaceModelManifest(instanceId, manifest, canCommit);
+      if (this.readOnlyMode || this.isModelLocked(instanceId)) throw new Error("请在编辑态解锁实例后热重载");
+      if (this.isIsolationActive()) throw new Error("请先退出隔离查看，再热重载");
+      if (this.fragmentModels.has(instanceId) || manifest.viewerKind === "ifc" || manifest.viewerKind === "fragments") {
+        throw new Error("IFC/Fragments 的构件热重载尚未验证，请移除后重新载入；原模型未修改");
+      }
+      const epoch = this.modelLoads.currentEpoch;
+      this.replacementSequence = (this.replacementSequence ?? 0) + 1;
+      return this.modelLoads.run(`reload:${instanceId}:${this.replacementSequence}`, epoch,
+        () => this.loadManifestOnce(
+          { ...manifestWithCacheBust(manifest, `reload-${Date.now()}-${this.replacementSequence}`), modelId: instanceId },
+          epoch, manifest.modelId, current, canCommit));
     }
   /**
      * IFC/Fragments 仅在实际加载对应模型时初始化。常规 glTF、FBX 与 DXF 浏览不再承担
