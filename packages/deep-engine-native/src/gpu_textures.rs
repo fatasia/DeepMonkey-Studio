@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use bytemuck::cast_slice;
-use deep_engine_native::mesh_abi::MATERIAL_UNIFORM_BYTES;
-use deep_engine_native::mesh_abi::MATERIAL_UNIFORM_FLOATS;
+use deep_engine_native::mesh_abi::{MATERIAL_UNIFORM_BYTES, MaterialUniformRow};
 use deep_engine_native::pbr_layered::LAYERED_SURFACE_BLOCK_BYTES;
 use deep_engine_native::pbr_texture::{
     PreparedLayeredMaterial, PreparedMaterial, PreparedPbrResources, PreparedPbrSummary,
@@ -193,7 +192,7 @@ impl GpuPbrResources {
     pub(crate) fn write_material_uniforms(
         &mut self,
         queue: &wgpu::Queue,
-        rows: &[(usize, [f32; MATERIAL_UNIFORM_FLOATS])],
+        rows: &[(usize, MaterialUniformRow)],
     ) -> Result<(), String> {
         for (index, uniform) in rows {
             let material = self
@@ -432,7 +431,7 @@ fn sampler_entry(binding: u32, texture: &GpuTexture) -> wgpu::BindGroupEntry<'_>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use deep_engine_native::mesh_abi::MATERIAL_UNIFORM_FLOATS;
+    use deep_engine_native::mesh_abi::MaterialUniformRow;
     use deep_engine_native::pbr_texture::PreparedPbrResources;
 
     fn prepared(id: &str, value: f32) -> PreparedMaterial {
@@ -440,7 +439,7 @@ mod tests {
             id: id.into(),
             normal_mapped: false,
             texture_indices: [None; 5],
-            uniform: [value; MATERIAL_UNIFORM_FLOATS],
+            uniform: [value; MaterialUniformRow::LEN],
             layered: None,
         }
     }
