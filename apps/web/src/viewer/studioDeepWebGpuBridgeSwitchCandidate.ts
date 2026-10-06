@@ -88,6 +88,10 @@ export async function prepareStudioDeepSwitchCandidate(host: StudioDeepBridgeSwi
       // 作者包编译与 GPU 环境准备互不依赖，重叠执行以压缩切换前段；
       // 两者都只读作者场景，顺序 await 之外的并发不引入新的写入竞争。
       const packetTask = host.options.authorRenderPacket?.(signal);
+      // packetTask 只在下方 await 处消费；若 create 在到达该 await 前因取消/环境
+      // 失败退出，这次预挂的空 catch 会观察拒绝，避免把编译错误或"Renderer
+      // preparation cancelled"以 unhandled rejection 形式直透为页面错误。
+      packetTask?.catch(() => undefined);
       frame.environment = await prepareStudioDeepEnvironmentSource(host.viewer.scene, signal);
       markSwitchPhase("deep-webgpu:environment-ready");
       const postProcessing = host.viewer.getPostProcessing();
