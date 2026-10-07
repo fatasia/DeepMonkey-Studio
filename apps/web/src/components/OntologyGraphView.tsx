@@ -98,7 +98,10 @@ function OntologyNodeCard({ data }: NodeProps<OntologyFlowNode>) {
   const Icon = KIND_ICONS[data.kind];
   return (
     <div className={["ontology-graph-node", GRAPH_NODE_KIND_META[data.kind].css, data.highlighted ? "is-highlighted" : "", data.secondary ? "is-secondary" : "", data.dimmed ? "is-dimmed" : ""].filter(Boolean).join(" ")}>
-      <Handle type="target" position={Position.Top} isConnectable={false} />
+      {/* 四向锚点(带 id):边按两节点相对方位选左右/上下锚,消除横向节点间的大 S 弯(用户实测"布线奇怪")。 */}
+      <Handle id="top" type="target" position={Position.Top} isConnectable={false} />
+      <Handle id="left" type="target" position={Position.Left} isConnectable={false} />
+      <Handle id="right" type="source" position={Position.Right} isConnectable={false} />
       <header>
         <Icon size={13} />
         <span>{data.label}</span>
@@ -117,7 +120,7 @@ function OntologyNodeCard({ data }: NodeProps<OntologyFlowNode>) {
           )}
         </span>
       </footer>
-      <Handle type="source" position={Position.Bottom} isConnectable={false} />
+      <Handle id="bottom" type="source" position={Position.Bottom} isConnectable={false} />
     </div>
   );
 }
@@ -375,17 +378,36 @@ export default function OntologyGraphView({ projectId, locale, onOpenWorkspace }
         dimmed ? "is-dim" : "",
       ].filter(Boolean).join(" ");
       const label = edge.aggregatedCount && edge.aggregatedCount > 1 ? `${edge.label} ×${edge.aggregatedCount}` : edge.label;
+      // 方向感知锚点:横向邻接走左右锚,纵向邻接走上下锚;浅弧 bezier(低曲率)——
+      // 业界关系图惯例(Neo4j Bloom/G6):小弧实线贴节点方位,不绕大弯。
+      const sourcePosition = positions?.get(edge.source);
+      const targetPosition = positions?.get(edge.target);
+      let sourceHandle: string | undefined;
+      let targetHandle: string | undefined;
+      if (sourcePosition && targetPosition) {
+        const dx = targetPosition.x - sourcePosition.x;
+        const dy = targetPosition.y - sourcePosition.y;
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          sourceHandle = dx >= 0 ? "right" : "left";
+          targetHandle = dx >= 0 ? "left" : "right";
+        } else {
+          sourceHandle = dy >= 0 ? "bottom" : "top";
+          targetHandle = dy >= 0 ? "top" : "bottom";
+        }
+      }
       return {
         id: edge.id,
         source: edge.source,
         target: edge.target,
+        ...(sourceHandle ? { sourceHandle } : {}),
+        ...(targetHandle ? { targetHandle } : {}),
         label,
-        animated: inPath,
+        /* 高亮用加粗实线(业界惯例),不用 animated 虚线——虚线语义是"进行中",不是"选中"。 */
         ...(className ? { className } : {}),
         ...(edge.direction === "directed" ? { markerEnd: { type: MarkerType.ArrowClosed } } : {}),
       };
     });
-  }, [displayEdges, highlight, neighborhood]);
+  }, [displayEdges, highlight, neighborhood, positions]);
 
   const searchTargets = useMemo(() => (state.graph ? findGraphTargets(state.graph, searchTerm) : []), [searchTerm, state.graph]);
 
