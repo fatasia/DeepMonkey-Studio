@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -302,9 +302,27 @@ export default function OntologyGraphView({ projectId, locale, onOpenWorkspace }
   );
   const edgeMetaById = useMemo(() => new Map(displayEdges.map((edge) => [edge.id, edge])), [displayEdges]);
 
+  // 画布实测尺寸进布局:写死的 960×560 逻辑画布在宽视口里只占左侧,收敛后即使铺满
+  // 逻辑画布也留右侧大片空白(用户实测"挤到一起");ResizeObserver 跟随真实容器。
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const [canvasSize, setCanvasSize] = useState({ width: CANVAS_WIDTH, height: CANVAS_HEIGHT });
+  useEffect(() => {
+    const element = canvasRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (!rect || rect.width < 100 || rect.height < 100) return;
+      setCanvasSize((previous) => (Math.abs(previous.width - rect.width) < 2 && Math.abs(previous.height - rect.height) < 2
+        ? previous
+        : { width: Math.round(rect.width), height: Math.round(rect.height) }));
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   const positions = useMemo(
-    () => (displayGraph ? forceLayout(displayGraph.nodes.map((node) => node.id), displayGraph.edges, { width: CANVAS_WIDTH, height: CANVAS_HEIGHT }) : undefined),
-    [displayGraph],
+    () => (displayGraph ? forceLayout(displayGraph.nodes.map((node) => node.id), displayGraph.edges, { width: canvasSize.width, height: canvasSize.height }) : undefined),
+    [canvasSize.height, canvasSize.width, displayGraph],
   );
 
   const flowNodes = useMemo<OntologyFlowNode[]>(() => {
@@ -588,9 +606,9 @@ export default function OntologyGraphView({ projectId, locale, onOpenWorkspace }
           </GraphListMode>
         ) : (
           <div className="ontology-graph-main">
-            <div className="ontology-graph-canvas">
+            <div className="ontology-graph-canvas" ref={canvasRef}>
               <ReactFlow
-                key={`${state.graph?.packageId ?? "none"}-${state.graph?.depth ?? 0}-${rootId ?? ""}`}
+                key={`${state.graph?.packageId ?? "none"}-${state.graph?.depth ?? 0}-${rootId ?? ""}-${canvasSize.width}x${canvasSize.height}`}
                 nodes={flowNodes}
                 edges={flowEdges}
                 nodeTypes={NODE_TYPES}

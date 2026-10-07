@@ -83,7 +83,8 @@ export function forceLayout(
 
   const idList = [...nodeIds];
   const REPULSION = 26000;
-  const REST_LENGTH = 150;
+  // 弹簧自然长随画布走(小画布维持旧值,大画布给足间距),收敛后另有等比铺满兜底。
+  const REST_LENGTH = Math.max(150, Math.min(width, height) * 0.22);
   const SPRING = 0.045;
   const GRAVITY = 0.015;
   const DAMPING = 0.86;
@@ -153,6 +154,34 @@ export function forceLayout(
       velocity.y = (velocity.y + force.y - (position.y - centerY) * GRAVITY) * DAMPING;
       position.x = Math.min(Math.max(position.x + velocity.x * temperature, PAD), width - PAD);
       position.y = Math.min(Math.max(position.y + velocity.y * temperature, PAD), height - PAD);
+    }
+  }
+  // 收敛后等比铺满（确定性后处理，2026-10-07 用户实测"图谱挤成一团+大片空白"）：
+  // 把结果包围盒按两轴最小缩放线性重映射到画布可用区并居中——保留相对几何
+  // （连通近/孤岛远的结构关系不变），只放大间距用满画布。单节点/全重合不动。
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const id of idList) {
+    const position = positions.get(id)!;
+    if (position.x < minX) minX = position.x;
+    if (position.y < minY) minY = position.y;
+    if (position.x > maxX) maxX = position.x;
+    if (position.y > maxY) maxY = position.y;
+  }
+  const spanX = Math.max(maxX - minX, 1);
+  const spanY = Math.max(maxY - minY, 1);
+  const usableX = width - PAD * 2;
+  const usableY = height - PAD * 2;
+  if (usableX > 0 && usableY > 0 && (spanX > 1 || spanY > 1)) {
+    // 逐轴铺满(两轴独立缩放):力导向收敛是近圆团,宽画布(约 2.6:1)下等比缩放会被
+    // 高度轴绑定、横向只铺到 ~38%(实测);逐轴拉伸牺牲边长各向同性换满画布分布。
+    const scaleX = usableX / spanX;
+    const scaleY = usableY / spanY;
+    const boxCenterX = (minX + maxX) / 2;
+    const boxCenterY = (minY + maxY) / 2;
+    for (const id of idList) {
+      const position = positions.get(id)!;
+      position.x = Math.min(Math.max(centerX + (position.x - boxCenterX) * scaleX, PAD), width - PAD);
+      position.y = Math.min(Math.max(centerY + (position.y - boxCenterY) * scaleY, PAD), height - PAD);
     }
   }
   return positions;
