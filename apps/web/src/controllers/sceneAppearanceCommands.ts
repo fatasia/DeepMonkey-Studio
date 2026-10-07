@@ -19,6 +19,7 @@ import { globalLightingCommand, modelEffectsCommand, modelMaterialCommand, physi
   sceneEnvironmentCommand, selectionMaterialCommand, selectionVisibilityCommand } from "../commands/engineEditCommand";
 import { translate as tr } from "../i18n";
 import { applyGroupedOrSelected } from "./sceneAppearanceDispatch";
+import { settleRevision } from "./revisionSettle";
 import { expandMaterialPreset, validateMaterialPresetValues, type PresetMaterialValues } from "../materials/industrialMaterialPresets";
 import type { UserMaterialPresetDefinition } from "@bim-studio/contracts";
 import type { SceneEditorControllerContext } from "./sceneEditorControllerContext";
@@ -210,7 +211,8 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
       (id) => engine.setOpacity(id, opacity),
       () => engine.setSelectionOpacity(opacity),
     );
-    setRevision((value) => value + 1);
+    // A3:滑块拖拽逐事件全壳提交的实测归因见 revisionSettle.ts;引擎写点保持逐事件。
+    settleRevision(setRevision);
   }
 
   function updateSelectionVisibility(visible: boolean) {

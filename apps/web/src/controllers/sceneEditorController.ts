@@ -42,6 +42,7 @@ import { createSceneAnimationCommands } from "./sceneAnimationCommands";
 import { createSceneAppearanceCommands } from "./sceneAppearanceCommands";
 import { createSceneOrganizationCommands } from "./sceneOrganizationCommands";
 import { layoutSceneSelection, type SceneSelectionLayoutAxis, type SceneSelectionLayoutMode } from "./sceneSelectionLayout";
+import { settleRevision } from "./revisionSettle";
 import { createIndustrialPrefabInstance, industrialPrefabPrimitiveVisual } from "../prefabs/industrialPrefabInstance";
 import { waitForOptimizerModel } from "../optimizer/modelOptimizerAssets";
 import { createAssetHotReloadService } from "../studio/assetHotReload";
@@ -372,11 +373,25 @@ export function createSceneEditorController(context: SceneEditorControllerContex
     setMessage(next ? "标签工具：点击模型表面或地面放置标签" : "已退出标签放置");
   }
 
+  // A3:标注尺寸滑块逐事件 setAnnotations+setRevision = 每事件两次全壳提交(与
+  // updateExplosion 同机制)。引擎 updateAnnotation 保持逐事件(画布标签实时),
+  // React 列表与 revision 以 ≤7Hz 合流落定,离散编辑(重命名/锁定)延迟 ≤150ms。
+  let annotationSettleTimer: number | undefined;
+  const pendingAnnotationUpdates = new Map<string, SceneAnnotationState>();
+  const flushAnnotationUpdates = () => {
+    annotationSettleTimer = undefined;
+    if (pendingAnnotationUpdates.size === 0) return;
+    const pending = new Map(pendingAnnotationUpdates);
+    pendingAnnotationUpdates.clear();
+    setAnnotations((items) => items.map((item) => pending.get(item.id) ?? item));
+    setRevision((value) => value + 1);
+  };
+
   function updateAnnotation(id: string, patch: Partial<Omit<SceneAnnotationState, "id">>) {
     const next = engine?.updateAnnotation(id, patch);
     if (!next) return;
-    setAnnotations((items) => items.map((item) => (item.id === id ? next : item)));
-    setRevision((value) => value + 1);
+    pendingAnnotationUpdates.set(id, next);
+    if (annotationSettleTimer === undefined) annotationSettleTimer = window.setTimeout(flushAnnotationUpdates, 150);
     recordSceneEdit("更新模型标签");
   }
 
@@ -509,15 +524,33 @@ export function createSceneEditorController(context: SceneEditorControllerContex
     setMessage(enabled ? "剖切工具已开启" : "已关闭剖切");
   }
 
+  let explosionSettleTimer: number | undefined;
+  let pendingExplosion: { factor: number; mode: ExplosionMode } | undefined;
+  const flushExplosionReadout = () => {
+    explosionSettleTimer = undefined;
+    const pending = pendingExplosion;
+    pendingExplosion = undefined;
+    if (!pending) return;
+    setRevision((value) => value + 1);
+    setMessage(
+      pending.factor > 0
+        ? `${tr(locale, "模型爆炸", "Model explosion")} ${Math.round(pending.factor * 100)}% · ${explosionModeName(pending.mode, locale)}`
+        : tr(locale, "已恢复模型组合", "Model restored"),
+    );
+  };
+  const settleExplosionReadout = (factor: number, mode: ExplosionMode) => {
+    pendingExplosion = { factor, mode };
+    if (explosionSettleTimer !== undefined) return;
+    explosionSettleTimer = window.setTimeout(flushExplosionReadout, 150);
+  };
+
   function updateExplosion(factor: number, mode: ExplosionMode = explosionMode) {
     if (!engine || !selected || selected.kind !== "model") return;
     engine.setExplosion(selected.id, factor, mode);
-    setRevision((value) => value + 1);
-    setMessage(
-      factor > 0
-        ? `${tr(locale, "模型爆炸", "Model explosion")} ${Math.round(factor * 100)}% · ${explosionModeName(mode, locale)}`
-        : tr(locale, "已恢复模型组合", "Model restored"),
-    );
+    // A3:爆炸滑块逐事件 setRevision+setMessage = 每事件两次全壳提交。合流为首沿
+    // 立即+150ms 尾沿:引擎 setExplosion 保持逐事件(画布反馈不变),消息百分比与
+    // revision 收敛值同帧落定(归因见 revisionSettle.ts)。
+    settleExplosionReadout(factor, mode);
   }
 
   function updateSelectedTransform(group: keyof ModelTransform, axis: "x" | "y" | "z", rawValue: string) {
