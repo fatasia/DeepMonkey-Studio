@@ -10,11 +10,33 @@ use crate::sdf_gi_scene::{
     fround, hypot3, transformed_triangle_bounds,
 };
 
-/// 场景级 SDF 烘焙(TS `bakeSdfSceneGrid` 镜像;无缓存子集,见模块头如实声明)。
-pub fn bake_sdf_scene_grid(
+/// 场景网格规划半(实例过滤 + bounds 并集 + dimensions + cells 预算 + exterior;
+/// CPU 烘焙与 GPU 烘焙链共用的单一实现点,TS `flattenWorldTriangles` 规划段同式)。
+/// 不做任何距离计算 —— 距离场由 [`bake_sdf_scene_grid`](CPU)或
+/// `sdfBakeSceneGrid.wgsl`(GPU)各自消费本规划产出。
+pub struct SdfSceneGridPlan {
+    /// 场景格原点(静态实例 bounds 并集 min;显式 bounds 优先)。
+    pub scene_min: [f64; 3],
+    /// 场景格分辨率(每轴 2..=128)。
+    pub dimensions: [usize; 3],
+    /// 总 cell 数(≤ [`MAX_SDF_SCENE_CELLS`])。
+    pub cells: usize,
+    /// 有界外推圈外的场值(米)。
+    pub exterior_distance: f32,
+    /// 静态实例在输入序中的索引(动态/非法/超三角形预算实例不在此列)。
+    pub static_indices: Vec<usize>,
+    /// 逐静态实例变换后 AABB(与 static_indices 同序;逐实例烘焙域来源)。
+    pub static_bounds: Vec<([f64; 3], [f64; 3])>,
+    /// 前置报告行(动态排除/跳过,输入序;烘焙报告的前半)。
+    pub pre_reports: Vec<SdfSceneBakeInstanceReport>,
+}
+
+/// 场景网格规划(与 [`bake_sdf_scene_grid`] 的前置合同逐式同源;规划失败
+/// 封闭映射同款错误)。GPU 烘焙链在 renderer 域消费,不落 CPU 距离场。
+pub fn plan_sdf_scene_grid(
     instances: &[SdfSceneBakeInstance<'_>],
     options: SdfSceneBakeOptions,
-) -> Result<(SdfSceneGrid, SdfSceneBakeReport), SdfSceneBakeError> {
+) -> Result<SdfSceneGridPlan, SdfSceneBakeError> {
     if !options.cell_size.is_finite() || options.cell_size <= 0.0 {
         return Err(SdfSceneBakeError::InvalidCellSize);
     }
@@ -26,14 +48,12 @@ pub fn bake_sdf_scene_grid(
         return Err(SdfSceneBakeError::InvalidDimensions);
     }
     let cell_size = options.cell_size;
-    let mut reports = Vec::new();
-    let mut statics: Vec<(&SdfSceneBakeInstance<'_>, [f64; 3], [f64; 3])> = Vec::new();
-    let (mut excluded, mut skipped) = (0usize, 0usize);
-    for instance in instances {
+    let mut statics: Vec<(usize, [f64; 3], [f64; 3])> = Vec::new();
+    let mut pre_reports = Vec::new();
+    for (ordinal, instance) in instances.iter().enumerate() {
         let triangles = instance.indices.len() / 3;
         if instance.dynamic {
-            excluded += 1;
-            reports.push(SdfSceneBakeInstanceReport {
+            pre_reports.push(SdfSceneBakeInstanceReport {
                 id: instance.id.to_string(),
                 status: SdfSceneBakeInstanceStatus::DynamicExcluded,
                 triangles,
@@ -50,8 +70,7 @@ pub fn bake_sdf_scene_grid(
                 .any(|index| *index as usize >= instance.positions.len() / 3)
             || triangles == 0;
         if invalid {
-            skipped += 1;
-            reports.push(SdfSceneBakeInstanceReport {
+            pre_reports.push(SdfSceneBakeInstanceReport {
                 id: instance.id.to_string(),
                 status: SdfSceneBakeInstanceStatus::Skipped,
                 triangles,
@@ -61,8 +80,7 @@ pub fn bake_sdf_scene_grid(
             continue;
         }
         if triangles > MAX_SDF_SCENE_BAKE_TRIANGLES {
-            skipped += 1;
-            reports.push(SdfSceneBakeInstanceReport {
+            pre_reports.push(SdfSceneBakeInstanceReport {
                 id: instance.id.to_string(),
                 status: SdfSceneBakeInstanceStatus::Skipped,
                 triangles,
@@ -76,12 +94,12 @@ pub fn bake_sdf_scene_grid(
             instance.indices,
             instance.transform.as_ref(),
         );
-        statics.push((instance, bounds_min, bounds_max));
+        statics.push((ordinal, bounds_min, bounds_max));
     }
     if statics.is_empty() {
         return Err(SdfSceneBakeError::NoBakeableInstances);
     }
-    let (scene_min, scene_max) = resolve_scene_bounds(&statics, options.bounds);
+    let (scene_min, scene_max) = resolve_static_bounds(&statics, options.bounds);
     let dimensions = options
         .dimensions
         .unwrap_or_else(|| derive_dimensions(scene_min, scene_max, cell_size));
@@ -97,16 +115,53 @@ pub fn bake_sdf_scene_grid(
         scene_max[1] - scene_min[1],
         scene_max[2] - scene_min[2],
     )) as f32;
+    Ok(SdfSceneGridPlan {
+        scene_min,
+        dimensions,
+        cells,
+        exterior_distance,
+        static_indices: statics.iter().map(|(ordinal, _, _)| *ordinal).collect(),
+        static_bounds: statics.iter().map(|(_, min, max)| (*min, *max)).collect(),
+        pre_reports,
+    })
+}
+
+/// 场景级 SDF 烘焙(TS `bakeSdfSceneGrid` 镜像;无缓存子集,见模块头如实声明)。
+/// 规划半(实例过滤/bounds/dimensions/cells 预算/exterior)与 GPU 烘焙链共用
+/// [`plan_sdf_scene_grid`] 单一实现点;本函数只做距离场计算与合成。
+pub fn bake_sdf_scene_grid(
+    instances: &[SdfSceneBakeInstance<'_>],
+    options: SdfSceneBakeOptions,
+) -> Result<(SdfSceneGrid, SdfSceneBakeReport), SdfSceneBakeError> {
+    let cell_size = options.cell_size;
+    let plan = plan_sdf_scene_grid(instances, options)?;
+    let mut reports = plan.pre_reports;
+    let excluded = reports
+        .iter()
+        .filter(|report| report.status == SdfSceneBakeInstanceStatus::DynamicExcluded)
+        .count();
+    let scene_min = plan.scene_min;
+    let dimensions = plan.dimensions;
+    let cells = plan.cells;
+    let exterior_distance = plan.exterior_distance;
     let mut field = vec![exterior_distance; cells];
-    let (mut baked, mut _cached) = (0usize, 0usize);
-    for entry in &statics {
-        let (instance, bounds_min, bounds_max) = *entry;
+    let mut baked = 0usize;
+    let mut skipped = reports
+        .iter()
+        .filter(|report| report.status == SdfSceneBakeInstanceStatus::Skipped)
+        .count();
+    for (ordinal, (bounds_min, bounds_max)) in plan
+        .static_indices
+        .iter()
+        .zip(&plan.static_bounds)
+    {
+        let instance = &instances[*ordinal];
         let baked_grid = bake_instance_grid(
             instance.positions,
             instance.indices,
             instance.transform.as_ref(),
-            bounds_min,
-            bounds_max,
+            *bounds_min,
+            *bounds_max,
             cell_size,
             dimensions,
             scene_min,
@@ -148,7 +203,8 @@ pub fn bake_sdf_scene_grid(
         SdfSceneBakeReport {
             instances: reports,
             baked_count: baked,
-            cached_count: _cached,
+            // TS 的逐资产哈希缓存状态(native 权威链无缓存,恒 0;见模块头如实差异)。
+            cached_count: 0,
             excluded_dynamic_count: excluded,
             skipped_count: skipped,
             dimensions,
@@ -165,9 +221,10 @@ pub struct SceneBounds {
     pub max: [f64; 3],
 }
 
-/// 显式 bounds 或静态实例 AABB 并集(TS `resolveSceneBounds` 镜像)。
-fn resolve_scene_bounds(
-    statics: &[(&SdfSceneBakeInstance<'_>, [f64; 3], [f64; 3])],
+/// 显式 bounds 或静态实例 AABB 并集(TS `resolveSceneBounds` 镜像;条目仅消费
+/// bounds 对,实例身份由调用方语义承载)。
+fn resolve_static_bounds(
+    statics: &[(usize, [f64; 3], [f64; 3])],
     explicit: Option<SceneBounds>,
 ) -> ([f64; 3], [f64; 3]) {
     if let Some(explicit) = explicit {
