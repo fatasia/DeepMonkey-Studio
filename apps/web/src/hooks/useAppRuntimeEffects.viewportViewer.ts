@@ -1,5 +1,5 @@
 import { useEffect, useState, type MutableRefObject } from "react";
-import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
+import type { GlobalLightingState, ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { synchronizeSelectionFromViewport } from "../controllers/sceneSelectionSynchronization";
 import { commitRendererPreference } from "../viewer/rendererBackendPreference";
 import { readAnimationPlayheadSec } from "../viewer/animationPlayheadReader";
@@ -86,6 +86,23 @@ export function useViewportViewerLifecycle(context: AppRuntimeEffectsContext,
       viewer?.requestRender();
       scheduleRevisionSettle();
     };
+    // A2(2026-10-06 交互风暴归因):灯光 gizmo 拖拽期引擎逐 pointermove 发
+    // onLightingChange;原 handler 每 move setLighting + requestRevision,实测一次
+    // 3s 拖拽 181 次全壳提交(React 自采样占该窗口 CPU 40.8%,长任务至 99ms)。
+    // 改为 100ms 合流(首沿立即、尾沿 100ms 内落定):最终 lighting 状态与逐事件
+    // 应用逐位一致,拖拽中面板读数 ≥10Hz;revision 走 250ms settle(消费方只需要
+    // 拖拽静止后的收敛值,逐帧推进实测只产生全壳空渲染)。
+    let lightingFlushTimer: number | undefined;
+    let lightingLastFlush = Number.NEGATIVE_INFINITY;
+    let pendingLighting: GlobalLightingState | undefined;
+    const flushLighting = () => {
+      lightingFlushTimer = undefined;
+      const next = pendingLighting;
+      pendingLighting = undefined;
+      if (!next) return;
+      lightingLastFlush = performance.now();
+      setLighting(next);
+    };
     setRendererSwitching(true);
     void import("../viewer/ViewerEngine")
       // Studio 作者 Viewer 固定为 WebGL；Deep 是同一作者状态的独立输出表面。
@@ -114,8 +131,12 @@ export function useViewportViewerLifecycle(context: AppRuntimeEffectsContext,
           recordSceneEdit("编辑三维对象");
         };
         viewer.onLightingChange = (nextLighting) => {
-          setLighting(nextLighting);
-          requestRevision();
+          pendingLighting = nextLighting;
+          const elapsed = performance.now() - lightingLastFlush;
+          if (elapsed >= 100) flushLighting();
+          else if (lightingFlushTimer === undefined) lightingFlushTimer = window.setTimeout(flushLighting, 100 - elapsed);
+          viewer?.requestRender();
+          scheduleRevisionSettle();
           recordSceneEdit("调整场景灯光");
         };
         viewer.onXRSessionChange = (mode) => setXrActiveMode(mode);
@@ -263,6 +284,7 @@ export function useViewportViewerLifecycle(context: AppRuntimeEffectsContext,
       if (revisionFrame !== undefined) window.cancelAnimationFrame(revisionFrame);
       if (revisionSettleTimer !== undefined) window.clearTimeout(revisionSettleTimer);
       if (diagnosticsTimer !== undefined) window.clearTimeout(diagnosticsTimer);
+      if (lightingFlushTimer !== undefined) window.clearTimeout(lightingFlushTimer);
       viewer?.dispose();
       setEngine((current) => (current === viewer ? undefined : current));
     };
