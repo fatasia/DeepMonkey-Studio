@@ -65,6 +65,14 @@ describe("MegaLights RIS WGSL single-source gate (TS half)", () => {
     expect(MEGA_LIGHTS_RIS_WGSL).toContain("if (record.iesRow != 0u)");
     // M2 胜者可见性:同一宿主注入家族(deepMegaVisibilityAt,模板装配)。
     expect(MEGA_LIGHTS_RIS_WGSL).toContain("deepMegaVisibilityAt(sourceIndex)");
+    // 相似门/蓄水池打包的视深口径 = -z(megaViewDepth 同式;surfaceA.w 是 metallic)。
+    // 2026-10-07 真机 GPU 探针逐源对拍抓出:门拿 metallic 比较 → 源集合与 CPU 权威
+    // 分歧,随机帧逐像素颜色偏差放大(pixel 28 实测 GPU 6740 vs CPU 6949)。
+    expect(MEGA_LIGHTS_RIS_WGSL).toContain("deepMegaDepthGate(-surfaceA.z, previous.w)");
+    expect(MEGA_LIGHTS_RIS_WGSL).toContain("deepMegaDepthGate(-surfaceA.z, -sourceSurfaceA.z)");
+    expect(MEGA_LIGHTS_RIS_WGSL).toContain("deepMegaReservoirPack(reservoir, -surfaceA.z)");
+    expect(MEGA_LIGHTS_RIS_WGSL).not.toContain("deepMegaDepthGate(surfaceA.w");
+    expect(MEGA_LIGHTS_RIS_WGSL).not.toContain("ReservoirPack(reservoir, surfaceA.w)");
   });
 
   it("keeps the unbiased RIS estimator and degenerate exhaustive mode locked", () => {

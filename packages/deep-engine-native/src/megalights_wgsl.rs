@@ -87,6 +87,13 @@ fn mega_lights_ris_wgsl_contracts_stay_aligned() {
     // 胜者可见性与 IES 为宿主注入符号(模板组合;核内只消费)。
     assert!(wgsl.contains("deepMegaVisibilityAt(pixelIndex)"));
     assert!(wgsl.contains("deepSpotIesFactor(record.iesRow - 1u, surfaceToLight, record.direction)"));
+    // 相似门/蓄水池打包的视深口径 = -z(surfaceA.w 是 metallic;2026-10-07 真机
+    // 探针逐源对拍抓出的单源分歧,与 TS 半同款防回归钉)。
+    assert!(wgsl.contains("deepMegaDepthGate(-surfaceA.z, previous.w)"));
+    assert!(wgsl.contains("deepMegaDepthGate(-surfaceA.z, -sourceSurfaceA.z)"));
+    assert!(wgsl.contains("deepMegaReservoirPack(reservoir, -surfaceA.z)"));
+    assert!(!wgsl.contains("deepMegaDepthGate(surfaceA.w"));
+    assert!(!wgsl.contains("ReservoirPack(reservoir, surfaceA.w)"));
     // 绑定留宿主模板:核体自身不得声明 @group(与 TS 半同款合同)。
     assert!(!wgsl.contains("@group("), "RIS 核绑定必须留宿主模板");
     assert!(!wgsl.contains("@compute"), "入口 entrypoint 属宿主模板");

@@ -46,7 +46,10 @@ describe("MegaLights runtime composed shader template", () => {
     // 趟二:表面 3-vec4 布局直取 + EMA 混合 + 蓄水池回写。
     expect(composed).toContain(`deepMegaSurfaces[pixelIndex * ${MEGA_LIGHTS_SURFACES_STRIDE_VEC4}u]`);
     expect(composed).toContain("deepMegaColorHistory[pixelIndex].rgb, color, vec3f(deepMegaFrame.alphaBlend)");
-    expect(composed).toContain("deepMegaReservoirPack(center, surfaceA.w)");
+    // 蓄水池回写的 .w = 视深(-z,下一帧时域相似门消费;surfaceA.w 是 metallic,
+    // 2026-10-07 真机 GPU 探针抓出的宿主模板缺陷,与 CPU megaViewDepth 同口径)。
+    expect(composed).toContain("deepMegaReservoirPack(center, -surfaceA.z)");
+    expect(composed).not.toContain("deepMegaReservoirPack(center, surfaceA.w)");
   });
 
   it("pins the params uniform word budget and pipeline key", () => {

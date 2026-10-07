@@ -187,7 +187,7 @@ fn ${MEGA_LIGHTS_ENTRY_SHADE}(@builtin(global_invocation_id) gid: vec3u) {
   }
   deepMegaColor[pixelIndex] = vec4f(blended, 0.0);
   deepMegaColorHistory[pixelIndex] = vec4f(blended, 0.0);
-  deepMegaReservoirsB[pixelIndex] = deepMegaReservoirPack(center, surfaceA.w);
+  deepMegaReservoirsB[pixelIndex] = deepMegaReservoirPack(center, -surfaceA.z);
 }
 `;
 }
