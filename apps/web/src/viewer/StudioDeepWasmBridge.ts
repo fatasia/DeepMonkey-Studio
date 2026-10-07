@@ -6,6 +6,8 @@ import { captureAuthorStyle, createDeepCanvas, prepareAuthorInputCanvas, restore
 import { DeepCameraController, sameHostCameraPose, type CameraPose } from "./deepCameraController";
 import { DeepCameraInputSession } from "./deepCameraInputSession";
 import { DeepGizmoInteraction, type DeepGizmoInteractionHost } from "./deepGizmoInteraction";
+import { StudioWasmPackageCache } from "./StudioWasmPackageCache";
+import type { StudioWasmCompiledPackage } from "./studioWasmCompilationClient";
 
 /** 视口手势接管期间的引擎中立相机姿态(世界单位)。 */
 export type ViewportCameraPose = CameraPose;
@@ -13,9 +15,12 @@ export type ViewportCameraPose = CameraPose;
 export interface DeepWasmRuntimeModule {
   default(input?: RequestInfo | URL | Response | BufferSource | WebAssembly.Module): Promise<unknown>;
   set_scene_package(bytes: Uint8Array): void;
+  set_scene_package_with_expected_hash?(bytes: Uint8Array, expectedHash: string): void;
+  compute_runtime_package_canonical_hash?(bytes: Uint8Array): string;
   start_scene_viewer(canvas?: HTMLCanvasElement | null): number;
   stop_scene_viewer(handle: number): void;
   update_scene_viewer(handle: number, bytes: Uint8Array): void;
+  update_scene_viewer_with_expected_hash?(handle: number, bytes: Uint8Array, expectedHash: string): void;
   update_editor_overlay?(handle: number, revision: number, vertices: Float32Array): void;
   set_viewer_camera(handle: number, positionX: number, positionY: number, positionZ: number,
     targetX: number, targetY: number, targetZ: number, focal: number, near: number, far: number): void;
@@ -31,7 +36,7 @@ export interface DeepWasmPhysicsPose {
 }
 
 export interface StudioDeepWasmBridgeOptions {
-  readonly compilePackage: (signal: AbortSignal) => Promise<Uint8Array>;
+  readonly compilePackage: (signal: AbortSignal) => Promise<StudioWasmCompiledPackage>;
   readonly loadModule?: () => Promise<DeepWasmRuntimeModule>;
   readonly preparationTimeoutMs?: number;
   readonly onRuntimeFailure?: (error: Error) => void;
@@ -65,7 +70,7 @@ export interface StudioWasmSwitchResult {
   readonly error?: string;
 }
 
-const MODULE_URL = "/engine-wasm/deep_engine_wasm.js";
+const MODULE_URL = `${import.meta.env.BASE_URL}engine-wasm/deep_engine_wasm.js`;
 
 /** Full WASM presentation surface behind an engine-neutral author seam. */
 export class StudioDeepWasmBridge {
@@ -89,6 +94,7 @@ export class StudioDeepWasmBridge {
   /** 控制器最后写回/采纳的姿态:区分"手势收敛中"与"宿主程序性变更"。 */
   private lastAppliedPose: CameraPose | undefined;
   private readonly gizmoInteraction: DeepGizmoInteraction | undefined;
+  private readonly packageCache = new StudioWasmPackageCache();
 
   constructor(
     private readonly viewer: StudioDeepWasmAuthorHost,
@@ -124,7 +130,8 @@ export class StudioDeepWasmBridge {
     this.pending = undefined;
   }
 
-  async switchTo(target: "webgl" | "wasm"): Promise<StudioWasmSwitchResult> {
+  async switchTo(target: "webgl" | "wasm",
+    beforePublish?: (signal: AbortSignal) => Promise<void>): Promise<StudioWasmSwitchResult> {
     if (this.closed) return this.result("failed", "Renderer bridge is disposed.");
     this.cancelPendingSwitch();
     const generation = this.generation;
@@ -140,6 +147,7 @@ export class StudioDeepWasmBridge {
     this.pending = controller;
     markSwitchPhase("deep-wasm:switch-start");
     const canvas = this.canvas ?? createDeepCanvas(this.container, "deep-wasm");
+    canvas.dataset.rendererPreparing = "true";
     let startedHandle: number | undefined;
     let runtimeModule: DeepWasmRuntimeModule | undefined;
     try {
@@ -147,20 +155,30 @@ export class StudioDeepWasmBridge {
       markSwitchPhase("deep-wasm:module-ready");
       runtimeModule = module;
       controller.signal.throwIfAborted();
-      const bytes = await this.options.compilePackage(controller.signal);
+      const { bytes, canonicalHash } = await this.options.compilePackage(controller.signal);
       markSwitchPhase("deep-wasm:package-compiled");
       controller.signal.throwIfAborted();
       const before = module.viewer_ready_generation();
       let handle = this.handle;
       if (handle === undefined) {
-        module.set_scene_package(bytes);
+        markSwitchPhase("deep-wasm:set-package-start");
+        if (canonicalHash && module.set_scene_package_with_expected_hash) module.set_scene_package_with_expected_hash(bytes, canonicalHash);
+        else module.set_scene_package(bytes);
+        markSwitchPhase("deep-wasm:set-package-done");
         handle = module.start_scene_viewer(canvas);
+        markSwitchPhase("deep-wasm:start-viewer-done");
         startedHandle = handle;
-      } else {
+      } else if (!this.packageCache.matches(bytes)) {
+        markSwitchPhase("deep-wasm:update-package-start");
         module.update_scene_viewer(handle, bytes);
+        markSwitchPhase("deep-wasm:update-package-done");
       }
-      await waitForRendererReady(module, before, controller.signal, this.options.preparationTimeoutMs ?? 30_000);
+      const reused = startedHandle === undefined && this.packageCache.matches(bytes);
+      if (reused) assertWasmRuntimeHealthy(module);
+      else await waitForRendererReady(module, before, controller.signal, this.options.preparationTimeoutMs ?? 30_000);
       markSwitchPhase("deep-wasm:renderer-ready");
+      controller.signal.throwIfAborted();
+      await beforePublish?.(controller.signal);
       if (this.closed || generation !== this.generation) {
         if (startedHandle !== undefined) module.stop_scene_viewer(startedHandle);
         if (!this.canvas) canvas.remove();
@@ -169,6 +187,7 @@ export class StudioDeepWasmBridge {
       this.module = module;
       this.canvas = canvas;
       this.handle = handle;
+      if (!reused) this.packageCache.commit(bytes);
       this.publishWasm();
       markSwitchPhase("deep-wasm:published");
       return this.result("switched");
@@ -176,10 +195,11 @@ export class StudioDeepWasmBridge {
       if (runtimeModule && startedHandle !== undefined) {
         try { runtimeModule.stop_scene_viewer(startedHandle); } catch { /* best-effort cleanup after failed startup */ }
       }
-      if (controller.signal.aborted) return this.result("cancelled");
       if (!this.canvas) canvas.remove();
+      if (controller.signal.aborted) return this.result("cancelled");
       return this.result("failed", reason instanceof Error ? reason.message : String(reason));
     } finally {
+      delete canvas.dataset.rendererPreparing;
       if (this.pending === controller) this.pending = undefined;
     }
   }
@@ -191,16 +211,23 @@ export class StudioDeepWasmBridge {
     this.pending = controller;
     const generation = this.generation;
     try {
-      const bytes = await this.options.compilePackage(controller.signal);
+      const { bytes, canonicalHash } = await this.options.compilePackage(controller.signal);
       controller.signal.throwIfAborted();
       const before = this.module.viewer_ready_generation();
+      if (this.packageCache.matches(bytes)) {
+        assertWasmRuntimeHealthy(this.module);
+        this.publishWasm();
+        return this.result("unchanged");
+      }
       // Keep the last successfully presented WASM frame visible while the next
       // scene package is prepared. The native event loop rebuilds the renderer
       // asynchronously; swapping back to the author canvas here made every
       // autosave/revision look like a black/background flash.
-      this.module.update_scene_viewer(this.handle, bytes);
+      if (canonicalHash && this.module.update_scene_viewer_with_expected_hash) this.module.update_scene_viewer_with_expected_hash(this.handle, bytes, canonicalHash);
+      else this.module.update_scene_viewer(this.handle, bytes);
       await waitForRendererReady(this.module, before, controller.signal, this.options.preparationTimeoutMs ?? 30_000);
       if (this.closed || generation !== this.generation) return this.result("cancelled");
+      this.packageCache.commit(bytes);
       this.publishWasm();
       return this.result("switched");
     } catch (reason) {
@@ -217,6 +244,7 @@ export class StudioDeepWasmBridge {
   dispose(): void {
     if (this.closed) return;
     this.closed = true;
+    this.packageCache.clear();
     this.cancelPendingSwitch();
     this.releaseGesture();
     this.unsubscribeFrame?.();
@@ -232,7 +260,11 @@ export class StudioDeepWasmBridge {
 
   private publishWasm(): void {
     if (!this.canvas || !this.module || this.handle === undefined) throw new Error("WASM renderer is not prepared.");
+    // 内存诊断探针:wasm 线性内存字节数(JS heap 口径里与 JS 对象可分离的那部分)。
+    (window as unknown as { __studioDeepWasmMemoryProbe?: () => number }).__studioDeepWasmMemoryProbe =
+      () => (this.module as { memory?: { buffer?: ArrayBuffer } } | undefined)?.memory?.buffer?.byteLength ?? -1;
     this.canvas.style.visibility = "visible";
+    delete this.canvas.dataset.rendererPreparing;
     this.canvas.style.opacity = "1";
     this.authorCanvas.style.opacity = "0";
     this.activeBackendValue = "wasm";
@@ -412,4 +444,9 @@ function waitForRendererReady(module: DeepWasmRuntimeModule, before: number, sig
     };
     poll();
   });
+}
+
+function assertWasmRuntimeHealthy(module: DeepWasmRuntimeModule): void {
+  const failure = module.viewer_failure_message();
+  if (failure) throw new Error(failure);
 }

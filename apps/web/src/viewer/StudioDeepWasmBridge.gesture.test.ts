@@ -62,7 +62,7 @@ describe("StudioDeepWasmBridge viewport gesture takeover", () => {
     const { hostObject: hostStub, frame } = host({ renderer: { domElement: author } });
     const bridge = new StudioDeepWasmBridge(hostStub, container(), {
       loadModule: async () => runtime.module,
-      compilePackage: async () => new Uint8Array([1, 2, 3]),
+      compilePackage: async () => ({ bytes: new Uint8Array([1, 2, 3]) }),
       preparationTimeoutMs: 100,
     });
     owned.push(bridge);
@@ -93,7 +93,7 @@ describe("StudioDeepWasmBridge viewport gesture takeover", () => {
     });
     const bridge = new StudioDeepWasmBridge(hostStub, container(), {
       loadModule: async () => runtime.module,
-      compilePackage: async () => new Uint8Array([1, 2, 3]),
+      compilePackage: async () => ({ bytes: new Uint8Array([1, 2, 3]) }),
       preparationTimeoutMs: 100,
     });
     owned.push(bridge);
@@ -120,7 +120,7 @@ describe("StudioDeepWasmBridge viewport gesture takeover", () => {
     const { hostObject: hostStub, frame } = host({ renderer: { domElement: author } });
     const bridge = new StudioDeepWasmBridge(hostStub, container(), {
       loadModule: async () => runtime.module,
-      compilePackage: async () => new Uint8Array([1, 2, 3]),
+      compilePackage: async () => ({ bytes: new Uint8Array([1, 2, 3]) }),
       preparationTimeoutMs: 100,
     });
     owned.push(bridge);
@@ -155,7 +155,7 @@ describe("StudioDeepWasmBridge viewport gesture takeover", () => {
     });
     const bridge = new StudioDeepWasmBridge(hostStub, container(), {
       loadModule: async () => runtime.module,
-      compilePackage: async () => new Uint8Array([1, 2, 3]),
+      compilePackage: async () => ({ bytes: new Uint8Array([1, 2, 3]) }),
       preparationTimeoutMs: 100,
     });
     owned.push(bridge);
@@ -176,7 +176,7 @@ describe("StudioDeepWasmBridge viewport gesture takeover", () => {
     const { hostObject: hostStub } = host();
     const bridge = new StudioDeepWasmBridge(hostStub, container(), {
       loadModule: async () => runtime.module,
-      compilePackage: async () => new Uint8Array([1, 2, 3]),
+      compilePackage: async () => ({ bytes: new Uint8Array([1, 2, 3]) }),
       preparationTimeoutMs: 100,
     });
     owned.splice(0);

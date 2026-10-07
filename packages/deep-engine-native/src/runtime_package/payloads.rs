@@ -81,6 +81,8 @@ pub(super) fn decode(
             .map_err(RuntimePackageError)?;
     let solid_environment = decode_background(&package, &package.entrypoints.environment)?;
     let background = solid_environment.as_ref().map(|decoded| decoded.background);
+    let studio_background_gradient =
+        solid_environment.as_ref().is_some_and(|decoded| decoded.studio_gradient);
     let fog = solid_environment.as_ref().and_then(|decoded| decoded.fog);
     // v9 作者色彩分级：仅纯色环境 v9 档声明时存在，旧包恒 None（精确中性）。
     let author_grading = solid_environment
@@ -127,6 +129,7 @@ pub(super) fn decode(
         chart_sim,
         environment,
         background,
+        studio_background_gradient,
         lighting,
         fog,
         author_grading,

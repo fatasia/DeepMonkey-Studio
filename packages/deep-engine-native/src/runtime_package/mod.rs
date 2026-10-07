@@ -130,23 +130,123 @@ pub fn parse_and_validate_runtime_package(
     bytes: &[u8],
 ) -> Result<LoadedRuntimePackage, RuntimePackageError> {
     let package = validated_envelope(bytes)?;
+    finish_envelope(package)
+}
+
+/// Independent canonical re-hash used by the browser compilation worker.
+///
+/// Runs the exact same parse → budget → remove-`packageHash` → canonical-hash
+/// sequence as the verification path, so the value it returns is identical to
+/// what `parse_and_validate_runtime_package` would recompute for the same
+/// bytes. The main thread can then verify against this value instead of
+/// re-walking the whole tree a second time on the input thread.
+pub fn compute_runtime_package_canonical_hash(
+    bytes: &[u8],
+) -> Result<String, RuntimePackageError> {
+    validate::input_size(bytes)?;
+    let mut value: Value = unique_json::parse(bytes).map_err(|error| {
+        RuntimePackageError(format!("invalid Deep Runtime Package JSON: {error}"))
+    })?;
+    validate::tree_budget(&value)?;
+    let root = value
+        .as_object_mut()
+        .ok_or_else(|| RuntimePackageError("runtime package root must be an object".into()))?;
+    let package_hash = root.remove("packageHash");
+    let expected_hash = hash::hash_canonical(&value);
+    if let Some(package_hash) = package_hash {
+        value
+            .as_object_mut()
+            .expect("root was an object before packageHash removal")
+            .insert("packageHash".into(), package_hash);
+    }
+    Ok(expected_hash)
+}
+
+/// Same strict validation as `parse_and_validate_runtime_package`, but the
+/// canonical package hash is supplied by an independent worker-side recompute
+/// (via `compute_runtime_package_canonical_hash`) instead of being recomputed
+/// on the consuming thread. Every other check — schema, budgets, envelope,
+/// hash comparison — is unchanged.
+pub fn parse_and_validate_runtime_package_with_expected_hash(
+    bytes: &[u8],
+    expected_hash: &str,
+) -> Result<LoadedRuntimePackage, RuntimePackageError> {
+    validate::input_size(bytes)?;
+    if !is_lowercase_sha256(expected_hash) {
+        return fail("expected runtime package hash must be lowercase SHA-256");
+    }
+    let mut value: Value = unique_json::parse(bytes).map_err(|error| {
+        RuntimePackageError(format!("invalid Deep Runtime Package JSON: {error}"))
+    })?;
+    validate::tree_budget(&value)?;
+    let root = value
+        .as_object_mut()
+        .ok_or_else(|| RuntimePackageError("runtime package root must be an object".into()))?;
+    let mut shape = serde_json::Map::new();
+    if let Some(entrypoints) = root.get("entrypoints") {
+        shape.insert("entrypoints".into(), entrypoints.clone());
+    }
+    if root.contains_key("materialBindings") {
+        shape.insert("materialBindings".into(), Value::Null);
+    }
+    let package_hash = root.remove("packageHash");
+    if let Some(package_hash) = package_hash {
+        value
+            .as_object_mut()
+            .expect("root was an object before packageHash removal")
+            .insert("packageHash".into(), package_hash);
+    }
+    let package: RuntimePackageEnvelope = serde_json::from_value(value).map_err(|error| {
+        RuntimePackageError(format!("invalid Deep Runtime Package schema: {error}"))
+    })?;
+    validate::envelope(&package, &Value::Object(shape), expected_hash)?;
+    finish_envelope(package)
+}
+
+fn is_lowercase_sha256(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn validated_envelope(bytes: &[u8]) -> Result<RuntimePackageEnvelope, RuntimePackageError> {
+    validate::input_size(bytes)?;
+    let mut value: Value = unique_json::parse(bytes).map_err(|error| {
+        RuntimePackageError(format!("invalid Deep Runtime Package JSON: {error}"))
+    })?;
+    validate::tree_budget(&value)?;
+    let root = value
+        .as_object_mut()
+        .ok_or_else(|| RuntimePackageError("runtime package root must be an object".into()))?;
+    let mut shape = serde_json::Map::new();
+    if let Some(entrypoints) = root.get("entrypoints") {
+        shape.insert("entrypoints".into(), entrypoints.clone());
+    }
+    if root.contains_key("materialBindings") {
+        shape.insert("materialBindings".into(), Value::Null);
+    }
+    // The unique-field parser owns this tree. Hash the original core without a
+    // second full payload clone, then move that same tree into the typed schema.
+    let package_hash = root.remove("packageHash");
+    let expected_hash = hash::hash_canonical(&value);
+    if let Some(package_hash) = package_hash {
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert("packageHash".into(), package_hash);
+    }
+    let package: RuntimePackageEnvelope = serde_json::from_value(value).map_err(|error| {
+        RuntimePackageError(format!("invalid Deep Runtime Package schema: {error}"))
+    })?;
+    validate::envelope(&package, &Value::Object(shape), &expected_hash)?;
+    Ok(package)
+}
+
+fn finish_envelope(
+    package: RuntimePackageEnvelope,
+) -> Result<LoadedRuntimePackage, RuntimePackageError> {
     if package.schema_version == DEEP_RUNTIME_PACKAGE_EXPERIMENTAL_X_VERSION {
         return fail(
             "runtime package v6 requires the explicit experimental X loader; X is disabled by default",
         );
     }
     payloads::decode(package)
-}
-
-fn validated_envelope(bytes: &[u8]) -> Result<RuntimePackageEnvelope, RuntimePackageError> {
-    validate::input_size(bytes)?;
-    let value: Value = unique_json::parse(bytes).map_err(|error| {
-        RuntimePackageError(format!("invalid Deep Runtime Package JSON: {error}"))
-    })?;
-    validate::tree_budget(&value)?;
-    let package: RuntimePackageEnvelope = serde_json::from_slice(bytes).map_err(|error| {
-        RuntimePackageError(format!("invalid Deep Runtime Package schema: {error}"))
-    })?;
-    validate::envelope(&package, &value)?;
-    Ok(package)
 }

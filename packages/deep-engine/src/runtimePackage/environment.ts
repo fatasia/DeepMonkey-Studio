@@ -13,9 +13,10 @@ export function validateRuntimeEnvironment(value: unknown, id: string, revision:
   const object = record(value, path);
   if (object.schema === "deep-engine.solid-environment") {
     const hdr = object.schemaVersion === 6;
-    // v7 显雾必填；v8 studio 与 v9 分级档沿袭 v7 的雾语义但雾可选。
-    const fogged = object.schemaVersion === 7 || object.schemaVersion === 8 || object.schemaVersion === 9;
-    const studio = object.schemaVersion === 8;
+    // v7 显雾必填；v8 studio、v9 分级与 v10 studio 渐变档沿袭 v7 的雾语义但雾可选。
+    const fogged = object.schemaVersion === 7 || object.schemaVersion === 8
+      || object.schemaVersion === 9 || object.schemaVersion === 10;
+    const studio = object.schemaVersion === 8 || object.schemaVersion === 10;
     // v9 作者色彩分级档：colorGrading 必须声明；kind 允许 no-ibl 与 builtin-ibl
     // （studio 语义延续），与 Native solid_environment decode 档位门同一合同。
     const grading = object.schemaVersion === 9;
@@ -35,8 +36,8 @@ export function validateRuntimeEnvironment(value: unknown, id: string, revision:
     requireValue((hdr || lit || fogged || object.schemaVersion === 1) && object.id === id && id === "scene.environment"
       && object.revision === 1 && revision === 1
       && object.kind === (grading ? object.kind // v9 的 kind 在下方 grading 块内显式校验双档位。
-        : studio ? "solid-background-builtin-ibl" : hdr ? "solid-background-prefiltered-ibl" : "solid-background-no-ibl")
-      && object.outputTransform === (grading ? "native-aces-grading-v9" : studio ? "native-aces-studio-v8" : fogged ? "native-aces-fog-v7" : hdr ? "native-aces-hdr-v6" : pointShadow ? "native-aces-local-shadows-v5" : shadows ? "native-aces-spot-shadows-v4" : many ? "native-aces-lights-v3" : lit ? "native-aces-light-v2" : "native-aces-v1")
+        : object.schemaVersion === 10 ? "solid-background-builtin-ibl" : studio ? "solid-background-builtin-ibl" : hdr ? "solid-background-prefiltered-ibl" : "solid-background-no-ibl")
+      && object.outputTransform === (grading ? "native-aces-grading-v9" : object.schemaVersion === 10 ? "native-aces-studio-gradient-v10" : studio ? "native-aces-studio-v8" : fogged ? "native-aces-fog-v7" : hdr ? "native-aces-hdr-v6" : pointShadow ? "native-aces-local-shadows-v5" : shadows ? "native-aces-spot-shadows-v4" : many ? "native-aces-lights-v3" : lit ? "native-aces-light-v2" : "native-aces-v1")
       && (hdr || lit || fogged || !Object.hasOwn(object, "lighting")), path, "Unsupported solid environment profile.");
     if (grading) {
       // v9 双 kind：builtin-ibl（继承 v8 studio）或 no-ibl（普通纯色场景），二者之外拒绝。

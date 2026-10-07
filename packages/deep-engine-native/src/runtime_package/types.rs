@@ -138,6 +138,8 @@ pub struct LoadedRuntimePackage {
     pub chart_sim: Option<crate::chart::simulation::ChartSimFixture>,
     pub environment: PreparedIblEnvironment,
     pub background: Option<[f64; 3]>,
+    /// v10 studio 渐变档:渲染端用全屏渐变 pass 画背景。
+    pub studio_background_gradient: bool,
     pub lighting: Option<crate::scene_lighting::DirectionalLighting>,
     /// v7 作者雾（exp2）；仅在纯色环境声明时存在。
     pub fog: Option<crate::fog::FogSettings>,

@@ -56,7 +56,12 @@ pub fn encode_opaque_pass(
                 depth_slice: None,
                 resolve_target: Some(&targets.hdr_view),
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(targets.clear_color()),
+                    // v10 studio 渐变档:背景 pass 已画,颜色 Load;否则原样清屏。
+                    load: if targets.studio_gradient {
+                        wgpu::LoadOp::Load
+                    } else {
+                        wgpu::LoadOp::Clear(targets.clear_color())
+                    },
                     store: if has_transparent {
                         wgpu::StoreOp::Store
                     } else {
@@ -126,6 +131,7 @@ pub fn encode_transparent_pass(
     if !scene.has_transparent() {
         return;
     }
+    targets.copy_opaque_for_transmission(encoder);
     let color_attachments = [Some(wgpu::RenderPassColorAttachment {
         view: &targets.msaa_view,
         depth_slice: None,
@@ -229,7 +235,11 @@ pub fn encode_opaque_pass_rt(
             depth_slice: None,
             resolve_target: Some(&targets.hdr_view),
             ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(targets.clear_color()),
+                load: if targets.studio_gradient {
+                    wgpu::LoadOp::Load
+                } else {
+                    wgpu::LoadOp::Clear(targets.clear_color())
+                },
                 store: if has_transparent {
                     wgpu::StoreOp::Store
                 } else {

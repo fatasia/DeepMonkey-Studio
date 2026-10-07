@@ -55,6 +55,22 @@ pub fn load_bytes(bytes: &[u8]) -> Result<PreparedRuntimePackage, String> {
     prepare(package)
 }
 
+/// Browser fast path: the canonical package hash was already recomputed
+/// independently inside the compilation worker; the consuming thread verifies
+/// against it instead of re-walking the whole tree a second time.
+#[cfg(target_arch = "wasm32")]
+pub fn load_bytes_with_expected_hash(
+    bytes: &[u8],
+    expected_hash: &str,
+) -> Result<PreparedRuntimePackage, String> {
+    let package =
+        deep_engine_native::runtime_package::parse_and_validate_runtime_package_with_expected_hash(
+            bytes, expected_hash,
+        )
+        .map_err(|error| error.to_string())?;
+    prepare(package)
+}
+
 pub fn load_embedded(path: &Path) -> Result<Option<PreparedRuntimePackage>, String> {
     let mut executable =
         std::fs::File::open(path).map_err(|error| format!("overlay/open: {error}"))?;

@@ -34,6 +34,7 @@ use crate::{
 use super::{Renderer, RendererFeatures};
 
 mod resources;
+mod rt;
 
 pub(super) async fn create_renderer(
     window: Arc<Window>,
@@ -385,7 +386,7 @@ pub(super) async fn create_renderer(
             u64::try_from(cluster_plan.pack_storage().len()).unwrap_or(u64::MAX / 4) * 4,
         );
     }
-    let candidate = ibl_environment.and_then(|ibl| {
+    let candidate = ibl_environment.and_then(|mut ibl| {
         match initial_preparation_clock.as_mut() {
             Some(clock) => {
                 clock.upload_timed(|| ibl.write_cluster_grid(&queue, &cluster_plan));
@@ -393,16 +394,6 @@ pub(super) async fn create_renderer(
             None => ibl.write_cluster_grid(&queue, &cluster_plan),
         }
         diagnostics.note_native_cluster_lookup();
-        let frame_bind_group = ibl.create_frame_bind_group(
-            &device,
-            &frame_layout,
-            &frame_buffer,
-            Some(&ies_buffer),
-            &shadow_map,
-            Some(&probe_frame_buffer),
-            "Deep Engine native frame bindings",
-            true,
-        );
         let mut forward_targets = ForwardTargets::new(
             &device,
             super::content_profile::forward_size(
@@ -415,6 +406,15 @@ pub(super) async fn create_renderer(
                 .any(|instance| instance.outline == Some(true)),
         );
         forward_targets.background = content.background;
+        forward_targets.studio_gradient = content.studio_background_gradient;
+        if packet.materials.iter().any(|material| material.transmission_factor() > 0.0) {
+            forward_targets.enable_transmission(&device);
+            ibl.set_scene_opaque_view(forward_targets.scene_opaque_view.as_ref());
+        }
+        let frame_bind_group = ibl.create_frame_bind_group(
+            &device, &frame_layout, &frame_buffer, Some(&ies_buffer), &shadow_map,
+            Some(&probe_frame_buffer), "Deep Engine native frame bindings", true,
+        );
         let shadow_probe = features.shadow_probe.then(|| {
             ShadowProbe::new(
                 &device,
@@ -649,83 +649,11 @@ pub(super) async fn create_renderer(
     if let Some(clock) = initial_preparation_clock.as_mut() {
         clock.resource_stage_prepared(3)?;
     }
-    // F2:硬件 RT 驻留(静态实例 BLAS 缓存 + 场景 TLAS)在栅格原子事务之外
-    // 建立——任何拒绝都 fail-closed 关闭 RT 并记录诊断原因,绝不阻塞栅格主通路。
-    let mut rt_residency = match super::rt_residency::RtSceneResidency::build(&device, &scene) {
-        Ok((residency, blas_encoder, tlas_encoder)) => {
-            // BLAS 必须先于 TLAS 完成;单次 submit 内 FIFO 保证 GPU 执行序。
-            match initial_preparation_clock.as_mut() {
-                Some(clock) => clock
-                    .upload_timed(|| queue.submit([blas_encoder.finish(), tlas_encoder.finish()])),
-                None => queue.submit([blas_encoder.finish(), tlas_encoder.finish()]),
-            };
-            diagnostics.note_rt_tlas_resident();
-            Some(residency)
-        }
-        // 能力缺失维持既有 adapter/device 精确原因,不覆盖。
-        Err(super::rt_residency::RtResidencyReject::MissingFeature) => None,
-        Err(reject) => {
-            diagnostics.note_rt_tlas_rejected(reject.reason());
-            None
-        }
-    };
-    let rt_frame_bind_group = match (&rt_residency, &rt_frame_layout) {
-        (Some(residency), Some(layout)) => Some(ibl.create_rt_frame_bind_group(
-            &device,
-            layout,
-            &frame_buffer,
-            Some(&ies_buffer),
-            &shadow_map,
-            residency.tlas(),
-            Some(&probe_frame_buffer),
-            "Deep Engine native RT frame bindings",
-        )),
-        _ => None,
-    };
-    // F2 pixel:opaque/MASK 方向阴影 Ray Query 管线族。与驻留同在栅格原子
-    // 事务之外:创建走独立 validation error scope,失败仅丢弃管线族并记录
-    // 精确原因(fail-closed 回退栅格),不阻塞渲染器创建。含 custom shader
-    // 批次的场景不创建——其批次只能绑定普通 frame layout,RT frame bind
-    // group 无法与之混用,整帧回退栅格由帧循环判定。
-    let rt_pixel_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
-    if let (Some(residency), Some(layout)) = (rt_residency.as_mut(), rt_frame_layout.as_ref())
-        && scene.shader_materials.is_none()
-    {
-        let rt_shader = crate::frame_bindings::create_native_mesh_rt_shader(&device);
-        let rt_pipelines = match (has_layered_materials, layered_material_layout.as_ref()) {
-            (true, Some(layered_layout)) => crate::pipeline::create_rt_mesh_pipelines_with_layered(
-                &device,
-                layout,
-                &material_layout,
-                layered_layout,
-                &rt_shader,
-            ),
-            _ => crate::pipeline::create_rt_mesh_pipelines(
-                &device,
-                layout,
-                &material_layout,
-                &rt_shader,
-            ),
-        };
-        residency.install_pixel_pipelines(rt_pipelines);
-    }
-    match rt_pixel_scope.pop().await {
-        Some(_) => {
-            if let Some(residency) = rt_residency.as_mut() {
-                residency.drop_pixel_pipelines();
-            }
-            diagnostics.note_rt_pixel_rejected();
-        }
-        None if rt_residency
-            .as_ref()
-            .is_some_and(|residency| residency.pixel_pipelines().is_some()) =>
-        {
-            // 驻留 + RT frame 绑定 + Ray Query 管线族全部就绪:诊断从
-            // tlas_resident_pixel_pending 升级为真实像素消费态。
-            diagnostics.note_rt_directional_shadow_pixels();
-        }
-        None => {}
-    }
+    let (rt_residency, rt_frame_bind_group) = rt::prepare(
+        &device, &queue, &scene, &mut initial_preparation_clock, &mut diagnostics,
+        rt_frame_layout.as_ref(), &material_layout, layered_material_layout.as_ref(),
+        has_layered_materials, &ibl, &frame_buffer, &ies_buffer, &shadow_map, &probe_frame_buffer,
+    ).await;
     if let Some(clock) = initial_preparation_clock.as_mut() {
         clock.resource_stage_prepared(4)?;
     }
@@ -769,8 +697,14 @@ pub(super) async fn create_renderer(
     let initial_preparation = initial_preparation_clock
         .map(|clock| clock.finish(renderer_id))
         .transpose()?;
+    let studio_background_pipeline = deep_engine_native::studio_background::create_studio_background_pipeline(
+        &device,
+        deep_engine_native::mesh_abi::FORWARD_COLOR_FORMAT,
+        deep_engine_native::mesh_abi::FORWARD_SAMPLE_COUNT,
+    );
     Ok(Renderer {
         id: renderer_id,
+        studio_background_pipeline,
         instance,
         window,
         surface,
@@ -801,6 +735,7 @@ pub(super) async fn create_renderer(
         probe_gi_storage,
         sdf_gi: sdf_gi_runtime,
         mega_lights,
+        forward_depth_epoch: 1,
         shadow_map,
         ibl,
         shadow_cache,

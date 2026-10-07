@@ -1,5 +1,5 @@
 import { DEFAULT_DISPLAY_CONTRACT, type DisplayToneMappingOperator, type KeyframeTransition, type SceneSnapshot } from "@bim-studio/contracts";
-import { buildDeepRuntimePackage, runtimeContentSha256, serializeDeepRuntimePackage,
+import { buildDeepRuntimePackageArtifactAsync, runtimeContentSha256,
   type DeepRuntimePackage, type RuntimeJson, type RuntimePrefilteredIbl,
   type RuntimeIrradianceProbe, type RuntimeIrradianceProbeGrid, type RuntimeIrradianceProbeGridSingle } from "@bim-studio/deep-engine/runtime-package";
 import { packNativeProbeGridRecords, packNativeProbeGridLevels, DEEP_GI_PROBE_RECORD_BYTES } from "@bim-studio/deep-engine/lighting";
@@ -26,12 +26,8 @@ function findNonJson(value: unknown, path = "$", seen = new Set<object>()): stri
   else for (const [key, child] of Object.entries(value)) { const issue = findNonJson(child, `${path}.${key}`, seen); if (issue) return issue; }
   seen.delete(value);
 }
-/** native 运行时包的闭合材质 profile 不携带扩展/高级 lobe:给出可操作的提示,而不是裸的 "Unknown field"。 */
-function assertNativePackageMaterials(packet: { readonly materials: ReadonlyArray<{ readonly id: string; readonly extendedParameters?: unknown; readonly advancedParameters?: unknown }> }): void {
-  const ids = packet.materials.filter(material => material.extendedParameters !== undefined || material.advancedParameters !== undefined).map(material => material.id);
-  if (ids.length) throw new Error(`场景含 native 运行时包尚不支持的高级材质（清漆 / 光泽 / 薄膜 / 透射）：${ids.slice(0, 3).join("、")}${ids.length > 3 ? ` 等 ${ids.length} 项` : ""}。请在材质面板的“高级材质”中重置后再发布，或使用 Deep 浏览器渲染路径预览。`);
-}
 function stage<T>(name: string, run: () => T): T { try { return run(); } catch (error) { throw new Error(`${name}: ${error instanceof Error ? error.message : String(error)}`); } }
+async function stageAsync<T>(name: string, run: () => Promise<T>): Promise<T> { try { return await run(); } catch (error) { throw new Error(`${name}: ${error instanceof Error ? error.message : String(error)}`); } }
 /** Lower deterministic camera and object TRS keyframes into the v7 dynamic resource.
  * Imported model clip playback remains deferred until its dedicated consumer exists.
  * Exported for delivery hosts that play the dynamic channel of an already
@@ -141,6 +137,8 @@ export type SceneIrradianceProbeBake = SceneIrradianceProbeGridBake | SceneIrrad
 export interface CompileSceneRuntimeOptions extends CompileSceneRenderOptions {
   readonly packageId: string;
   readonly packageVersion: string;
+  /** Called immediately before the synchronous package freeze/hash/serialization stage. */
+  readonly onPackageBuild?: () => void;
   /** Explicit Native display math; omission uses the product display contract. */
   readonly displayProfile?: DisplayToneMappingOperator;
   readonly hdrEnvironment?: {readonly payload:RuntimePrefilteredIbl;readonly source:{readonly bytes:number;readonly sha256:string}};
@@ -154,11 +152,13 @@ export interface SceneCompilationEvidence {
   readonly compileGraphHash: string;
   /** 对 runtime/package.json 实际 UTF-8 字节计算，与包内 canonical hash 分开。 */
   readonly targetArtifactHash: string;
-  readonly recipe: typeof RECIPE | "deep-scene-static-compile-v4" | "deep-scene-static-compile-v6" | "deep-scene-static-compile-v7" | "deep-scene-static-compile-v8" | "deep-scene-static-compile-v9" | "deep-scene-static-compile-v10" | "deep-scene-static-compile-v11" | "deep-scene-static-compile-v12" | "deep-scene-static-compile-v13" | "deep-scene-static-compile-v14";
+  readonly recipe: typeof RECIPE | "deep-scene-static-compile-v4" | "deep-scene-static-compile-v6" | "deep-scene-static-compile-v7" | "deep-scene-static-compile-v8" | "deep-scene-static-compile-v9" | "deep-scene-static-compile-v10" | "deep-scene-static-compile-v11" | "deep-scene-static-compile-v12" | "deep-scene-static-compile-v13" | "deep-scene-static-compile-v14" | "deep-scene-static-compile-v15";
   readonly environmentSource?:{readonly bytes:number;readonly sha256:string};
   readonly localCoordinates: SceneLocalCoordinateFrame;
   readonly maxSourceBytes: number;
   readonly sourceAssets: readonly { assetId: string; bytes: number; sha256: string }[];
+  /** Content-deduplicated encoded author images; URLs and credentials stay outside the evidence. */
+  readonly sourceTextures?: readonly { bytes: number; sha256: string }[];
   readonly objectBindings: SceneRenderCompilation["objectBindings"];
   readonly compiledSceneFields: readonly { field: string; capability: string; resourceId: string }[];
   /** 尚未进入运行包的语义，正式发布门禁必须继续处理，不能直接放行。 */
@@ -191,13 +191,28 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
   const environmentSource=environment?.schemaVersion===6 ? options.hdrEnvironment?.source : undefined;
   if (environment?.schemaVersion===6 && !environmentSource) throw new Error("HDR 来源身份缺失");
   if (environmentSource && (!Number.isSafeInteger(environmentSource.bytes) || environmentSource.bytes<1 || environmentSource.bytes>32*1024**2 || environmentSource.sha256!==environment?.ibl?.source.contentHash.value)) throw new Error("HDR 来源身份或预算无效");
-  const recipe = environment?.schemaVersion === 9 ? "deep-scene-static-compile-v14" : environment?.schemaVersion === 8 ? "deep-scene-static-compile-v13" : environment?.schemaVersion === 7 ? "deep-scene-static-compile-v12" : environment?.schemaVersion === 6 ? "deep-scene-static-compile-v11" : environment?.schemaVersion === 5 ? "deep-scene-static-compile-v10" : environment?.schemaVersion === 4 ? "deep-scene-static-compile-v9" : environment?.lighting?.localLights ? "deep-scene-static-compile-v8" : environment?.lighting ? "deep-scene-static-compile-v7" : environment ? "deep-scene-static-compile-v6" : RECIPE;
+  const recipe = environment?.schemaVersion === 10 ? "deep-scene-static-compile-v15" : environment?.schemaVersion === 9 ? "deep-scene-static-compile-v14" : environment?.schemaVersion === 8 ? "deep-scene-static-compile-v13" : environment?.schemaVersion === 7 ? "deep-scene-static-compile-v12" : environment?.schemaVersion === 6 ? "deep-scene-static-compile-v11" : environment?.schemaVersion === 5 ? "deep-scene-static-compile-v10" : environment?.schemaVersion === 4 ? "deep-scene-static-compile-v9" : environment?.lighting?.localLights ? "deep-scene-static-compile-v8" : environment?.lighting ? "deep-scene-static-compile-v7" : environment ? "deep-scene-static-compile-v6" : RECIPE;
   const sourceAssets: Array<{ assetId: string; bytes: number; sha256: string }> = [];
+  const textureSources = new Map<string, { bytes: number; sha256: string }>();
   let loadedBytes = environmentSource?.bytes ?? 0;
   if (loadedBytes>(maxSourceBytes ?? 256*1024*1024)) throw new Error("HDR 资源超出场景预算");
   const compiled = await compileSceneRenderPacket(localized.scene, {
+    ...(options.advancedMaterials === true ? { advancedMaterials: true } : {}),
     ...(options.normalizeModel ? { normalizeModel: options.normalizeModel } : {}),
     ...(imageDecoder ? { imageDecoder } : {}), ...(signal ? { signal } : {}),
+    ...(options.textureBudgetBytes === undefined ? {} : { textureBudgetBytes: options.textureBudgetBytes }),
+    ...(options.loadTexture ? { loadTexture: async (url: string, loadSignal: AbortSignal) => {
+      const bytes = Uint8Array.from(await options.loadTexture!(url, loadSignal));
+      loadSignal.throwIfAborted();
+      const sha256 = await byteHash(bytes);
+      loadSignal.throwIfAborted();
+      if (!textureSources.has(sha256)) {
+        loadedBytes += bytes.byteLength;
+        if (loadedBytes > (maxSourceBytes ?? 256 * 1024 * 1024)) throw new Error("贴图资源超出场景预算");
+        textureSources.set(sha256, { bytes: bytes.byteLength, sha256 });
+      }
+      return bytes;
+    } } : {}),
     auxiliaryGridOrigin: worldToLocal({ x: 0, y: 0, z: 0 }, localized.frame.origin, "environment.grid.origin"),
     ...(maxSourceBytes === undefined ? {} : { maxSourceBytes }),
     async loadModel(assetId, loadSignal) {
@@ -211,15 +226,19 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
       return bytes;
     } });
   signal?.throwIfAborted();
+  if (compiled.textureLosses?.length) throw new Error(`法线贴图不能完整发布：${compiled.textureLosses.map(loss => `${loss.modelId}：${loss.reason}`).join("；")}`);
+  if (compiled.materialLosses?.length) throw new Error(`源材质不能完整发布：${compiled.materialLosses.map(({ modelId, loss }) => `${modelId}：${loss.assetPath} ${loss.detail}`).join("；")}`);
   const dynamicRuntime = compileDynamicRuntime(localized.scene, { objectBindings: compiled.objectBindings, coordinateOrigin: localized.frame.origin });
   const customShaders = stage("shader compile", () => compileSceneCustomShaders(localized.scene, compiled.packet));
-  const runtimePackage = stage("package build", () => (assertNativePackageMaterials(compiled.packet), buildDeepRuntimePackage({ packageId, packageVersion, camera, ...(environment ? { environment } : {}), ...(dynamicRuntime ? { dynamicRuntime } : {}),
+  options.onPackageBuild?.();
+  const { runtimePackage, packageJson } = await stageAsync("package build", () => (buildDeepRuntimePackageArtifactAsync({ packageId, packageVersion, camera, ...(environment ? { environment } : {}), ...(dynamicRuntime ? { dynamicRuntime } : {}),
     ...(customShaders.shaderPackages.length ? { shaderPackages: customShaders.shaderPackages, materialBindings: customShaders.materialBindings } : {}),
-    renderPacket: { id: "scene.main", revision: 1, value: compiled.packet } })));
+    renderPacket: { id: "scene.main", revision: 1, value: compiled.packet } }, signal ? { signal } : {})));
   const nonJson = findNonJson(runtimePackage); if (nonJson) throw new Error(`runtime package non-JSON at ${nonJson}`);
-  const packageJson = serializeDeepRuntimePackage(runtimePackage);
   sourceAssets.sort((a, b) => a.assetId < b.assetId ? -1 : a.assetId > b.assetId ? 1 : 0);
+  const sourceTextures = [...textureSources.values()].sort((a, b) => a.sha256 < b.sha256 ? -1 : a.sha256 > b.sha256 ? 1 : 0);
   const compileGraphHash = runtimeContentSha256({ recipe, sourceSemanticHash, sourceAssets,
+    ...(sourceTextures.length ? { sourceTextures } : {}),
     packageId, packageVersion, maxSourceBytes: maxSourceBytes ?? 256 * 1024 * 1024,
     localCoordinates: localized.frame,
     ...(environment ? { environmentHash: runtimeContentSha256(environment) } : {}),
@@ -255,7 +274,7 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
     .filter(item => item.fields.length > 0);
   return { runtimePackage, packageJson, evidence: { schemaVersion: 1, scope: "static-render-packet", recipe,
     localCoordinates: localized.frame, maxSourceBytes: maxSourceBytes ?? 256 * 1024 * 1024,
-    sourceSemanticHash, compileGraphHash, targetArtifactHash, sourceAssets, ...(environmentSource ? {environmentSource} : {}),
+    sourceSemanticHash, compileGraphHash, targetArtifactHash, sourceAssets, ...(sourceTextures.length ? { sourceTextures } : {}), ...(environmentSource ? {environmentSource} : {}),
     objectBindings: compiled.objectBindings, compiledSceneFields: [{ field: "camera", capability: "deep.scene.camera.v1", resourceId: camera.id },
       ...(orbitConstraintsCompiled ? [{ field: "cameraConstraints", capability: "deep.scene.camera.v1", resourceId: camera.id }] : []),
       ...(cameraViewsCompiled ? [

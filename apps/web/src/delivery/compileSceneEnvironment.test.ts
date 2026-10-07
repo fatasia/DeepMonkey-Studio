@@ -21,10 +21,10 @@ describe("authored solid environment", () => {
         type: "directional", color: "#ffffff", target: { x: 0, y: 0, z: 0 }, enabled: true,
         position: { x: 18, y: 28, z: 12 }, intensity: 2.2, castShadow: true }] };
     const result = await compileSceneRuntimePackage(source, options);
-    expect(result.evidence.recipe).toBe("deep-scene-static-compile-v13");
+    expect(result.evidence.recipe).toBe("deep-scene-static-compile-v15");
     expect(result.evidence.deferredSceneFields).toEqual([]);
-    expect(result.runtimePackage.payloads["scene.environment"]).toMatchObject({ schemaVersion: 8,
-      kind: "solid-background-builtin-ibl", outputTransform: "native-aces-studio-v8", backgroundSrgb: [32 / 255, 42 / 255, 49 / 255] });
+    expect(result.runtimePackage.payloads["scene.environment"]).toMatchObject({ schemaVersion: 10,
+      kind: "solid-background-builtin-ibl", outputTransform: "native-aces-studio-gradient-v10", backgroundSrgb: [32 / 255, 42 / 255, 49 / 255] });
   });
   it("keeps authored GI intensity through the Native environment payload", async () => {
     const source = scene();
@@ -84,7 +84,7 @@ describe("authored solid environment", () => {
     const withoutGrid = scene();
     withoutGrid.environment = { gridVisible: false, skybox: "studio", backgroundColor: "#202a31" };
     const studio = await compileSceneRuntimePackage(withoutGrid, options);
-    expect(studio.evidence.recipe).toBe("deep-scene-static-compile-v13");
+    expect(studio.evidence.recipe).toBe("deep-scene-static-compile-v15");
     expect(studio.runtimePackage.payloads["scene.main"]).toMatchObject({ instances: [] });
 
     const withGrid = scene();

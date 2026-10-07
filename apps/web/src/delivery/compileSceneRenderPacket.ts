@@ -2,7 +2,7 @@ import { applySourceMaterialOverrides, assertStaticMaterialOverrides, assertMate
 import { AuthorTextureResolver, authorTextureTransform, effectiveTextureState, ensureGeometryTangents,
   isSupportedAuthorTextureField, sceneHasAuthorTextureOverrides } from "./sceneTextureOverrides";
 import { getSceneModelAssetId, type SceneMaterialState, type SceneModelState, type SceneSnapshot } from "@bim-studio/contracts";
-import { prepareRenderPacket, STOCK_MATERIAL_INSTANCE_OPTIONS, type RenderPacket } from "@bim-studio/deep-engine";
+import { prepareRenderPacketAsync, STOCK_MATERIAL_INSTANCE_OPTIONS, type RenderPacket } from "@bim-studio/deep-engine";
 import { invertAffineSceneMatrix, multiplySceneMatrices } from "@bim-studio/deep-engine/scene";
 import { HLOD_PROXY_MATERIAL_ID, type HlodClusterStreamBinding } from "@bim-studio/deep-engine/three-bridge";
 import { decodeDeformablePacketGlb, GltfImportError, type DeformablePacketMode, type GltfDeformationFeature } from "@bim-studio/deep-engine/gltf";
@@ -17,12 +17,28 @@ import { compileSceneAuxiliaryGrid } from "./compileSceneAuxiliaryGrid";
 import { readSceneModelMaterialState } from "./sceneAuthorMaterialState";
 import { bindWebHlodAsset, type WebHlodPackage } from "./webHlodPackage";
 import type { GltfImageDecoder } from "@bim-studio/deep-engine/gltf";
+import { isAuthorModelNormalizationFailure, type AuthorModelDecoder } from "./authorModelDecode";
+
+async function byteSha256(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes as unknown as ArrayBuffer);
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
 
 export interface CompileSceneRenderOptions {
   readonly loadModel: (assetId: string, signal: AbortSignal) => Promise<Uint8Array>;
   readonly imageDecoder?: GltfImageDecoder;
   /** 宿主解压几何；原始文件仍用于来源哈希和读取预算。 */
   readonly normalizeModel?: (bytes: Uint8Array, signal: AbortSignal) => Promise<Uint8Array>;
+  /** Browser author opt-in: host owns normalization and decoding of each unique asset. */
+  readonly decodeModel?: AuthorModelDecoder;
+  /**
+   * 跨编译资产解码缓存:键为 `assetId:sha256(bytes)`,值为解码产物(几何/材质/
+   * 变形,消费合同为只读)。同一资产在切换/刷新的重复编译间跳过整段 GLB 解码;
+   * 命中键含内容哈希,资产字节任何变化都会自然失效。*/
+  readonly decodedAssetCache?: {
+    get(key: string): { decodedBytes: Uint8Array; decoded: Awaited<ReturnType<typeof decodeDeformablePacketGlb>> } | undefined;
+    set(key: string, entry: { decodedBytes: Uint8Array; decoded: Awaited<ReturnType<typeof decodeDeformablePacketGlb>> }): void;
+  };
   readonly signal?: AbortSignal;
   readonly maxSourceBytes?: number;
   /** 已局部化运行空间中，作者世界原点的位置；辅助网格仍与 Three 的世界原点对齐。 */
@@ -34,6 +50,8 @@ export interface CompileSceneRenderOptions {
    * 缺省按绑定姿态静态显示,不会因动画/蒙皮使整份场景编译失败。
    */
   readonly liveDeformation?: boolean;
+  /** Browser advanced material capability; keeps untextured transmission/clearcoat lobes. */
+  readonly advancedMaterials?: boolean;
   /** 每个资产的纹理解码总预算(字节);超出时按需降低该资产纹理边长。缺省不降采样。 */
   readonly textureBudgetBytes?: number;
   /**
@@ -65,6 +83,12 @@ export interface SceneTextureLoss {
   readonly modelId: string;
   readonly slot: "normal";
   readonly reason: string;
+}
+/** Source glTF material fallback, retained per author placement for visible diagnostics. */
+export interface SceneMaterialLoss {
+  readonly modelId: string;
+  readonly assetId: string;
+  readonly loss: NonNullable<RenderPacket["materialLosses"]>[number];
 }
 /** 含 glTF 动画/蒙皮/形变目标的放置,以及它在包内的呈现方式。 */
 export interface SceneDeformedModel {
@@ -99,6 +123,7 @@ export interface SceneRenderCompilation {
   readonly skippedModels?: readonly SceneSkippedModel[];
   /** 按槽丢弃的作者法线贴图(切线基不可交付);缺省 = 无损失。 */
   readonly textureLosses?: readonly SceneTextureLoss[];
+  readonly materialLosses?: readonly SceneMaterialLoss[];
 }
 
 /** 将已保存快照和宿主提供的 GLB 转成静态绘制数据，不访问编辑器当前 GPU 状态。 */
@@ -139,6 +164,7 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
   const deformationPoses: NonNullable<RenderPacket["deformation"]>["poses"][number][] = [];
   const posesByAsset = new Map<string, ReadonlyMap<string, NonNullable<RenderPacket["deformation"]>["poses"][number]>>();
   const deformedModels: SceneDeformedModel[] = [];
+  const materialLosses: SceneMaterialLoss[] = [];
   const skippedAssets = new Map<string, string>(), skippedModels: SceneSkippedModel[] = [];
   const skipModel = (modelId: string, assetId: string): void => {
     objectBindings.push({ nodeId: modelId, instanceIds: [] });
@@ -233,11 +259,40 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
       signal.throwIfAborted();
       sourceBytes += bytes.byteLength;
       if (sourceBytes > maxBytes) throw new Error(`对象 ${model.modelId} 的模型资源超过场景预算`);
-      const decodedBytes = options.normalizeModel ? await options.normalizeModel(Uint8Array.from(bytes), signal) : bytes;
+      let decodedBytes = !options.decodeModel && options.normalizeModel
+        ? await options.normalizeModel(Uint8Array.from(bytes), signal) : bytes;
       signal.throwIfAborted();
       if (decodedBytes.byteLength > maxBytes) throw new Error(`对象 ${model.modelId} 的解压模型超过场景预算`);
-      let decoded: Awaited<ReturnType<typeof decodeDeformablePacketGlb>>;
+      const cacheKey = options.decodedAssetCache ? `asset-${await byteSha256(bytes)}:${bytes.byteLength}` : undefined;
+      const cache = options.decodedAssetCache;
+      const cached = cacheKey && cache ? cache.get(cacheKey) : undefined;
+      if (cached && cacheKey) {
+        decodedBytes = cached.decodedBytes;
+        source = cached.decoded.packet;
+        if (cached.decoded.mode !== "static") {
+          assetDeformation.set(assetId, { mode: cached.decoded.mode, features: cached.decoded.features,
+            ...(cached.decoded.fallbackReason ? { fallbackReason: cached.decoded.fallbackReason } : {}) });
+          deformationSources.push(...cached.decoded.packet.deformation?.sources ?? []);
+          posesByAsset.set(assetId, new Map(cached.decoded.packet.deformation?.poses.map(pose => [pose.id, pose])));
+        }
+        geometries.push(...cached.decoded.packet.geometries); textures.push(...cached.decoded.packet.textures ?? []);
+        for (const geometry of cached.decoded.packet.geometries) sourceGeometries.set(geometry.id, geometry);
+        assets.set(assetId, cached.decoded.packet);
+      }
+      let decoded: Awaited<ReturnType<typeof decodeDeformablePacketGlb>> | undefined = cached?.decoded;
       try {
+        if (!decoded && options.decodeModel) {
+          const result = await options.decodeModel(bytes, {
+            resourcePrefix: `asset-${runtimeContentSha256(assetId)}`, modelId: model.modelId, maxDecodedBytes: maxBytes,
+            ...(options.textureBudgetBytes === undefined ? {} : { textureBudgetBytes: options.textureBudgetBytes }),
+            ...(options.liveDeformation === true ? { liveDeformation: true } : {}),
+            ...(options.advancedMaterials === true ? { advancedMaterials: true } : {}),
+            ...(preserveTexCoords ? { preserveTexCoords: true } : {}),
+          }, signal);
+          decodedBytes = result.normalizedBytes;
+          if (decodedBytes.byteLength > maxBytes) throw new Error(`对象 ${model.modelId} 的解压模型超过场景预算`);
+          decoded = result.decoded;
+        } else if (!decoded) {
         const glb = Uint8Array.from(decodedBytes);
         const cap = options.textureBudgetBytes === undefined || !options.imageDecoder ? undefined
           : textureDimensionCap(glbEmbeddedImageDimensions(glb), options.textureBudgetBytes);
@@ -245,12 +300,15 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
           : capImageDimension(options.imageDecoder, cap), {
           resourcePrefix: `asset-${runtimeContentSha256(assetId)}`, signal,
           ...(options.liveDeformation === true ? { liveDeformation: true } : {}),
+          ...(options.advancedMaterials === true ? { advancedMaterials: true } : {}),
           // 场景带作者贴图覆盖时,无源纹理基元保留既有 UV 流,作者贴图才能映射到几何。
           ...(preserveTexCoords ? { preserveTexCoords: true } : {}),
         });
+        }
       } catch (error) {
         // 编辑器 Deep 切换:单个资产超出引擎导入子集只隐藏它并如实提示,不拖垮整份场景。
-        if (options.skipUndecodableModels !== true || !(error instanceof GltfImportError)) throw error;
+        if (options.skipUndecodableModels !== true || !(error instanceof GltfImportError)
+          || isAuthorModelNormalizationFailure(error)) throw error;
         skippedAssets.set(assetId, `${error.path}: ${error.message}`);
         skipModel(model.modelId, assetId);
         continue;
@@ -258,6 +316,7 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
       signal.throwIfAborted();
       source = decoded.packet;
       assets.set(assetId, source);
+      if (cacheKey && decoded && cache) cache.set(cacheKey, { decodedBytes, decoded });
       if (decoded.mode !== "static") {
         assetDeformation.set(assetId, { mode: decoded.mode, features: decoded.features,
           ...(decoded.fallbackReason ? { fallbackReason: decoded.fallbackReason } : {}) });
@@ -282,12 +341,14 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
     // read the live Three material through ViewerEngine, because WASM/Native
     // publication has no viewer instance.
     const authoredMaterial = readSceneModelMaterialState(scene, model.modelId);
+    for (const loss of source.materialLosses ?? []) materialLosses.push({ modelId: model.modelId, assetId, loss });
     assertMaterialSlotsResolve(source.materials, authoredMaterial, model.modelId);
     const materialMap = new Map<string, string>(), prefix = `model-${runtimeContentSha256(model.modelId)}`;
     const color = model.colorOverride ? sceneHexToLinearRgb(model.colorOverride) : undefined;
     const effectEmissive = staticSceneEffectEmissive(model.effects);
     const effectColor = effectEmissive ? sceneHexToLinearRgb(effectEmissive.color) : undefined;
-    // 发布查看器的 applyModelState 会显式应用实例透明度，包括 1。
+    // 场景透明度与 Three sourceMaterialOpacity 同口径：倍率作用于源 alpha，
+    // 默认值 1 保留导入玻璃/镂空材质的覆盖率及透明模式。
     for (const material of source.materials) {
       const masked = material.alphaMode === "MASK";
       const blended = model.opacity < 0.999;
@@ -304,7 +365,8 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
         ...(color ? { baseColor: color } : {}) }, authoredMaterial, model.modelId, textureFields), id,
         ...(effectColor ? { emissiveFactor: effectColor,
           emissiveStrength: effectEmissive!.strength } : {}),
-        baseColorAlpha: model.opacity, alphaMode: blended ? "BLEND" : masked ? "MASK" : "OPAQUE",
+        baseColorAlpha: (material.baseColorAlpha ?? 1) * model.opacity,
+        alphaMode: blended || material.alphaMode === "BLEND" ? "BLEND" : masked ? "MASK" : "OPAQUE",
         // exactOptionalPropertyTypes 会把可选属性展开加宽为 | undefined;按槽条件展开保持引擎合同的精确可选。
         ...(textureWiring?.baseColorTexture ? { baseColorTexture: textureWiring.baseColorTexture } : {}),
         ...(textureWiring?.normalTexture ? { normalTexture: textureWiring.normalTexture } : {}),
@@ -367,10 +429,11 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
     ...(textures.length ? { textures } : {}),
     ...(deformationPoses.length ? { deformation: { sources: deformationSources, poses: deformationPoses } } : {}) };
   // 与运行时包/GPU 上传同一实例 ABI(v5),非默认 IOR 的真实材质才不会在编译期被误拒。
-  prepareRenderPacket(packet, STOCK_MATERIAL_INSTANCE_OPTIONS);
+  await prepareRenderPacketAsync(packet, STOCK_MATERIAL_INSTANCE_OPTIONS, signal);
   return { packet, objectBindings: objectBindings.sort((a, b) => compare(a.nodeId, b.nodeId)), sourceBytes,
     ...(hlodClusters.length ? { hlodClusters } : {}), ...(deformedModels.length ? { deformedModels } : {}),
-    ...(skippedModels.length ? { skippedModels } : {}), ...(textureLosses.length ? { textureLosses } : {}) };
+    ...(skippedModels.length ? { skippedModels } : {}), ...(textureLosses.length ? { textureLosses } : {}),
+    ...(materialLosses.length ? { materialLosses } : {}) };
 }
 
 function assertStaticModel(model: SceneModelState,

@@ -40,10 +40,11 @@ describe("StudioDeepWasmBridge", () => {
 
   it("reuses the live session for scene revisions and restores WebGL on failure", async () => {
     const runtime = fakeRuntime();
-    const { bridge, author, presentation } = fixture(runtime.module);
+    const { bridge, author, presentation, compilePackage } = fixture(runtime.module);
     await bridge.switchTo("wasm");
+    compilePackage.mockResolvedValue({ bytes: new Uint8Array([1, 2, 4]) });
     expect((await bridge.refresh()).status).toBe("switched");
-    expect(runtime.update).toHaveBeenCalledWith(7, new Uint8Array([1, 2, 3]));
+    expect(runtime.update).toHaveBeenCalledWith(7, new Uint8Array([1, 2, 4]));
     expect(author.style.opacity).toBe("0");
     expect(createdCanvases[0]?.style.opacity).toBe("1");
 
@@ -66,6 +67,45 @@ describe("StudioDeepWasmBridge", () => {
     expect(createdCanvases[0]?.remove).toHaveBeenCalledOnce();
   });
 
+  it("reuses an identical package after a WebGL round trip without native rebuild", async () => {
+    const runtime = fakeRuntime();
+    const { bridge, compilePackage } = fixture(runtime.module);
+    await bridge.switchTo("wasm");
+    await bridge.switchTo("webgl");
+    const retirement = vi.fn(async () => {
+      expect(runtime.start).toHaveBeenCalledOnce();
+      expect(runtime.update).not.toHaveBeenCalled();
+    });
+    expect((await bridge.switchTo("wasm", retirement)).status).toBe("switched");
+    expect(retirement).toHaveBeenCalledOnce();
+    expect(compilePackage).toHaveBeenCalledTimes(2);
+    expect((await bridge.refresh()).status).toBe("unchanged");
+    expect(runtime.update).not.toHaveBeenCalled();
+  });
+
+  it("keeps the previous presentation when retirement rejects and cleans up the candidate", async () => {
+    const runtime = fakeRuntime();
+    const { bridge, presentation } = fixture(runtime.module);
+    const result = await bridge.switchTo("wasm", async () => {
+      expect(runtime.start).toHaveBeenCalledOnce();
+      expect(presentation).not.toHaveBeenCalled();
+      throw new Error("retirement rejected");
+    });
+    expect(result).toMatchObject({ status: "failed", error: "retirement rejected" });
+    expect(runtime.stop).toHaveBeenCalledOnce();
+    expect(createdCanvases[0]?.remove).toHaveBeenCalledOnce();
+    expect(presentation).not.toHaveBeenCalled();
+  });
+
+  it("cancels before retiring the current renderer and removes the candidate canvas", async () => {
+    const runtime = fakeRuntime();
+    const { bridge } = fixture(runtime.module);
+    const retirement = vi.fn(async () => bridge.cancelPendingSwitch());
+    expect((await bridge.switchTo("wasm", retirement)).status).toBe("cancelled");
+    expect(runtime.stop).toHaveBeenCalledOnce();
+    expect(createdCanvases[0]?.remove).toHaveBeenCalledOnce();
+  });
+
   it("reads only a matching committed physics pose from the active WASM session", async () => {
     const runtime = fakeRuntime();
     const { bridge } = fixture(runtime.module);
@@ -84,6 +124,7 @@ describe("StudioDeepWasmBridge", () => {
     const container = { append: (value: ReturnType<typeof canvas>) => appended.push(value) };
     let callback: () => void = () => undefined;
     const presentation = vi.fn();
+    const compilePackage = vi.fn(async () => ({ bytes: new Uint8Array([1, 2, 3]) }));
     const viewer = {
       renderer: { domElement: author },
       getCameraState: () => ({ position: { x: 2, y: 3, z: 4 }, target: { x: 0, y: 0, z: 0 }, mode: "orbit" }),
@@ -93,11 +134,11 @@ describe("StudioDeepWasmBridge", () => {
     };
     const bridge = new StudioDeepWasmBridge(viewer as never, container as never, {
       loadModule: async () => module,
-      compilePackage: async () => new Uint8Array([1, 2, 3]),
+      compilePackage,
       preparationTimeoutMs: 100,
     });
     owned.push(bridge);
-    return { bridge, author, presentation, frame: () => callback(), appended };
+    return { bridge, author, presentation, compilePackage, frame: () => callback(), appended };
   }
 });
 

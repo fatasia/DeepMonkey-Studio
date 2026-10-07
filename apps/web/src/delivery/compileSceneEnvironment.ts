@@ -33,8 +33,10 @@ export function compileSceneEnvironment(value: unknown, authorLighting?: unknown
     outputTransform: "native-aces-grading-v9", ...(lighting ? { lighting } : {}), ...(fog ? { fog } : {}),
     colorGrading: grading,
     backgroundSrgb: [1, 3, 5].map(offset => parseInt(color.slice(offset, offset + 2), 16) / 255) as [number, number, number] };
-  if (builtinStudio) return { schema: "deep-engine.solid-environment", schemaVersion: 8, id: "scene.environment", revision: 1,
-    kind: "solid-background-builtin-ibl", outputTransform: "native-aces-studio-v8", ...(lighting ? { lighting } : {}), ...(fog ? { fog } : {}),
+  // 视觉一致性收口:studio 档升 v10(渐变背景,渲染端全屏 pass 消费,与 Three
+  // getSkyboxTexture("studio") 同源三 stop);backgroundSrgb 保留为兜底清屏色。
+  if (builtinStudio) return { schema: "deep-engine.solid-environment", schemaVersion: 10, id: "scene.environment", revision: 1,
+    kind: "solid-background-builtin-ibl", outputTransform: "native-aces-studio-gradient-v10", ...(lighting ? { lighting } : {}), ...(fog ? { fog } : {}),
     backgroundSrgb: [1, 3, 5].map(offset => parseInt(color.slice(offset, offset + 2), 16) / 255) as [number, number, number] };
   if (fog) return { schema: "deep-engine.solid-environment", schemaVersion: 7, id: "scene.environment", revision: 1,
     kind: "solid-background-no-ibl", outputTransform: "native-aces-fog-v7", ...(lighting ? { lighting } : {}), fog,

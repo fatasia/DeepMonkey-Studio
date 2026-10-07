@@ -49,6 +49,9 @@ mod environment_update;
 #[cfg(all(test, windows))]
 mod device_loss_probe;
 mod frame;
+mod transmission;
+#[cfg(all(test, windows))]
+mod physical_material_gpu_tests;
 mod frame_probes;
 mod frame_target;
 mod hi_z_pyramid;
@@ -58,6 +61,18 @@ mod init;
 mod init_report;
 mod initial_preparation;
 mod material_resource_diff;
+mod megalights_gpu;
+mod megalights_gbuffer;
+mod megalights_inputs;
+mod megalights_composite;
+#[cfg(test)]
+mod megalights_gpu_tests;
+#[cfg(test)]
+mod megalights_material_gpu_tests;
+#[cfg(test)]
+mod megalights_full_hd_gpu_tests;
+#[cfg(all(test, target_os = "windows"))]
+mod megalights_gpu_probe_tests;
 mod megalights_runtime;
 #[cfg(all(test, target_os = "windows"))]
 mod material_uniform_fastpath_gpu_tests;
@@ -148,6 +163,10 @@ pub struct Renderer {
     /// P1 质量主线:megaLights RIS 生产帧接线(门控默认关;执行腿待真机门,
     /// 视觉零影响)。
     mega_lights: Option<megalights_runtime::MegaLightsFrameRuntime>,
+    /// 前向深度视图代(resize 递增;megalights GPU 腿换代重建键)。
+    /// v10 studio 渐变背景管线(format 与 forward 目标同;MSAA 4×)。
+    studio_background_pipeline: wgpu::RenderPipeline,
+    forward_depth_epoch: u64,
     shadow_map: ShadowMap,
     ibl: GpuIblEnvironment,
     shadow_cache: ShadowDirtyCache,
@@ -301,6 +320,7 @@ impl Renderer {
             content_profile::forward_size(self.content_profile.compact_forward_targets, size),
             self.scene.has_outline(),
         );
+        if self.scene.has_transmission() { next_forward.enable_transmission(&self.device); }
         let next_bloom: Option<BloomTargets> = self
             .bloom
             .as_ref()
@@ -332,6 +352,9 @@ impl Renderer {
         self.surface.configure(&self.device, &self.config);
         next_forward.background = self.forward_targets.background;
         self.forward_targets = next_forward;
+        self.bind_transmission_source();
+        // megalights GPU 腿换代键:前向目标(深度纹理)换代 → 链原位重建。
+        self.forward_depth_epoch = self.forward_depth_epoch.wrapping_add(1);
         // HiZ 金字塔跟随前向目标尺寸重建;遮挡判定/消费链按新源重挂
         // (OcclusionSource 的尺寸与 mip 视图随金字塔实例固定)。
         self.hi_z = self.rebuild_hi_z()?;

@@ -31,26 +31,14 @@ export interface PublishedRendererDecision {
   reason: "publication-webgl" | "webgpu-unavailable" | "preserve-authored-effects" | "webgpu-preferred";
 }
 
-/**
- * 零配置默认渲染器：WebGPU API 在场即直接进 Deep（Z1 P0，第一梯队管线成为默认
- * 画面）；API 缺席回退 WebGL。启动期同步探测只看 `navigator.gpu` 是否存在——
- * 适配器级失败（请求失败/不支持/非安全上下文）由既有 fail-closed 链兜底：
- * switchTo 失败 → 宿主 setRendererBackend("webgl") 保留画布；运行期失败 →
- * onRuntimeFailure → publishWebGl。此处不做能力猜测。
- * 优先级：URL 参数 > 持久化偏好（含显式 webgl） > 能力默认。
- */
+/** Zero-config editing starts with Three/WebGL. Explicit URL and saved choices take precedence. */
 export function initialRendererBackend(queryValue: string | null, storedValue: string | null): RendererBackend {
   if (queryValue === "wasm") return "wasm";
   if (queryValue === "webgpu") return "webgpu";
   if (queryValue === "webgl" || queryValue === "auto") return "webgl";
   if (storedValue === "webgpu" || storedValue === "wasm") return storedValue;
   if (storedValue === "webgl") return "webgl";
-  return webGpuApiPresent() ? "webgpu" : "webgl";
-}
-
-function webGpuApiPresent(): boolean {
-  return typeof navigator !== "undefined" && "gpu" in navigator
-    && Boolean((navigator as Navigator & { gpu?: unknown }).gpu);
+  return "webgl";
 }
 
 /** 从持久化场景中提取仍需 WebGL 发布守卫的作者效果。 */
@@ -108,7 +96,12 @@ export async function probeRendererCapabilities(): Promise<RendererCapabilityPro
   let adapter: AdapterLike | null = null;
   if (gpu && window.isSecureContext) {
     try {
-      adapter = await gpu.requestAdapter({ powerPreference: "high-performance" }) as AdapterLike | null;
+      // GPU 进程高压力(WASM 大包会话并存、驱动重置)下 requestAdapter 可能
+      // 长时间不返回;8s 无响应按探测失败处理,诊断面板不能永远停在预检。
+      adapter = await Promise.race([
+        gpu.requestAdapter({ powerPreference: "high-performance" }) as Promise<AdapterLike | null>,
+        new Promise<null>(resolve => setTimeout(() => resolve(null), 8_000)),
+      ]) as AdapterLike | null;
     } catch {
       adapter = null;
     }

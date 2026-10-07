@@ -33,6 +33,9 @@ pub(super) struct DecodedSolidEnvironment {
     pub(super) fog: Option<FogSettings>,
     pub(super) grading: Option<crate::author_grading::AuthorGrading>,
     pub(super) display_profile: crate::output_color_profile::OutputColorProfile,
+    /// v10 studio 渐变档:背景由渲染端全屏渐变 pass 消费,`background` 只作
+    /// 兜底清屏色(渐变底 stop)。
+    pub(super) studio_gradient: bool,
 }
 
 pub(super) fn validate_static_lightmap(
@@ -276,6 +279,13 @@ pub(super) fn decode(
                 && lighting.is_none_or(|light| light.validate().is_ok())
                 && source.ibl.is_none()
         }
+        // v10 studio 渐变档:kind/字段与 v8 完全同形,仅 outputTransform 名
+        // 描述渐变背景;无新字段,背景由渲染端 studio gradient pass 消费。
+        (10, lighting) => {
+            source.output_transform == "native-aces-studio-gradient-v10"
+                && lighting.is_none_or(|light| light.validate().is_ok())
+                && source.ibl.is_none()
+        }
         _ => false,
     };
     if source.schema != "deep-engine.solid-environment"
@@ -299,13 +309,19 @@ pub(super) fn decode(
                 } else {
                     ""
                 }
+            } else if source.schema_version == 10 {
+                if source.kind == "solid-background-builtin-ibl" {
+                    source.kind.as_str()
+                } else {
+                    ""
+                }
             } else {
                 "solid-background-no-ibl"
             }
         || (source.schema_version != 6 && value.get("ibl").is_some())
         // deny-unknown 不覆盖已声明的 Option 字段：非 v7/v8/v9 档声明 fog、
         // 非 v9 档声明 colorGrading 一律拒绝（档位名必须真实描述包内容）。
-        || (![7, 8, 9].contains(&source.schema_version) && value.get("fog").is_some())
+        || (![7, 8, 9, 10].contains(&source.schema_version) && value.get("fog").is_some())
         || (source.schema_version != 9 && value.get("colorGrading").is_some())
         || source
             .background_srgb
@@ -333,18 +349,28 @@ pub(super) fn decode(
         })
         .transpose()?;
     // Three 的 Color 背景不经 tone mapping；抵消现有固定 ACES，保持作者 sRGB。
+    let studio_gradient = source.schema_version == 10;
     Ok(DecodedSolidEnvironment {
-        background: match source.display_profile {
-            crate::output_color_profile::OutputColorProfile::DeepAces => {
-                source.background_srgb.map(inverse_output)
-            }
-            crate::output_color_profile::OutputColorProfile::ThreeAcesR185 => {
-                crate::output_color_profile::three_background_linear(source.background_srgb)
+        background: {
+            // v10 渐变档:兜底清屏色取渐变底 stop(渲染端 pass 覆盖全屏)。
+            let fallback_srgb = if studio_gradient {
+                crate::studio_background::STUDIO_GRADIENT_STOPS_SRGB[2]
+            } else {
+                source.background_srgb
+            };
+            match source.display_profile {
+                crate::output_color_profile::OutputColorProfile::DeepAces => {
+                    fallback_srgb.map(inverse_output)
+                }
+                crate::output_color_profile::OutputColorProfile::ThreeAcesR185 => {
+                    crate::output_color_profile::three_background_linear(fallback_srgb)
+                }
             }
         },
         fog,
         grading,
         display_profile: source.display_profile,
+        studio_gradient,
     })
 }
 
@@ -360,6 +386,12 @@ pub(super) fn lighting(
     serde_json::from_value::<SolidEnvironment>(value.clone())
         .ok()?
         .lighting
+}
+
+/// v10 渐变底 stop 的兜底清屏色(DeepAces 逆变换,与 studio_background 同源)。
+#[cfg(test)]
+pub(super) fn studio_gradient_fallback_background() -> [f64; 3] {
+    crate::studio_background::STUDIO_GRADIENT_STOPS_SRGB[2].map(inverse_output)
 }
 
 fn inverse_output(srgb: f64) -> f64 {

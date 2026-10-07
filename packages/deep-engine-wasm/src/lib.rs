@@ -7,16 +7,39 @@ mod physics_pose;
 pub use physics_pose::viewer_physics_pose;
 
 thread_local! {
-    static SCENE_PACKAGE: std::cell::RefCell<Option<Vec<u8>>> = const { std::cell::RefCell::new(None) };
+    static SCENE_PACKAGE: std::cell::RefCell<Option<runtime_package_startup::PreparedRuntimePackage>> = const { std::cell::RefCell::new(None) };
     static VIEWER_SESSIONS: std::cell::RefCell<std::collections::BTreeMap<u32, winit::event_loop::EventLoopProxy<events::GpuEvent>>> = const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
     static NEXT_VIEWER_SESSION: std::cell::Cell<u32> = const { std::cell::Cell::new(1) };
 }
 
 #[wasm_bindgen]
 pub fn set_scene_package(bytes: &[u8]) -> Result<(), JsValue> {
-    deep_engine_native::runtime_package::parse_and_validate_runtime_package(bytes)
-        .map_err(|error| JsValue::from_str(&error.to_string()))?;
-    SCENE_PACKAGE.with(|slot| *slot.borrow_mut() = Some(bytes.to_vec()));
+    let package =
+        runtime_package_startup::load_bytes(bytes).map_err(|error| JsValue::from_str(&error))?;
+    SCENE_PACKAGE.with(|slot| *slot.borrow_mut() = Some(package));
+    Ok(())
+}
+
+/// Recompute the canonical package hash on the compilation worker's own wasm
+/// instance. Same function as the consuming thread's verification path, so the
+/// value is domain-identical; the main thread then verifies against it instead
+/// of re-walking the tree a second time.
+#[wasm_bindgen]
+pub fn compute_runtime_package_canonical_hash(bytes: &[u8]) -> Result<String, JsValue> {
+    deep_engine_native::runtime_package::compute_runtime_package_canonical_hash(bytes)
+        .map_err(|error| JsValue::from_str(&error.to_string()))
+}
+
+/// Verification against the worker-computed canonical hash; every other check
+/// matches `set_scene_package` exactly.
+#[wasm_bindgen]
+pub fn set_scene_package_with_expected_hash(
+    bytes: &[u8],
+    expected_hash: &str,
+) -> Result<(), JsValue> {
+    let package = runtime_package_startup::load_bytes_with_expected_hash(bytes, expected_hash)
+        .map_err(|error| JsValue::from_str(&error))?;
+    SCENE_PACKAGE.with(|slot| *slot.borrow_mut() = Some(package));
     Ok(())
 }
 
@@ -48,11 +71,11 @@ pub fn add_runtime_font(
 #[wasm_bindgen]
 pub fn start_scene_viewer(canvas: Option<web_sys::HtmlCanvasElement>) -> Result<u32, JsValue> {
     console_error_panic_hook::set_once();
-    let bytes = SCENE_PACKAGE
-        .with(|slot| slot.borrow().clone())
-        .ok_or_else(|| JsValue::from_str("scene package bytes were not injected"))?;
-    let package =
-        runtime_package_startup::load_bytes(&bytes).map_err(|error| JsValue::from_str(&error))?;
+    let package = SCENE_PACKAGE
+        .with(|slot| slot.borrow_mut().take())
+        .ok_or_else(|| {
+            JsValue::from_str("scene package was not injected or was already consumed")
+        })?;
     app_startup::set_wasm_canvas(canvas);
     let proxy =
         app::spawn_wasm(package.into_content()).map_err(|error| JsValue::from_str(&error))?;
@@ -78,13 +101,31 @@ pub fn stop_scene_viewer(handle: u32) {
 
 #[wasm_bindgen]
 pub fn update_scene_viewer(handle: u32, bytes: &[u8]) -> Result<(), JsValue> {
-    deep_engine_native::runtime_package::parse_and_validate_runtime_package(bytes)
-        .map_err(|error| JsValue::from_str(&error.to_string()))?;
     let proxy = VIEWER_SESSIONS
         .with(|sessions| sessions.borrow().get(&handle).cloned())
         .ok_or_else(|| JsValue::from_str("scene viewer handle is not active"))?;
+    let package =
+        runtime_package_startup::load_bytes(bytes).map_err(|error| JsValue::from_str(&error))?;
     proxy
-        .send_event(events::GpuEvent::WasmScenePackage(bytes.to_vec()))
+        .send_event(events::GpuEvent::WasmScenePackage(Box::new(package)))
+        .map_err(|_| JsValue::from_str("scene viewer event loop is closed"))
+}
+
+/// Same validation as `update_scene_viewer`, verifying against the
+/// worker-computed canonical hash instead of re-walking the tree.
+#[wasm_bindgen]
+pub fn update_scene_viewer_with_expected_hash(
+    handle: u32,
+    bytes: &[u8],
+    expected_hash: &str,
+) -> Result<(), JsValue> {
+    let proxy = VIEWER_SESSIONS
+        .with(|sessions| sessions.borrow().get(&handle).cloned())
+        .ok_or_else(|| JsValue::from_str("scene viewer handle is not active"))?;
+    let package = runtime_package_startup::load_bytes_with_expected_hash(bytes, expected_hash)
+        .map_err(|error| JsValue::from_str(&error))?;
+    proxy
+        .send_event(events::GpuEvent::WasmScenePackage(Box::new(package)))
         .map_err(|_| JsValue::from_str("scene viewer event loop is closed"))
 }
 
@@ -190,6 +231,13 @@ pub mod deep2d_context_wiring_tests;
 
 #[path = "../../deep-engine-native/src/deep2d_gpu.rs"]
 pub mod deep2d_gpu;
+
+#[path = "../../deep-engine-native/src/deep2d_backdrop_gpu.rs"]
+pub mod deep2d_backdrop_gpu;
+#[path = "../../deep-engine-native/src/deep2d_dynamic_gpu.rs"]
+pub mod deep2d_dynamic_gpu;
+#[path = "../../deep-engine-native/src/deep2d_frame_context.rs"]
+pub mod deep2d_frame_context;
 
 #[path = "../../deep-engine-native/src/deep2d_gpu_cache.rs"]
 pub mod deep2d_gpu_cache;
@@ -466,7 +514,6 @@ pub mod x_package_window;
 pub mod x_worker_cli;
 
 #[cfg(feature = "bench-viewer")]
-
 #[cfg(feature = "bench-viewer")]
 #[path = "bench_viewer.rs"]
 pub mod bench_viewer;

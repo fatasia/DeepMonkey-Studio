@@ -59,7 +59,7 @@ export interface RuntimeIrradianceProbe {
 /** 固定输出变换的纯色背景；不携带直射灯或全局照明状态。 */
 export interface RuntimeSolidEnvironment {
   readonly schema: "deep-engine.solid-environment";
-  readonly schemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+  readonly schemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
   readonly id: "scene.environment";
   readonly revision: 1;
   readonly kind: "solid-background-no-ibl" | "solid-background-prefiltered-ibl" | "solid-background-builtin-ibl";
@@ -67,7 +67,7 @@ export interface RuntimeSolidEnvironment {
   readonly backgroundSrgb: readonly [number, number, number];
   /** Optional display math; omission preserves the published Native default. */
   readonly displayProfile?: "deep-aces" | "three-aces-r185";
-  readonly outputTransform: "native-aces-v1" | "native-aces-light-v2" | "native-aces-lights-v3" | "native-aces-spot-shadows-v4" | "native-aces-local-shadows-v5" | "native-aces-hdr-v6" | "native-aces-fog-v7" | "native-aces-studio-v8" | "native-aces-grading-v9";
+  readonly outputTransform: "native-aces-v1" | "native-aces-light-v2" | "native-aces-lights-v3" | "native-aces-spot-shadows-v4" | "native-aces-local-shadows-v5" | "native-aces-hdr-v6" | "native-aces-fog-v7" | "native-aces-studio-v8" | "native-aces-grading-v9" | "native-aces-studio-gradient-v10";
   readonly lighting?: RuntimeAuthoredLighting;
   /** B6 静态贴图描述符；缺失时表示没有烘焙光照，不应推断为黑色贴图。 */
   readonly staticLightmap?: RuntimeStaticLightmapDescriptor;

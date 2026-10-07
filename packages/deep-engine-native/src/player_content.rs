@@ -51,6 +51,8 @@ pub struct PlayerContent {
     pub chart_sim: Option<chart_sim::ChartSimHost>,
     pub environment: PreparedIblEnvironment,
     pub background: Option<[f64; 3]>,
+    /// v10 studio 渐变档:渲染端用全屏渐变 pass 画背景。
+    pub studio_background_gradient: bool,
     pub lighting: Option<deep_engine_native::scene_lighting::DirectionalLighting>,
     /// v7 作者雾（exp2）；渲染器装配时经 `for_content` 替换宿主雾档。
     pub fog: Option<FogSettings>,
@@ -195,6 +197,7 @@ impl PlayerContent {
             chart_sim: None,
             environment: builtin_default_environment(),
             background: None,
+            studio_background_gradient: false,
             lighting: None,
             fog: None,
             author_grading: None,
@@ -224,6 +227,7 @@ impl PlayerContent {
             dashboard,
             environment,
             background,
+            studio_background_gradient,
             lighting,
             fog,
             author_grading,
@@ -315,6 +319,7 @@ impl PlayerContent {
             chart_sim: entry.chart_sim,
             environment,
             background,
+            studio_background_gradient,
             lighting,
             fog,
             author_grading,
@@ -645,6 +650,13 @@ impl PlayerContent {
 
     pub fn runtime_package(&self) -> Option<&RuntimePackageSnapshot> {
         self.runtime_package.as_ref()
+    }
+
+    /// Benchmark observation uses the ordinary replacement transaction, retaining
+    /// the package camera/environment and source identity across packet updates.
+    pub(crate) fn replace_benchmark_packet(&mut self, packet: RenderPacket) {
+        self.packet = packet;
+        self.scene_content_key = crate::player_shader_plan::scene_content_key(&self.packet);
     }
 
     #[cfg(test)]

@@ -1,8 +1,11 @@
 pub mod adapter_n1;
+pub mod benchmark_observer;
+pub mod benchmark_workload;
 /// atmosphere-sky 能力行(native 缺位补齐,2026-10-06):T09 解析单散射天空的
 /// CPU 权威镜像 + WGSL 单源 + 全屏背景管线(TS skyReference.ts 同构;
 /// 登记 supported/harness-only,生产背景 pass 接线为后继切片)。
 pub mod atmosphere_sky;
+pub mod studio_background;
 pub mod ground_preview;
 pub mod asset_package;
 pub mod author_grading;
@@ -101,6 +104,7 @@ pub mod probe_gi_storage;
 /// F5 WGSL 单源试点:探针 GI 采样库的 include_str! 消费端与双端校验和对拍(详见模块文档)。
 pub mod probe_gi_wgsl;
 pub mod native_mesh_wgsl;
+mod native_material_source;
 #[cfg(test)]
 mod probe_gi_native_adapter_tests;
 /// P1 质量主线(六引擎对标刀位 1):native SDF-GI 链——场景级 SDF 体积烘焙

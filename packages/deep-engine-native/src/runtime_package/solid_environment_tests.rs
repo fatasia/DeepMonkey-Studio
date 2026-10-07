@@ -322,3 +322,23 @@ fn grading_profile_admits_plain_no_ibl_kind_and_rejects_unknown_kinds() {
     wrong["kind"] = serde_json::json!("solid-background-prefiltered-ibl");
     assert!(decode(&wrong, "scene.environment", 1).is_err());
 }
+
+#[test]
+fn v10_studio_gradient_decodes_with_fallback_background_and_flag() {
+    let mut value = source();
+    value["schemaVersion"] = serde_json::json!(10);
+    value["kind"] = serde_json::json!("solid-background-builtin-ibl");
+    value["outputTransform"] = serde_json::json!("native-aces-studio-gradient-v10");
+    value["backgroundSrgb"] = serde_json::json!([32.0 / 255.0, 42.0 / 255.0, 49.0 / 255.0]);
+    let decoded = decode(&value, "scene.environment", 1).expect("v10 decode");
+    assert!(decoded.studio_gradient);
+    let expected = super::studio_gradient_fallback_background();
+    assert!(decoded.background.iter().zip(expected).all(|(a, b)| (a - b).abs() < 1e-12));
+
+    // 非 builtin kind 或旧 outputTransform 在 v10 一律拒绝(档位名必须真实)。
+    value["kind"] = serde_json::json!("solid-background-no-ibl");
+    assert!(decode(&value, "scene.environment", 1).is_err());
+    value["kind"] = serde_json::json!("solid-background-builtin-ibl");
+    value["outputTransform"] = serde_json::json!("native-aces-studio-v8");
+    assert!(decode(&value, "scene.environment", 1).is_err());
+}

@@ -62,12 +62,16 @@ pub struct OutlineTargets {
 #[allow(dead_code)]
 pub struct ForwardTargets {
     pub background: Option<[f64; 3]>,
+    /// v10 studio 渐变档:opaque 前先跑渐变背景 pass,mesh pass 颜色 Load。
+    pub studio_gradient: bool,
     hdr: wgpu::Texture,
     _msaa: wgpu::Texture,
     _depth: wgpu::Texture,
     pub hdr_view: wgpu::TextureView,
     pub msaa_view: wgpu::TextureView,
     pub depth_view: wgpu::TextureView,
+    scene_opaque: Option<wgpu::Texture>,
+    pub scene_opaque_view: Option<wgpu::TextureView>,
     pub outline: Option<OutlineTargets>,
     pub normal_capture: Option<NormalCaptureTargets>,
 }
@@ -128,12 +132,15 @@ impl ForwardTargets {
         let depth_view = depth.create_view(&Default::default());
         Self {
             background: None,
+            studio_gradient: false,
             hdr,
             _msaa: msaa,
             _depth: depth,
             hdr_view,
             msaa_view,
             depth_view,
+            scene_opaque: None,
+            scene_opaque_view: None,
             outline: outline.then(|| OutlineTargets::new(device, extent)),
             normal_capture: capture.then(|| NormalCaptureTargets::new(device, extent)),
         }
@@ -154,6 +161,20 @@ impl ForwardTargets {
         self.normal_capture
             .as_ref()
             .map(|targets| &targets.resolved)
+    }
+
+    pub fn enable_transmission(&mut self, device:&wgpu::Device) {
+        if self.scene_opaque.is_some() { return; }
+        let texture=device.create_texture(&wgpu::TextureDescriptor {label:Some("Native transmission opaque scene"),
+            size:self.hdr.size(),mip_level_count:1,sample_count:1,dimension:wgpu::TextureDimension::D2,
+            format:FORWARD_COLOR_FORMAT,usage:wgpu::TextureUsages::COPY_DST|wgpu::TextureUsages::TEXTURE_BINDING,view_formats:&[]});
+        self.scene_opaque_view=Some(texture.create_view(&Default::default()));
+        self.scene_opaque=Some(texture);
+    }
+    pub fn copy_opaque_for_transmission(&self,encoder:&mut wgpu::CommandEncoder) {
+        if let Some(target)=&self.scene_opaque {
+            encoder.copy_texture_to_texture(self.hdr.as_image_copy(),target.as_image_copy(),self.hdr.size());
+        }
     }
 
     /// 前向目标实际宽度(HiZ 金字塔取数基准;compact 档可为 1)。
