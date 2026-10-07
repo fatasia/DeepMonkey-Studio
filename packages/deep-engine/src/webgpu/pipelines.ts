@@ -58,6 +58,10 @@ export interface Pipelines {
   /** M2 光追阴影:group(2) 追加 binding(3) r32float mask 槽(仅 features.rayTracedShadows
    *  构建档为 true;CascadedShadowResources 据此追加第 4 条 bind group entry 并支持运行时换 view)。 */
   readonly rayTracedShadowMaskBinding: boolean;
+  /** 级联档 frame 组 0 布局剥离 12..14(仅虚拟档消费;旧 Chromium per-stage 基线
+   *  16 sampled / 8 storage,恒挂会把主片元推到 17/10 超限)→ 虚拟档为 true,
+   *  mainBindings 据此决定是否装配页表/atlas(真资源或占位)。缺省 = 级联档。 */
+  readonly virtualFrameBindings?: boolean;
   readonly deformationPlainLayout?: GPUBindGroupLayout;
   /** Conventional D2 variant used by materials that cannot enter an array. */
   readonly textureArrayFallback?: Pipelines;
@@ -222,6 +226,21 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   const [sceneInfo] = await Promise.all([module.getCompilationInfo(), sharedOutput.validated]);
   const errors = sceneInfo.messages.filter(message => message.type === "error");
   if (errors.length) throw new Error(errors.map(message => `WGSL ${message.lineNum}: ${message.message}`).join("\n"));
+  // B1 Brief-VSM:虚拟阴影页表 meta/layers(storage)与页 atlas(unfilterable float
+  // 2d-array)挂 frame 组 0 尾部(仅 virtual 档消费)。级联档剥离这三槽:着色端
+  // (sceneShader 非虚拟家族)不静态声明/使用 12..14(VIRTUAL_SHADOW_WGSL 只进
+  // virtual 变体),而旧 Chromium(Dawn 扩展上限落地前)的 per-stage 基线是
+  // 16 sampled / 8 storage —— 恒挂 15 槽会把主片元推到 17 sampled / 10 storage
+  // 超限,CreatePipelineLayout 验证失败且被 HDR environment 的 error scope 捕获
+  //(2026-10-06 真机:引擎切换被"HDR environment GPU validation failed …
+  // sampled textures (17) … (16)"阻断)。虚拟档保持 15 槽并由 mainBindings 填真资源;
+  // 级联档装配端同步跳过(见 pbrMainBindings.virtualFrameBindings)。
+  const virtualFrameEntries: GPUBindGroupLayoutEntry[] = virtualShadowPages ? [
+    { binding: 12, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+    { binding: 13, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+    { binding: 14, visibility: GPUShaderStage.FRAGMENT,
+      texture: { sampleType: "unfilterable-float", viewDimension: "2d-array" } },
+  ] : [];
   markPipeline("shaders-validated");  const frameLayout = device.createBindGroupLayout({ entries: [
     { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
       buffer: { type: "uniform", minBindingSize: PBR_FRAME_UNIFORM_BYTES } },
@@ -234,13 +253,7 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     { binding: 8, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 32 } },
     ...[9, 10].map(binding => ({ binding, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "cube" as const } })),
     { binding: 11, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 128 } },
-    // B1 Brief-VSM:虚拟阴影页表 meta/layers(storage)与页 atlas(unfilterable float
-    // 2d-array)挂 frame 组 0 尾部(仅 virtual 档消费;级联档由 mainBindings 以占位
-    // 16B buffer/4×4 纹理填充,params2.x=0 时着色端不读)。
-    { binding: 12, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
-    { binding: 13, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
-    { binding: 14, visibility: GPUShaderStage.FRAGMENT,
-      texture: { sampleType: "unfilterable-float", viewDimension: "2d-array" } },
+    ...virtualFrameEntries,
   ] });
   const material = device.createBindGroupLayout({ entries: textureArrays
     ? [...textureArrayMaterialTableLayoutEntries(), ...poseEntries]
@@ -521,6 +534,7 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     get outputShaderProvenance() { return outputProvenance; },
     materialLayout: { material, ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}) }, cascadedShadowLayout,
     rayTracedShadowMaskBinding: rayTracedShadows,
+    ...(virtualShadowPages ? { virtualFrameBindings: true } : {}),
     ...(deformation ? { deformationPlainLayout: emptyMaterialLayout } : {}),
   };
   // 对象展开会立即求值访问器，条件可选字段必须用 defineProperty 挂 getter，

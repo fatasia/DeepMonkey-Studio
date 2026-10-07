@@ -131,8 +131,12 @@ export class PbrMainBindings {
   private createBinding(environment: StudioEnvironment, shadows = this.shadows,
     reflectionBuffer = this.reflectionBuffers[this.reflectionBufferIndex]!): GPUBindGroup {
     const [primary, secondary] = pbrReflectionProbeViews(environment);
-    // B1 Brief-VSM:组 0 绑定 12/13/14 = 虚拟页表/atlas(virtual 档真资源;级联档占位)。
-    const virtual = this.virtualBinding ?? this.ensurePlaceholderBinding();
+    // 级联档 frame 布局剥离 12..14(2026-10-06 真机修复:旧 Chromium per-stage 基线
+    // 16 sampled / 8 storage,恒挂 15 槽使主片元 17 sampled / 10 storage 超限,
+    // CreatePipelineLayout 验证失败 → Deep WebGPU 切换被阻断);虚拟档保留页表/atlas
+    // (真资源或级联占位)。bind group 条目必须与布局逐槽对应,装配端同步跳过。
+    const virtual = this.pipelines.virtualFrameBindings === true
+      ? (this.virtualBinding ?? this.ensurePlaceholderBinding()) : undefined;
     return this.session.device.createBindGroup({ layout: this.pipelines.main.getBindGroupLayout(0), entries: [
       { binding: 0, resource: { buffer: this.frameBuffer } }, { binding: 1, resource: shadows.legacyView },
       { binding: 2, resource: shadows.sampler }, { binding: 3, resource: environment.specular },
@@ -141,9 +145,11 @@ export class PbrMainBindings {
       { binding: 8, resource: { buffer: this.fogBuffer } },
       { binding: 9, resource: primary }, { binding: 10, resource: secondary },
       { binding: 11, resource: { buffer: reflectionBuffer } },
-      { binding: 12, resource: { buffer: virtual.metaBuffer } },
-      { binding: 13, resource: { buffer: virtual.layersBuffer } },
-      { binding: 14, resource: virtual.atlasView },
+      ...(virtual ? [
+        { binding: 12, resource: { buffer: virtual.metaBuffer } },
+        { binding: 13, resource: { buffer: virtual.layersBuffer } },
+        { binding: 14, resource: virtual.atlasView },
+      ] : []),
     ] });
   }
 
