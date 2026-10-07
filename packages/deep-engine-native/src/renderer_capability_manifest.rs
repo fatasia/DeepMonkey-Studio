@@ -149,13 +149,14 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         evidence: "probe_gi_abi 96B 布局合同 + renderer::native_gi_producer 直光种子;无 32 方向辐射内核",
     },
     // P1 质量主线(六引擎对标刀位 1,2026-10-06):native SDF-GI 链入库——CPU 权威
-    // 镜像与生产 WGSL 单源齐备,真机 GPU 门过;生产 renderer 帧循环接线为后继切片,
-    // 如实 harness-only(与 auto-exposure/spatial-aa 同款登记)。
+    // 镜像与生产 WGSL 单源齐备,真机 GPU 门过;2026-10-06 生产帧接线批:门控 CPU 链
+    // 已接进 renderer 帧循环(烘焙→驻留→滑窗采样→既有探针 storage/采样消费),
+    // GPU dispatch 三核与真机复验仍为后继切片,维持 harness-only(不虚报生产)。
     NativeCapabilitySelfCheck {
         capability_id: "sdf-gi",
         support: RendererCapabilitySupport::Supported,
         reason: RendererCapabilityReasonCode::HarnessOnly,
-        evidence: "src/sdf_gi_scene.rs(场景 SDF 体积烘焙 CPU 权威镜像:triangleDistance 精确距离+rayX 奇偶定号+逐实例域+min 合成+探针 lattice 推导,TS sdfSceneBake/sdfGrid 逐式同构) + src/sdf_gi_trace.rs(天光圆锥追踪 visibility+hitDistance 双输出+Fibonacci 方向集) + src/sdf_gi_probe_update.rs(L1 SH 投影/bounce 能量哨兵/时域滤波/命中统计归约/窗口计划,记录直供 probe_gi_abi 96B) + src/sdf_gi_wgsl.rs(三个 WGSL 计算核 include_str 单源+校验和双端 Rust 半);对拍 src/sdf_gi_parity_tests.rs 与 TS 权威 fixture 位级(f32 词逐字+SHA-256:1872 cells/24 探针/384 lanes/双帧记录流/初值,唯二跨 libm 哨兵 coneTan≤4ulp 与 targetEnergy≤1e-9) + 真机 src/sdf_gi_gpu_probe_tests.rs(RTX 4060/Vulkan:非翻转 cells 距离逐位 mean=max=0,trace/update 全词逐位 0 误差,烘焙符号翻转 64/1872=3.4%≤5% 预算=WGSL 退化射线文档化限制);如实 harness-only:生产 renderer 帧循环接线后继切片,烘焙哈希缓存子集缺(TS cached 状态恒 0)",
+        evidence: "src/sdf_gi_scene.rs(场景 SDF 体积烘焙 CPU 权威镜像:triangleDistance 精确距离+rayX 奇偶定号+逐实例域+min 合成+探针 lattice 推导,TS sdfSceneBake/sdfGrid 逐式同构) + src/sdf_gi_trace.rs(天光圆锥追踪 visibility+hitDistance 双输出+Fibonacci 方向集) + src/sdf_gi_probe_update.rs(L1 SH 投影/bounce 能量哨兵/时域滤波/命中统计归约/窗口计划,记录直供 probe_gi_abi 96B) + src/sdf_gi_wgsl.rs(三个 WGSL 计算核 include_str 单源+校验和双端 Rust 半);对拍 src/sdf_gi_parity_tests.rs 与 TS 权威 fixture 位级(f32 词逐字+SHA-256:1872 cells/24 探针/384 lanes/双帧记录流/初值,唯二跨 libm 哨兵 coneTan≤4ulp 与 targetEnergy≤1e-9) + 真机 src/sdf_gi_gpu_probe_tests.rs(RTX 4060/Vulkan:非翻转 cells 距离逐位 mean=max=0,trace/update 全词逐位 0 误差,烘焙符号翻转 64/1872=3.4%≤5% 预算=WGSL 退化射线文档化限制);2026-10-06 生产帧接线已落:src/renderer/sdf_gi_runtime.rs 门控(DEEP_ENGINE_NATIVE_SDF_GI 缺省关)烘焙→探针 lattice→全域首追→legacy 单层格记录流经既有级联解码/storage/开关路径物化(binding 11 采样消费),帧循环窗口预算 256 探针重追+SH 更新+write_buffer 重上传,CPU 测试 renderer::sdf_gi_runtime_tests 6 个(解包/格合同/storage 打包/窗口确定性/反例);fail-closed:NoBakeable/BakeContract/ProbeLattice/ProbeGridContract/ProbeExtentExceeded/SkyRadianceMissing 六类拒因整体回退既有直光种子路径;如实边界:GPU dispatch(三核)与真机复验后继切片、静态层一次烘焙(动态重烘焙/哈希缓存后继)、故维持 harness-only",
     },
     NativeCapabilitySelfCheck {
         capability_id: "contact-shadows",
@@ -412,13 +413,15 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
     // CPU 权威镜像与生产 WGSL 单源齐备,双端 fixture 对拍过;真机 GPU leg 受 wgpu 30
     // naga 编译路径限制(见 megalights_gpu_probe_tests 已知限制;2026-10-07 预备刀:RIS 核
 // spatial 块 continue→嵌套 if 逐位等价改写已落地——嵌套循环携带状态+continue 是 naga
-// SPIR-V 结构化控制流误编译已知家族,两半校验和/parity 31 测试绿,真机复验待 GPU 串行窗口),生产 renderer 帧循环
-    // 接线为后继切片——如实 harness-only(与 sdf-gi/auto-exposure 同款登记)。
+// SPIR-V 结构化控制流误编译已知家族,两半校验和/parity 31 测试绿,真机复验待 GPU 串行窗口)。2026-10-06
+    // 生产帧接线批:帧运行时(决策/灯池/IES 行重映射/可见性可用性)已接进 renderer
+    // 帧循环且门控默认关,RIS 执行腿(GPU dispatch+像素消费 pass)待真机门,维持
+    // harness-only(不虚报生产,现役直射恒走簇光)。
     NativeCapabilitySelfCheck {
         capability_id: "megalights",
         support: RendererCapabilitySupport::Supported,
         reason: RendererCapabilityReasonCode::HarnessOnly,
-        evidence: "src/megalights_ris.rs(P1 质量主线刀位 2:统一灯池 64B/灯打包 ABI + RIS K=32 WRS 蓄水池 + 时域合并(单候选/深度门 0.1) + 5×5 空间值域无偏平均(源像素评价 W_src/法线门 0.9) + 胜者可见性 mask 只乘 shade 侧(self 本像素/空间源像素) + 穷举参考与穷举模式 + 直射通路选择(≤64 簇光快路径=clustered_lighting 组合,超预算 RIS);TS megaLights.ts/megaLightsRisCpu.ts 逐式同构,f64 中间量) + src/megalights_wgsl.rs(wgsl/megaLightsRis.wgsl 单源 include_str + .sha256 校验和 Rust 半,TS 半 megaLightsRisWgslChecksum.test.ts 同夹具,两半同绿=双端逐字节) + 对拍 src/megalights_parity_tests.rs 与 TS 权威 fixture(fixtures/megalights-native-parity-v1.json,生成器 packages/deep-engine/scripts/generateMegaLightsNativeParity.mts,黄金场景 8×6×12 灯×5 帧覆盖矩阵:空间值域平均/时域合并/EMA/self 回落/穷举/可见性/门分支;RNG 全流与蓄水池结构 winner/m 位级,weightSum f64 ≤1e-9 相对,f32 color 词 ≤2 ulp,唯跨 libm hypot/pow/exp2 哨兵如实) + 真机 src/megalights_gpu_probe_tests.rs(#[ignore];harness/设备对照核全过,但 RIS 核 dispatch 在 wgpu 30 naga 双后端执行期故障=编译路径已知限制,TS 生产 Dawn 同源正常,如实不虚报);如实 harness-only:生产 renderer 帧循环接线后继切片,IES 因子注入与可见性射线档(traceTwoLevelOccluded 家族)缺位",
+        evidence: "src/megalights_ris.rs(P1 质量主线刀位 2:统一灯池 64B/灯打包 ABI + RIS K=32 WRS 蓄水池 + 时域合并(单候选/深度门 0.1) + 5×5 空间值域无偏平均(源像素评价 W_src/法线门 0.9) + 胜者可见性 mask 只乘 shade 侧(self 本像素/空间源像素) + 穷举参考与穷举模式 + 直射通路选择(≤64 簇光快路径=clustered_lighting 组合,超预算 RIS);TS megaLights.ts/megaLightsRisCpu.ts 逐式同构,f64 中间量) + src/megalights_wgsl.rs(wgsl/megaLightsRis.wgsl 单源 include_str + .sha256 校验和 Rust 半,TS 半 megaLightsRisWgslChecksum.test.ts 同夹具,两半同绿=双端逐字节) + 对拍 src/megalights_parity_tests.rs 与 TS 权威 fixture(fixtures/megalights-native-parity-v1.json,生成器 packages/deep-engine/scripts/generateMegaLightsNativeParity.mts,黄金场景 8×6×12 灯×5 帧覆盖矩阵:空间值域平均/时域合并/EMA/self 回落/穷举/可见性/门分支;RNG 全流与蓄水池结构 winner/m 位级,weightSum f64 ≤1e-9 相对,f32 color 词 ≤2 ulp,唯跨 libm hypot/pow/exp2 哨兵如实) + 真机 src/megalights_gpu_probe_tests.rs(#[ignore];harness/设备对照核全过,但 RIS 核 dispatch 在 wgpu 30 naga 双后端执行期故障=编译路径已知限制,TS 生产 Dawn 同源正常,如实不虚报);2026-10-06 生产帧接线已落:src/renderer/megalights_runtime.rs 门控(DEEP_ENGINE_NATIVE_MEGALIGHTS off/auto/force 缺省关)每帧 resolve_direct_lighting_path 决策(native 簇预算=MAX_LOCAL_LIGHTS 16)+ 视空间统一灯池(pack_mega_lights,TS worldToView look-at 口径)+ IES 档位(light-slot→spot-ordinal 行重映射,metaBase/tableBase 双重定基,载荷与 TS packIesShading 紧凑布局逐词一致且 factor 求值相等,fail-closed 回退恒 1)+ 可见性档位可用性披露(TLAS 驻留在场=TlasResident,缺=Off 恒 1);CPU 测试 renderer::megalights_runtime_tests 8 个;执行腿如实 PendingRealMachineGate:GPU RIS dispatch 与像素消费 pass(GBuffer 表面供给)待真机门复验,现役直射恒走簇光视觉零影响,维持 harness-only(IES 求值与可见性射线档 CPU 镜像已入库,像素级消费缺位)",
     },
     NativeCapabilitySelfCheck {
         capability_id: "projected-textures",
