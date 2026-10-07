@@ -202,6 +202,9 @@ pub(super) async fn create_renderer(
     // P1 质量主线:sdf-gi 生产接线(门控默认关)——无作者探针时,SDF 烘焙→
     // 探针 lattice→全域首追产出记录流(legacy 单层格),经下方既有级联解码/
     // storage/开关路径物化;任何构建失败 fail-closed 回退既有路径并披露原因。
+    // 2026-10-06 GPU dispatch 生产化:GPU 腿先试(规划 → 资源创建,独立
+    // error scope + 尺寸护栏),就绪走 GPU 三核链;任何失败 fail-closed 回退
+    // CPU 权威链(既有通路原样保留,绝不半挂载)。
     let mut sdf_gi_runtime = None;
     let mut probe_grid_records = content
         .probe_grid_records
@@ -217,16 +220,68 @@ pub(super) async fn create_renderer(
             .first()
             .map(|mip| mip.texels.as_slice())
             .unwrap_or(&[]);
-        match super::sdf_gi_runtime::SdfGiFrameRuntime::build(&sources, skipped, diffuse_mip0) {
-            Ok(runtime) => match runtime.initial_records() {
+        // GPU 腿:共享规划面(拒因与 CPU 腿同款封闭映射;规划失败 = 终局拒,
+        // CPU 烘焙对同款合同拒因同判,不再重跑)。资源创建独立 error scope:
+        // 设备拒/超限只丢 GPU 腿,不阻塞栅格主通路(fail-closed 回退 CPU)。
+        let gpu_leg = match super::sdf_gi_runtime::SdfGiFrameRuntime::plan_gpu(&sources, diffuse_mip0)
+        {
+            Ok(plan) => {
+                let gpu_validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
+                let gpu_memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+                let gpu_internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
+                let chain =
+                    super::sdf_gi_gpu::SdfGiGpuChain::create(&plan, &sources, &device);
+                let gpu_errors = [
+                    gpu_internal.pop().await,
+                    gpu_memory.pop().await,
+                    gpu_validation.pop().await,
+                ];
+                match (chain, gpu_errors.into_iter().flatten().next()) {
+                    (Ok(chain), None) => Some(chain),
+                    (Ok(chain), Some(_)) => {
+                        drop(chain);
+                        diagnostics.note_sdf_gi_rejected(
+                            super::sdf_gi_runtime::SdfGiReject::GpuDeviceRejected.reason(),
+                        );
+                        None
+                    }
+                    (Err(reject), _) => {
+                        diagnostics.note_sdf_gi_rejected(reject.reason());
+                        None
+                    }
+                }
+            }
+            Err(reject) => {
+                diagnostics.note_sdf_gi_rejected(reject.reason());
+                None
+            }
+        };
+        if let Some(chain) = gpu_leg {
+            let mut runtime =
+                super::sdf_gi_runtime::SdfGiFrameRuntime::from_gpu_chain(chain, skipped);
+            match runtime.initial_records() {
                 Ok(records) => {
-                    diagnostics.note_native_sdf_gi_runtime();
+                    diagnostics.note_native_sdf_gi_runtime_gpu();
                     probe_grid_records = Some(records);
                     sdf_gi_runtime = Some(runtime);
                 }
                 Err(reject) => diagnostics.note_sdf_gi_rejected(reject.reason()),
-            },
-            Err(reject) => diagnostics.note_sdf_gi_rejected(reject.reason()),
+            }
+        }
+        if sdf_gi_runtime.is_none() {
+            // CPU 权威腿回退(既有通路;规划面已拒的场景此处会同因拒并再披露)。
+            match super::sdf_gi_runtime::SdfGiFrameRuntime::build(&sources, skipped, diffuse_mip0)
+            {
+                Ok(runtime) => match runtime.initial_records() {
+                    Ok(records) => {
+                        diagnostics.note_native_sdf_gi_runtime();
+                        probe_grid_records = Some(records);
+                        sdf_gi_runtime = Some(runtime);
+                    }
+                    Err(reject) => diagnostics.note_sdf_gi_rejected(reject.reason()),
+                },
+                Err(reject) => diagnostics.note_sdf_gi_rejected(reject.reason()),
+            }
         }
     }
     if let (Some(records), Some(lighting), false) =
@@ -287,6 +342,19 @@ pub(super) async fn create_renderer(
             } else {
                 1.0
             };
+    }
+    // GPU 腿 init 全域首追 dispatch:bake → trace 全域 → update 全域 → 记录面
+    // copy 进 probe storage(首帧渲染前 submit;三核绑定面与真机探针门同源,
+    // 2026-10-07 两腿真机 PASS)。本 submit 在 init 原子事务 error scope 区间
+    // 内 —— dispatch 面错误原子拒 renderer(诚实失败,不半挂载);资源创建
+    // 阶段的设备拒/超限已在上方独立 scope fail-closed 回退 CPU 腿。
+    if let Some(runtime) = sdf_gi_runtime.as_mut()
+        && runtime.gpu_chain_mut().is_some()
+        && let Some(storage) = probe_gi_storage.as_ref()
+    {
+        if let Some(chain) = runtime.gpu_chain_mut() {
+            chain.submit_initial_dispatch(&device, &queue, storage.buffer());
+        }
     }
     let frame_buffer = resources::frame_buffer(&device, &frame);
     let ies_resource = resources::ies_resource(content.lighting.as_ref())?;

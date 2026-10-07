@@ -255,6 +255,18 @@ impl PlayerDiagnostics {
         self.note_dynamic_gi("native_sdf_gi_probe_runtime");
     }
 
+    /// sdf-gi GPU 三核 dispatch 链挂载(烘焙/追踪/更新/发布全 GPU;CPU 只做
+    /// 窗口计划与参数写入,零 CPU 重追零读回)。
+    pub(crate) fn note_native_sdf_gi_runtime_gpu(&mut self) {
+        self.note_dynamic_gi("native_sdf_gi_gpu_runtime");
+    }
+
+    /// sdf-gi GPU 腿帧内重烘焙评估结论(哈希命中跳过 / 原位重烘焙 /
+    /// 格几何变化 fail-closed 维持旧静态层)。
+    pub(crate) fn note_sdf_gi_rebake(&mut self, reason: &'static str) {
+        self.note_dynamic_gi(reason);
+    }
+
     /// P1 质量主线:sdf-gi 构建被拒(烘焙预算/格合同/lattice/场景尺度/
     /// 天空辐射缺席),fail-closed 回退既有探针路径并披露精确原因。
     pub(crate) fn note_sdf_gi_rejected(&mut self, reason: &'static str) {

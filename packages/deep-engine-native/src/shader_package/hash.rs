@@ -130,14 +130,14 @@ impl Default for Sha256 {
     }
 }
 
-pub(crate) fn sha256(input: &[u8]) -> String {
+pub fn sha256(input: &[u8]) -> String {
     sha256_bytes(input)
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
 }
 
-pub(crate) fn sha256_bytes(input: &[u8]) -> [u8; 32] {
+pub fn sha256_bytes(input: &[u8]) -> [u8; 32] {
     let mut hash = Sha256::new();
     hash.update(input);
     hash.finish_bytes()

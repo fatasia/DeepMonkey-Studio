@@ -2,7 +2,8 @@ mod abi;
 mod execution_plan;
 mod executor;
 mod gpu_descriptor;
-pub(crate) mod hash;
+/// SHA-256 工具(lib 内校验和与 bin 侧 sdf-gi 烘焙内容哈希共用同一实现)。
+pub mod hash;
 mod pipeline;
 mod primitives;
 mod validate;

@@ -80,6 +80,9 @@ mod scene_instance_diff;
 pub(crate) mod scene_update;
 mod scene_update_stage;
 pub(crate) use scene_update_stage::StagedRenderPacketUpdate;
+mod sdf_gi_gpu;
+#[cfg(all(test, target_os = "windows"))]
+mod sdf_gi_gpu_probe_tests;
 mod sdf_gi_runtime;
 mod section_readback;
 #[cfg(all(test, target_os = "windows"))]

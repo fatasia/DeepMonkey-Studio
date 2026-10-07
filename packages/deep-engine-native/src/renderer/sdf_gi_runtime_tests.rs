@@ -149,9 +149,9 @@ fn build_produces_grid_contract_records() {
     assert!(probe_count > 0 && probe_count <= SDF_GI_MAX_PROBES);
     assert_eq!(
         probe_count,
-        runtime.lattice.dimensions.iter().product::<usize>()
+        runtime.lattice().dimensions.iter().product::<usize>()
     );
-    assert_eq!(runtime.directions.len(), SDF_GI_DIRECTION_COUNT as usize);
+    assert_eq!(runtime.directions().len(), SDF_GI_DIRECTION_COUNT as usize);
 
     let records = runtime
         .initial_records()
@@ -162,9 +162,9 @@ fn build_produces_grid_contract_records() {
     assert_eq!(
         header.grid_size,
         [
-            runtime.lattice.dimensions[0] as u32,
-            runtime.lattice.dimensions[1] as u32,
-            runtime.lattice.dimensions[2] as u32
+            runtime.lattice().dimensions[0] as u32,
+            runtime.lattice().dimensions[1] as u32,
+            runtime.lattice().dimensions[2] as u32
         ]
     );
     assert_eq!(header.probe_count as usize, probe_count);
@@ -224,7 +224,7 @@ fn flat_scene_and_missing_sky_fail_closed() {
     // 零延展轴按 lattice 公式 floor(0).max(1)+1 = 2(与 TS deriveSdfGiProbeLattice
     // 同式):扁场合法构建,y 轴恒 2 层探针,格合同(单轴 ≥2)天然满足。
     let flat = build_runtime(&packet, &[[1.0, 1.0, 1.0, 1.0]; 6]).expect("flat scene bakes");
-    assert_eq!(flat.lattice.dimensions[1], 2);
+    assert_eq!(flat.lattice().dimensions[1], 2);
     // 场景级 cells 超预算(100×100×30m,cell 钳 1.0 → 101×101×31 > 262 144)
     // = 整场烘焙拒绝(fail-closed 回退,TS 同一口径的规模墙)。
     let mut big = cube_geometry("big");

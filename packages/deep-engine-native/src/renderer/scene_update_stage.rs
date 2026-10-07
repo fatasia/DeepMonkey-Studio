@@ -81,6 +81,9 @@ pub(crate) struct StagedRenderPacketPayload {
     /// C3 路由证据（测试与遥测读）；运行期由结构化构造携带。
     #[allow(dead_code)]
     pub(crate) staged_via_resource_reuse: bool,
+    /// sdf-gi 帧内重烘焙评估输入(仅 GPU 腿产生;publish 唯一提交点消费,
+    /// 哈希命中跳过重烘焙 / 原位重烘焙 / 格几何变化 fail-closed 维持旧层)。
+    pub(crate) sdf_gi_rebake: Option<super::sdf_gi_runtime::SdfGiRebakeInput>,
 }
 
 impl Renderer {
@@ -479,6 +482,7 @@ impl Renderer {
                 scene_update_ns,
                 resource_upload_ns,
                 staged_via_resource_reuse: false,
+                sdf_gi_rebake: self.sdf_gi_rebake_input(packet, content),
             },
         )))
     }
@@ -613,6 +617,7 @@ impl Renderer {
                 scene_update_ns,
                 resource_upload_ns,
                 staged_via_resource_reuse: true,
+                sdf_gi_rebake: self.sdf_gi_rebake_input(packet, content),
             },
         ))))
     }
@@ -654,7 +659,7 @@ impl Renderer {
             }
             return Ok(GpuSceneCacheMetrics::default());
         }
-        let StagedRenderPacketUpdate::Replace(staged) = staged else {
+        let StagedRenderPacketUpdate::Replace(mut staged) = staged else {
             return Ok(GpuSceneCacheMetrics::default());
         };
         let metrics = staged.scene.metrics();
@@ -676,6 +681,21 @@ impl Renderer {
         if staged.invalidate_shadow {
             self.shadow_version.bump_scene();
         }
+        // sdf-gi GPU 腿帧内重烘焙评估(publish 唯一提交点;哈希命中跳过 /
+        // 原位重烘焙 / 格几何变化 fail-closed 维持旧静态层,CPU 腿不动)。
+        // 字段级 disjoint 借用(storage 只读 + runtime 可变 + 诊断可变)。
+        if let Some(storage) = self.probe_gi_storage.as_ref().map(|storage| storage.buffer())
+            && let Some(input) = staged.sdf_gi_rebake.take()
+            && let Some(runtime) = self.sdf_gi.as_mut()
+        {
+            runtime.evaluate_scene_change(
+                input,
+                &self.device,
+                &self.queue,
+                storage,
+                &mut self.diagnostics,
+            );
+        }
         // R6-2 细分:commit 成功后记入 packet 级准备样本(唯一提交点,
         // 覆盖 replace_render_packet / present_render_packet_update /
         // drop_preview 三条汇入路径)。
@@ -683,5 +703,40 @@ impl Renderer {
             telemetry.record_packet_prepare(staged.scene_update_ns, staged.resource_upload_ns);
         }
         Ok(metrics)
+    }
+
+    /// sdf-gi 帧内重烘焙评估输入(仅 GPU 腿;CPU 腿维持静态层假设)。
+    /// stage 阶段构造(此时 packet/content 在手),随 Replace 载荷携带到
+    /// publish 唯一提交点消费。几何解包按 id 去重 Arc 共享,一次性成本。
+    fn sdf_gi_rebake_input(
+        &self,
+        packet: &deep_engine_native::contract::RenderPacket,
+        content: &PlayerContent,
+    ) -> Option<super::sdf_gi_runtime::SdfGiRebakeInput> {
+        if !self
+            .sdf_gi
+            .as_ref()
+            .is_some_and(super::sdf_gi_runtime::SdfGiFrameRuntime::is_gpu)
+        {
+            return None;
+        }
+        let (sources, skipped) = super::sdf_gi_runtime::bake_sources_from_packet(packet);
+        let diffuse_mip0 = content
+            .environment
+            .diffuse
+            .mips
+            .first()
+            .map(|mip| mip.texels.as_slice())
+            .unwrap_or(&[]);
+        Some(
+            match super::sdf_gi_runtime::SdfGiFrameRuntime::plan_gpu(&sources, diffuse_mip0) {
+                Ok(plan) => super::sdf_gi_runtime::SdfGiRebakeInput::Ready {
+                    plan,
+                    sources,
+                    skipped,
+                },
+                Err(reject) => super::sdf_gi_runtime::SdfGiRebakeInput::Rejected(reject),
+            },
+        )
     }
 }
