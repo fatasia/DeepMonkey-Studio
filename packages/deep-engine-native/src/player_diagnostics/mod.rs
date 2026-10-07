@@ -248,6 +248,47 @@ impl PlayerDiagnostics {
         }
     }
 
+    /// P1 质量主线:sdf-gi 生产帧接线已落(门控 CPU 链:烘焙→驻留→窗口采样,
+    /// 经既有探针 storage/mesh 采样消费);GPU dispatch 与真机复验为后继切片,
+    /// 如实保持 degraded。
+    pub(crate) fn note_native_sdf_gi_runtime(&mut self) {
+        self.note_dynamic_gi("native_sdf_gi_probe_runtime");
+    }
+
+    /// P1 质量主线:sdf-gi 构建被拒(烘焙预算/格合同/lattice/场景尺度/
+    /// 天空辐射缺席),fail-closed 回退既有探针路径并披露精确原因。
+    pub(crate) fn note_sdf_gi_rejected(&mut self, reason: &'static str) {
+        self.note_dynamic_gi(reason);
+    }
+
+    fn note_dynamic_gi(&mut self, reason: &'static str) {
+        if let Some(capability) = self
+            .capabilities
+            .iter_mut()
+            .find(|item| item.name == "dynamic_gi")
+        {
+            capability.status = "degraded";
+            capability.reason = Some(reason);
+        }
+    }
+
+    /// P1 质量主线:megaLights RIS 帧接线已落(决策/统一灯池/IES 行重映射/
+    /// 可见性档位可用性);RIS 执行腿待真机门复验,现役直射恒走既有簇光。
+    pub(crate) fn note_megalights_wired(&mut self, forced: bool) {
+        if let Some(capability) = self
+            .capabilities
+            .iter_mut()
+            .find(|item| item.name == "clustered_lighting")
+        {
+            capability.status = "degraded";
+            capability.reason = Some(if forced {
+                "megalights_ris_wired_force_pending_gpu_gate"
+            } else {
+                "megalights_ris_wired_auto_pending_gpu_gate"
+            });
+        }
+    }
+
     /// CPU cluster planning is bounded and deterministic.
     pub(crate) fn note_native_cluster_plan(&mut self) {
         if let Some(capability) = self

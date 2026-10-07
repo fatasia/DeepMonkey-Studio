@@ -199,13 +199,38 @@ pub(super) async fn create_renderer(
     // 开关必须在 frame_buffer 固化前写入 uniform。
     // F3:优先消费环境探针网格(网格头模式,开关=2);旧包/空场景不创建真实
     // storage(None),开关保持 0,逐位不变。开关必须在 frame_buffer 固化前写入。
+    // P1 质量主线:sdf-gi 生产接线(门控默认关)——无作者探针时,SDF 烘焙→
+    // 探针 lattice→全域首追产出记录流(legacy 单层格),经下方既有级联解码/
+    // storage/开关路径物化;任何构建失败 fail-closed 回退既有路径并披露原因。
+    let mut sdf_gi_runtime = None;
     let mut probe_grid_records = content
         .probe_grid_records
         .as_deref()
         .filter(|records| !records.is_empty())
         .map(|records| records.to_vec());
-    if let (Some(records), Some(lighting)) =
-        (probe_grid_records.as_mut(), content.lighting.as_ref())
+    if probe_grid_records.is_none() && super::sdf_gi_runtime::sdf_gi_enabled() {
+        let (sources, skipped) = super::sdf_gi_runtime::bake_sources_from_packet(packet);
+        let diffuse_mip0 = content
+            .environment
+            .diffuse
+            .mips
+            .first()
+            .map(|mip| mip.texels.as_slice())
+            .unwrap_or(&[]);
+        match super::sdf_gi_runtime::SdfGiFrameRuntime::build(&sources, skipped, diffuse_mip0) {
+            Ok(runtime) => match runtime.initial_records() {
+                Ok(records) => {
+                    diagnostics.note_native_sdf_gi_runtime();
+                    probe_grid_records = Some(records);
+                    sdf_gi_runtime = Some(runtime);
+                }
+                Err(reject) => diagnostics.note_sdf_gi_rejected(reject.reason()),
+            },
+            Err(reject) => diagnostics.note_sdf_gi_rejected(reject.reason()),
+        }
+    }
+    if let (Some(records), Some(lighting), false) =
+        (probe_grid_records.as_mut(), content.lighting.as_ref(), sdf_gi_runtime.is_some())
     {
         let native_records: &mut [crate::probe_gi_abi::IrradianceProbeRecord] =
             bytemuck::cast_slice_mut(records.as_mut_slice());
@@ -264,7 +289,8 @@ pub(super) async fn create_renderer(
             };
     }
     let frame_buffer = resources::frame_buffer(&device, &frame);
-    let ies_buffer = resources::ies_buffer(&device, content.lighting.as_ref())?;
+    let ies_resource = resources::ies_resource(content.lighting.as_ref())?;
+    let ies_buffer = resources::ies_buffer(&device, &ies_resource);
     // binding 11 槽位资源:有探针绑真实 storage,否则绑 96B 全零占位
     // (validity=0,叠加进 ambient 的探针项恒为零)。
     let probe_disabled_buffer = crate::probe_gi_storage::disabled_frame_buffer(&device);
@@ -635,6 +661,28 @@ pub(super) async fn create_renderer(
     if let Some(clock) = initial_preparation_clock.as_mut() {
         clock.resource_stage_prepared(4)?;
     }
+    // P1 质量主线:megaLights RIS 生产接线(门控默认关)。门开且内容带局部灯
+    // 才构造帧运行时(决策/统一灯池/IES 行重映射/可见性档位可用性);执行腿
+    // 待真机门,现役直射恒走既有簇光。门关 = 零构造。
+    let mega_gate = super::megalights_runtime::megalights_gate();
+    let mega_lights = if mega_gate != super::megalights_runtime::MegaLightsGate::Off {
+        let runtime = content.lighting.as_ref().map(|lighting| {
+            super::megalights_runtime::MegaLightsFrameRuntime::build(
+                lighting,
+                mega_gate,
+                Some(ies_resource.rows.as_slice()),
+                rt_residency.is_some(),
+            )
+        });
+        if let Some(runtime) = &runtime {
+            let forced = runtime.telemetry().decision.reason
+                == deep_engine_native::megalights_ris::DirectLightingPathReason::MegalightsForced;
+            diagnostics.note_megalights_wired(forced);
+        }
+        runtime
+    } else {
+        None
+    };
     let telemetry = features
         .telemetry
         .then(|| crate::telemetry::FrameTelemetry::for_device(&device, &queue, renderer_id));
@@ -683,6 +731,8 @@ pub(super) async fn create_renderer(
         rt_frame_bind_group,
         rt_residency,
         probe_gi_storage,
+        sdf_gi: sdf_gi_runtime,
+        mega_lights,
         shadow_map,
         ibl,
         shadow_cache,

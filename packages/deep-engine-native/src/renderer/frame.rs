@@ -139,6 +139,17 @@ impl Renderer {
             resources,
         );
 
+        // P1 质量主线生产接线(门控,默认关):sdf-gi 滑动窗口重追+SH 更新,
+        // 经 queue.write_buffer 前置于本帧 submit(opaque 探针采样读到新记录);
+        // megalights 刷新直射通路决策与统一灯池(执行腿待真机门,视觉零影响)。
+        // 两者缺省 None = 零成本短路。
+        if let (Some(runtime), Some(storage)) = (&mut self.sdf_gi, self.probe_gi_storage.as_ref()) {
+            runtime.advance(&self.queue, storage.buffer());
+        }
+        if let Some(mega) = self.mega_lights.as_mut() {
+            mega.advance(self.view, self.lighting.as_ref(), self.rt_residency.is_some());
+        }
+
         let shadow_started = timer(token);
         let mut shadow_buffers = Vec::new();
         if parallel_shadow {

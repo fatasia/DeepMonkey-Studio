@@ -58,6 +58,7 @@ mod init;
 mod init_report;
 mod initial_preparation;
 mod material_resource_diff;
+mod megalights_runtime;
 #[cfg(all(test, target_os = "windows"))]
 mod material_uniform_fastpath_gpu_tests;
 mod native_gi_producer;
@@ -79,6 +80,7 @@ mod scene_instance_diff;
 pub(crate) mod scene_update;
 mod scene_update_stage;
 pub(crate) use scene_update_stage::StagedRenderPacketUpdate;
+mod sdf_gi_runtime;
 mod section_readback;
 #[cfg(all(test, target_os = "windows"))]
 mod shadow_parallel_gpu_tests;
@@ -137,6 +139,12 @@ pub struct Renderer {
     /// F3: 非空探针才创建的 renderer-owned storage；旧包和空场景保持 None。
     #[allow(dead_code)] // F3 存储驻留合同:窄特性目标不消费,完整目标经访问器读取。
     probe_gi_storage: Option<crate::probe_gi_storage::ProbeGiStorage>,
+    /// P1 质量主线:sdf-gi 生产帧接线(门控默认关;构建失败 fail-closed
+    /// 回退既有探针路径,绝不半挂载)。
+    sdf_gi: Option<sdf_gi_runtime::SdfGiFrameRuntime>,
+    /// P1 质量主线:megaLights RIS 生产帧接线(门控默认关;执行腿待真机门,
+    /// 视觉零影响)。
+    mega_lights: Option<megalights_runtime::MegaLightsFrameRuntime>,
     shadow_map: ShadowMap,
     ibl: GpuIblEnvironment,
     shadow_cache: ShadowDirtyCache,

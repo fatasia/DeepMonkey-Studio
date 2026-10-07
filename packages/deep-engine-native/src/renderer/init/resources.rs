@@ -75,23 +75,27 @@ pub(super) fn frame_buffer(device: &wgpu::Device, frame: &FrameUniform) -> wgpu:
     })
 }
 
-pub(super) fn ies_buffer(
-    device: &wgpu::Device,
+/// E02 IES 打包(纯 CPU;与 GPU buffer 同源,供 megaLights 行重映射复用)。
+pub(super) fn ies_resource(
     lighting: Option<&deep_engine_native::scene_lighting::DirectionalLighting>,
-) -> Result<wgpu::Buffer, String> {
-    use wgpu::util::DeviceExt;
+) -> Result<deep_engine_native::ies_shading::NativeIesShadingResource, String> {
     let empty: [deep_engine_native::local_lighting::LocalLight; 0] = [];
-    let packed = deep_engine_native::ies_shading::NativeIesShadingResource::prepare(
+    deep_engine_native::ies_shading::NativeIesShadingResource::prepare(
         lighting.map_or(&empty, |value| value.local_lights.as_slice()),
         lighting.and_then(|value| value.light_profiles.as_deref()),
-    )?;
-    Ok(
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Deep Engine native IES shading"),
-            contents: packed.bytes(),
-            usage: wgpu::BufferUsages::STORAGE,
-        }),
     )
+}
+
+pub(super) fn ies_buffer(
+    device: &wgpu::Device,
+    resource: &deep_engine_native::ies_shading::NativeIesShadingResource,
+) -> wgpu::Buffer {
+    use wgpu::util::DeviceExt;
+    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Deep Engine native IES shading"),
+        contents: resource.bytes(),
+        usage: wgpu::BufferUsages::STORAGE,
+    })
 }
 
 pub(super) fn deep2d(
