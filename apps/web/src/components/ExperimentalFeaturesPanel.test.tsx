@@ -111,11 +111,11 @@ function renderPanel(): Element[] {
 }
 
 describe("ExperimentalFeaturesPanel", () => {
-  it("渲染:全部 13 个开关行(名称+参数徽章+说明+复选框),两组标题与引导语齐备", () => {
+  it("渲染:全部 14 个开关行(名称+参数徽章+说明+复选框),两组标题与引导语齐备", () => {
     locationState.search = "?mega-lights=1";
     const tree = renderPanel();
     const rows = tree.filter((node) => typeof node.props["data-testid"] === "string" && String(node.props["data-testid"]).startsWith("ef-row-"));
-    expect(rows).toHaveLength(13);
+    expect(rows).toHaveLength(14);
     const text = textOf(tree.map((node) => node as unknown as ReactNode));
     expect(text).toContain("渲染路径");
     expect(text).toContain("调试与首帧");

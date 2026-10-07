@@ -47,7 +47,7 @@ export function DashboardWorkspaceHeader() {
       <WorkspaceModeSwitch
         locale={locale}
         active={scriptOpen ? "script" : "2d"}
-        contextLabel={`${tr(locale, "二维页面", "2D page")} · ${page.name}`}
+        /* 页面名不进模式切换徽章:左侧标题块已是名称唯一来源(用户实测同屏双标题,2026-10-07)。 */
         sceneAvailable={Boolean(linkedSceneId)}
         {...(onCloseScripts ? { onSelect2D: onCloseScripts } : {})}
         onSelect3D={() => {
