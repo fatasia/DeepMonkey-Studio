@@ -150,13 +150,14 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
     },
     // P1 质量主线(六引擎对标刀位 1,2026-10-06):native SDF-GI 链入库——CPU 权威
     // 镜像与生产 WGSL 单源齐备,真机 GPU 门过;2026-10-06 生产帧接线批:门控 CPU 链
-    // 已接进 renderer 帧循环(烘焙→驻留→滑窗采样→既有探针 storage/采样消费),
-    // GPU dispatch 三核与真机复验仍为后继切片,维持 harness-only(不虚报生产)。
+    // 已接进 renderer 帧循环;2026-10-06 GPU dispatch 生产化:三核接进生产路径,
+    // GPU 腿主路+CPU 权威腿 fail-closed 回退保留,门控缺省关故维持 harness-only
+    // (不虚报默认生产)。
     NativeCapabilitySelfCheck {
         capability_id: "sdf-gi",
         support: RendererCapabilitySupport::Supported,
         reason: RendererCapabilityReasonCode::HarnessOnly,
-        evidence: "src/sdf_gi_scene.rs(场景 SDF 体积烘焙 CPU 权威镜像:triangleDistance 精确距离+rayX 奇偶定号+逐实例域+min 合成+探针 lattice 推导,TS sdfSceneBake/sdfGrid 逐式同构) + src/sdf_gi_trace.rs(天光圆锥追踪 visibility+hitDistance 双输出+Fibonacci 方向集) + src/sdf_gi_probe_update.rs(L1 SH 投影/bounce 能量哨兵/时域滤波/命中统计归约/窗口计划,记录直供 probe_gi_abi 96B) + src/sdf_gi_wgsl.rs(三个 WGSL 计算核 include_str 单源+校验和双端 Rust 半);对拍 src/sdf_gi_parity_tests.rs 与 TS 权威 fixture 位级(f32 词逐字+SHA-256:1872 cells/24 探针/384 lanes/双帧记录流/初值,唯二跨 libm 哨兵 coneTan≤4ulp 与 targetEnergy≤1e-9) + 真机 src/sdf_gi_gpu_probe_tests.rs(RTX 4060/Vulkan:非翻转 cells 距离逐位 mean=max=0,trace/update 全词逐位 0 误差,烘焙符号翻转 64/1872=3.4%≤5% 预算=WGSL 退化射线文档化限制);2026-10-06 生产帧接线已落:src/renderer/sdf_gi_runtime.rs 门控(DEEP_ENGINE_NATIVE_SDF_GI 缺省关)烘焙→探针 lattice→全域首追→legacy 单层格记录流经既有级联解码/storage/开关路径物化(binding 11 采样消费),帧循环窗口预算 256 探针重追+SH 更新+write_buffer 重上传,CPU 测试 renderer::sdf_gi_runtime_tests 6 个(解包/格合同/storage 打包/窗口确定性/反例);fail-closed:NoBakeable/BakeContract/ProbeLattice/ProbeGridContract/ProbeExtentExceeded/SkyRadianceMissing 六类拒因整体回退既有直光种子路径;如实边界:GPU dispatch(三核)与真机复验后继切片、静态层一次烘焙(动态重烘焙/哈希缓存后继)、故维持 harness-only",
+        evidence: "src/sdf_gi_scene.rs(场景 SDF 体积烘焙 CPU 权威镜像:triangleDistance 精确距离+rayX 奇偶定号+逐实例域+min 合成+探针 lattice 推导,TS sdfSceneBake/sdfGrid 逐式同构) + src/sdf_gi_trace.rs(天光圆锥追踪 visibility+hitDistance 双输出+Fibonacci 方向集) + src/sdf_gi_probe_update.rs(L1 SH 投影/bounce 能量哨兵/时域滤波/命中统计归约/窗口计划,记录直供 probe_gi_abi 96B) + src/sdf_gi_wgsl.rs(三个 WGSL 计算核 include_str 单源+校验和双端 Rust 半);对拍 src/sdf_gi_parity_tests.rs 与 TS 权威 fixture 位级(f32 词逐字+SHA-256:1872 cells/384 lanes/双帧记录流/初值,唯二跨 libm 哨兵 coneTan≤4ulp 与 targetEnergy≤1e-9);2026-10-06 GPU dispatch 生产化已落:src/renderer/sdf_gi_gpu.rs 三核链(bake→trace 全域→update 窗口→publish copy 进 probe storage 96B 偏移,全 GPU 驻留零读回;窗口计划与 CPU 腿同一 plan_sdf_gi_probe_window 预算;init/重烘焙全域首追 α=1 与 CPU 腿 previous=None 首帧语义逐值一致,帧窗口 α=0.1)经 sdf_gi_runtime 双腿分发(GPU 腿主路,CPU 权威腿 fail-closed 回退保留),资源创建独立 error scope+尺寸护栏(GpuResourceLimit/GpuDeviceRejected 回退);动态重烘焙+内容哈希缓存(SHA-256 sdfGiBakeContentHash native 对齐:帧内包更新 publish_render_packet_update 唯一提交点评估,哈希命中跳过重烘焙/未命中且格几何逐位同原位重烘焙/格几何变化 fail-closed 维持旧层并诊断披露);真机三腿全绿(RTX 4060/Vulkan 2026-10-07 串行窗口):lib sdf_gi_gpu_probe_tests 两腿(bake 非翻转 cells mean=max=0,符号翻转≤5% 预算=WGSL 退化射线文档化限制;trace/update 全词 0 误差)+ bin renderer::sdf_gi_gpu_probe_tests 生产链编排腿(1440 探针,init/窗口记录词 worst=0 逐位一致,publish 不动网格头,CacheHit/Rebaked/GridGeometryChanged 三态断言;期望侧=读回 GPU 场按 CPU 权威数学重追,场差为共同输入,三层证据链见模块头);CPU 测试 lib 944+bin 349 全绿;如实边界:门控 DEEP_ENGINE_NATIVE_SDF_GI 缺省关(维持 harness-only 不虚报默认生产)、GPU bake 场退化射线翻转经 trace 级联的记录面偏差由场级预算背书(编排腿以共同输入消化)、CPU 腿静态层一次烘焙照旧(帧内重烘焙仅 GPU 腿)",
     },
     NativeCapabilitySelfCheck {
         capability_id: "contact-shadows",
