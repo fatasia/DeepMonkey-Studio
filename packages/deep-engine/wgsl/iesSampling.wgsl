@@ -27,6 +27,15 @@ fn deepSpotIesFactor(spotIndex: u32, surfaceToLightDirection: vec3<f32>, lightDi
   var rowHalf = 0.0;
   if (profileMeta.w != 1.0) { rowHalf = clamp(round(gHalf / profileMeta.z), 0.0, profileMeta.y - 1.0); }
   let cell = deepIesShading[u32(profileMeta.x) + u32(rowHalf) * DEEP_IES_ROW_STRIDE + u32(thetaHalf) / 4u];
-  let value = select(cell.x, select(cell.y, select(cell.z, cell.w, u32(thetaHalf) % 4u == 3u), u32(thetaHalf) % 4u == 2u), u32(thetaHalf) % 4u == 1u);
+  // 列选择:θ 半度数直取 + 尾部 vec4 对齐。此前的嵌套 select 链在 naga→SPIR-V
+  // (Vulkan 真机腿)被误编译:u32(thetaHalf)%4==3 时仍返回 cell.x(2026-10-07
+  // megaLights GPU 探针逐中间量抓出:θ=71、cell.w=1.0、嵌套 select 返 0.8)。
+  // 改写为互斥 if 阶梯——求值顺序与取值语义逐位等价,DX12/HLSL 与 Dawn/tint 不变;
+  // 与 28312073 continue→if 同一 naga 结构化改写先例。
+  let thetaSlot = u32(thetaHalf) % 4u;
+  var value = cell.x;
+  if (thetaSlot == 1u) { value = cell.y; }
+  if (thetaSlot == 2u) { value = cell.z; }
+  if (thetaSlot == 3u) { value = cell.w; }
   return value * params.z;
 }
