@@ -17,6 +17,12 @@ export interface GltfTextureManifestOptions {
   readonly signal?: AbortSignal;
   /** 此 manifest 最多保留的编码图像总字节数。 */
   readonly maxImageBytes?: number;
+  /**
+   * 保留无源纹理基元的既有 TEXCOORD 流(几何流从严格解码移交 manifest 层)。
+   * 供宿主的作者贴图覆盖链把纹理接线到源包无纹理的资产;缺省 false 时无源纹理
+   * 基元不产生 uvSets,坐标流不进包。该模式与源纹理路径共享 8192 组坐标预算。
+   */
+  readonly preserveTexCoords?: boolean;
 }
 
 /** KHR_texture_transform 的列主序 T*R*S 3×3 矩阵；glTF UV 原点保持左上，不翻转 V。 */
@@ -207,11 +213,19 @@ export function extractGltfTextureManifest(json: unknown, buffers: readonly Uint
       const materialIndex = reference(materials, primitive.material, `${location}.material`), material = materials[materialIndex]!;
       const slots = [material.baseColorTexture, material.metallicRoughnessTexture, material.normalTexture,
         material.occlusionTexture, material.emissiveTexture].filter((slot): slot is GltfTextureSlot => slot !== undefined);
-      if (!slots.length) return [];
       const attributes = object(primitive.attributes, `${location}.attributes`);
+      let coordinateSets: (0 | 1)[];
+      if (slots.length) {
+        coordinateSets = [...new Set(slots.map(slot => slot.texCoord))].sort() as (0 | 1)[];
+      } else {
+        if (options.preserveTexCoords !== true || attributes.POSITION === undefined) return [];
+        // 作者贴图覆盖链:无源纹理的基元保留既有 TEXCOORD 流;未声明坐标的基元照旧零坐标,
+        // 渲染端由几何特征校验 fail-closed。
+        coordinateSets = ([0, 1] as const).filter(texCoord => attributes[`TEXCOORD_${texCoord}`] !== undefined);
+      }
+      if (!coordinateSets.length) return [];
       if (attributes.POSITION === undefined) invalid(`${location}.attributes.POSITION`, "Textured primitives require POSITION.");
       const positionCount = reader.accessorCount(attributes.POSITION, `${location}.attributes.POSITION`);
-      const coordinateSets = [...new Set(slots.map(slot => slot.texCoord))].sort() as (0 | 1)[];
       return coordinateSets.map(texCoord => {
         const attribute = `TEXCOORD_${texCoord}`;
         if (attributes[attribute] === undefined) invalid(`${location}.attributes.${attribute}`, `Textured primitive requires ${attribute}.`);

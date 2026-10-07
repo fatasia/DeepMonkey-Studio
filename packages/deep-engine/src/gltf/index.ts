@@ -109,6 +109,7 @@ export {
 export type { GltfRenderAnimationRuntimeOptions } from "./renderAnimationBridgeTypes.js";
 export { parseGlb, type ParsedGlb } from "./parseGlb.js";
 export { decodeGltfTextureManifest } from "./textureDecode.js";
+export { generateTangents, validateTangentBasis } from "./tangentSpace.js";
 export { extractGltfTextureManifest, gltfTextureTransformMatrix, type GltfTextureManifestOptions } from "./textureManifest.js";
 export type {
   GltfDecodedImage, GltfDecodedTextures, GltfEncodedImage, GltfImageDecoder, GltfNormalTextureSlot, GltfOcclusionTextureSlot,

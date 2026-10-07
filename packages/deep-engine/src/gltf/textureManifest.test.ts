@@ -71,6 +71,21 @@ describe("glTF texture manifest extraction", () => {
     expect(Math.max(...manifest.uvSets[0]!.values)).toBe(6);
   });
 
+  it("preserveTexCoords retains TEXCOORD streams for primitives without source textures", () => {
+    const { document, bytes } = fixture();
+    // 剥掉材质全部纹理引用 → 基元变为无源纹理(作者贴图覆盖链的解码入口)。
+    const material = (document.materials as JsonObject[])[0]!, pbr = material.pbrMetallicRoughness as JsonObject;
+    for (const key of ["baseColorTexture", "metallicRoughnessTexture"]) delete pbr[key];
+    for (const key of ["normalTexture", "occlusionTexture", "emissiveTexture"]) delete material[key];
+    const untextured = { resourcePrefix: "asset/a" }, preserved = { resourcePrefix: "asset/a", preserveTexCoords: true };
+    expect(extractGltfTextureManifest(document, [bytes], untextured).uvSets).toHaveLength(0);
+    const uvSets = extractGltfTextureManifest(document, [bytes], preserved).uvSets;
+    expect(uvSets).toHaveLength(1);
+    expect(uvSets[0]!.geometry).toBe("asset/a/mesh/0/primitive/0");
+    expect([...uvSets[0]!.values]).toEqual([0, 0.25, 0.5, 0.75, 1, 1]);
+    expect(uvSets[0]!.requiresTangents).toBe(false);
+  });
+
   it("extracts embedded bytes, glTF sampler semantics, all PBR slots, transform and UV0 without IO", () => {
     const { document, bytes, uvLength } = fixture(), fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
     try {

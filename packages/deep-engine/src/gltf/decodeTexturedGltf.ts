@@ -19,6 +19,12 @@ export interface TexturedGltfImportOptions extends GltfImportOptions, GltfTextur
    * 且 clearcoat / transmission / 上述 lobe 允许无核心纹理的材质(由中性纹理承载)。缺省保持既有回退与 loss 语义。
    */
   readonly advancedMaterials?: boolean;
+  /**
+   * 保留无源纹理基元的既有 TEXCOORD 流(manifest 层承载,几何解码不再持有)。
+   * 供宿主把作者贴图覆盖接线到源包无纹理的资产;缺省 false 保持既有几何流经济性。
+   * 该模式消耗 texture coordinate sets 预算(与源纹理路径同一 8192 上限)。
+   */
+  readonly preserveTexCoords?: boolean;
 }
 
 function textureSlot(slot: GltfTextureSlot): TextureSlot {
@@ -205,6 +211,7 @@ export async function decodeTexturedGltfDocument(json: unknown, buffers: readonl
     ...(options.resourcePrefix === undefined ? {} : { resourcePrefix: options.resourcePrefix }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     ...(options.maxBytes === undefined ? {} : { maxImageBytes: options.maxBytes }),
+    ...(options.preserveTexCoords === undefined ? {} : { preserveTexCoords: options.preserveTexCoords }),
   });
   const packet = decodeGltf(geometryDocument(fallbackDocument, manifest, handledDeformations), buffers,
     { ...options, materialLosses: [] });
