@@ -8,14 +8,17 @@ import { sceneShader } from "./pbrShader.js";
 import { readFileSync } from "node:fs";
 
 afterEach(() => vi.unstubAllGlobals());
-function fixture() {
+function fixture(mode: "cascaded" | "virtual" = "cascaded") {
   vi.stubGlobal("GPUBufferUsage", { UNIFORM: 1, COPY_DST: 2 });
   vi.stubGlobal("GPUTextureUsage", { TEXTURE_BINDING: 16 });
   const buffer = {} as GPUBuffer, writeBuffer = vi.fn(), createBindGroup = vi.fn(() => ({} as GPUBindGroup));
   const release = vi.fn(), createBuffer = vi.fn(() => buffer);
   const session = { device: { createBuffer, createTexture: vi.fn(() => ({ createView: () => ({}) } as unknown as GPUTexture)), createSampler: vi.fn(() => ({} as GPUSampler)), queue: { writeBuffer }, createBindGroup },
     own: (value: GPUBuffer) => value, release } as unknown as DeviceSession;
-  const pipelines = { main: { getBindGroupLayout: () => ({}) } } as unknown as Pipelines;
+  // 2026-10-06 分档:级联档 frame 布局剥离 12..14(旧 Chromium per-stage 基线 16/8),
+  // 装配端同步跳过占位;虚拟档保留 15 槽并懒建占位资源。
+  const pipelines = { main: { getBindGroupLayout: () => ({}) },
+    ...(mode === "virtual" ? { virtualFrameBindings: true } : {}) } as unknown as Pipelines;
   const environment = { specular: {}, diffuse: {}, brdf: {}, sampler: {} } as StudioEnvironment;
   const create = () => new PbrMainBindings(session, pipelines, {} as GPUBuffer, {} as CascadedShadowResources, environment);
   return { buffer, createBuffer, writeBuffer, createBindGroup, release, environment, create };
@@ -49,8 +52,23 @@ describe("PBR bounded reflection bindings", () => {
     const candidate = (latest.find(entry => entry.binding === 11)!.resource as GPUBufferBinding).buffer;
     expect(candidate).not.toBe(active); expect(f.writeBuffer).toHaveBeenCalledOnce();
     expect(f.writeBuffer.mock.calls[0]![0]).toBe(candidate);
-    // B1 Brief-VSM:组 0 增补虚拟页表占位(meta/layers 16B ×2,首次 createBinding 懒建)→ +2。
+    // 2026-10-06 分档:级联档不再懒建占位页资源(diffuse/fog/reflection×2 = 4 buffer)。
+    expect(f.createBuffer).toHaveBeenCalledTimes(4);
+    expect(initial.find(entry => entry.binding === 12)).toBeUndefined();
+    expect(initial.find(entry => entry.binding === 14)).toBeUndefined();
+  });
+
+  it("fills virtual page-table/atlas slots only on the virtual-mode frame layout", () => {
+    const f = fixture("virtual");
+    let next = 0;
+    f.createBuffer.mockImplementation(() => ({ label: `buffer-${next++}` }) as GPUBuffer);
+    f.create();
+    // B1 Brief-VSM:虚拟档占位页资源照旧懒建(diffuse/fog/reflection×2 + meta/layers = 6)。
     expect(f.createBuffer).toHaveBeenCalledTimes(6);
+    const entries = Array.from((f.createBindGroup.mock.calls[0]![0] as GPUBindGroupDescriptor).entries);
+    expect(entries.find(entry => entry.binding === 12)?.resource).toEqual({ buffer: { label: "buffer-4" } });
+    expect(entries.find(entry => entry.binding === 13)?.resource).toEqual({ buffer: { label: "buffer-5" } });
+    expect(entries.find(entry => entry.binding === 14)?.resource).toEqual({});
   });
 
   it("keeps the previous binding and active records after candidate upload failure, then retries the same inactive buffer", () => {
@@ -63,8 +81,8 @@ describe("PBR bounded reflection bindings", () => {
     const failed = f.writeBuffer.mock.calls[0]![0]; bindings.setEnvironment(f.environment);
     expect(f.writeBuffer.mock.calls[1]![0]).toBe(failed);
     expect(bindings.binding).not.toBe(active);
-    // B1 Brief-VSM 同上:占位页资源计入。
-    expect(f.createBuffer).toHaveBeenCalledTimes(6);
+    // 2026-10-06 分档:级联档占位页资源不再计入(diffuse/fog/reflection×2 = 4)。
+    expect(f.createBuffer).toHaveBeenCalledTimes(4);
   });
 });
 

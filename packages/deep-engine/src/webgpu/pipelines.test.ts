@@ -167,6 +167,17 @@ describe("PBR pipeline texture variants", () => {
     expect(f.pipelineLayouts.slice(0, 2).map(layout => Array.from(layout.bindGroupLayouts).length)).toEqual([4, 4]);
     expect(Array.from(f.pipelineLayouts[0]!.bindGroupLayouts)[3]).toEqual({});
     expect(Array.from(f.pipelineLayouts[2]!.bindGroupLayouts)).toEqual([f.layouts[0], f.layouts[2], f.layouts[3]]);
+    // 2026-10-06 分档:级联档 frame 布局剥离 12..14(旧 Chromium per-stage 基线 16
+    // sampled / 8 storage,恒挂 15 槽使主片元 17 sampled / 10 storage 超限,Deep WebGPU
+    // 切换被 CreatePipelineLayout 验证错误阻断);虚拟档保留 15 槽。
+    expect(f.layouts[0]!.entries.map(entry => entry.binding)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(result.virtualFrameBindings).toBeUndefined();
+    const virtualFixture = fixture();
+    const virtualResult = await createPipelinesBuild(virtualFixture.device, "bgra8unorm", {} as GPUBindGroupLayout,
+      true, false, true, { deformation: true, virtualShadowPages: true });
+    expect(virtualResult.pipelines.virtualFrameBindings).toBe(true);
+    const virtualFrame = virtualFixture.layouts[0]!;
+    expect(virtualFrame.entries.slice(-3).map(entry => entry.binding)).toEqual([12, 13, 14]);
     expect(PBR_FRAME_UNIFORM_BYTES).toBe(384);
     expect(PBR_FRAME_FLOAT_OFFSETS).toEqual({ currentViewProjection: 0, previousViewProjection: 16, worldToView: 32,
       lightViewProjection: 48, eye: 64, background: 68, floor: 72, lightDirection: 76, tuning: 80, sunColor: 84,
