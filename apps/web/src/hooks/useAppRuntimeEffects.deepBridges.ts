@@ -92,11 +92,18 @@ export function useDeepBridgesSetup(context: AppRuntimeEffectsContext, refs: Dee
           signal,
           // 编辑器逐帧把 Three AnimationMixer 的骨骼/形变姿态同步给 Deep,含蒙皮/形变目标的模型保留为活体。
           liveDeformation: true,
-          // 4K 贴图合计超出引擎单资产解码预算时按需降采样;引擎导入子集之外的模型只隐藏并提示。
+          // 4K 贴图合计超出引擎单资产解码预算时按需降采样;作者贴图以同一数值作为整场预算,
+          // 超限/不可解码 fail-closed 回退投影路径。引擎导入子集之外的模型只隐藏并提示。
           textureBudgetBytes: 112 * 1024 * 1024,
           skipUndecodableModels: true,
           imageDecoder: browserImageDecoder,
           normalizeModel: normalizeStudioWasmModel,
+          // 场景级贴图覆盖走 Deep 原生链:作者材质贴图 URL 由宿主取回字节、编译器解码进包,
+          // 不再依赖 SceneAppearanceUnsupported 降级(该路径保留为兜底,见下方 catch)。
+          loadTexture: async (url, loadSignal) => {
+            loadSignal.throwIfAborted();
+            return new Uint8Array(await loadViewerAssetBuffer(url, "材质贴图", { signal: loadSignal, timeoutMs: 120_000 }));
+          },
           ...(hlodPackages?.size ? { hlodPackages } : {}),
           loadModel: async (assetId, loadSignal) => {
             loadSignal.throwIfAborted();

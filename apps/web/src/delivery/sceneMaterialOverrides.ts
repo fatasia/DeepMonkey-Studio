@@ -9,7 +9,8 @@ const scalarFields = new Set(["color", "roughness", "metalness", "ior", "emissiv
 
 const lobeFields = new Set<string>(PHYSICAL_LOBE_KEYS);
 
-export function assertStaticMaterialOverrides(state: SceneMaterialState | undefined, id: string): void {
+export function assertStaticMaterialOverrides(state: SceneMaterialState | undefined, id: string,
+  acceptTextureField: ((key: string, value: unknown) => boolean) | undefined = undefined): void {
   if (state !== undefined) {
     const { slotOverrides: _slots, ...own } = state;
     try { validatePhysicalLobePatch(own); } catch (error) { throw new Error(`对象 ${id} 的高级材质参数无效：${error instanceof Error ? error.message : String(error)}`); }
@@ -20,19 +21,22 @@ export function assertStaticMaterialOverrides(state: SceneMaterialState | undefi
     if (!/^gltf:(0|[1-9]\d*)$/.test(slot) || !value || typeof value !== "object" || "slotOverrides" in value) {
       throw new Error(`对象 ${id} 的材质槽无效`);
     }
-    assertStaticMaterialOverrides(value, id);
+    assertStaticMaterialOverrides(value, id, acceptTextureField);
   }
   for (const [key, value] of Object.entries(state ?? {})) {
-    if (value !== undefined && key !== "slotOverrides" && !scalarFields.has(key) && !lobeFields.has(key) && !isNeutralMaterialField(key, value)) {
+    if (value !== undefined && key !== "slotOverrides" && !scalarFields.has(key) && !lobeFields.has(key)
+      && !(acceptTextureField?.(key, value) === true) && !isNeutralMaterialField(key, value)) {
       throw appearanceUnsupportedError(`对象 ${id} 的扩展外观需要模型适配：${key}`);
     }
   }
 }
 
 /** Mirror the existing instance-wide editor override without mutating shared GLB materials. */
-export function applyStaticMaterialOverrides(source: Material, state: SceneMaterialState | undefined, id: string, original: Material = source): Material {
+export function applyStaticMaterialOverrides(source: Material, state: SceneMaterialState | undefined, id: string,
+  original: Material = source,
+  acceptTextureField: ((key: string, value: unknown) => boolean) | undefined = undefined): Material {
   if (!state) return source;
-  assertStaticMaterialOverrides(state, id);
+  assertStaticMaterialOverrides(state, id, acceptTextureField);
   if (state.doubleSided !== undefined && typeof state.doubleSided !== "boolean") throw new Error(`对象 ${id} 的双面材质无效`);
   for (const key of ["sourceColor", "sourceEmissive"] as const) {
     if (state[key] !== undefined && typeof state[key] !== "boolean") throw new Error(`对象 ${id} 的源颜色恢复参数无效`);
@@ -68,10 +72,11 @@ export function sourceMaterialSlot(id: string): string | undefined {
   const index = /\/material\/(0|[1-9]\d*)$/.exec(id)?.[1];
   return index === undefined ? undefined : `gltf:${index}`;
 }
-export function applySourceMaterialOverrides(source: Material, state: SceneMaterialState | undefined, id: string): Material {
-  const global = applyStaticMaterialOverrides(source, state, id);
+export function applySourceMaterialOverrides(source: Material, state: SceneMaterialState | undefined, id: string,
+  acceptTextureField: ((key: string, value: unknown) => boolean) | undefined = undefined): Material {
+  const global = applyStaticMaterialOverrides(source, state, id, source, acceptTextureField);
   const slot = sourceMaterialSlot(source.id);
-  return slot ? applyStaticMaterialOverrides(global, state?.slotOverrides?.[slot], id, source) : global;
+  return slot ? applyStaticMaterialOverrides(global, state?.slotOverrides?.[slot], id, source, acceptTextureField) : global;
 }
 export function assertMaterialSlotsResolve(materials: readonly Material[], state: SceneMaterialState | undefined, id: string): void {
   const slots = new Set(materials.map(material => sourceMaterialSlot(material.id)));

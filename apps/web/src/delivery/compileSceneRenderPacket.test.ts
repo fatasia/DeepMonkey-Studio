@@ -260,3 +260,108 @@ it("publishes restored source textures and scalar slot values after save/reload"
   const result = await compileSceneRenderPacket(JSON.parse(JSON.stringify(scene([restored]))), { loadModel: async () => box });
   expect(result.packet.materials[0]).toMatchObject(original.packet.materials[0]!);
 });
+
+
+describe("author texture overrides on the Deep native chain", () => {
+  const decode = async (image: { data: Uint8Array }) => {
+    const decoded = await sharp(image.data).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    return { width: decoded.info.width, height: decoded.info.height, data: new Uint8Array(decoded.data) };
+  };
+  const png = async (size: number, red: number): Promise<Uint8Array<ArrayBuffer>> =>
+    new Uint8Array(await sharp({ create: { width: size, height: size, channels: 4,
+      background: { r: red, g: 30, b: 40, alpha: 1 } } }).png().toBuffer());
+  const loadTextureOf = (loadTexture: (url: string) => Promise<Uint8Array<ArrayBuffer>>) =>
+    ({ loadTexture: async (url: string, signal: AbortSignal) => { signal.throwIfAborted(); return loadTexture(url); } });
+
+  /** BoxTextured 剥掉源纹理引用:TEXCOORD_0 保留,材质变为无源纹理(作者贴图覆盖的主战场)。 */
+  function uvCarryingGlbWithoutSourceTextures(): Buffer {
+    const bytes = readFileSync(new URL("../../../../packages/deep-engine/lab/assets/BoxTextured.glb", import.meta.url));
+    const jsonLength = bytes.readUInt32LE(12);
+    const gltf = JSON.parse(bytes.subarray(20, 20 + jsonLength).toString("utf8"));
+    for (const material of gltf.materials) delete material.pbrMetallicRoughness.baseColorTexture;
+    const json = Buffer.from(JSON.stringify(gltf));
+    const padded = Buffer.alloc(Math.ceil(json.length / 4) * 4, 0x20); json.copy(padded);
+    const rest = bytes.subarray(20 + jsonLength), header = Buffer.from(bytes.subarray(0, 20));
+    header.writeUInt32LE(20 + padded.length + rest.length, 8); header.writeUInt32LE(padded.length, 12);
+    return Buffer.concat([header, padded, rest]);
+  }
+  const uvGlb = uvCarryingGlbWithoutSourceTextures();
+
+  it("wires the five author map slots into the native packet", async () => {
+    const loadTexture = vi.fn(async (url: string) => {
+      if (url.endsWith("base.png")) return png(8, 200);
+      if (url.endsWith("normal.png")) return png(8, 30);
+      if (url.endsWith("ao.png")) return png(8, 60);
+      if (url.endsWith("rough.png")) return png(8, 90);
+      throw new Error(`unexpected texture ${url}`);
+    });
+    const result = await compileSceneRenderPacket(scene([{ ...model("pbr"), material: {
+      baseColorMapUrl: "/t/base.png", normalMapUrl: "/t/normal.png", ambientOcclusionMapUrl: "/t/ao.png",
+      roughnessMapUrl: "/t/rough.png", metalnessMapUrl: "/t/rough.png", normalScale: 2,
+      textureRepeatX: 2, textureRepeatY: 2,
+    } }]), { loadModel: async () => uvGlb, imageDecoder: { decode }, textureBudgetBytes: 112 * 1024 * 1024,
+      ...loadTextureOf(loadTexture) });
+    const material = result.packet.materials[0]!;
+    expect(material.baseColorTexture).toMatchObject({ scale: [2, 2], offset: [-0.5, -0.5], rotation: 0 });
+    expect(material.normalTexture).toMatchObject({ normalScale: 2, scale: [2, 2], offset: [-0.5, -0.5] });
+    expect(material.occlusionTexture).toMatchObject({ strength: 1 });
+    expect(material.metallicRoughnessTexture).toBeDefined();
+    expect(new Set(result.packet.textures!.map(texture => texture.semantic)))
+      .toEqual(new Set(["baseColor", "normal", "occlusion", "metallicRoughness"]));
+    expect(result.packet.textures!.find(texture => texture.semantic === "baseColor")!.width).toBe(8);
+    // 源包无 TANGENT:切线按 N5 先例生成,无损失记录。
+    const geometry = result.packet.geometries[0]!;
+    expect(geometry.tangents).toHaveLength(geometry.vertices.length / 6 * 4);
+    expect(result.textureLosses).toBeUndefined();
+    const runtime = buildDeepRuntimePackage({ packageId: "author-textures.scene", packageVersion: "1.0.0",
+      renderPacket: { id: "scene", revision: 1, value: result.packet } });
+    expect(validateDeepRuntimePackage(JSON.parse(JSON.stringify(runtime))).valid).toBe(true);
+    // 同 URL 只取一次字节(MR 双槽共享解码)。
+    expect(loadTexture).toHaveBeenCalledTimes(4);
+  }, 30_000);
+
+  it("still refuses non-whitelisted appearance extensions with a loader present", async () => {
+    const options = { loadModel: async () => box, imageDecoder: { decode },
+      textureBudgetBytes: 112 * 1024 * 1024, ...loadTextureOf(async () => png(4, 1)) };
+    await expect(compileSceneRenderPacket(scene([{ ...model("emissive"), material: {
+      emissiveMapUrl: "/t/e.png" } }]), options)).rejects.toThrow(/emissiveMapUrl/);
+    await expect(compileSceneRenderPacket(scene([{ ...model("uv"), material: {
+      baseColorMapUrl: "/t/b.png", uvAnimation: { enabled: true, offsetSpeedX: 1, offsetSpeedY: 0, rotationSpeed: 0 } } }]),
+      options)).rejects.toThrow(/uvAnimation/);
+  });
+
+  it("fail-closes UV0-less geometry to the projection fallback", async () => {
+    // Box.glb 源无 TEXCOORD:任何渲染器都无法映射贴图,按 SceneAppearanceUnsupported 交回投影路径。
+    await expect(compileSceneRenderPacket(scene([{ ...model("nouv"), material: { baseColorMapUrl: "/t/base.png" } }]), {
+      loadModel: async () => box, imageDecoder: { decode }, textureBudgetBytes: 112 * 1024 * 1024,
+      ...loadTextureOf(async () => png(4, 1)),
+    })).rejects.toThrow(/材质贴图需要 UV0/);
+  });
+
+  it("fail-closes author textures over the decode budget", async () => {
+    await expect(compileSceneRenderPacket(scene([{ ...model("big"), material: { baseColorMapUrl: "/t/base.png" } }]), {
+      loadModel: async () => uvGlb, imageDecoder: { decode }, textureBudgetBytes: 8,
+      ...loadTextureOf(async () => png(64, 1)),
+    })).rejects.toThrow(/超出 Deep 纹理解码预算/);
+  });
+
+  it("applies slot-scoped texture overrides to the targeted source slot only", async () => {
+    const jsonLength = uvGlb.readUInt32LE(12);
+    const gltf = JSON.parse(uvGlb.subarray(20, 20 + jsonLength).toString("utf8"));
+    gltf.materials.push(structuredClone(gltf.materials[0]));
+    gltf.meshes[0].primitives.push({ ...gltf.meshes[0].primitives[0], material: 1 });
+    const json = Buffer.from(JSON.stringify(gltf));
+    const padded = Buffer.alloc(Math.ceil(json.length / 4) * 4, 0x20); json.copy(padded);
+    const rest = uvGlb.subarray(20 + jsonLength), header = Buffer.from(uvGlb.subarray(0, 20));
+    header.writeUInt32LE(20 + padded.length + rest.length, 8); header.writeUInt32LE(padded.length, 12);
+    const bytes = Buffer.concat([header, padded, rest]);
+    const result = await compileSceneRenderPacket(scene([{ ...model("slotted"), material: {
+      slotOverrides: { "gltf:1": { baseColorMapUrl: "/t/slot.png" } } } }]),
+      { loadModel: async () => bytes, imageDecoder: { decode }, textureBudgetBytes: 112 * 1024 * 1024,
+        ...loadTextureOf(async () => png(4, 7)) });
+    const materialBySlot = (slot: string) => result.packet.materials.find(material => material.id.endsWith(`/material/${slot}`))!;
+    expect(materialBySlot("0").baseColorTexture).toBeUndefined();
+    expect(materialBySlot("1").baseColorTexture).toBeDefined();
+    expect(result.packet.textures).toHaveLength(1);
+  }, 30_000);
+});

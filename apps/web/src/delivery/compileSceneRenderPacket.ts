@@ -1,5 +1,7 @@
-import { applySourceMaterialOverrides, assertStaticMaterialOverrides, assertMaterialSlotsResolve } from "./sceneMaterialOverrides";
-import { getSceneModelAssetId, type SceneModelState, type SceneSnapshot } from "@bim-studio/contracts";
+import { applySourceMaterialOverrides, assertStaticMaterialOverrides, assertMaterialSlotsResolve, sourceMaterialSlot } from "./sceneMaterialOverrides";
+import { AuthorTextureResolver, authorTextureTransform, effectiveTextureState, ensureGeometryTangents,
+  isSupportedAuthorTextureField, sceneHasAuthorTextureOverrides } from "./sceneTextureOverrides";
+import { getSceneModelAssetId, type SceneMaterialState, type SceneModelState, type SceneSnapshot } from "@bim-studio/contracts";
 import { prepareRenderPacket, STOCK_MATERIAL_INSTANCE_OPTIONS, type RenderPacket } from "@bim-studio/deep-engine";
 import { invertAffineSceneMatrix, multiplySceneMatrices } from "@bim-studio/deep-engine/scene";
 import { HLOD_PROXY_MATERIAL_ID, type HlodClusterStreamBinding } from "@bim-studio/deep-engine/three-bridge";
@@ -34,13 +36,34 @@ export interface CompileSceneRenderOptions {
   readonly liveDeformation?: boolean;
   /** 每个资产的纹理解码总预算(字节);超出时按需降低该资产纹理边长。缺省不降采样。 */
   readonly textureBudgetBytes?: number;
+  /**
+   * 项目资源 URL → 贴图字节。提供(且提供 imageDecoder)时,作者贴图覆盖
+   * (baseColor/normal/AO/roughness/metalness 五槽)进入 Deep 原生链;预算沿用
+   * textureBudgetBytes 作为整场作者贴图预算,超限/格式不支持 fail-closed 回退投影
+   * 路径。缺省保持独立发布包的严格语义(贴图 URL 仍按 SceneAppearanceUnsupported 拒绝)。
+   */
+  readonly loadTexture?: (url: string, signal: AbortSignal) => Promise<Uint8Array<ArrayBuffer>>;
   /** 引擎导入子集之外的资产只隐藏对应模型并经 skippedModels 报告,而不是使整份编译失败(仅编辑器切换使用)。 */
   readonly skipUndecodableModels?: boolean;
 }
+/** 作者贴图槽接线产物(可变局部;展开进材质后与 PbrMaterial 只读合同对齐)。 */
+type AuthorTextureWiring = {
+  baseColorTexture?: RenderPacket["materials"][number]["baseColorTexture"];
+  metallicRoughnessTexture?: RenderPacket["materials"][number]["metallicRoughnessTexture"];
+  normalTexture?: RenderPacket["materials"][number]["normalTexture"];
+  occlusionTexture?: RenderPacket["materials"][number]["occlusionTexture"];
+};
+
 /** 因引擎无法导入而未进包的模型放置。 */
 export interface SceneSkippedModel {
   readonly modelId: string;
   readonly assetId: string;
+  readonly reason: string;
+}
+/** 按槽丢弃的作者法线贴图:切线基不可交付,对象仍以无凹凸渲染,损失如实披露。 */
+export interface SceneTextureLoss {
+  readonly modelId: string;
+  readonly slot: "normal";
   readonly reason: string;
 }
 /** 含 glTF 动画/蒙皮/形变目标的放置,以及它在包内的呈现方式。 */
@@ -74,6 +97,8 @@ export interface SceneRenderCompilation {
   readonly deformedModels?: readonly SceneDeformedModel[];
   /** 被隐藏的不可导入模型(仅 skipUndecodableModels)。 */
   readonly skippedModels?: readonly SceneSkippedModel[];
+  /** 按槽丢弃的作者法线贴图(切线基不可交付);缺省 = 无损失。 */
+  readonly textureLosses?: readonly SceneTextureLoss[];
 }
 
 /** 将已保存快照和宿主提供的 GLB 转成静态绘制数据，不访问编辑器当前 GPU 状态。 */
@@ -120,10 +145,86 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
     skippedModels.push({ modelId, assetId, reason: skippedAssets.get(assetId)! });
   };
   let sourceBytes = 0;
+  // 作者贴图覆盖(loadTexture + imageDecoder 齐备才启用):budget 沿用 textureBudgetBytes
+  // 作为整场作者贴图预算,超限按 SceneAppearanceUnsupported 回退宿主投影降级。
+  const textureFields = options.loadTexture && options.imageDecoder ? isSupportedAuthorTextureField : undefined;
+  const textureResolver = textureFields ? new AuthorTextureResolver({
+    loadTexture: options.loadTexture!, imageDecoder: options.imageDecoder!,
+  }, options.textureBudgetBytes, signal) : undefined;
+  const textureLosses: SceneTextureLoss[] = [];
+  /** 作者法线贴图的切线升级:几何被同一资产的多个放置共享,打包前统一替换。 */
+  const upgradedGeometries = new Map<string, RenderPacket["geometries"][number]>();
+  // 场景带作者贴图覆盖时,解码保留无源纹理基元的 UV 流(deep-engine preserveTexCoords)。
+  const preserveTexCoords = textureFields !== undefined && sceneHasAuthorTextureOverrides(scene.models);
+  /**
+   * 作者贴图槽 → Deep 材质纹理槽。URL 解码进包(textureResolver),UV 变换按作者画布
+   * 同一 three 矩阵口径拆解;法线贴图缺切线时按 GLB N5 先例生成,不可交付按槽丢弃并
+   * 记 textureLosses(对象仍渲染,不拖垮整场编译)。
+   */
+  const wireAuthorTextures = async (modelId: string, asset: RenderPacket,
+    material: RenderPacket["materials"][number],
+    state: SceneMaterialState | undefined): Promise<AuthorTextureWiring> => {
+    if (!state || !textureResolver) return {};
+    const url = (value: string | undefined): string | undefined => value?.trim() ? value : undefined;
+    const baseColorUrl = url(state.baseColorMapUrl), normalUrl = url(state.normalMapUrl);
+    const occlusionUrl = url(state.ambientOcclusionMapUrl);
+    const roughUrl = url(state.roughnessMapUrl), metalUrl = url(state.metalnessMapUrl);
+    if (!baseColorUrl && !normalUrl && !occlusionUrl && !roughUrl && !metalUrl) return {};
+    // 引擎在打包时对带纹理材质强制 UV0(validateGeometryFeatures);此处提前以
+    // SceneAppearanceUnsupported 表达,让宿主走既有投影降级而非整场切换失败。
+    for (const instance of asset.instances) {
+      if (instance.material !== material.id) continue;
+      if (!sourceGeometries.get(instance.geometry)?.uv0) {
+        throw appearanceUnsupportedError(`对象 ${modelId} 的材质贴图需要 UV0(几何 ${instance.geometry} 缺失)`);
+      }
+    }
+    const transform = authorTextureTransform(state);
+    return {
+      ...(baseColorUrl ? { baseColorTexture: { texture: await textureResolver.resolve(baseColorUrl, "baseColor"), ...transform } } : {}),
+      ...(occlusionUrl ? { occlusionTexture: { texture: await textureResolver.resolve(occlusionUrl, "occlusion"),
+        ...transform, strength: 1 } } : {}),
+      ...(roughUrl || metalUrl ? { metallicRoughnessTexture: await wireMetallicRoughness(modelId, material, roughUrl, metalUrl, transform) } : {}),
+      ...(normalUrl ? await wireNormalTexture(modelId, asset, material, normalUrl, transform, state) : {}),
+    };
+  };
+  /** Deep 的 metallicRoughness 是单槽;源包已带组合贴图时作者单通道覆盖无法表达,如实降级。 */
+  const wireMetallicRoughness = async (modelId: string, material: RenderPacket["materials"][number],
+    roughUrl: string | undefined, metalUrl: string | undefined,
+    transform: ReturnType<typeof authorTextureTransform>): Promise<AuthorTextureWiring["metallicRoughnessTexture"]> => {
+    if (material.metallicRoughnessTexture) {
+      throw appearanceUnsupportedError(`对象 ${modelId} 的源金属粗糙度贴图与作者粗糙度/金属度覆盖需要模型适配`);
+    }
+    return { texture: await textureResolver!.resolveMetallicRoughness(roughUrl, metalUrl), ...transform };
+  };
+  /** 法线贴图缺切线基时按 GLB N5 先例按槽丢弃并记 loss(对象仍渲染,不拖垮整场编译)。 */
+  const wireNormalTexture = async (modelId: string, asset: RenderPacket,
+    material: RenderPacket["materials"][number], normalUrl: string,
+    transform: ReturnType<typeof authorTextureTransform>, state: SceneMaterialState): Promise<AuthorTextureWiring> => {
+    let tangentFailure: string | undefined;
+    for (const instance of asset.instances) {
+      if (instance.material !== material.id) continue;
+      const geometry = upgradedGeometries.get(instance.geometry) ?? sourceGeometries.get(instance.geometry)!;
+      try {
+        const upgraded = ensureGeometryTangents(geometry, `models[${modelId}].${instance.geometry}`);
+        if (upgraded !== geometry) upgradedGeometries.set(instance.geometry, upgraded);
+      } catch (error) {
+        if (!(error instanceof GltfImportError)) throw error;
+        tangentFailure = `${error.path}: ${error.message}`;
+        break;
+      }
+    }
+    if (tangentFailure !== undefined) { textureLosses.push({ modelId, slot: "normal", reason: tangentFailure }); return {}; }
+    const normalScale = state.normalScale;
+    if (normalScale !== undefined && (!Number.isFinite(normalScale) || normalScale < 0)) {
+      throw new Error(`对象 ${modelId} 的法线强度必须为非负有限数值`);
+    }
+    return { normalTexture: { texture: await textureResolver!.resolve(normalUrl, "normal"), ...transform,
+      ...(normalScale === undefined ? {} : { normalScale: Math.min(4, normalScale) }) } };
+  };
   for (const model of [...scene.models].sort((a, b) => compare(a.modelId, b.modelId))) {
     signal.throwIfAborted();
     if (!model.visible) { objectBindings.push({ nodeId: model.modelId, instanceIds: [] }); continue; }
-    assertStaticModel(model);
+    assertStaticModel(model, textureFields);
     const root = sceneModelMatrixValues(model.transform, model.modelId), assetId = getSceneModelAssetId(model);
     if (skippedAssets.has(assetId)) { skipModel(model.modelId, assetId); continue; }
     let source = assets.get(assetId);
@@ -144,6 +245,8 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
           : capImageDimension(options.imageDecoder, cap), {
           resourcePrefix: `asset-${runtimeContentSha256(assetId)}`, signal,
           ...(options.liveDeformation === true ? { liveDeformation: true } : {}),
+          // 场景带作者贴图覆盖时,无源纹理基元保留既有 UV 流,作者贴图才能映射到几何。
+          ...(preserveTexCoords ? { preserveTexCoords: true } : {}),
         });
       } catch (error) {
         // 编辑器 Deep 切换:单个资产超出引擎导入子集只隐藏它并如实提示,不拖垮整份场景。
@@ -192,11 +295,21 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
         throw new Error(`对象 ${model.modelId} 的镂空材质与半透明叠加尚未适配`);
       }
       const id = `${prefix}/${material.id}`;
+      const textureSlotKey = sourceMaterialSlot(material.id);
+      const textureWiring = textureResolver && authoredMaterial ? await wireAuthorTextures(model.modelId, source,
+        material, effectiveTextureState(authoredMaterial,
+          textureSlotKey === undefined ? undefined : authoredMaterial.slotOverrides?.[textureSlotKey]))
+        : undefined;
       materials.push({ ...applySourceMaterialOverrides({ ...material,
-        ...(color ? { baseColor: color } : {}) }, authoredMaterial, model.modelId), id,
+        ...(color ? { baseColor: color } : {}) }, authoredMaterial, model.modelId, textureFields), id,
         ...(effectColor ? { emissiveFactor: effectColor,
           emissiveStrength: effectEmissive!.strength } : {}),
-        baseColorAlpha: model.opacity, alphaMode: blended ? "BLEND" : masked ? "MASK" : "OPAQUE" });
+        baseColorAlpha: model.opacity, alphaMode: blended ? "BLEND" : masked ? "MASK" : "OPAQUE",
+        // exactOptionalPropertyTypes 会把可选属性展开加宽为 | undefined;按槽条件展开保持引擎合同的精确可选。
+        ...(textureWiring?.baseColorTexture ? { baseColorTexture: textureWiring.baseColorTexture } : {}),
+        ...(textureWiring?.normalTexture ? { normalTexture: textureWiring.normalTexture } : {}),
+        ...(textureWiring?.occlusionTexture ? { occlusionTexture: textureWiring.occlusionTexture } : {}),
+        ...(textureWiring?.metallicRoughnessTexture ? { metallicRoughnessTexture: textureWiring.metallicRoughnessTexture } : {}) });
       materialMap.set(material.id, id);
     }
     const instanceIds: string[] = [];
@@ -238,6 +351,13 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
     }
   }
   signal.throwIfAborted();
+  // 作者法线贴图的切线升级落到共享几何(顶点流不变,仅附加切线);作者纹理统一入包,
+  // 未被任何材质消费的条目由 prepareRenderPacket 过滤。
+  for (let index = 0; index < geometries.length; index++) {
+    const upgraded = upgradedGeometries.get(geometries[index]!.id);
+    if (upgraded) geometries[index] = upgraded;
+  }
+  if (textureResolver) textures.push(...textureResolver.registered());
   // 节点级拾取映射:compilation.objectBindings 保留"每个作者对象一条(不可见为空)"语义,
   // 供发布兼容与物理编译消费;进包的映射只保留非空绑定(包校验拒绝空 instanceIds)。
   const packetBindings = objectBindings.filter(binding => binding.instanceIds.length > 0)
@@ -250,13 +370,14 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
   prepareRenderPacket(packet, STOCK_MATERIAL_INSTANCE_OPTIONS);
   return { packet, objectBindings: objectBindings.sort((a, b) => compare(a.nodeId, b.nodeId)), sourceBytes,
     ...(hlodClusters.length ? { hlodClusters } : {}), ...(deformedModels.length ? { deformedModels } : {}),
-    ...(skippedModels.length ? { skippedModels } : {}) };
+    ...(skippedModels.length ? { skippedModels } : {}), ...(textureLosses.length ? { textureLosses } : {}) };
 }
 
-function assertStaticModel(model: SceneModelState): void {
+function assertStaticModel(model: SceneModelState,
+  acceptTextureField?: (key: string, value: unknown) => boolean): void {
   if (!Number.isFinite(model.opacity) || model.opacity < 0 || model.opacity > 1) throw new Error(`对象 ${model.modelId} 的透明度无效`);
   if (model.colorOverride && !/^#[\da-f]{6}$/i.test(model.colorOverride)) throw new Error(`对象 ${model.modelId} 的颜色无效`);
-  assertStaticMaterialOverrides(model.material, model.modelId);
+  assertStaticMaterialOverrides(model.material, model.modelId, acceptTextureField);
   const activeEffects = unsupportedStaticSceneEffectFields(model.effects);
   if (activeEffects.length || model.prefab || model.rig || model.layers?.length || model.explosionFactor
     || model.robotPose && Object.keys(model.robotPose).length) {
