@@ -67,10 +67,25 @@ Pages 无需账号或密码。源码开发默认 `admin / admin`；Docker 账号
 
 ## Codex / Claude 接入
 
-克隆仓库后，从仓库目录启动 Codex 或 Claude Code。Skill 已分别放在 `.agents/skills/` 和 `.claude/skills/`，可直接调用：
+### 用 Skill 基于 SDK 开发
 
-- Codex：`$deep-engine-3d 做一个三维车间`
-- Claude Code：`/deep-engine-3d 做一个三维车间`
+Deep Engine SDK 可独立嵌入自己的 TypeScript / Web 项目。下载 [SDK 0.2.0](https://github.com/fatasia/DeepMonkey-Studio/releases/download/v0.2.0/DeepMonkey-Studio-SDK-0.2.0.tar.gz)，按包内 `INSTALL.md` 安装；SDK 随包提供类型声明和八个场景模板。
+
+克隆仓库后，从仓库目录启动 Codex 或 Claude Code。Skill 已分别放在 `.agents/skills/` 和 `.claude/skills/`。给 Codex 这段提示词：
+
+```text
+$deep-engine-3d 用 Deep Engine SDK 开发一个独立的三维车间网页。
+从 02-factory-floor 模板起步，加入设备状态灯、相机环绕和动画。
+使用真实 SDK 导出，给出源码与运行命令，完成类型检查和浏览器画面验证。
+```
+
+Claude Code 把首行的 `$deep-engine-3d` 换成 `/deep-engine-3d`。在自己的项目使用 Skill，可从源码仓库执行以下命令，并把 `templates/deep-engine-3d/` 复制到目标项目同一路径：
+
+```sh
+node templates/deep-engine-3d/scripts/distribute-skill.mjs --root /absolute/path/to/my-project
+```
+
+### 用 MCP 制作 Studio 场景
 
 连接运行中的 Studio：先按[接入教程](docs/ai-development.md#3-连接-studio-mcp)登录并设置 `DEEPMONKEY_TOKEN`，然后配置 MCP。
 
@@ -84,7 +99,11 @@ Claude Code 在项目 `.mcp.json` 中添加以下配置，再用 `/mcp` 检查�
 {"mcpServers":{"deepmonkey":{"type":"http","url":"http://127.0.0.1:4100/api/mcp","headers":{"Authorization":"Bearer ${DEEPMONKEY_TOKEN}"}}}}
 ```
 
-独立开发项目可使用引擎 SDK 和八个示例模板，见 [Skill、MCP 与 SDK 教程](docs/ai-development.md)。
+在 Studio 中新建或打开一个场景，使用同一账号登录并保持编辑器在线，然后让 Codex / Claude：
+
+> 读取 deepmonkey 的工具和当前场景，使用真实 sessionId、对象 ID 和 revision。创建地面和六台设备，排列成两条产线，调整材质和相机。通过 editor.scene-transaction 提交修改，检查回执并读回场景确认结果。
+
+修改会进入正在打开的编辑器，完成后点击「保存项目」。SDK API、模板和 MCP 认证步骤见 [完整接入教程](docs/ai-development.md)。
 
 ## 功能亮点
 

@@ -39,7 +39,7 @@ describe('Pages browser workspace', () => {
     vi.stubGlobal('window', { location: { origin: 'https://example.test' } });
     const transport = vi.fn(), api = new PagesDemoApi(seed(), new Store(), transport);
     await api.initialize();
-    const response = await api.handle(path, { method, body: method === 'POST' ? '{}' : undefined });
+    const response = await api.handle(path, { method, ...(method === 'POST' ? { body: '{}' } : {}) });
     expect(response.status).toBe(409);
     expect(transport).not.toHaveBeenCalled();
     vi.unstubAllGlobals();

@@ -59,10 +59,25 @@ Pages requires no username or password. Source development defaults to `admin / 
 
 ## Connect Codex / Claude
 
-Clone this repository and start Codex or Claude Code in its directory. Skills are included in `.agents/skills/` and `.claude/skills/`:
+### Develop with the SDK and Skill
 
-- Codex: `$deep-engine-3d build a 3D workshop`
-- Claude Code: `/deep-engine-3d build a 3D workshop`
+Embed Deep Engine in your own TypeScript / Web application. Download [SDK 0.2.0](https://github.com/fatasia/DeepMonkey-Studio/releases/download/v0.2.0/DeepMonkey-Studio-SDK-0.2.0.tar.gz) and follow its `INSTALL.md`; the archive includes type declarations and eight scene templates.
+
+Start Codex or Claude Code in the cloned repository. Skills are included in `.agents/skills/` and `.claude/skills/`. In Codex, use:
+
+```text
+$deep-engine-3d build a standalone 3D workshop with the Deep Engine SDK.
+Start from 02-factory-floor; add equipment status lights, an orbit camera and animation.
+Use real SDK exports. Provide source and run commands, type-check and verify the rendered browser output.
+```
+
+In Claude Code, replace `$deep-engine-3d` with `/deep-engine-3d`. To use the Skill in your own project, run this from the source repository and copy `templates/deep-engine-3d/` to the same path in your project:
+
+```sh
+node templates/deep-engine-3d/scripts/distribute-skill.mjs --root /absolute/path/to/my-project
+```
+
+### Make Studio scenes through MCP
 
 To connect to a running Studio instance, follow the [login instructions](docs/ai-development.md) and set `DEEPMONKEY_TOKEN`, then add MCP:
 
@@ -76,7 +91,11 @@ In Claude Code, add this to the project's `.mcp.json` and check the connection w
 {"mcpServers":{"deepmonkey":{"type":"http","url":"http://127.0.0.1:4100/api/mcp","headers":{"Authorization":"Bearer ${DEEPMONKEY_TOKEN}"}}}}
 ```
 
-See the [Skill, MCP and SDK guide](docs/ai-development.md) for standalone SDK development and eight example templates.
+Open or create a scene in Studio with the same account and keep its editor online, then ask Codex / Claude:
+
+> Read deepmonkey's tools and the current scene. Use actual sessionId, object IDs and revision. Create a floor and six machines in two production lines; adjust materials and the camera. Submit changes through editor.scene-transaction, check receipts and read the scene back to verify the result.
+
+Changes appear in the open editor. Click “Save project” when finished. See the [full setup guide](docs/ai-development.md) for SDK APIs, templates and MCP authentication.
 
 License designation: **MIT License + Ethical Restrictions** (source-available).
 
