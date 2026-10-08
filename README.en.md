@@ -57,45 +57,13 @@ The browser demo includes an SMT line, 275 models and environment/material asset
 
 Pages requires no username or password. Source development defaults to `admin / admin`; Docker uses `admin` with a password obtained through the [deployment guide](docs/docker-application.md).
 
-## Connect Codex / Claude
+### Switch rendering engines
 
-### Develop with the SDK and Skill
+Open a scene, then choose **3D → More → Rendering engine settings**. Select WebGL 2, Deep WebGPU or Deep WASM.
 
-Embed Deep Engine in your own TypeScript / Web application. Download [SDK 0.2.0](https://github.com/fatasia/DeepMonkey-Studio/releases/download/v0.2.0/DeepMonkey-Studio-SDK-0.2.0.tar.gz) and follow its `INSTALL.md`; the archive includes type declarations and eight scene templates.
+![Open rendering engine settings](docs/assets/engine-switch-menu.png)
 
-Start Codex or Claude Code in the cloned repository. Skills are included in `.agents/skills/` and `.claude/skills/`. In Codex, use:
-
-```text
-$deep-engine-3d build a standalone 3D workshop with the Deep Engine SDK.
-Start from 02-factory-floor; add equipment status lights, an orbit camera and animation.
-Use real SDK exports. Provide source and run commands, type-check and verify the rendered browser output.
-```
-
-In Claude Code, replace `$deep-engine-3d` with `/deep-engine-3d`. To use the Skill in your own project, run this from the source repository and copy `templates/deep-engine-3d/` to the same path in your project:
-
-```sh
-node templates/deep-engine-3d/scripts/distribute-skill.mjs --root /absolute/path/to/my-project
-```
-
-### Make Studio scenes through MCP
-
-To connect to a running Studio instance, follow the [login instructions](docs/ai-development.md) and set `DEEPMONKEY_TOKEN`, then add MCP:
-
-```sh
-codex mcp add deepmonkey --url http://127.0.0.1:4100/api/mcp --bearer-token-env-var DEEPMONKEY_TOKEN
-```
-
-In Claude Code, add this to the project's `.mcp.json` and check the connection with `/mcp`:
-
-```json
-{"mcpServers":{"deepmonkey":{"type":"http","url":"http://127.0.0.1:4100/api/mcp","headers":{"Authorization":"Bearer ${DEEPMONKEY_TOKEN}"}}}}
-```
-
-Open or create a scene in Studio with the same account and keep its editor online, then ask Codex / Claude:
-
-> Read deepmonkey's tools and the current scene. Use actual sessionId, object IDs and revision. Create a floor and six machines in two production lines; adjust materials and the camera. Submit changes through editor.scene-transaction, check receipts and read the scene back to verify the result.
-
-Changes appear in the open editor. Click “Save project” when finished. See the [full setup guide](docs/ai-development.md) for SDK APIs, templates and MCP authentication.
+![Choose the rendering engine](docs/assets/engine-switch-options.png)
 
 License designation: **MIT License + Ethical Restrictions** (source-available).
 
@@ -135,12 +103,12 @@ Grouped by product subsystem. Format targets, experimental modules, and capabili
 
 - Projects, applications, scenes, pages, topologies, components, datasets, semantic metrics, vision events, and publication records use versioned contracts and stable IDs. AI receives addressable engineering objects and their relationships, so answers can point back to specific components, data, and evidence.
 - Context is scoped to the current project, scene, selected objects, and task, and keeps provenance, versions, character budgets, and omission status. The "Request context" section of the panel lists the sources actually read for a request and how ready each one is; memory and the experiment archive live there too.
-- The assistant panel has two modes: **Chat** and **Run task**. In chat, the "Question scope" selector next to the input chooses the evidence source (in the editor: Scene, Object, BIM, Simulation, Dashboard, Ask Data; on platform pages: Platform, 2D, and so on). Sessions switch from a dropdown in the title bar, and an empty session offers only a few questions you can click.
+- The assistant offers **Chat** and **Run task**. Chat scopes evidence to Scene, Object, BIM, Simulation, Dashboard, Ask Data, Platform or 2D. Switch sessions from the title bar; empty sessions offer clickable questions.
 - **Run task** takes a goal and lets the industrial Agent orchestrate tool calls. Runs can be stopped and resumed from a checkpoint.
 - There are three execution modes. Plan only keeps read and analyze tools; simulate, write, and control calls are rejected and audited. Confirm each (the default) asks the user to approve every high-risk capability, with approval bound to a parameter fingerprint and valid for 15 minutes. Autonomous runs within the granted authorization, with cancellation and auditing unchanged.
 - The Tool Harness exposes 20 curated tools to the Agent by default: data queries, predictive maintenance and energy analysis, battery prediction, diagnostics and alert root cause, virtual commissioning and simulation studies, provenance tracing, workcell audits, and parametric validation. Each tool declares input and output schemas, permissions, execution location, timeout, and cancellation. There are no shell, file-system, or arbitrary-command tools.
 - Scene edits are submitted as command transactions of up to 64 commands. A diff plan is generated first, and the editor in the browser executes it after the user confirms. Revision conflicts are rejected and failures roll back. AI-generated dashboards and scripts appear only as drafts that still need human review; nothing is saved or published automatically.
-- Hypotheses, runs, verdicts, reports, and actions are written to a read-only provenance ledger with three query surfaces: replay the full decision chain from any node (broken links are reported as such), search past precedents by parameter/result fingerprint or reason code, and trace which downstream verdicts and reports a conclusion has influenced. Long-term memory writes run deterministic conflict detection first (verdict reversals, reason-code semantic reversals, and re-assertions of refuted proposals); conflicts are flagged and surfaced, never silently overwritten, and recording is not blocked.
+- A read-only ledger records hypotheses, runs, verdicts, reports and actions. Replay decision chains with broken links marked, search parameter/result fingerprints or reason codes, and trace downstream impact. Memory writes detect verdict reversals, reversed reason codes and reasserted refutations; conflicts are flagged without overwriting or blocking records.
 - Responses, Chat Completions, MCP, and pluggable AI Providers share session and run records. A request shows its reading, generation, preview, and application states, and can be stopped, retried, and recovered after a disconnect.
 
 ### Projects, applications, and assets
@@ -149,7 +117,7 @@ Grouped by product subsystem. Format targets, experimental modules, and capabili
 - When you create a scene you can choose "Sample" or "Blank scene"; the default is the sample: a pedestal, a pillar, and a behavior hotspot with a click interaction, plus an overview camera view, all with explicit PBR materials. Sample objects are named with a "Sample" prefix and can be deleted like any other object.
 - A unified asset library manages models, images, videos, environment maps, materials, prefabs, and robot assets. Search, classify, crop thumbnails, record provenance and licensing, drag assets into scenes, and replace existing instances.
 - When an asset has a newer revision, scene models that reference an older one are flagged "stale" in the library. You can update to the latest revision in one click or choose "Keep current". The update runs a scene-side revision check and then writes back to the affected scenes.
-- In the development environment, assets support hot reload: the dev server watches model and texture files inside the project and pushes changes to the running editor, hot-swapping the same asset in place. Replacement is a fail-closed transaction; on structural incompatibility, missing animation, or a fetch failure the original instance is kept and the reason is disclosed. The asset browser also offers a manual "Reload" entry. This push channel exists only in development builds; production is unaffected.
+- Development builds watch model and texture files and hot-swap assets in place. Structural incompatibility, missing animation or fetch failures retain the original instance and report the reason. The asset browser also provides manual reload; production has no push channel.
 - Before an asset is deleted, the library lists the impact down to the field path, for example which scene's `models[0].assetModelId` refers to it. Limits: the backend has no endpoint for fetching a package by an older revision yet, so updates do not diff against the old package, and "Keep current" lasts only for the current session.
 - The parametric workbench creates, validates, and saves parametric models, and can generate a model from a text description through Tripo3D or Tencent Hunyuan 3D (provider credentials stay on the server and are configured in system settings). Industrial prefabs support instance parameters, materials, connection points, and scene-level persistence.
 - The model optimizer performs polygon reduction, Draco compression, texture compression, vertex colors, and Web lightmap baking locally in the browser. Tasks can be cancelled, and results return to the project as new assets.
@@ -172,7 +140,7 @@ Grouped by product subsystem. Format targets, experimental modules, and capabili
 - Measure distance, minimum distance between components, angles, and elevation. Use clipping boxes, axis and picked-face clipping; radial, vertical, and axial explosions; BVH collision checks; and location of engineering analysis results.
 - Orbit, first-person, and third-person navigation; ground following and collision; six standard views, custom camera bookmarks, camera constraints, an orientation cube, and WebXR VR/AR.
 - Built-in model animation, camera and object timelines, keyframe recording, and animation state machines. Each keyframe can set its own transition (linear, smooth, ease in, ease out, step), camera paths can also use a spline, and looping, ping-pong playback, and path display are supported. Markers, spatial audio, and interaction state are saved with scenes.
-- The "Root motion" switch in the model animation panel applies the animation root's translation and rotation to the model instance (rotation pivots about the instance origin), with a readout of accumulated displacement and rotation and a "Reset" button. The switch lasts only for the current session, and the pose change is saved as an ordinary edit, so reset before saving; the panel warns you about it.
+- Root motion applies animation-root translation and rotation to the instance, pivoting at its origin, with accumulated readings and Reset. The switch lasts for the current session; pose edits are saved normally, and the panel prompts you to reset before saving.
 - Skeleton and IK: edit bone poses, add a single-chain IK to an end-effector bone, and set the target in model coordinates, the chain length, and the iteration count.
 - Fixed, dynamic, and kinematic rigid bodies with mass, friction, restitution, initial velocity, gravity, and character control. A revolute joint can connect to the world or another body, with angle limits and a velocity motor, and colliders can be shown as wireframes.
 - Physics runs on Rapier and is stepped deterministically at a fixed 60 Hz: the same frame-time sequence yields the same per-tick trajectory (locked by tests from 30 to 144 fps and with jittery frame rates), and steps are dropped, and counted, only when catching up would exceed 12 steps. No render interpolation yet; behavior scripts and physics still run on separate clocks.
@@ -242,13 +210,13 @@ Grouped by product subsystem. Format targets, experimental modules, and capabili
 
 - The TypeScript WebGPU kernel, Rust `wgpu` native executor, and Rust WASM runtime share scene packages, capability reports, and quality policies. Studio can switch supported backends without losing authoring state.
 - The engine includes a render graph, PBR, glTF, geometry and textures, LOD/streaming, instancing and culling, material/Shader IR, caches, lighting and shadows, GI/probes, volumetric fog, post-processing, picking, animation, a physics bridge, particles (curve LUTs, budgets, and transparent sorting), retained UI, and the Deep2D chart runtime.
-- The native executor ships an independent 2D engine (native deep2d, GPUI-aligned): gradient/rounded-rectangle/box-shadow are the three visual commands, evaluated per fragment with analytic SDFs; a taffy flex layout engine emits draw commands directly; and dynamic paths are auto-routed by a sliding window of change frequency to stencil-then-cover GPU filling (fill domain; strokes still expand on the CPU). All three carry real-GPU readback pixel comparisons. This path currently lives in the native engine; the web side has no deep2d render path yet.
+- Native Deep2D provides analytic SDF gradients, rounded rectangles and box shadows, taffy flex layout, and change-frequency routing to stencil-then-cover GPU path fills; strokes still expand on the CPU. All three paths have real-GPU pixel comparisons. Web Deep2D is not connected yet.
 - Three.js and Deep share one display contract, `DEFAULT_DISPLAY_CONTRACT` (`packages/contracts/src/displayContract.ts`): the `three-aces-r185` ACES operator, exposure 1.05 (dynamic exposure clamped to 0.55–1.55), sRGB output, a 2048 shadow map with its biases, the Bloom parameters, and a GI default of 0.32. The Three.js main view, the Deep product bridge, and the publication compile payload all read from it instead of keeping their own defaults.
-- `pnpm gate:parity` renders the same scene in Three.js and in Deep on a real GPU and compares them pixel by pixel: 5 standard scenes (PBR matrix, IBL, directional shadow, AA + Bloom, transparency) plus 3 diagnostic scenes, graded strict, tolerant, or diagnostic by RMSE, ΔE2000, and SSIM. Right now the PBR matrix and directional shadow reach the strict tier, IBL is tolerant, and AA + Bloom and transparency are known differences held in place by a regression guard so they cannot get worse. With no hardware GPU adapter the gate fails rather than skips. Baselines were calibrated on a single machine (RTX 4060), and the gate is not in CI yet.
+- `pnpm gate:parity` compares Three.js and Deep on real GPU hardware: five standard scenes and three diagnostics, graded by RMSE, ΔE2000 and SSIM. PBR and directional shadows meet strict thresholds; IBL is tolerant, while AA + Bloom and transparency remain regression-guarded differences. Missing hardware fails the gate. Baselines use one RTX 4060; CI integration is pending.
 - Change revisions and dirty regions drive incremental compilation and partial uploads. Instance batching, LOD, HiZ/occlusion culling, compact visibility sets, indirect draws, chunked submission, and lower idle frame rates reduce CPU submission, GPU overdraw, and main-thread work.
 - Scene first frames load and compile by criticality: a critical subset of shadow pipelines compiles first and the rest are created off-peak, and the cascade tier strips unreachable shader libraries (a measured −341 ms off the compile wall). Further optimization of the overall first-frame time is ongoing.
 - GPU buffer suballocation, resource residency, transient texture pools, pipeline/Shader/text caches, resource prewarming, and on-demand streaming reduce repeat allocation and uploads. Workers and cancellable tasks handle model processing, baking, and heavy computation.
-- Frame time, upload bytes, cache hits, visible objects, VRAM budget, quality level, device-loss recovery, and backend capabilities have explicit diagnostics. Performance validation covers whole-frame P95/P99, memory, and visual consistency; unsupported capabilities block publication or give a reason for fallback. A unified "Performance & diagnostics" panel in the tool dock (frame time / scene / resources / pipeline tabs, F9 toggle) shows per-pass GPU timings, cross-frame swimlanes, and renderer-rebuild markers, off by default and sampling only while open.
+- Diagnostics cover frame time, uploads, caches, visible objects, VRAM, quality, device loss and backend capabilities. Validation checks whole-frame P95/P99, memory and visual consistency; unsupported features block publication or explain fallback. Performance & diagnostics (F9) shows frame/scene/resource/pipeline data, per-pass GPU timing, frame timelines and rebuild markers; sampling runs only while open.
 - The native executor gains a visual post-processing trio: vignette can be enabled through the color grading contract (one wire contract on both ends, opt-in and off by default); FXAA and auto-exposure are ports of the same algorithms, verified by bit-exact CPU golden comparisons and real-GPU readback on an RTX 4060 (≤2/255) — currently harness-only, with production frame-loop wiring left to a later slice and the public capability matrix stating so.
 - SDF occlusion GI and virtual geometry land on both ends under the same harness discipline: the native SDF volume baking, sky cone tracing, and probe SH update chain is compared bit-for-bit against the web side (bit-level f32 words plus SHA-256; zero error on critical paths on a real RTX 4060), while the web side can enable it via the `sdfGi` switch; the virtual-geometry meshlet DAG has an offline compilation toolchain (greedy cluster partition → hierarchical cluster simplification → the `.dgc` streaming format, with CLI build/info/verify), always-on serialization golden-byte and consumer-contract gates, a closed web-side chain of page scheduling, residency, indirect-draw planning, and cluster-LOD consumption, and a wired scene-package-to-`.dgc` residency ingestion chain — geometry uploads are encoded at production quality per (geometry, material) section (bit-compared against the Rust authoritative writer), material instances bind at the section, the native side runs per-section from_dgc residency prechecks, and a CRC-corrupt section fails closed without poisoning the rest; per-section GPU main-pass draw call sites are a later slice.
 - The SDK offers subpath entries including `/app`, `/webgpu`, `/scene`, `/gltf`, `/geometry`, `/textures`, `/streaming`, `/hlod`, `/shadows`, `/lighting`, `/postprocess`, `/particles`, `/physics`, `/shader*`, `/runtime-package`, `/three-bridge`, and `/host`.
@@ -275,7 +243,7 @@ Grouped by product subsystem. Format targets, experimental modules, and capabili
 
 - In-app `/docs` provides offline illustrated guides covering getting started, assets and editing, data and AI, industrial tasks, delivery and operations, SDKs, and participation in the project, with Chinese and English language switching.
 - The documentation center is the single source of truth. The GitHub Wiki mirror is generated by `pnpm docs:wiki:export` rather than maintained separately.
-- The documentation center's "Render engine" category hosts a public engine capability matrix: the renderer-capability and model-format tables are derived read-only from the contracts single source, displayed by domain with both-end statuses (fully available, available when enabled, harness-only, degraded, planned, and so on), each row carrying its evidence path; data updates with the registries and is never hand-maintained. The physics domain has no public registry yet and shows an honest "not registered" empty state.
+- The render-engine capability and format matrices derive read-only from contract registries, with per-backend status and evidence: available, opt-in, harness-only, degraded or planned. They update with the registries; physics has no public registry yet.
 
 ### System administration and governance
 
@@ -296,18 +264,62 @@ Grouped by product subsystem. Format targets, experimental modules, and capabili
 | Clients and delivery | Tauri 2, WebView2, Rust Native/WASM, Android, static Web Viewer, Windows NSIS/MSI |
 | Engineering | pnpm workspace, TypeScript, Vitest, Node Test Runner, Cargo Test |
 
+## Use AI
+
+### Develop with the SDK and Skill
+
+Embed Deep Engine in your own TypeScript / Web application with `npm i deepmonkey`. Create a project with type declarations, eight templates and Codex / Claude Skills; this command installs dependencies and starts the preview:
+
+```sh
+npx create-deepmonkey my-world
+```
+
+Start Codex or Claude Code in the generated project or source repository. Skills are included in `.agents/skills/` and `.claude/skills/`. In Codex, use:
+
+```text
+$deep-engine-3d build a standalone 3D workshop with the Deep Engine SDK.
+Start from 02-factory-floor; add equipment status lights, an orbit camera and animation.
+Use real SDK exports. Provide source and run commands, type-check and verify the rendered browser output.
+```
+
+In Claude Code, replace `$deep-engine-3d` with `/deep-engine-3d`. To use the Skill in your own project, run this from the source repository and copy `templates/deep-engine-3d/` to the same path in your project:
+
+```sh
+node templates/deep-engine-3d/scripts/distribute-skill.mjs --root /absolute/path/to/my-project
+```
+
+### Make Studio scenes through MCP
+
+To connect to a running Studio instance, follow the [login instructions](docs/ai-development.md) and set `DEEPMONKEY_TOKEN`, then add MCP:
+
+```sh
+codex mcp add deepmonkey --url http://127.0.0.1:4100/api/mcp --bearer-token-env-var DEEPMONKEY_TOKEN
+```
+
+In Claude Code, add this to the project's `.mcp.json` and check the connection with `/mcp`:
+
+```json
+{"mcpServers":{"deepmonkey":{"type":"http","url":"http://127.0.0.1:4100/api/mcp","headers":{"Authorization":"Bearer ${DEEPMONKEY_TOKEN}"}}}}
+```
+
+Open or create a scene in Studio with the same account and keep its editor online, then ask Codex / Claude:
+
+> Read deepmonkey's tools and the current scene. Use actual sessionId, object IDs and revision. Create a floor and six machines in two production lines; adjust materials and the camera. Submit changes through editor.scene-transaction, check receipts and read the scene back to verify the result.
+
+Changes appear in the open editor. Click “Save project” when finished. See the [full setup guide](docs/ai-development.md) for SDK APIs, templates and MCP authentication.
+
 ## Quick start
 
 
-Three commands to run (Git + Node.js 24+ only; no PostgreSQL / MinIO / Docker needed):
+**Start the editor** (Node.js 24+):
 
-```bash
-git clone https://github.com/fatasia/DeepMonkey-Studio && cd DeepMonkey-Studio
-corepack enable && corepack prepare pnpm@11.18.0 --activate && pnpm install --frozen-lockfile
-pnpm run init   # initializes the sample project and starts it at http://localhost:5173 (admin/admin)
+```sh
+npx deepmonkey
 ```
 
-If startup complains about missing configuration, run `cp .env.example .env` first (PowerShell: `Copy-Item .env.example .env`). Full environment matrix, desktop client, and production deployment below.
+The first run downloads and verifies Studio, then opens `http://localhost:4100` (or the next available port); later runs reuse the cache. Windows x64 includes dependencies; other platforms install server dependencies on first launch. Sign in as `admin` using the `adminPassword` in the credential file printed by the terminal. Project data is stored separately. Options include `--port 4200` and `--data-dir ./studio-data`; `npx deepmonkey-studio` is an equivalent entry.
+
+For source development, follow sections 1–4 below (development login: `admin/admin`). Native player: `cargo install deepmonkey-native --version 0.2.0 --locked`, then `deepmonkey-native --package runtime-package.json`. Standalone 2D library: `cargo add deepmonkey-2d`. [npm / Cargo guide](docs/registry-install.md).
 
 ### 1. Requirements
 

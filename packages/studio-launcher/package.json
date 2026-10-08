@@ -1,0 +1,12 @@
+{
+  "name": "deepmonkey-studio",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Start the complete DeepMonkey Studio Web/API application",
+  "bin": { "deepmonkey-studio": "bin/studio.mjs" },
+  "engines": { "node": ">=24" },
+  "repository": { "type": "git", "url": "git+https://github.com/fatasia/DeepMonkey-Studio.git", "directory": "packages/studio-launcher" },
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "files": ["bin", "runtime-manifest.json", "LICENSE", "LICENSE.zh-CN.md", "THIRD_PARTY_NOTICES.md", "README.md"]
+}

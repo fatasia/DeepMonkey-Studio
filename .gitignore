@@ -46,6 +46,11 @@ tools/unity/.smoke-runs/
 /artifacts/
 /deliverables/
 /r10-compat-check/
+/packages/create-deepmonkey/payload/
+!/packages/create-deepmonkey/bin/
+!/packages/create-deepmonkey/bin/create.mjs
+!/packages/studio-launcher/bin/
+!/packages/studio-launcher/bin/studio.mjs
 test-output*.mjs
 .idea/
 .vscode/

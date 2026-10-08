@@ -12,7 +12,7 @@ Deep Engine 可以像普通 TypeScript 三维库一样嵌入自己的网页。Sk
 
 ## 1. 让 AI 使用 Skill
 
-克隆仓库，在仓库根目录启动 Codex 或 Claude Code。两份 Skill 已随源码交付，无需额外安装。直接输入：
+执行 `npx create-deepmonkey my-world` 创建带 SDK、八模板和两份 Skill 的项目；安装完成后自动打开预览。从该项目或克隆的源码仓库启动 Codex / Claude Code，直接输入：
 
 ```text
 # Codex
@@ -35,7 +35,7 @@ node templates/deep-engine-3d/scripts/distribute-skill.mjs --root /absolute/path
 
 环境为 Node.js 24、pnpm 11.18.0；浏览器渲染需要支持 WebGPU 的浏览器及 HTTPS 或 localhost。
 
-SDK 通过 [GitHub Releases](https://github.com/fatasia/DeepMonkey-Studio/releases) 中的 `DeepMonkey-Studio-SDK-<版本>.tar.gz` 分发，包内有正式 JS、TypeScript 声明、依赖归档和八个模板。安装步骤见 [SDK 离线安装](sdk-release.md)。当前 `@bim-studio/*` 包为仓库私有包，使用发布的 `.tgz` 或源码构建，不直接从 npm registry 安装。
+公开 npm SDK 名称为 `deepmonkey`；`@bim-studio/*` 仍为仓库内部包。已有项目执行 `npm i deepmonkey`，新项目执行 `npx create-deepmonkey my-world`。启动完整编辑器使用 `npx deepmonkey`；命令选项和 Rust 安装见 [registry 安装](registry-install.md)。离线 SDK 仍通过 [GitHub Releases](https://github.com/fatasia/DeepMonkey-Studio/releases) 的 `DeepMonkey-Studio-SDK-<版本>.tar.gz` 分发，安装步骤见 [SDK 离线安装](sdk-release.md)。
 
 从源码生成同样的 SDK 包：
 
@@ -51,9 +51,9 @@ node scripts/export-release-sdk.mjs
 模板从 [01-starter](../templates/deep-engine-3d/templates/01-starter/scene.ts) 开始：`scene.ts` 定义几何、材质、实例、相机和动画，`browser.ts` 接入浏览器，`node.ts` 检查场景逻辑。共享 [harness.ts](../templates/deep-engine-3d/harness.ts) 展示完整的创建、渲染、读回与释放流程：
 
 ```ts
-import { DeepApp, PbrRendererPlugin } from "@bim-studio/deep-engine/app";
-import type { RenderPacket } from "@bim-studio/deep-engine";
-import type { RenderView } from "@bim-studio/deep-engine/webgpu";
+import { DeepApp, PbrRendererPlugin } from "deepmonkey/app";
+import type { RenderPacket } from "deepmonkey";
+import type { RenderView } from "deepmonkey/webgpu";
 
 export async function renderScene(
   canvas: HTMLCanvasElement, packet: RenderPacket, view: RenderView,

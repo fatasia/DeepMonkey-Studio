@@ -4,6 +4,9 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Add public npm SDK and Studio launch commands (`npm i deepmonkey`, `npx deepmonkey`, `npx deepmonkey-studio`) and an eight-template scaffolder with Codex / Claude Skills. Publish native Rust, geometry and standalone Deep2D crates; stage verified runtime archives without changing the 0.2.0 release tag. Windows x64 includes pruned server dependencies and reuses the runtime on later launches.
+- Open the Pages demo on the project workbench, add engine-switch screenshots and concise AI setup to both READMEs, and remove unused root artifacts.
+
 ## 0.2.0 — 2026-10-08
 
 - Align Deep WebGPU/WASM zoom with Three; coalesce camera input, retain prepared runtimes, cache decoded assets and specialize material pipelines. SMT cold preparation measured about 3.5 s (WebGPU) and 5.8–6.3 s (WASM); reloads took 4.4–4.7 s. WASM linear memory fell from about 220 to 124 MiB.

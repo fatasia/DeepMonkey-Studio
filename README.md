@@ -65,45 +65,13 @@ https://github.com/user-attachments/assets/d562bbec-f85a-4d75-890c-1aaa7f561105
 
 Pages 无需账号或密码。源码开发默认 `admin / admin`；Docker 账号为 `admin`，密码按[部署说明](docs/docker-application.md)获取。
 
-## Codex / Claude 接入
+### 切换渲染引擎
 
-### 用 Skill 基于 SDK 开发
+打开场景，进入「三维」→「更多」→「渲染引擎设置」，选择 WebGL 2、Deep WebGPU 或 Deep WASM。
 
-Deep Engine SDK 可独立嵌入自己的 TypeScript / Web 项目。下载 [SDK 0.2.0](https://github.com/fatasia/DeepMonkey-Studio/releases/download/v0.2.0/DeepMonkey-Studio-SDK-0.2.0.tar.gz)，按包内 `INSTALL.md` 安装；SDK 随包提供类型声明和八个场景模板。
+![Open rendering engine settings](docs/assets/engine-switch-menu.png)
 
-克隆仓库后，从仓库目录启动 Codex 或 Claude Code。Skill 已分别放在 `.agents/skills/` 和 `.claude/skills/`。给 Codex 这段提示词：
-
-```text
-$deep-engine-3d 用 Deep Engine SDK 开发一个独立的三维车间网页。
-从 02-factory-floor 模板起步，加入设备状态灯、相机环绕和动画。
-使用真实 SDK 导出，给出源码与运行命令，完成类型检查和浏览器画面验证。
-```
-
-Claude Code 把首行的 `$deep-engine-3d` 换成 `/deep-engine-3d`。在自己的项目使用 Skill，可从源码仓库执行以下命令，并把 `templates/deep-engine-3d/` 复制到目标项目同一路径：
-
-```sh
-node templates/deep-engine-3d/scripts/distribute-skill.mjs --root /absolute/path/to/my-project
-```
-
-### 用 MCP 制作 Studio 场景
-
-连接运行中的 Studio：先按[接入教程](docs/ai-development.md#3-连接-studio-mcp)登录并设置 `DEEPMONKEY_TOKEN`，然后配置 MCP。
-
-```sh
-codex mcp add deepmonkey --url http://127.0.0.1:4100/api/mcp --bearer-token-env-var DEEPMONKEY_TOKEN
-```
-
-Claude Code 在项目 `.mcp.json` 中添加以下配置，再用 `/mcp` 检查连接：
-
-```json
-{"mcpServers":{"deepmonkey":{"type":"http","url":"http://127.0.0.1:4100/api/mcp","headers":{"Authorization":"Bearer ${DEEPMONKEY_TOKEN}"}}}}
-```
-
-在 Studio 中新建或打开一个场景，使用同一账号登录并保持编辑器在线，然后让 Codex / Claude：
-
-> 读取 deepmonkey 的工具和当前场景，使用真实 sessionId、对象 ID 和 revision。创建地面和六台设备，排列成两条产线，调整材质和相机。通过 editor.scene-transaction 提交修改，检查回执并读回场景确认结果。
-
-修改会进入正在打开的编辑器，完成后点击「保存项目」。SDK API、模板和 MCP 认证步骤见 [完整接入教程](docs/ai-development.md)。
+![Choose the rendering engine](docs/assets/engine-switch-options.png)
 
 ## 功能亮点
 
@@ -137,12 +105,12 @@ Claude Code 在项目 `.mcp.json` 中添加以下配置，再用 `/mcp` 检查�
 
 - 项目、应用、场景、页面、拓扑、构件、数据集、语义指标、视觉事件和发布记录使用版本化合同与稳定 ID。AI 拿到的是可定位的工程对象及其关系，回答能回到具体构件、数据和证据。
 - 上下文按当前项目、场景、选中对象和任务裁剪，保留来源、版本、字符预算与省略状态。面板里的“本次上下文”折叠区列出这次实际读取的来源和就绪情况，记忆与实验档案也收在这里。
-- 助手面板有两种用法：**对话**与**执行任务**。对话时用输入框旁的“提问范围”选择证据来源（编辑器内为场景、选中对象、BIM、仿真运营、看板、问数据；平台页为全平台、二维等），会话在标题栏的下拉里切换，空会话只给几条可直接点击的问题。
+- 助手支持**对话**与**执行任务**。对话可选择场景、对象、BIM、仿真运营、看板、问数据、全平台或二维等证据范围，在标题栏切换会话；空会话提供可点击的问题。
 - **执行任务**输入一个目标，由工业 Agent 编排工具调用；运行可以停止，也能从检查点恢复。
 - 执行方式分三档：只出计划（仅保留读取与分析工具，仿真、写入和控制调用会被拒绝并记入审计）；逐次确认（默认，高风险能力每次由用户确认，审批绑定参数指纹，15 分钟内有效）；自主执行（在授权范围内自动执行，取消与审计照常生效）。
 - Tool Harness 默认向 Agent 开放 20 个精选工具，涵盖数据查询、预测维护与能源分析、电池预测、诊断与告警根因、虚拟调试和仿真研究、溯源追踪、工位审计、参数化校验。每个工具声明输入输出 schema、权限、执行位置、超时和取消方式；没有 shell、文件系统或任意命令类工具。
 - 场景修改以命令事务提交：一次最多 64 条命令，先生成差异计划，用户确认后由浏览器里的编辑器执行；修订号冲突会被拒绝，失败可回滚。AI 生成的看板和脚本只作为草稿呈现，确认后仍需人工检查，不会自动保存或发布。
-- AI 的假设、运行、判定、报告与行动写入只读溯源账本：可从任一节点回放完整决策链（断链如实标注）、按参数或结果指纹/理由码检索历史先例、反查某结论影响了哪些下游判定与报告；助手长期记忆写入前做确定性冲突检测（判定翻供、理由码语义反转、被否方案的再主张），冲突只标记并呈现，不静默覆盖、不阻断记录。
+- 假设、运行、判定、报告与行动写入只读溯源账本，可回放决策链、标注断链、按参数/结果指纹或理由码检索，并反查下游影响。长期记忆检测判定翻供、理由码反转和被否方案再主张；冲突只标记，不覆盖或阻断记录。
 - Responses、Chat Completions、MCP 和可插拔 AI Provider 共用会话与运行记录；请求过程显示读取、生成、预览、应用等状态，可停止、重试，断线后可恢复。
 
 ### 项目、应用与资源
@@ -151,7 +119,7 @@ Claude Code 在项目 `.mcp.json` 中添加以下配置，再用 `/mcp` 检查�
 - 新建场景时可选“示例本体”或“空白场景”，默认前者：底座、立柱和一个带点击交互的行为热点，外加一个概览视角，材质使用显式 PBR 参数。示例对象的名称带“示例”前缀，按普通对象删除即可。
 - 统一资源库管理模型、图片、视频、环境贴图、材质、预制体和机器人资源；支持搜索、分类、缩略图裁剪、来源与授权信息、拖放入场景及替换既有实例。
 - 资源有新修订时，引用旧修订的场景模型会在资源库里标出“已陈旧”，可一键更新到最新版本，也可选“保持当前”。更新先做场景侧的修订校验，再写回受影响场景。
-- 开发环境支持资产热重载：dev 服务器监听项目内模型与纹理文件变更并推送到运行中的编辑器，同资产原位热换；替换走 fail-closed 事务，结构不兼容、动画缺失或取数失败时保留原实例并如实披露，资源浮窗另有手动“重新加载”入口。该推送通道只在开发构建中存在，生产不受影响。
+- 开发服务器监听模型与纹理变更，同资产原位热换；结构不兼容、动画缺失或取数失败时保留原实例并显示原因。资源浮窗可手动重新加载，生产构建不提供推送通道。
 - 删除资源前会列出字段路径级的影响范围，例如哪个场景的 `models[0].assetModelId` 在引用它。边界：后端还没有按旧修订取包的接口，更新时不做旧包差异比对，“保持当前”也只在本次会话内有效。
 - 参数化工作台创建、校验和保存参数化模型，也可通过 Tripo3D 或腾讯混元 3D 从文字描述生成模型（服务商凭据只保存在服务端，需在系统设置中配置）；工业预制体支持实例参数、材质、连接点和场景级持久化。
 - 模型优化器在浏览器本地完成减面、Draco、贴图压缩、顶点色及 Web 光照贴图烘焙；任务可取消，结果作为新资源回到项目。
@@ -174,7 +142,7 @@ Claude Code 在项目 `.mcp.json` 中添加以下配置，再用 `/mcp` 检查�
 - 距离、构件最小距离、角度和标高测量；剖切盒、轴向与拾取面剖切；径向、垂直和轴向爆炸；BVH 碰撞检查和工程分析结果定位。
 - 轨道、第一人称和第三人称导航，地面跟随与碰撞，六个标准视角、自定义相机书签、相机约束、方向立方体以及 WebXR VR/AR。
 - 模型内置动画、相机与对象时间线、关键帧录制、动画状态机，每个关键帧可单独设置过渡（线性、平滑、缓入、缓出、阶跃），相机轨迹另可选曲线路径，并支持循环/往返和路径显示；标记、空间音频和交互状态随场景保存。
-- 模型动画面板里的“根运动”开关会把动画根节点的位移和旋转应用到模型实例上（旋转以实例原点为枢轴），带累计位移/转角读数和“复位”按钮。开关只在当前会话有效，姿态改动会按普通编辑保存，保存前建议先复位，界面有提示。
+- “根运动”把动画根节点的位移和旋转应用到实例，以实例原点为旋转枢轴，提供累计读数和复位。开关仅当前会话有效；姿态按普通编辑保存，保存前界面提示复位。
 - 骨骼与 IK：编辑骨骼姿态，为效应骨添加单链 IK，设置模型坐标下的目标、链长和迭代次数。
 - 固定、动态和运动学刚体，质量、摩擦、弹性、初速度、重力和角色控制；旋转关节可连接世界或另一刚体，带角度限位和速度马达；碰撞体可线框显示。
 - 物理基于 Rapier，以 60 Hz 固定步长确定性推进：同一段帧时间序列得到同一条逐 tick 轨迹（30–144 fps 与抖动帧率有单测锁定），追赶超过 12 步才丢弃并计数。暂无渲染插值，行为脚本与物理仍是两条时钟。
@@ -214,7 +182,7 @@ Claude Code 在项目 `.mcp.json` 中添加以下配置，再用 `/mcp` 检查�
 - 数据集可直接绑定 2D 组件、3D 对象和 AI 能力；支持参数化直接绑定、设备信号规则、记录表单、受权限控制的数据回写和执行回执。
 - 语义模型统一管理指标、维度、参数、过滤和版本；看板绑定确认后的语义口径，版本变化不会静默漂移。
 - 本体包描述对象类型、关系类型、动作类型和事件类型，对象属性可绑定数据集、管线、场景树、API 或手工录入。本体包按草稿、评审、发布、退役流转，保留版本并支持回滚；存在未确认的属性时不能发布。动作带效果类别（读取、分析、内部写入、外部写入、控制）和四级风险，并可查看关系图。
-- 本体关系图按治理态做形色双编码，边按语义着色并带悬停卡，支持关联链路分级高亮与大图 LOD 聚簇；对象卡可直接打开 AI 决策链面板，回放与该对象相关的完整决策链。对象实例值与动作参数在写入/执行前经本体约束校验（必填、类型、枚举、单位格式、合同外属性五类规则），默认只报告不阻断，行动服务可按 strict 选项在执行前拒绝。
+- 本体关系图按治理态区分形色，语义连线带悬停卡；支持链路高亮、大图 LOD 聚簇和对象决策链回放。写入/执行前校验必填、类型、枚举、单位格式及合同外属性，默认只报告，行动服务可用 strict 拒绝执行。
 
 ### 脚本、交互与自动化
 
@@ -244,13 +212,13 @@ Claude Code 在项目 `.mcp.json` 中添加以下配置，再用 `/mcp` 检查�
 
 - TypeScript WebGPU 内核、Rust `wgpu` 原生执行器和 Rust WASM 运行时共享场景包、能力报告与质量策略；Studio 可在作者状态不丢失的前提下切换可用后端。
 - 引擎包含渲染图、PBR、glTF、几何与纹理、LOD/流送、实例与剔除、材质/Shader IR、缓存、灯光与阴影、GI/探针、体积雾、后处理、拾取、动画、物理桥、粒子（曲线 LUT、预算与透明排序）、保留式 UI 和 Deep2D 图表运行时。
-- 原生执行器内置独立的 2D 引擎（native deep2d，GPUI 对齐路线）：渐变/圆角矩形/箱阴影三个视觉命令按解析 SDF 在片段级求值，taffy flex 组件布局直接产出绘制命令，动态路径按滑窗变更频次自动分路到 stencil-then-cover GPU 填充（fill 域，描边仍走 CPU 展开）；三件均有真 GPU readback 逐像素对拍。该通路目前在原生引擎内，web 端暂无 deep2d 渲染通路。
+- 原生 Deep2D（GPUI 对齐路线）提供解析 SDF 渐变、圆角矩形和箱阴影，taffy flex 布局，以及按变化频次分路的 stencil-then-cover GPU 路径填充；描边仍由 CPU 展开。三条通路均有真实 GPU 像素对拍，Web 暂未接入 Deep2D。
 - three 与 Deep 共用一份显示合约 `DEFAULT_DISPLAY_CONTRACT`（`packages/contracts/src/displayContract.ts`）：ACES 算子 `three-aces-r185`、曝光 1.05（动态曝光限制在 0.55–1.55）、sRGB 输出、2048 阴影贴图及 bias、Bloom 参数和 GI 缺省值 0.32。three 主视图、Deep 产品桥和发布编译载荷都从它取值，不再各写各的默认。
-- `pnpm gate:parity` 在真实 GPU 上让同一份场景在 three 与 Deep 里各渲染一遍并逐像素比较：5 个标准场景（PBR 矩阵、IBL、方向光阴影、AA+Bloom、透明）加 3 个诊断场景，用 RMSE、ΔE2000 和 SSIM 分严格、容许、诊断三档。目前 PBR 矩阵和方向光阴影达到严格档，IBL 为容许档，AA+Bloom 与透明仍是已知差异，由回归守卫锁住不让变差。没有 GPU 硬件适配器时直接失败而不是跳过；基线在单一机器（RTX 4060）上标定，尚未接入 CI。
+- `pnpm gate:parity` 用真实 GPU 对拍 three 与 Deep：5 个标准场景加 3 个诊断场景，以 RMSE、ΔE2000、SSIM 分严格、容许、诊断档。PBR 矩阵与方向光阴影为严格档，IBL 为容许档；AA+Bloom、透明的已知差异由回归守卫约束。无硬件适配器即失败；基线为 RTX 4060 单机，尚未接入 CI。
 - 变化 revision 和脏域驱动增量编译与局部上传；实例合批、LOD、HiZ/遮挡剔除、紧凑可见集、间接绘制、分块提交与静止降频减少 CPU 提交、GPU 过绘和主线程工作。
 - 场景首帧按关键度分级加载与编译：关键阴影管线子集先行、其余管线错峰创建，级联档剥离不可达着色器库（实测编译墙 −341ms）；整体首帧时长的进一步优化仍在进行。
 - GPU 缓冲子分配、资源驻留、瞬态纹理池、管线/Shader/文字缓存、资源预热和按需流送减少重复分配与上传；Worker 和可取消任务承接模型处理、烘焙及重型计算。
-- 帧时间、上传字节、缓存命中、可见对象、显存预算、质量档、设备丢失恢复和后端能力均有显式诊断；性能验证关注整帧 P95/P99、内存和画质一致性，不支持项会阻止发布或给出降级原因。工具坞的「性能与诊断」统一面板(帧时/场景/资源/管线四分区,F9 可开关)以泳道展示逐 pass GPU 计时、跨帧时序与渲染器重建标记,默认关、面板关闭时不采样。
+- 诊断覆盖帧时间、上传、缓存、可见对象、显存预算、质量档、设备丢失和后端能力；验收关注整帧 P95/P99、内存与画质。不支持项会阻止发布或说明降级原因。「性能与诊断」（F9）按帧时、场景、资源、管线展示逐 pass GPU 计时、跨帧时序与重建标记，仅打开时采样。
 - 原生执行器补齐视觉后处理三件：vignette 暗角随色彩分级合约可选启用（双端同一 wire 合同，opt-in 默认关）；FXAA 与自动曝光按同一算法移植，经 CPU 逐位 golden 与真机 GPU readback（RTX 4060，≤2/255）对拍，当前为“验收通路”级——生产帧循环接线属后续切片，文档中心能力矩阵如实标注。
 - SDF 遮蔽 GI 与虚拟几何按“验收通路”纪律双端入库：SDF 体积烘焙、天光圆锥追踪与探针 SH 更新链的原生实现与 web 侧逐位对拍（位级 f32 词加 SHA-256，真机 RTX 4060 关键路径零误差），web 侧可经 `sdfGi` 开关启用；虚拟几何 meshlet DAG 有离线编译工具链（贪心簇划分→层级聚类简化→`.dgc` 流式格式，CLI build/info/verify），序列化字节黄金钉版与消费合同门常开，web 侧页调度/驻留/indirect 计划与簇 LOD 消费链已闭环；场景包→`.dgc` 驻留摄入链已接通——几何上传即按 (geometry, material) 分节生产编码(与 Rust 权威写端逐位对拍)、材质实例绑定在节、native 逐节 from_dgc 驻留预检、损坏节 CRC 咬人回退不毒化，GPU 主 pass 逐节 draw 调用点属后续切片。
 - SDK 提供 `/app`、`/webgpu`、`/scene`、`/gltf`、`/geometry`、`/textures`、`/streaming`、`/hlod`、`/shadows`、`/lighting`、`/postprocess`、`/particles`、`/physics`、`/shader*`、`/runtime-package`、`/three-bridge` 和 `/host` 等子路径入口。
@@ -277,7 +245,7 @@ Claude Code 在项目 `.mcp.json` 中添加以下配置，再用 `/mcp` 检查�
 
 - 应用内 `/docs` 提供离线图文指南，覆盖快速开始、资源与编辑、数据与 AI、工业任务、交付与运维、SDK 和参与项目，中英文可切换。
 - 文档中心是唯一文档事实源；GitHub Wiki 镜像由 `pnpm docs:wiki:export` 生成，不单独维护第二套内容。
-- 文档中心“渲染引擎”分类提供公开引擎能力矩阵页：渲染能力与模型格式两张登记表只读派生自 contracts 单源，按双端状态（完整可用、可用·需开启、验收通路、降级、规划中等）分域展示，每行附证据路径，数据随登记表即时更新、不做手工维护；物理域尚无公开登记表，以“未登记”空态如实呈现。
+- 文档中心提供渲染能力与模型格式矩阵，由 contracts 登记表只读派生，逐项显示双端状态与证据；完整可用、需开启、验收通路、降级和规划中分别标注。数据随登记表更新，物理域暂无登记表。
 
 ### 系统管理与治理
 
@@ -298,18 +266,62 @@ Claude Code 在项目 `.mcp.json` 中添加以下配置，再用 `/mcp` 检查�
 | 客户端与交付 | Tauri 2、WebView2、Rust Native/WASM、Android、静态 Web Viewer、Windows NSIS/MSI |
 | 工程工具 | pnpm workspace、TypeScript、Vitest、Node Test Runner、Cargo Test |
 
+## 使用 AI
+
+### 用 Skill 基于 SDK 开发
+
+Deep Engine SDK 可独立嵌入自己的 TypeScript / Web 项目。`npm i deepmonkey` 安装 SDK；以下命令创建项目、安装依赖并启动预览，随项目提供类型声明、八个模板和 Codex / Claude Skill：
+
+```sh
+npx create-deepmonkey my-world
+```
+
+从生成的项目或源码仓库启动 Codex / Claude Code。Skill 位于 `.agents/skills/` 和 `.claude/skills/`。给 Codex 这段提示词：
+
+```text
+$deep-engine-3d 用 Deep Engine SDK 开发一个独立的三维车间网页。
+从 02-factory-floor 模板起步，加入设备状态灯、相机环绕和动画。
+使用真实 SDK 导出，给出源码与运行命令，完成类型检查和浏览器画面验证。
+```
+
+Claude Code 把首行的 `$deep-engine-3d` 换成 `/deep-engine-3d`。在自己的项目使用 Skill，可从源码仓库执行以下命令，并把 `templates/deep-engine-3d/` 复制到目标项目同一路径：
+
+```sh
+node templates/deep-engine-3d/scripts/distribute-skill.mjs --root /absolute/path/to/my-project
+```
+
+### 用 MCP 制作 Studio 场景
+
+连接运行中的 Studio：先按[接入教程](docs/ai-development.md#3-连接-studio-mcp)登录并设置 `DEEPMONKEY_TOKEN`，然后配置 MCP。
+
+```sh
+codex mcp add deepmonkey --url http://127.0.0.1:4100/api/mcp --bearer-token-env-var DEEPMONKEY_TOKEN
+```
+
+Claude Code 在项目 `.mcp.json` 中添加以下配置，再用 `/mcp` 检查连接：
+
+```json
+{"mcpServers":{"deepmonkey":{"type":"http","url":"http://127.0.0.1:4100/api/mcp","headers":{"Authorization":"Bearer ${DEEPMONKEY_TOKEN}"}}}}
+```
+
+在 Studio 中新建或打开一个场景，使用同一账号登录并保持编辑器在线，然后让 Codex / Claude：
+
+> 读取 deepmonkey 的工具和当前场景，使用真实 sessionId、对象 ID 和 revision。创建地面和六台设备，排列成两条产线，调整材质和相机。通过 editor.scene-transaction 提交修改，检查回执并读回场景确认结果。
+
+修改会进入正在打开的编辑器，完成后点击「保存项目」。SDK API、模板和 MCP 认证步骤见 [完整接入教程](docs/ai-development.md)。
+
 ## 快速开始
 
 
-三条命令跑起来（只需 Git + Node.js 24+，不需要 PostgreSQL / MinIO / Docker）：
+**直接启动编辑器**（Node.js 24+）：
 
-```bash
-git clone https://github.com/fatasia/DeepMonkey-Studio && cd DeepMonkey-Studio
-corepack enable && corepack prepare pnpm@11.18.0 --activate && pnpm install --frozen-lockfile
-pnpm run init   # 初始化示例工程并启动,浏览器打开 http://localhost:5173(默认账号 admin/admin)
+```sh
+npx deepmonkey
 ```
 
-启动缺配置时先 `cp .env.example .env`（Windows PowerShell：`Copy-Item .env.example .env`）。完整环境矩阵、桌面客户端与生产部署见下文。
+首次下载并校验 Studio 运行包，随后打开 `http://localhost:4100`（占用时顺延端口）；以后复用缓存。Windows x64 已带齐依赖，其他平台首次安装服务端依赖。账号 `admin`，密码见终端提示的 `standalone-credentials.json` 中 `adminPassword`。项目数据独立保存；可加 `--port 4200`、`--data-dir ./studio-data`。也可使用 `npx deepmonkey-studio`。
+
+源码启动按下文第 1–4 节操作；开发账号 `admin/admin`。Rust 原生播放器：`cargo install deepmonkey-native --version 0.2.0 --locked`，运行 `deepmonkey-native --package runtime-package.json`。独立二维库：`cargo add deepmonkey-2d`。[npm / Cargo 使用说明](docs/registry-install.md)。
 
 ### 1. 环境依赖
 
@@ -364,13 +376,13 @@ AI_MODEL=gpt-4.1-mini
 
 ### 3. 初始化
 
-初始化公开示例和元数据，但暂不启动服务：
+只初始化公开示例和元数据：
 
 ```bash
 pnpm run init -- --prepare-only
 ```
 
-直接执行 `pnpm run init` 会在初始化完成后启动 Web 模式。初始化默认不覆盖已有数据；不要把 `--force` 当作日常命令。
+`pnpm run init` 初始化后直接启动 Web；默认保留已有数据。
 
 ### 4. 启动与访问
 

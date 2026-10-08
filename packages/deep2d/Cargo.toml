@@ -1,0 +1,31 @@
+[package]
+name = "deepmonkey-2d"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+description = "Standalone Deep2D display lists, flex layout, path/atlas rendering and wgpu painter"
+repository = "https://github.com/fatasia/DeepMonkey-Studio"
+homepage = "https://github.com/fatasia/DeepMonkey-Studio"
+license-file = "../../LICENSE"
+readme = "README.md"
+publish = false
+
+[features]
+default = ["gpu"]
+gpu = ["dep:wgpu"]
+native-bench = []
+
+[dependencies]
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
+web-time = "=1.1.0"
+taffy = { version = "=0.14.0", default-features = false, features = ["std", "flexbox", "taffy_tree"] }
+bytemuck = "=1.25.2"
+wgpu = { version = "=30.0.1", optional = true, default-features = false, features = ["std", "parking_lot", "dx12", "metal", "vulkan", "wgsl"] }
+
+[dev-dependencies]
+pollster = "=1.0.1"
+
+[[example]]
+name = "offscreen"
+required-features = ["gpu"]

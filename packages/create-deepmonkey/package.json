@@ -1,0 +1,12 @@
+{
+  "name": "create-deepmonkey",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Create and start an AI-ready DeepMonkey 3D application",
+  "bin": { "create-deepmonkey": "bin/create.mjs" },
+  "engines": { "node": ">=24" },
+  "repository": { "type": "git", "url": "git+https://github.com/fatasia/DeepMonkey-Studio.git", "directory": "packages/create-deepmonkey" },
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "files": ["bin", "payload", "LICENSE", "LICENSE.zh-CN.md", "THIRD_PARTY_NOTICES.md", "README.md"]
+}
