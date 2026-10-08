@@ -45,13 +45,13 @@
 
 ## 演示视频
 
-https://github.com/user-attachments/assets/63f8cce2-0360-4ba9-a2cb-92086a57aca3
+https://github.com/user-attachments/assets/b6059d6a-04c1-4fe1-b11e-9a46a42184d2
 
 从模型接入、轻量化与数据连接，到 AI 工作流、自研引擎和多端交付。
 
 ### 系统核心功能录屏
 
-https://github.com/user-attachments/assets/cb60822e-f2ee-41ec-ab45-943929da2f5a
+https://github.com/user-attachments/assets/d562bbec-f85a-4d75-890c-1aaa7f561105
 
 ## 功能亮点
 
