@@ -3,6 +3,7 @@ import { AuthorTextureResolver, authorTextureTransform, effectiveTextureState, e
   isSupportedAuthorTextureField, sceneHasAuthorTextureOverrides } from "./sceneTextureOverrides";
 import { getSceneModelAssetId, type SceneMaterialState, type SceneModelState, type SceneSnapshot } from "@bim-studio/contracts";
 import { validateRenderPacketAsync, STOCK_MATERIAL_INSTANCE_OPTIONS, type RenderPacket } from "@bim-studio/deep-engine";
+import { studioTextureMips } from "./studioTextureMips";
 import { invertAffineSceneMatrix, multiplySceneMatrices } from "@bim-studio/deep-engine/scene";
 import { HLOD_PROXY_MATERIAL_ID, type HlodClusterStreamBinding } from "@bim-studio/deep-engine/three-bridge";
 import { decodeDeformablePacketGlb, GltfImportError, type DeformablePacketMode, type GltfDeformationFeature } from "@bim-studio/deep-engine/gltf";
@@ -439,7 +440,7 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
     .map(binding => ({ nodeId: binding.nodeId, instanceIds: binding.instanceIds }));
   const packet: RenderPacket = { geometries, materials, instances,
     ...(packetBindings.length ? { objectBindings: packetBindings } : {}),
-    ...(textures.length ? { textures } : {}),
+    ...(textures.length ? { textures: textures.map(studioTextureMips) } : {}),
     ...(deformationPoses.length ? { deformation: { sources: deformationSources, poses: deformationPoses } } : {}) };
   // 与运行时包/GPU 上传同一实例 ABI(v5),非默认 IOR 的真实材质才不会在编译期被误拒。
   await validateRenderPacketAsync(packet, STOCK_MATERIAL_INSTANCE_OPTIONS, signal);

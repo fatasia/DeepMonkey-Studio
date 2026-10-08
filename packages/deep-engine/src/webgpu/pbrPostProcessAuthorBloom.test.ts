@@ -75,7 +75,9 @@ describe("author bloom frame profile", () => {
     expect(mocks.create).toHaveBeenCalledTimes(2); target.dispose();
   });
   it("releases legacy resources despite author disposal failure and rejects work after disposal", () => {
-    const target = chain(); target.encodeFinal(enabled(), color);
+    const target = chain();
+    target.encodeFinal({ ...input, postProcess: { bloom: true } }, color);
+    target.encodeFinal(enabled(), color);
     mocks.disposeAuthor.mockImplementationOnce(() => { throw new Error("release failed"); });
     expect(() => target.dispose()).toThrow("Post-process disposal failed");
     expect(mocks.disposeLegacy).toHaveBeenCalledOnce();

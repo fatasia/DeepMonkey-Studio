@@ -36,7 +36,7 @@ export async function decodeAuthorModel(bytes: Uint8Array, options: AuthorModelD
     : textureDimensionCap(glbEmbeddedImageDimensions(normalizedBytes), options.textureBudgetBytes);
   const decoded = await decodeDeformablePacketGlb(normalizedBytes,
     cap === undefined ? imageDecoder : capImageDimension(imageDecoder, cap), {
-      resourcePrefix: options.resourcePrefix, signal,
+      resourcePrefix: options.resourcePrefix, signal, imageDecodeConcurrency: 2,
       ...(options.liveDeformation ? { liveDeformation: true } : {}),
       ...(options.advancedMaterials ? { advancedMaterials: true } : {}),
       ...(options.preserveTexCoords ? { preserveTexCoords: true } : {}),

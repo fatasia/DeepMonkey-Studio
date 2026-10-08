@@ -7,6 +7,23 @@ import { BackendSwitchCoordinator, type SwitchableBackend } from "../backendSwit
 import { deformationBridge, morphMesh } from "./deformation.testUtils.js";
 
 describe("DeepWebGpuBackend", () => {
+  it("evicts hidden scene resources without closing the runtime and requires a full reupload", async () => {
+    const author = mesh(), source = bridge(); author.updateWorldMatrix(true, true);
+    const projected = source.project(author, { cameraLayerMask: 1 });
+    if (!projected.ok) throw Error("projection failed");
+    const target = runtime(); target.setPacket = vi.fn();
+    const factory = { create: vi.fn(async () => target) };
+    const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      view, renderPacket: projected.packet }, factory);
+    expect(backend.evictSceneResources()).toBe(true);
+    expect(target.setPacket).toHaveBeenCalledWith({ geometries: [], materials: [], instances: [] });
+    expect(target.dispose).not.toHaveBeenCalled();
+    expect(await backend.prepareInstanceTransforms(projected.packet.instances, undefined, view)).toBeUndefined();
+    await backend.prepareRenderPacket(projected.packet, view);
+    expect(target.setPacketValidated).toHaveBeenCalledTimes(2);
+    expect(factory.create).toHaveBeenCalledOnce(); expect(target.validateFrame).toHaveBeenCalledTimes(2);
+    backend.dispose();
+  });
   it("admits resident instance transforms without another resource upload and preserves coordinate rebasing", async () => {
     const author = mesh(), source = bridge(); author.updateWorldMatrix(true, true);
     const projected = source.project(author, { cameraLayerMask: 1 });

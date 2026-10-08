@@ -9,6 +9,7 @@ import { validatePbrFrame } from "./validatePbrFrame.js";
 import { RenderTargets } from "./renderTargets.js";
 import type { StudioEnvironment } from "./studioEnvironment.js";
 import { PacketBuffers } from "./packetBuffers.js";
+import { assertAdvancedMaterialFeatures, assertResidentMaterialFeatures, resolveAdvancedMaterialFeatures } from "./advancedMaterialFeatures.js";
 import type { InstanceUpdate, RenderPacket } from "../renderPacket.js";
 import { pickScene, pickingUnavailable, type PickOptions, type PickResult } from "./picking.js";
 import { spherePacket } from "./spherePacket.js";
@@ -91,6 +92,7 @@ import { VirtualTextureTileLookupPass } from "./virtualTextureSampling.js";
 import type { CachedPacketGeometry } from "./packetBufferTypes.js";
 export type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
 export class PbrRenderer {
+  readonly advancedMaterialFeatures: number;
   readonly id = "deep-webgpu";
   private readonly diagnostics: PbrRendererDiagnostics; get gpuTimer() { return this.diagnostics.gpuTimer; }
   get performanceTelemetry() { return this.diagnostics.performance; } get transientTextureStats() { return this.targets.transientStats; }
@@ -211,6 +213,7 @@ export class PbrRenderer {
     // releasePipelines 只开 deferred 编译队列门(PbrPipelineSet.release=releaseDeferredQueues),
     // 不释放图本身。帧宿主经 `as unknown as` 转型,dispose 后帧路径本就非法,提前在此失败。
     this.pipelines = pipelines;
+    this.advancedMaterialFeatures = resolveAdvancedMaterialFeatures(options.advancedMaterialFeatures);
     this.releasePipelines = releasePipelines;
     this.deformationNeedsEarlyRelease = options.pipelines?.firstFrameMainKeys === undefined;
     // Initial TLAS staging uses the same public path as later updates.
@@ -435,6 +438,7 @@ export class PbrRenderer {
   }
   setInstances(data: Float32Array<ArrayBuffer>): void { this.setPacket(spherePacket(data)); }
   setPacket(packet: RenderPacket): void {
+    assertAdvancedMaterialFeatures(packet.materials, this.advancedMaterialFeatures);
     this.deviceEpoch?.assertCurrent(this.session.device);
     if (this.packets.set(packet)) { this.sceneChanged(); this.syncProbeClipmapSurfaces(packet);
       if (this.clusterLodEnabled) this.packets.stageClusterLodProduction(); }
@@ -443,6 +447,7 @@ export class PbrRenderer {
     this.virtualTextures?.syncTextures(packet.textures ?? []);
   }
   async setPacketValidated(packet: RenderPacket, signal?: AbortSignal): Promise<void> {
+    assertAdvancedMaterialFeatures(packet.materials, this.advancedMaterialFeatures);
     this.deviceEpoch?.assertCurrent(this.session.device);
     // 旧 SDK 全量变形集合仍需提前放行；子集模式按实际 packet 启动关键变体，
     // 保留背景管线门直到真实首帧验证完成，避免无用编译抢占初始化。
@@ -452,18 +457,23 @@ export class PbrRenderer {
     this.virtualTextures?.syncTextures(packet.textures ?? []);
   }
   stageResidentPacket(projection: ResidentPacketProjection): void {
+    assertResidentMaterialFeatures(projection, this.advancedMaterialFeatures);
     this.deviceEpoch?.assertCurrent(this.session.device);
     this.packets.stageResidentProjection(projection);
   }
   async stageResidentPacketValidated(projection: ResidentPacketProjection,
     signal?: AbortSignal): Promise<void> {
+    assertResidentMaterialFeatures(projection, this.advancedMaterialFeatures);
     this.deviceEpoch?.assertCurrent(this.session.device);
     if (this.deformationNeedsEarlyRelease && projection.batches.some(batch => batch.source.pose !== undefined)) this.releasePipelines?.();
     await this.packets.stageResidentProjectionValidated(projection, signal);
   }
   cancelResidentPacketStage(): void { this.packets.cancelPendingPacketStage(); }
   async setInstancesValidated(data: Float32Array<ArrayBuffer>, signal?: AbortSignal): Promise<void> { await this.setPacketValidated(spherePacket(data), signal); }
-  setDiagnosticsSampling(enabled: boolean): void { this.diagnostics.setEnabled(enabled); } updateInstances(update: InstanceUpdate): void { this.deviceEpoch?.assertCurrent(this.session.device); if (this.packets.updateInstances(update)) this.shadowDirty = true; }
+  setDiagnosticsSampling(enabled: boolean): void { this.diagnostics.setEnabled(enabled); } updateInstances(update: InstanceUpdate): void {
+    assertAdvancedMaterialFeatures(update.materials, this.advancedMaterialFeatures);
+    this.deviceEpoch?.assertCurrent(this.session.device); if (this.packets.updateInstances(update)) this.shadowDirty = true;
+  }
   /**
    * 第 3 条权威路径:CPU 拾取查询(同步)。遍历当前发布实例并用几何球体宽相位筛选,
    * 最坏仍为 O(实例 × 三角形);边界与精度限制见 webgpu/picking.ts 头注;不可用时返回

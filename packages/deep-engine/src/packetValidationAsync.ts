@@ -17,7 +17,7 @@ export async function validateRenderPacketAsync(packet: RenderPacket, options: M
   signal?.throwIfAborted();
   assertPacketCloneSafe(packet); assertPacketCloneSafe(options);
   // Compilation workers already run off the UI thread; avoid a nested full-packet clone.
-  if (!createWorker && (typeof Worker === "undefined" || typeof window === "undefined" || !packetPreparationIsLarge(packet))) {
+  if (!createWorker && (typeof Worker === "undefined" || !("window" in globalThis) || !packetPreparationIsLarge(packet))) {
     validateRenderPacket(packet, options); return;
   }
   await new Promise<void>((resolve, reject) => {

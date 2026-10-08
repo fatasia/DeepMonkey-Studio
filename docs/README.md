@@ -17,7 +17,7 @@
 | 使用 AI | [AI 助手与视觉能力](../apps/web/src/docs/ai-workflows.md)、[视觉 AI 上手](vision-quickstart.md) |
 | 发布与交付 | [预览、体检与发布](../apps/web/src/docs/server-publish.md) |
 | 排障 | [交付自检与故障恢复](../apps/web/src/docs/troubleshooting.md)、[常见问题](../apps/web/src/docs/faq.md) |
-| 容器化评估 | [容器部署评估](../apps/web/src/docs/container-deployment.md)（镜像制作延后） |
+| Docker / Compose 一键启动 | [应用镜像与离线启动包](docker-application.md) |
 
 ## 渲染引擎与 SDK
 
@@ -25,6 +25,7 @@
 | --- | --- |
 | 切换渲染器、构建客户端 | [Deep Engine](../apps/web/src/docs/deep-engine.md) |
 | 在自己的网页里接入引擎 | [Deep Engine 独立 SDK](../apps/web/src/docs/deep-engine-sdk.md) |
+| 用 Codex / Claude 开发、连接 MCP | [Skill、MCP 与 SDK 接入教程](ai-development.md) |
 | 脚本与 HTTP API | [SDK 与 API 总览](../apps/web/src/docs/sdk-api-overview.md) |
 | 性能与画质结论、Three 与 Deep 一致性门 | [引擎性能与画质基准](../apps/web/src/docs/engine-benchmarks.md) |
 

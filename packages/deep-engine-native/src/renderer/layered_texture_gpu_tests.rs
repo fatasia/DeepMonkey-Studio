@@ -11,7 +11,8 @@ fn layered_texture_fixture_keeps_real_contract_and_encoding() {
     // Author JSON round trip before typed material/resource preparation.
     let text = serde_json::to_string(&value).unwrap();
     let value = serde_json::from_str(&text).unwrap();
-    let prepared = prepare_pbr_resources(&packet(&value)).unwrap();
+    let packet = packet(&value);
+    let prepared = prepare_pbr_resources(&packet).unwrap();
     let layers = prepared.materials[0].layered.as_ref().unwrap();
     assert_eq!(layers.texture_indices, [Some(0), Some(1), Some(2), Some(3)]);
     assert_eq!(layers.block.len(), 76);
@@ -26,7 +27,8 @@ fn layered_texture_fixture_keeps_real_contract_and_encoding() {
         );
     }
     for index in 0..2 {
-        let p = prepare_pbr_resources(&parent(&value, Some(index))).unwrap();
+        let parent = parent(&value, Some(index));
+        let p = prepare_pbr_resources(&parent).unwrap();
         assert!(p.materials[0].layered.is_none());
         assert_eq!(p.materials[0].texture_indices[0], Some(index * 2));
         assert_eq!(p.materials[0].texture_indices[1], Some(index * 2 + 1));

@@ -25,7 +25,7 @@ docker exec deepmonkey-studio node -e "console.log(JSON.parse(require('fs').read
 
 大型素材包单独发布在 [asset-library-v1](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/asset-library-v1)。下载三个分卷并从 `.7z.001` 解压；将目录中含 `catalog.json` 与审核清单的素材根目录设为 `.env` 的 `STUDIO_ASSET_LIBRARY_DIR`。Compose 将它只读挂载到应用，素材导入后进入工程持久存储。内置 Nature Kit 随应用镜像交付。
 
-单容器可增加 `-v /path/to/library:/opt/studio/asset-library:ro -e ASSET_LIBRARY_DIR=/opt/studio/asset-library`。Pages 的素材列表、预览和导入复用同一 API；四 GB 素材分卷放在 Release 下载。
+单容器可增加 `-v /path/to/library:/opt/studio/asset-library:ro -e ASSET_LIBRARY_DIR=/opt/studio/asset-library`。Pages 使用浏览器本地工作区，内置精选素材与示例数据；完整素材分卷放在 Release 下载。
 
 ## 启动
 

@@ -82,6 +82,8 @@ export interface GltfImageDecoder {
 
 export interface GltfTextureDecodeOptions {
   readonly signal?: AbortSignal;
+  /** Opt in only when the PNG/JPEG host decoder supports concurrent calls. KTX2 stays serial. */
+  readonly imageDecodeConcurrency?: 1 | 2;
   readonly maxDimension?: number;
   readonly maxBytes?: number;
   readonly maxTextures?: number;

@@ -37,6 +37,8 @@ export interface DecodedTexture extends PixelLevel {
   readonly compression?: TextureCompression;
   /** 不包含 level 0。省略表示单级；提供时必须完整直到 1×1。 */
   readonly mipmaps?: readonly PixelLevel[];
+  /** Generate missing RGBA8 levels on the GPU. Mutually exclusive with authored/compressed mip chains. */
+  readonly generateMipmaps?: boolean;
   readonly sampler?: TextureSampler;
 }
 export interface MipLayout {
@@ -55,6 +57,7 @@ export interface PreparedTexture {
   readonly sampler: Required<TextureSampler>;
   readonly samplerKey: string;
   readonly byteLength: number;
+  readonly generateMipmaps?: boolean;
 }
 export interface TextureLimits { readonly maxDimension?: number; readonly maxBytes?: number; readonly maxTextures?: number }
 const DEFAULT_BYTES = 128 * 1024 * 1024;
@@ -147,6 +150,8 @@ function inspectTextures(input: readonly DecodedTexture[], limits: TextureLimits
       : planTextureMips(source.width, source.height, maxDimension);
     if (source.mipmaps !== undefined && !Array.isArray(source.mipmaps)) throw new Error("Invalid texture mip chain.");
     const extra = source.mipmaps ?? [];
+    if (source.generateMipmaps !== undefined && typeof source.generateMipmaps !== "boolean") throw new Error("Invalid texture mip generation flag.");
+    if (source.generateMipmaps && (compression || extra.length)) throw new Error("Generated mips require single-level RGBA8 pixels.");
     if (extra.length !== 0 && extra.length !== plan.length - 1) throw new Error("Texture mip chain must be complete.");
     const levels = [source, ...extra].map((level, index) => {
       const layout = plan[index]!, rows = compression ? Math.ceil(layout.height / 4) : layout.height;
@@ -174,7 +179,10 @@ export function prepareTextures(input: readonly DecodedTexture[], limits: Textur
       ? (compression?.srgb ?? "rgba8unorm-srgb")
       : (compression?.linear ?? "rgba8unorm"),
     ...(compression ? { requiredFeature: compression.feature } : {}), sampler,
-    samplerKey: JSON.stringify([sampler, levels.length]), byteLength: levels.reduce((sum, level) => sum + level.layout.byteLength, 0),
+    ...(source.generateMipmaps ? { generateMipmaps: true } : {}),
+    samplerKey: JSON.stringify([sampler, source.generateMipmaps ? planTextureMips(source.width, source.height).length : levels.length]),
+    byteLength: (source.generateMipmaps ? planTextureMips(source.width, source.height) : levels.map(level => level.layout))
+      .reduce((sum, level) => sum + level.byteLength, 0),
     levels: levels.map(({ source: pixels, layout, pitch, rows }) => {
       const data = new Uint8Array(layout.byteLength);
       for (let row = 0; row < rows; row++) data.set(pixels.data.subarray(row * pitch, row * pitch + layout.bytesPerRow), row * layout.bytesPerRow);
@@ -184,7 +192,7 @@ export function prepareTextures(input: readonly DecodedTexture[], limits: Textur
 }
 
 export function sameTextureContent(a: PreparedTexture, b: PreparedTexture): boolean {
-  return a.semantic === b.semantic && a.format === b.format && a.samplerKey === b.samplerKey && a.levels.length === b.levels.length
+  return a.semantic === b.semantic && a.format === b.format && !!a.generateMipmaps === !!b.generateMipmaps && a.samplerKey === b.samplerKey && a.levels.length === b.levels.length
     && a.levels.every((level, index) => {
       const other = b.levels[index]!;
       return level.width === other.width && level.height === other.height && level.data.length === other.data.length

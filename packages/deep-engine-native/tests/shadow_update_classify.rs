@@ -58,6 +58,7 @@ fn texture(id: &str, semantic: TextureSemantic, data: Vec<u8>) -> TextureResourc
         data,
         bytes_per_row: None,
         mipmaps: Vec::new(),
+        generate_mipmaps: false,
         sampler: None,
     }
 }

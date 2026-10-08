@@ -84,7 +84,8 @@ function material(input: unknown, path: string, browserProfile: boolean): PbrMat
 }
 function texture(input: unknown, path: string, browserProfile: boolean): Record<string, unknown> {
   const value = record(input, path);
-  fields(value, ["id", "revision", "semantic", "width", "height", "data"], ["bytesPerRow", "mipmaps", "sampler"], path);
+  fields(value, ["id", "revision", "semantic", "width", "height", "data"], ["bytesPerRow", "mipmaps", "sampler", "generateMipmaps"], path);
+  if (value.generateMipmaps !== undefined) requireValue(typeof value.generateMipmaps === "boolean", `${path}.generateMipmaps`, "Expected boolean.");
   id(value.id, `${path}.id`); nonnullOptions(value, ["bytesPerRow", "mipmaps", "sampler"], path);
   if (!browserProfile) requireValue(["baseColor", "metallicRoughness", "normal", "occlusion", "emissive", "specular", "specularColor"].includes(value.semantic as string),
     `${path}.semantic`, "Native RenderPacket texture semantic is unsupported.");

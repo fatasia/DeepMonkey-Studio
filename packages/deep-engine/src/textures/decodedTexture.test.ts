@@ -5,6 +5,14 @@ const source = (changes: Partial<DecodedTexture> = {}): DecodedTexture => ({ id:
   semantic: "baseColor", width: 2, height: 2, data: new Uint8Array(16).fill(128), ...changes });
 
 describe("decoded RGBA8 texture contract", () => {
+  it("accounts for GPU-generated mips without allocating CPU levels", () => {
+    const base = source(), generated = prepareTextures([{ ...base, generateMipmaps: true }])[0]!;
+    expect(generated.levels).toHaveLength(1); expect(generated.byteLength).toBe(20);
+    expect(generated.generateMipmaps).toBe(true);
+    expect(sameTextureContent(generated, prepareTextures([base])[0]!)).toBe(false);
+    expect(() => prepareTextures([{ ...base, generateMipmaps: true, mipmaps: [{ width: 1, height: 1, data: new Uint8Array(4) }] }])).toThrow("single-level");
+    expect(() => prepareTextures([{ ...base, generateMipmaps: 1 as unknown as boolean }])).toThrow("flag");
+  });
   it("validates without touching pixel rows, while preparation still owns its pixels", () => {
     const texture = source();
     const reads = vi.spyOn(texture.data, "subarray");

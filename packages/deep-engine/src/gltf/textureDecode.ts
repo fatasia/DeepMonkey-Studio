@@ -70,6 +70,7 @@ export async function decodeGltfTextureManifest(manifest: GltfTextureManifest, d
   const maxDimension = safeLimit(options.maxDimension, 16_384, 16_384, "options.maxDimension");
   const maxBytes = safeLimit(options.maxBytes, MAX_BYTES, MAX_BYTES, "options.maxBytes");
   const maxTextures = safeLimit(options.maxTextures, 4096, 4096, "options.maxTextures");
+  const concurrency = safeLimit(options.imageDecodeConcurrency, 1, 2, "options.imageDecodeConcurrency");
   budget(manifest.images.length, 4096, "textureManifest.images");
   budget(manifest.resources.length, maxTextures, "textureManifest.resources");
   const images = new Map<string, GltfEncodedImage>();
@@ -97,6 +98,8 @@ export async function decodeGltfTextureManifest(manifest: GltfTextureManifest, d
   const ktx2Features = options.ktx2?.supportedFeatures === undefined
     ? undefined : Array.from(options.ktx2.supportedFeatures);
   let decodedBytes = 0;
+  const jobs: Array<{ image: GltfEncodedImage; decodedKey: string; semantic: GltfTextureManifest["resources"][number]["semantic"] }> = [];
+  const scheduled = new Set<string>();
   for (let index = 0; index < manifest.resources.length; index++) {
     options.signal?.throwIfAborted();
     const resource = manifest.resources[index]!;
@@ -114,13 +117,18 @@ export async function decodeGltfTextureManifest(manifest: GltfTextureManifest, d
     const image = imageFor(resource, index);
     const colorSpace = isSrgbTextureSemantic(resource.semantic) ? "srgb" : "linear";
     const decodedKey = image.mimeType === "image/ktx2" ? `${image.id}:${colorSpace}` : image.id;
-    if (decoded.has(decodedKey)) continue;
+    if (scheduled.has(decodedKey)) continue;
+    scheduled.add(decodedKey);
+    jobs.push({ image, decodedKey, semantic: resource.semantic });
+  }
+  const decode = async ({ image, decodedKey, semantic }: typeof jobs[number]): Promise<void> => {
+    options.signal?.throwIfAborted();
     if (image.mimeType === "image/ktx2") {
       if (!options.ktx2) throw new GltfImportError("unsupported", `images[${image.imageIndex}]`,
         "KHR_texture_basisu requires an injected KTX2 transcoder.", "KHR_texture_basisu");
       try {
         const texture = await transcodeKtx2Texture({
-          id: decodedKey, revision: 0, semantic: resource.semantic, data: image.data,
+          id: decodedKey, revision: 0, semantic, data: image.data,
           // Without parsing the container twice, conservatively preserve an alpha channel.
           hasAlpha: true, sourceProfile: "unknown",
         }, options.ktx2.transcoder, {
@@ -132,7 +140,7 @@ export async function decodeGltfTextureManifest(manifest: GltfTextureManifest, d
         const bytes = texture.data.byteLength + (texture.mipmaps ?? []).reduce((sum, level) => sum + level.data.byteLength, 0);
         decodedBytes += bytes; budget(decodedBytes, maxBytes, `images[${image.imageIndex}]`);
         decoded.set(decodedKey, { kind: "ktx2", value: texture });
-        continue;
+        return;
       } catch (error) {
         if (options.signal?.aborted) throw options.signal.reason ?? error;
         if (error instanceof GltfImportError) throw error;
@@ -155,7 +163,17 @@ export async function decodeGltfTextureManifest(manifest: GltfTextureManifest, d
     const pixels = rgba8(result, image, maxDimension, maxBytes - decodedBytes);
     decodedBytes += pixels.width * pixels.height * 4;
     decoded.set(decodedKey, { kind: "rgba", value: pixels });
-  }
+  };
+  let nextJob = 0, failed = false;
+  const consume = async (): Promise<void> => {
+    while (!failed && nextJob < jobs.length) {
+      const job = jobs[nextJob++]!;
+      try { await decode(job); } catch (error) { failed = true; throw error; }
+    }
+  };
+  // A transcoder may own a single WASM instance; do not concurrently enter it.
+  const workers = jobs.some(job => job.image.mimeType === "image/ktx2") ? 1 : concurrency;
+  await Promise.all(Array.from({ length: Math.min(workers, jobs.length) }, consume));
   let expandedBytes = 0;
   for (let index = 0; index < manifest.resources.length; index++) {
     const resource = manifest.resources[index]!, image = imageFor(resource, index);
@@ -166,20 +184,24 @@ export async function decodeGltfTextureManifest(manifest: GltfTextureManifest, d
       : payload.value.data.byteLength + (payload.value.mipmaps ?? []).reduce((sum, level) => sum + level.data.byteLength, 0);
     expandedBytes += bytes; budget(expandedBytes, maxBytes, "textureManifest.resources");
   }
+  const assignedPayloads = new Set<DecodedPayload>();
   const sources: DecodedTexture[] = manifest.resources.map((resource, index) => {
     const image = imageFor(resource, index);
     const colorSpace = isSrgbTextureSemantic(resource.semantic) ? "srgb" : "linear";
     const payload = decoded.get(image.mimeType === "image/ktx2" ? `${image.id}:${colorSpace}` : image.id);
     if (!payload) invalid(`textureManifest.resources[${index}].image`, "Texture resource has no decoded image.");
+    // rgba8/transcode already owns these planes. Transfer the first use, copy only aliases.
+    const copy = assignedPayloads.has(payload);
+    assignedPayloads.add(payload);
     if (payload.kind === "rgba") return { id: resource.id, revision: 0, semantic: resource.semantic,
-      width: payload.value.width, height: payload.value.height, data: payload.value.data.slice(),
+      width: payload.value.width, height: payload.value.height, data: copy ? payload.value.data.slice() : payload.value.data,
       ...(payload.value.bytesPerRow === undefined ? {} : { bytesPerRow: payload.value.bytesPerRow }), sampler: { ...resource.sampler } };
     return { id: resource.id, revision: 0, semantic: resource.semantic,
-      width: payload.value.width, height: payload.value.height, data: payload.value.data.slice(),
+      width: payload.value.width, height: payload.value.height, data: copy ? payload.value.data.slice() : payload.value.data,
       ...(payload.value.bytesPerRow === undefined ? {} : { bytesPerRow: payload.value.bytesPerRow }),
       ...(payload.value.compression ? { compression: payload.value.compression } : {}),
       ...(payload.value.mipmaps ? { mipmaps: payload.value.mipmaps.map(level => ({
-        width: level.width, height: level.height, data: level.data.slice(),
+        width: level.width, height: level.height, data: copy ? level.data.slice() : level.data,
         ...(level.bytesPerRow === undefined ? {} : { bytesPerRow: level.bytesPerRow }),
       })) } : {}), sampler: { ...resource.sampler } };
   });

@@ -5,17 +5,19 @@ import type { PbrRendererOptions } from "../webgpu/pbrRenderer.js";
 import type { PbrEnvironmentSource } from "../webgpu/pbrEnvironmentSource.js";
 import { snapshotShadows } from "./deepWebGpuShadowPolicy.js";
 import { snapshotPbrReflectionProbeSources } from "../webgpu/pbrReflectionProbePreparation.js";
+import { resolveAdvancedMaterialFeatures } from "../webgpu/advancedMaterialFeatures.js";
 
 export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendererOptions {
   if (!options || typeof options !== "object" || Array.isArray(options)) {
     throw new TypeError("Deep WebGPU renderer options must be an object.");
   }
   if (Object.keys(options).some(key => !["shadows", "features", "environment", "deformation", "meshlets", "frameCapture", "adaptiveQuality", "probeClipmap", "pipelines",
-    "resolutionScalePolicy", "gpuPassTiming", "probeDirections", "clusterLod", "virtualTextures", "recovery", "autoExposure", "hdrDisplay", "advancedMaterials",
+    "resolutionScalePolicy", "gpuPassTiming", "probeDirections", "clusterLod", "virtualTextures", "recovery", "autoExposure", "hdrDisplay", "advancedMaterials", "advancedMaterialFeatures",
     "msaaSampleCount", "localSpotShadowAtlasTier"].includes(key))) {
     throw new TypeError("Unknown Deep WebGPU renderer option.");
   }
   // AA-M1:主 pass MSAA 请求档(1/4);缺省 4,非法值在渲染器侧 resolvePbrMsaaSampleCount fail-closed。
+  resolveAdvancedMaterialFeatures(options.advancedMaterialFeatures);
   if (options.msaaSampleCount !== undefined && options.msaaSampleCount !== 1 && options.msaaSampleCount !== 4) {
     throw new TypeError(`Deep WebGPU msaaSampleCount option must be 1 or 4; got ${String(options.msaaSampleCount)} (${typeof options.msaaSampleCount})`);
   }
@@ -59,6 +61,7 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     ...(options.deformation === undefined ? {} : { deformation: options.deformation }),
     // 选择性材质变体(opt-in):缺省不进快照,管线 WGSL 与原版逐字节一致。
     ...(options.advancedMaterials === undefined ? {} : { advancedMaterials: options.advancedMaterials }),
+    ...(options.advancedMaterialFeatures === undefined ? {} : { advancedMaterialFeatures: options.advancedMaterialFeatures }),
     ...(options.shadows === undefined ? {} : { shadows: snapshotShadows(options.shadows) }),
     ...(options.features === undefined ? {} : { features: resolvePbrRendererFeatures(options.features) }),
     ...(options.environment === undefined ? {} : { environment: snapshotEnvironment(options.environment) }),

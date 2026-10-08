@@ -75,6 +75,7 @@ pub fn scene_resource_manifest(
                 TextureEncoding::Srgb => 1,
             });
             hash.sampler(texture.sampler);
+            hash.bool(texture.generate_mipmaps);
             hash.usize(texture.levels.len());
             for level in &texture.levels {
                 hash.u32(level.width);

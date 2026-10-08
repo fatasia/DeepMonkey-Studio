@@ -107,6 +107,8 @@ export interface PbrRendererOptions {
    * 管线互斥(texture-array 批次对含 advanced 参数的材质回退常规路径)。
    */
   readonly advancedMaterials?: boolean;
+  /** Optional compiled lobe mask; absent retains all advanced features. Missing lobes reject before upload. */
+  readonly advancedMaterialFeatures?: number;
   readonly environment?: PbrEnvironmentSource;
   /** Optional R12 capture transaction; omitted on normal production frames. */
   readonly frameCapture?: PbrFrameCaptureOptions;

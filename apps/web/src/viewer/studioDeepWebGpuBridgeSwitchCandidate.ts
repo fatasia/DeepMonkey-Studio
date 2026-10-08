@@ -1,5 +1,7 @@
 import type { Object3D } from "three";
 import type { PbrRendererOptions } from "@bim-studio/deep-engine/webgpu";
+import { advancedMaterialFeatures } from "@bim-studio/deep-engine/webgpu";
+import { sceneAdvancedMaterialFeatures } from "./studioDeepAdvancedMaterials";
 import { studioDeepPipelineHints } from "./studioDeepPipelineHints";
 import { StudioDeepRuntimePreparation } from "./StudioDeepRuntimePreparation";
 import { DEFAULT_DISPLAY_CONTRACT } from "@bim-studio/contracts";
@@ -120,10 +122,11 @@ export async function prepareStudioDeepSwitchCandidate(host: StudioDeepBridgeSwi
       const megaLights = megaLightsEnabled();
       const rayTracedShadows = rayTracedShadowsEnabled();
       const rayTracedReflections = rayTracedReflectionsEnabled();
-      const rendererOptions = (advancedMaterials: boolean, alphaToCoverage: boolean, independent: boolean): PbrRendererOptions => {
+      const rendererOptions = (advancedMaterials: boolean, alphaToCoverage: boolean, independent: boolean,
+        featureMask = sceneAdvancedMaterialFeatures(host.viewer.scene)): PbrRendererOptions => {
         const pipelineBootstrap = t11PipelineBootstrap(independent);
         return { environment: frame.environment!.source, deformation: true, meshlets: true,
-          ...(advancedMaterials ? { advancedMaterials: true } : {}),
+          ...(advancedMaterials ? { advancedMaterials: true, advancedMaterialFeatures: featureMask } : {}),
           ...(alphaToCoverage ? { msaaSampleCount: 4 } : {}),
           // Studio uses the author's live exposure across engines. Automatic
           // exposure remains available to renderer clients that explicitly request it.
@@ -236,7 +239,8 @@ export async function prepareStudioDeepSwitchCandidate(host: StudioDeepBridgeSwi
         view, authorChunks: true,
         ...(authorRenderPacket ? { renderPacket: authorRenderPacket } : {}),
         ...(authorHlodClusters?.length ? { hlodClusters: authorHlodClusters } : {}),
-        renderer: rendererOptions(advancedMaterials, alphaToCoverage, authorRenderPacket !== undefined),
+        renderer: rendererOptions(advancedMaterials, alphaToCoverage, authorRenderPacket !== undefined,
+          authorRenderPacket ? advancedMaterialFeatures(authorRenderPacket.materials) : sceneAdvancedMaterialFeatures(host.viewer.scene)),
         cameraLayerMask: host.viewer.camera.layers.mask, signal,
       };
       const backend = await (early ? module.DeepWebGpuBackend.create(request, early) : module.DeepWebGpuBackend.create(request));

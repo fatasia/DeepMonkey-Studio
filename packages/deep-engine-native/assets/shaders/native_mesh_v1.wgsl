@@ -7,6 +7,7 @@
 // textureSample 处在按管线常量的分支内,与 Web 分层合成一致关闭
 // derivative_uniformity 诊断。
 diagnostic(off, derivative_uniformity);
+override deep_native_extended: bool = true;
 struct LocalLight {
   positionRange: vec4f, directionKind: vec4f, radianceOuter: vec4f, coneDecay: vec4f,
 };
@@ -718,17 +719,16 @@ fn native_extended_shade(
   let ext1 = material_textures.extended1;
   let sheen = material_textures.advanced0;
   let sheen_peak = deepAdvMax3(sheen.xyz);
-  let legacy = ext0.y == 0.0 && ext0.w == 0.0 && ext1.y == 0.0 && sheen_peak <= 0.0;
+  let original = native_lit_response(input, normal, geometry_normal, base, metal,
+    rough_raw, dielectric, ao, emission, view, light, visibility);
+  let legacy = !deep_native_extended || (ext0.y == 0.0 && ext0.w == 0.0 && ext1.y == 0.0 && sheen_peak <= 0.0);
   if (legacy) {
-    return native_lit_response(input, normal, geometry_normal, base, metal,
-      rough_raw, dielectric, ao, emission, view, light, visibility);
+    return original;
   }
   if (flag(input.material.w, 64u)) { return base; }
   let rough = min(1.0, clamp(rough_raw, 0.045, 1.0) + native_view_geometry_roughness(geometry_normal));
   let authored_light = frame.sunColor.w >= 2.0;
   let sun = select(vec3f(3.2, 3.0, 2.8), frame.sunColor.rgb, authored_light);
-  let original = native_lit_response(input, normal, geometry_normal, base, metal,
-    rough_raw, dielectric, ao, emission, view, light, visibility);
   let nv = clamp(dot(normal, view), 0.001, 1.0);
   let nl = clamp(dot(normal, light), 0.0, 1.0);
   // stock 主光直射(与 native_lit_response 内部同式:min(1,clamp+几何粗糙度)、

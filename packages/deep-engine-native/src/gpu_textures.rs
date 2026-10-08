@@ -18,6 +18,7 @@ pub struct GpuMaterial {
     pub base_color_mapped: bool,
     pub textured: bool,
     pub transmission: bool,
+    pub extended: bool,
     /// I-C23 分层绑定:304B uniform + 4 个借用纹理槽([base0, mr0, base1, mr1])。
     /// 只有调用方提供分层 layout 且材质声明层行时才驻留。
     pub layered: Option<LayeredGpuMaterial>,
@@ -229,10 +230,11 @@ impl GpuPbrResources {
                 "native GPU texture exceeds device 2D dimension limit {limit}"
             ));
         }
+        let mips = crate::gpu_texture_upload::TextureMipGenerator::default();
         let textures: Vec<Arc<GpuTexture>> = prepared
             .textures
             .iter()
-            .map(|texture| upload_texture(device, queue, texture).map(Arc::new))
+            .map(|texture| upload_texture(device, queue, texture, &mips).map(Arc::new))
             .collect::<Result<Vec<_>, _>>()?;
         let fallbacks = Arc::new(if prepared.materials.is_empty() {
             Vec::new()
@@ -351,6 +353,7 @@ impl GpuMaterial {
             base_color_mapped: material.texture_indices[0].is_some(),
             textured: material.texture_indices.iter().any(Option::is_some),
             transmission: material.uniform[45] > 0.0,
+            extended: material.uses_extended_response(),
             layered,
         })
     }

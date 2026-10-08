@@ -208,12 +208,8 @@ impl GpuSceneCache {
                     Ok(value)
                 } else {
                     metrics.texture_uploads += 1;
-                    let value = Arc::new(upload_texture(device, queue, source)?);
-                    let bytes: u64 = source
-                        .levels
-                        .iter()
-                        .map(|level| u64::from(level.width) * u64::from(level.height) * 4)
-                        .sum();
+                    let value = Arc::new(upload_texture(device, queue, source, &self.texture_mips)?);
+                    let bytes = source.gpu_bytes();
                     pending.push((key, Arc::clone(&value), bytes));
                     Ok(value)
                 }

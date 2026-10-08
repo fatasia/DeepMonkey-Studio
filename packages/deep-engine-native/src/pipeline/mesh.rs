@@ -114,13 +114,13 @@ fn create_raster_pipelines(
     let slot = |raster| {
         if capture.enabled() {
             return create_mesh_pipeline(device, frame_layout, material_layout, shader,
-                raster, semantic, normal_mapped, capture, layered_entries).into();
+                raster, semantic, normal_mapped, capture, layered_entries, true).into();
         }
         super::PipelineSlot::Mesh(std::sync::Arc::new(DeferredMeshPipeline {
         device: device.clone(), frame_layout: frame_layout.clone(),
         material_layout: material_layout.clone(), shader: shader.clone(),
         raster, semantic, normal_mapped, capture, layered_entries,
-        pipeline: std::sync::OnceLock::new(),
+        pipelines: std::array::from_fn(|_| std::sync::OnceLock::new()),
         }))
     };
     RasterPipelines {
@@ -141,15 +141,19 @@ pub(super) struct DeferredMeshPipeline {
     normal_mapped: bool,
     capture: CaptureMode,
     layered_entries: bool,
-    pipeline: std::sync::OnceLock<wgpu::RenderPipeline>,
+    pipelines: [std::sync::OnceLock<wgpu::RenderPipeline>; 2],
 }
 impl DeferredMeshPipeline {
     #[cfg(test)]
-    pub(super) fn is_ready(&self) -> bool { self.pipeline.get().is_some() }
+    pub(super) fn is_ready(&self) -> bool { self.pipelines.iter().any(|p| p.get().is_some()) }
     pub(super) fn get(&self) -> &wgpu::RenderPipeline {
-        self.pipeline.get_or_init(|| create_mesh_pipeline(
+        self.get_profile(true)
+    }
+    pub(super) fn get_profile(&self, extended: bool) -> &wgpu::RenderPipeline {
+        let extended = extended || self.layered_entries;
+        self.pipelines[usize::from(extended)].get_or_init(|| create_mesh_pipeline(
             &self.device, &self.frame_layout, &self.material_layout, &self.shader,
-            self.raster, self.semantic, self.normal_mapped, self.capture, self.layered_entries,
+            self.raster, self.semantic, self.normal_mapped, self.capture, self.layered_entries, extended,
         ))
     }
 }
@@ -165,6 +169,7 @@ fn create_mesh_pipeline(
     normal_mapped: bool,
     capture: CaptureMode,
     layered_entries: bool,
+    extended: bool,
 ) -> wgpu::RenderPipeline {
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Deep Engine native pipeline layout"),
@@ -233,7 +238,10 @@ fn create_mesh_pipeline(
                 (CaptureMode::None, true) => "fragment_main_layered",
                 (CaptureMode::None, false) => "fragment_main",
             }),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions {
+                constants: &[("deep_native_extended", if extended { 1.0 } else { 0.0 })],
+                ..Default::default()
+            },
             targets: &targets[..if capture.enabled() { 2 } else { 1 }],
         }),
         multiview_mask: None,

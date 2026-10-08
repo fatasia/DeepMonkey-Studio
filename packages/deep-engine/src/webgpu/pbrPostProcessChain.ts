@@ -131,19 +131,19 @@ export interface PbrFinalEffectsResult {
 /** Owns the stable post-process resources used by the default PBR frame. */
 export class PbrPostProcessChain {
   private readonly hiZ: HiZPyramid | undefined;
-  private readonly ambientOcclusion: AmbientOcclusionPass | undefined;
-  private readonly ambientOcclusionComposite: AmbientOcclusionCompositePass | undefined;
-  private readonly screenSpaceReflection: ScreenSpaceReflectionPass | undefined;
+  private ambientOcclusion: AmbientOcclusionPass | undefined;
+  private ambientOcclusionComposite: AmbientOcclusionCompositePass | undefined;
+  private screenSpaceReflection: ScreenSpaceReflectionPass | undefined;
   private readonly screenSpaceGi: ScreenSpaceGiPass | undefined;
   private readonly projectedTexture: ProjectedTexturePass | undefined;
   /** P1 RT specular GI 屏外填充(懒构造;rtSpecular 输入首帧才建,缺省零构造)。 */
   private rtSpecularFill: RtSpecularFillPass | undefined;
-  private readonly volumetricFog: VolumetricFogPass | undefined;
+  private volumetricFog: VolumetricFogPass | undefined;
   private volumetricGodRays: VolumetricGodRaysPass | undefined;
-  private readonly volumetricFogComposite: VolumetricFogCompositePass | undefined;
+  private volumetricFogComposite: VolumetricFogCompositePass | undefined;
   private readonly temporalAa: TemporalAaPass | undefined;
   private readonly temporalUpscale: TemporalUpscalePass | undefined;
-  private readonly bloom: BloomPass | undefined;
+  private bloom: BloomPass | undefined;
   private authorBloom: AuthorBloomPass | undefined;
   private instanceOutline: InstanceOutlinePass | undefined;
   private outlinePrewarm: Promise<void> | undefined;
@@ -165,11 +165,8 @@ export class PbrPostProcessChain {
     let temporalUpscale: TemporalUpscalePass | undefined;
     try {
       if (this.features.occlusionCulling) hiZ = new HiZPyramid(session);
-      if (this.features.ambientOcclusion) {
-        ambientOcclusion = new AmbientOcclusionPass(session, pool);
-        ambientOcclusionComposite = new AmbientOcclusionCompositePass(session, pool);
-      }
-      if (this.features.screenSpaceReflection) screenSpaceReflection = new ScreenSpaceReflectionPass(session, pool);
+      // Frame overrides may leave these capabilities inactive for the entire
+      // scene. Allocate them at their first actual encode, not at bootstrap.
       // P2 SSGI(opt-in,默认关):生产帧池恒在;pool 缺席 + ssgi 开启 = 显式配置错误。
       if (this.features.ssgi) {
         if (!pool) throw new Error("Screen-space GI requires the transient texture pool.");
@@ -180,13 +177,8 @@ export class PbrPostProcessChain {
         if (!pool) throw new Error("Projected texture light requires the transient texture pool.");
         projectedTexture = new ProjectedTexturePass(session, pool);
       }
-      if (this.features.volumetricFog) {
-        volumetricFog = new VolumetricFogPass(session, pool);
-        volumetricFogComposite = new VolumetricFogCompositePass(session, pool);
-      }
       if (this.features.temporalAa) temporalAa = new TemporalAaPass(session);
       if (this.features.temporalUpscale) temporalUpscale = new TemporalUpscalePass(session);
-      if (this.features.bloom) bloom = new BloomPass(session, pool);
     } catch (error) {
       failWithResourceCleanup(error, "Post-process construction failed", [
       () => bloom?.dispose(), () => temporalUpscale?.dispose(), () => temporalAa?.dispose(), () => screenSpaceReflection?.dispose(),
@@ -230,6 +222,8 @@ export class PbrPostProcessChain {
     if (!active.ambientOcclusion) {
       return Object.freeze({ color: targets.hdrTexture, ...(hiZ ? { hiZ } : {}), passCount: hiZPasses });
     }
+    this.ambientOcclusion ??= new AmbientOcclusionPass(this.session, this.pool);
+    this.ambientOcclusionComposite ??= new AmbientOcclusionCompositePass(this.session, this.pool);
     const radius = Math.min(100, Math.max(0.1, extent * 0.04));
     const thickness = Math.min(radius, Math.max(0.01, extent * 0.004));
     input.passTiming?.beginMarker(encoder, "ambient-occlusion");
@@ -269,7 +263,9 @@ export class PbrPostProcessChain {
     this.pendingTemporalRevision = revision; this.lastTemporalPlan = temporalPlan;
     let marched = color;
     let effectPasses = 0;
-    if (active.volumetricFog && this.volumetricFog && this.volumetricFogComposite) {
+    if (active.volumetricFog && this.features.volumetricFog) {
+      this.volumetricFog ??= new VolumetricFogPass(this.session, this.pool);
+      this.volumetricFogComposite ??= new VolumetricFogCompositePass(this.session, this.pool);
       const profile = active.volumetricFogProfile;
       input.passTiming?.beginMarker(encoder, "volumetric-fog-march");
       const source = {
@@ -322,7 +318,8 @@ export class PbrPostProcessChain {
       }, { verticalFovRadians, ...(input.passTiming ? { passTiming: input.passTiming } : {}) });
       marched = lit.texture; effectPasses += lit.passCount;
     }
-    if (active.screenSpaceReflection && this.screenSpaceReflection) {
+    if (active.screenSpaceReflection && this.features.screenSpaceReflection) {
+      this.screenSpaceReflection ??= new ScreenSpaceReflectionPass(this.session, this.pool);
       // E04 首切片:SSR 在 TAA 前,TAA 顺带平滑半分辨率步进痕迹;顺序与 Babylon SSR→TAA 一致。
       if (input.brdfLut === undefined) throw new Error("Screen-space reflection requires the environment BRDF LUT (C11 physical mask).");
       const reflected = this.screenSpaceReflection.encode(encoder, {
@@ -387,7 +384,7 @@ export class PbrPostProcessChain {
     input.passTiming?.beginMarker(encoder, "bloom");
     const bloom = active.authorBloom
       ? (this.authorBloom ??= new AuthorBloomPass(this.session, this.pool)).encode(encoder, source, active.authorBloom)
-      : this.bloom!.encode(encoder, source, DEFAULT_PBR_BLOOM_OPTIONS);
+      : (this.bloom ??= new BloomPass(this.session, this.pool)).encode(encoder, source, DEFAULT_PBR_BLOOM_OPTIONS);
     input.passTiming?.endMarker(encoder, "bloom");
     return Object.freeze({ color: bloom.texture, passCount: effectPasses + (this.features.temporalAa ? 1 : 0) + bloom.passCount,
       ...(outline ? { outline } : {}) });

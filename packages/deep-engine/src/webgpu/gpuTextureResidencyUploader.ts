@@ -2,12 +2,13 @@ import type {
   GpuResidencyUploader, GpuResidencyUploadRequest, GpuResidencyUploadResult,
 } from "../streaming/index.js";
 import {
-  prepareTextures, TEXTURE_SEMANTICS, type DecodedTexture, type PreparedTexture, type PreparedTextureFormat,
+  prepareTextures, planTextureMips, TEXTURE_SEMANTICS, type DecodedTexture, type PreparedTexture, type PreparedTextureFormat,
   type TextureCompressionFeature, type TextureSemantic,
 } from "../textures/decodedTexture.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { createAdmittedTexture } from "./resourceAdmission.js";
 import { bindGpuResidencyHandleDevice } from "./gpuResidencyDeviceAffinity.js";
+import { generateTextureMips } from "./textureMipGeneration.js";
 
 export type GpuTextureResidencyTexture = PreparedTexture | DecodedTexture;
 /** Provider 必须声明返回内容对应的外部 LOD，不能只靠相同字节数猜测。 */
@@ -70,6 +71,7 @@ export class GpuTextureResidencyUploader implements GpuResidencyUploader<GpuText
     const source = prepareSource(provided.texture, textureLimit(this.session));
     if (request.signal.aborted) throw cancellation(request.signal);
     const layout = validateSource(source, request, this.session);
+    const mipLevelCount = source.generateMipmaps ? planTextureMips(source.levels[0]!.width, source.levels[0]!.height).length : source.levels.length;
     const device = this.session.device, checks: Promise<GPUError | null>[] = [];
     let texture: GPUTexture | undefined, view: GPUTextureView | undefined, sampler: GPUSampler | undefined;
     let depth = 0, workError: unknown;
@@ -80,8 +82,8 @@ export class GpuTextureResidencyUploader implements GpuResidencyUploader<GpuText
       texture = createAdmittedTexture(this.session, {
         label: `Deep streamed texture ${request.id} LOD ${request.level}`,
         size: { width: source.levels[0]!.width, height: source.levels[0]!.height, depthOrArrayLayers: 1 },
-        format: source.format, mipLevelCount: source.levels.length, dimension: "2d",
-        usage: this.usage | GPUTextureUsage.COPY_DST,
+        format: source.format, mipLevelCount, dimension: "2d",
+        usage: this.usage | GPUTextureUsage.COPY_DST | (source.generateMipmaps ? GPUTextureUsage.RENDER_ATTACHMENT : 0),
       });
       for (let index = 0; index < source.levels.length; index += 1) {
         const mip = source.levels[index]!;
@@ -91,9 +93,10 @@ export class GpuTextureResidencyUploader implements GpuResidencyUploader<GpuText
             height: alignedCopyDimension(mip.height, layout.blockWidth), depthOrArrayLayers: 1 });
         if (request.signal.aborted) throw cancellation(request.signal);
       }
+      if (source.generateMipmaps) generateTextureMips(device, texture, source.format, mipLevelCount);
       view = texture.createView();
       sampler = device.createSampler({ label: `Deep streamed sampler ${request.id}`,
-        ...source.sampler, lodMinClamp: 0, lodMaxClamp: source.levels.length - 1 });
+        ...source.sampler, lodMinClamp: 0, lodMaxClamp: mipLevelCount - 1 });
       if (request.signal.aborted) throw cancellation(request.signal);
     } catch (error) { workError = error; }
     finally {
@@ -115,7 +118,7 @@ export class GpuTextureResidencyUploader implements GpuResidencyUploader<GpuText
         texture: texture!, view: view!, sampler: sampler!,
         id: request.id, revision: request.revision,
         level: request.level, byteLength: source.byteLength, semantic: source.semantic, format: source.format,
-        width: base.width, height: base.height, mipLevelCount: source.levels.length,
+        width: base.width, height: base.height, mipLevelCount,
         ...(source.requiredFeature ? { requiredFeature: source.requiredFeature } : {}) }), device);
       return Object.freeze({ handle, byteLength: source.byteLength });
     } catch (error) {
@@ -181,6 +184,11 @@ function validateSource(source: PreparedTexture, request: GpuResidencyUploadRequ
     if (!Number.isSafeInteger(total)) throw new Error("Texture residency byte length is invalid.");
   }
   const finalMip = source.levels[source.levels.length - 1]!;
+  if (source.generateMipmaps !== undefined && typeof source.generateMipmaps !== "boolean") throw new Error("Invalid mip generation flag.");
+  if (source.generateMipmaps) {
+    if (source.levels.length !== 1 || layout.feature) throw new Error("Generated mips require single-level RGBA8 pixels.");
+    total = planTextureMips(finalMip.width, finalMip.height).reduce((sum, level) => sum + level.byteLength, 0);
+  }
   if (source.levels.length > 1 && (finalMip.width !== 1 || finalMip.height !== 1)) {
     throw new Error("Texture residency mip chain must end at 1x1.");
   }

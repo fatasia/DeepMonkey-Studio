@@ -1,5 +1,23 @@
 import type * as THREE from "three";
 
+/** All authored materials, including hidden objects, can become visible without a recompile. */
+export function sceneAdvancedMaterialFeatures(root: THREE.Object3D): number {
+  let mask = 0;
+  root.traverse(child => {
+    const material = (child as THREE.Mesh).material;
+    if (!material) return;
+    for (const entry of Array.isArray(material) ? material : [material]) {
+      const physical = entry as THREE.MeshPhysicalMaterial;
+      if (physical.clearcoat > 0) mask |= 1;
+      if (physical.sheen > 0 && physical.sheenColor && Math.max(physical.sheenColor.r, physical.sheenColor.g, physical.sheenColor.b) > 0) mask |= 2;
+      if (physical.iridescence > 0 && (physical.iridescenceThicknessRange?.[1] ?? 400) > 0) mask |= 4;
+      if (physical.transmission > 0) mask |= 8;
+      if (physical.anisotropy > 0) mask |= 16;
+    }
+  });
+  return mask;
+}
+
 /**
  * Deep 渲染器按需变体的宿主侧探测(同一族两档):
  * - advancedMaterials:场景里存在 three r185 MeshPhysicalMaterial 的 clearcoat / sheen /

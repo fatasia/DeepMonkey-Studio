@@ -28,7 +28,7 @@ export class PacketTextureArrayConsumer {
   constructor(private readonly session: DeviceSession, private readonly layout: GPUBindGroupLayout) {}
 
   plannedTextureIds(textures: readonly PreparedTexture[]): ReadonlySet<string> {
-    const entries = textures.filter(texture => !texture.requiredFeature).map(texture => ({
+    const entries = textures.filter(texture => !texture.requiredFeature && !texture.generateMipmaps).map(texture => ({
       textureId: texture.id, format: texture.format, width: texture.levels[0]!.width,
       height: texture.levels[0]!.height,
       compatibilityKey: `${texture.samplerKey}|mips:${texture.levels.length}`,

@@ -6,6 +6,11 @@ import { compileSceneRuntimePackage, type SceneIrradianceProbeBake } from "../de
 import { probeGridBakeForPayload } from "../delivery/probeGridBakePublicationSession";
 import { loadViewerAssetBuffer } from "./viewerAssetTransport";
 import type { StudioWasmCompilationProgress, StudioDecodedAsset } from "./studioWasmCompilationClient";
+import { decodeAuthorModel } from "../delivery/authorModelDecode";
+import { persistentAuthorModelDecoder } from "../delivery/persistentAuthorModelDecoder";
+
+const decodeAsset = persistentAuthorModelDecoder((bytes, options, signal) =>
+  decodeAuthorModel(bytes, options, signal, normalizeStudioWasmModel, browserImageDecoder));
 
 /** Compile through the same runtime-package path used by Native publication. */
 export async function compileStudioWasmRuntimePackageInProcess(
@@ -32,6 +37,7 @@ export async function compileStudioWasmRuntimePackageInProcess(
     imageDecoder: { decode: (...args) => { progress("textures"); return browserImageDecoder.decode(...args); } },
     textureBudgetBytes: 112 * 1024 * 1024,
     advancedMaterials: true,
+    decodeModel: (bytes, options, loadSignal) => { progress("geometry"); return decodeAsset(bytes, options, loadSignal); },
     onPackageBuild: () => progress("package"),
     loadTexture: async (url, loadSignal) => {
       progress("assets");

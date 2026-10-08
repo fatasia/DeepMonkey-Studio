@@ -192,6 +192,9 @@ pub(super) async fn create_renderer(
         has_layered_materials,
         compact_content,
     );
+    if !compact_content && content.material_bindings.is_empty() {
+        resources::prewarm_used_pipelines(&pipelines, &prepared, &prepared_pbr);
+    }
     if let Some(clock) = initial_preparation_clock.as_mut() {
         clock.resource_stage_prepared(1)?;
     }

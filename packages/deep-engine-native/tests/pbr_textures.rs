@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use deep_engine_native::{
     contract::{RenderPacket, TextureSemantic, default_textured_fixture_path, load_and_validate},
     pbr_texture::{
-        MATERIAL_UNIFORM_FLOATS, TextureEncoding, decode_tangent_normal, occlusion_factor,
+        TextureEncoding, decode_tangent_normal, occlusion_factor,
         prepare_pbr_resources, srgb_channel_to_linear,
     },
     scene::prepare_scene,
@@ -23,9 +23,9 @@ fn textured_fixture_prepares_all_five_core_slots_and_mips() {
     assert_eq!(prepared.summary().linear_textures, 3);
     assert_eq!(
         prepared.materials[0].texture_indices,
-        [Some(0), Some(1), Some(2), Some(3), Some(4)]
+        [Some(0), Some(1), Some(2), Some(3), Some(4), None, None]
     );
-    assert_eq!(prepared.materials[0].uniform.len(), MATERIAL_UNIFORM_FLOATS);
+    assert_eq!(prepared.materials[0].uniform.len(), deep_engine_native::mesh_abi::MATERIAL_UNIFORM_ROW_FLOATS);
     assert_eq!(
         [3, 11, 19, 27, 35].map(|offset| prepared.materials[0].uniform[offset]),
         [2.0, 1.0, 1.0, 2.0, 2.0]
@@ -51,8 +51,8 @@ fn padded_rows_are_compacted_before_gpu_upload() {
     let packet: RenderPacket = serde_json::from_value(value).expect("packet");
     let prepared = prepare_pbr_resources(&packet).expect("compact padded texture");
     assert_eq!(
-        prepared.textures[0].levels[0].data,
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        prepared.textures[0].levels[0].data.as_ref(),
+        &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     );
 }
 

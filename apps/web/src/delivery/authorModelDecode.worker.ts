@@ -4,6 +4,10 @@ import { decodeAuthorModel, isAuthorModelNormalizationFailure } from "./authorMo
 import { inProcessImageDecoder } from "./inProcessImageDecoder";
 import { authorModelTransferBuffers } from "./authorModelTransfer";
 import type { AuthorModelWorkerRequest, AuthorModelWorkerReply, AuthorModelFailure } from "./authorModelWorkerClient";
+import { persistentAuthorModelDecoder } from "./persistentAuthorModelDecoder";
+
+const decode = persistentAuthorModelDecoder((bytes, options, signal) =>
+  decodeAuthorModel(bytes, options, signal, normalizeStudioWasmModel, inProcessImageDecoder));
 
 const scope = globalThis as unknown as {
   onmessage: ((event: { data: AuthorModelWorkerRequest }) => void) | null;
@@ -11,8 +15,7 @@ const scope = globalThis as unknown as {
 };
 scope.onmessage = async ({ data }) => {
   try {
-    const result = await decodeAuthorModel(data.bytes, data.options, new AbortController().signal,
-      normalizeStudioWasmModel, inProcessImageDecoder);
+    const result = await decode(data.bytes, data.options, new AbortController().signal);
     scope.postMessage({ id: data.id, result }, authorModelTransferBuffers(result));
   } catch (reason) {
     const error: AuthorModelFailure = { message: reason instanceof Error ? reason.message : String(reason),

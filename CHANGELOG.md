@@ -6,7 +6,9 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## 0.2.0 — 2026-10-08
 
-- Align Deep WebGPU and WASM wheel/pinch zoom with Three. Coalesce camera input, pause parked runtimes, reuse compiled geometry and cap decoded/GPU caches. The SMT verification measured prepared switches at 126–502 ms; first background preparation still takes 9.2 s (WebGPU) / 26.3 s (WASM).
+- Align Deep WebGPU/WASM zoom with Three; coalesce camera input, retain prepared runtimes, cache decoded assets and specialize material pipelines. SMT cold preparation measured about 3.5 s (WebGPU) and 5.8–6.3 s (WASM); reloads took 4.4–4.7 s. WASM linear memory fell from about 220 to 124 MiB.
+- Generate texture mipmaps on GPU, avoid duplicate CPU texture planes, fix frozen desktop texture loading, and transfer runtime assets in compressed binary packages.
+- Document Codex and Claude Skills, eight SDK templates, MCP authentication and scene editing.
 - Publish Windows editor installers, a frozen SMT Windows viewer, source and offline Docker archives with SHA-256 checksums. Deploy the complete Web frontend, browser example and videos through GitHub Pages.
 
 - Close out the three-engine switching batch: worker-side canonical re-hash (`compute_runtime_package_canonical_hash`) with prevalidated `set/update_scene_viewer` fast paths, the WASM package cache raised to 256 MiB (the real 159.9 MB SMT package now caches), cross-compilation asset decode cache, idle author-package prewarming, and a compile-lookup short circuit — WASM round-trip switching drops from 18.2 s to ~0.6 s, WebGPU warm switching to ~0.4 s, and the diagnostics preflight no longer hangs forever when `requestAdapter` stalls (8 s timeout). Solid-environment contract v10 ships the studio gradient background consumed by a new fullscreen background pass, matching the three.js studio palette.

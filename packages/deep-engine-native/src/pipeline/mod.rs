@@ -59,6 +59,12 @@ enum PipelineSlot {
     Mesh(std::sync::Arc<mesh::DeferredMeshPipeline>),
 }
 impl PipelineSlot {
+    fn get_profile(&self, extended: bool) -> &wgpu::RenderPipeline {
+        match self {
+            Self::Ready(pipeline) => pipeline,
+            Self::Mesh(recipe) => recipe.get_profile(extended),
+        }
+    }
     fn get(&self) -> &wgpu::RenderPipeline {
         match self {
             Self::Ready(pipeline) => pipeline,
@@ -77,6 +83,10 @@ struct ShadowPipelines {
 }
 
 impl RasterPipelines {
+    fn select_profile(&self, mirrored: bool, double_sided: bool, extended: bool) -> &wgpu::RenderPipeline {
+        let slot = if double_sided { &self.double_sided } else if mirrored { &self.mirrored } else { &self.regular };
+        slot.get_profile(extended)
+    }
     fn select(&self, mirrored: bool, double_sided: bool) -> &wgpu::RenderPipeline {
         if double_sided {
             self.double_sided.get()
@@ -115,6 +125,13 @@ impl MeshPipelines {
         double_sided: bool,
         normal_mapped: bool,
     ) -> &wgpu::RenderPipeline {
+        self.select_profile(alpha_mode, premultiplied, mirrored, double_sided, normal_mapped, true)
+    }
+
+    pub fn select_profile(
+        &self, alpha_mode: AlphaMode, premultiplied: bool, mirrored: bool,
+        double_sided: bool, normal_mapped: bool, extended: bool,
+    ) -> &wgpu::RenderPipeline {
         let active = self
             .active
             .as_ref()
@@ -134,7 +151,7 @@ impl MeshPipelines {
         } else {
             &set.standard
         };
-        set.select(mirrored, double_sided)
+        set.select_profile(mirrored, double_sided, extended)
     }
 
     /// I-C23:分层批次的颜色管线选择,选择轴与 `select` 完全同构;仅入口与
@@ -331,6 +348,9 @@ mod demand_tests {
             let first = pipelines.select(AlphaMode::Opaque, false, false, false, false);
             assert!(recipe.is_ready());
             assert!(std::ptr::eq(first, clone.get()));
+            let ordinary = pipelines.select_profile(AlphaMode::Opaque, false, false, false, false, false);
+            assert!(!std::ptr::eq(first, ordinary));
+            assert!(std::ptr::eq(ordinary, clone.get_profile(false)));
             let PipelineSlot::Mesh(unused) = &active.blend.normal_mapped.mirrored else { panic!("must defer") };
             assert!(!unused.is_ready(), "unused material variants must stay uncompiled");
             for alpha in [AlphaMode::Opaque, AlphaMode::Blend] {

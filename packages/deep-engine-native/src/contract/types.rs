@@ -398,6 +398,8 @@ pub struct TextureResource {
     pub bytes_per_row: Option<u32>,
     #[serde(default, deserialize_with = "present_or_default")]
     pub mipmaps: Vec<PixelLevel>,
+    #[serde(default, deserialize_with = "present_or_default")]
+    pub generate_mipmaps: bool,
     #[serde(default, deserialize_with = "present")]
     pub sampler: Option<TextureSampler>,
 }

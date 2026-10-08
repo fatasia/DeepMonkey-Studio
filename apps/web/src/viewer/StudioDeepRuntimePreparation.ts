@@ -17,6 +17,7 @@ export class StudioDeepRuntimePreparation {
   readonly create: Factory["create"] = async (canvas, gpu, signal, options = {}) => {
     // Pipeline hints may differ; packet preparation admits every actually-used variant.
     const compatible = !!options.advancedMaterials === !!this.options.advancedMaterials
+      && (options.advancedMaterialFeatures ?? 31) === (this.options.advancedMaterialFeatures ?? 31)
       && options.msaaSampleCount === this.options.msaaSampleCount
       && JSON.stringify(options.shadows) === JSON.stringify(this.options.shadows);
     if (!compatible || this.closed || this.taken) {

@@ -81,6 +81,7 @@
     "@types/react-dom": "^19.2.0",
     "@types/three": "0.186.0",
     "@vitejs/plugin-react": "^5.1.0",
+    "fake-indexeddb": "6.2.4",
     "sharp": "^0.35.4",
     "typescript": "^5.9.3",
     "vite": "^8.1.0",

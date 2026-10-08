@@ -28,6 +28,49 @@ const manifest = (): GltfTextureManifest => ({ images: [image()], resources: [re
   materials: [], uvSets: [] });
 
 describe("glTF texture host decode boundary", () => {
+  it("bounds concurrent host decodes and keeps resource ordering and aliases independent", async () => {
+    const input: GltfTextureManifest = { ...manifest(),
+      images: [0, 1, 2].map(i => ({ ...image(), id: `image/${i}`, imageIndex: i })),
+      resources: [0, 1, 2, 0].map((i, j) => resource("baseColor", { id: `texture/${j}`, image: `image/${i}` })),
+    };
+    const releases: Array<() => void> = [];
+    let active = 0, peak = 0;
+    const decode = vi.fn(async (source: GltfEncodedImage) => {
+      peak = Math.max(peak, ++active);
+      await new Promise<void>(resolve => releases.push(resolve));
+      active--;
+      return { width: 1, height: 1, data: new Uint8Array([source.imageIndex, 0, 0, 255]) };
+    });
+    const pending = decodeGltfTextureManifest(input, { decode }, { imageDecodeConcurrency: 2 });
+    expect(decode).toHaveBeenCalledTimes(2);
+    releases[1]!();
+    await vi.waitFor(() => expect(decode).toHaveBeenCalledTimes(3));
+    releases[2]!(); releases[0]!();
+    const textures = await pending;
+    expect(peak).toBe(2);
+    expect(textures.map(texture => texture.data[0])).toEqual([0, 1, 2, 0]);
+    textures[0]!.data.fill(99);
+    expect(textures[3]!.data[0]).toBe(0);
+  });
+
+  it("stops admitting decodes after a concurrent failure and validates concurrency", async () => {
+    const input: GltfTextureManifest = { ...manifest(),
+      images: [0, 1, 2].map(i => ({ ...image(), id: `image/${i}`, imageIndex: i })),
+      resources: [0, 1, 2].map(i => resource("baseColor", { id: `texture/${i}`, image: `image/${i}` })),
+    };
+    let finish!: () => void;
+    const decode = vi.fn(async (source: GltfEncodedImage) => {
+      if (source.imageIndex === 0) throw new Error("decode failed");
+      await new Promise<void>(resolve => { finish = resolve; });
+      return { width: 1, height: 1, data: new Uint8Array(4) };
+    });
+    await expect(decodeGltfTextureManifest(input, { decode }, { imageDecodeConcurrency: 2 })).rejects.toThrow("decode failed");
+    finish();
+    await Promise.resolve(); await Promise.resolve();
+    expect(decode).toHaveBeenCalledTimes(2);
+    await expect(decodeGltfTextureManifest(input, { decode }, { imageDecodeConcurrency: 3 as 2 })).rejects.toMatchObject({ path: "options.imageDecodeConcurrency" });
+  });
+
   it("decodes each image once, strips row padding and returns independent semantic resources", async () => {
     const pixels = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 99, 99, 9, 10, 11, 12, 13, 14, 15, 16]);
     const decoder: GltfImageDecoder = { decode: vi.fn(async received => {

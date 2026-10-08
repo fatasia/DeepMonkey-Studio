@@ -16,6 +16,9 @@ pub(super) fn validate_textures(packet: &RenderPacket) -> Result<(), String> {
     for texture in &packet.textures {
         unique_id(&mut texture_ids, &texture.id, "texture")?;
         safe_revision(texture.revision, "texture")?;
+        if texture.generate_mipmaps && !texture.mipmaps.is_empty() {
+            return Err(format!("texture {} cannot combine generated and authored mips", texture.id));
+        }
         if texture.width == 0
             || texture.height == 0
             || texture.width > 16_384

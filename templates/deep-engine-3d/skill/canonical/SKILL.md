@@ -34,6 +34,8 @@ description: 用 Deep Engine Web SDK(@bim-studio/deep-engine)从需求生成可�
 
 版本必须与 `references/sdk-versions.json` 一致;升级流程见该文件 `upgradeDetection`。
 
+`@bim-studio/*` 当前通过 GitHub Releases 的 SDK 归档分发，不从 npm registry 安装。下载 `DeepMonkey-Studio-SDK-0.2.0.tar.gz`，按包内 `INSTALL.md` 安装本地 `.tgz` 与依赖归档；仓内构建和打包见 `docs/sdk-release.md`。上面的版本表用于校验包身份，不是 registry 安装命令。连接 Studio MCP 的客户端配置见 `docs/ai-development.md`。
+
 ## 3. 运行与观察
 
 仓内一键门(构建 SDK → 打包 → 仓外空项目安装 → 逐模板 tsc + Node 断言 + esbuild + Chrome WebGPU 像素证据 + 截图):

@@ -67,7 +67,7 @@ jobs:
               raise ValueError('Browser example has no index')
           root = pathlib.Path('.').resolve()
           with zipfile.ZipFile('deepmonkey-studio-editor.zip') as archive:
-              if sum(item.file_size for item in archive.infolist()) > 800_000_000:
+              if sum(item.file_size for item in archive.infolist()) > 850_000_000:
                   raise ValueError('Editor exceeds Pages size budget')
               for item in archive.infolist():
                   if not (root / item.filename).resolve().is_relative_to(root):

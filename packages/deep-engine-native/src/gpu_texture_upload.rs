@@ -4,6 +4,9 @@ use crate::gpu_texture_types::{
 use deep_engine_native::pbr_texture::{
     PreparedAddressMode, PreparedFilter, PreparedSampler, PreparedTexture,
 };
+#[path = "gpu_texture_mips.rs"]
+mod mips;
+pub use mips::TextureMipGenerator;
 
 pub struct GpuTexture {
     _texture: wgpu::Texture,
@@ -15,6 +18,7 @@ pub fn upload_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     source: &PreparedTexture,
+    mips: &TextureMipGenerator,
 ) -> Result<GpuTexture, String> {
     let level = source
         .levels
@@ -28,11 +32,12 @@ pub fn upload_texture(
             height: level.height,
             depth_or_array_layers: 1,
         },
-        mip_level_count: source.levels.len() as u32,
+        mip_level_count: source.mip_level_count(),
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST
+            | if source.generate_mipmaps { wgpu::TextureUsages::RENDER_ATTACHMENT } else { wgpu::TextureUsages::empty() },
         view_formats: &[],
     });
     for (mip_level, level) in source.levels.iter().enumerate() {
@@ -56,8 +61,9 @@ pub fn upload_texture(
             },
         );
     }
+    if source.generate_mipmaps { mips.generate(device, queue, &texture, format, source.mip_level_count()); }
     let view = texture.create_view(&Default::default());
-    let sampler = create_sampler(device, &source.sampler, source.levels.len());
+    let sampler = create_sampler(device, &source.sampler, source.mip_level_count() as usize);
     Ok(GpuTexture {
         _texture: texture,
         view,
@@ -69,6 +75,7 @@ pub fn create_fallbacks(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> Result<Vec<GpuTexture>, String> {
+    let mips = TextureMipGenerator::default();
     FALLBACK_TEXTURE_SPECS
         .into_iter()
         .enumerate()
@@ -79,6 +86,7 @@ pub fn create_fallbacks(
                 &PreparedTexture {
                     id: format!("native-fallback-{index}"),
                     revision: 0,
+                    generate_mipmaps: false,
                     semantic,
                     encoding,
                     sampler: PreparedSampler {
@@ -92,9 +100,9 @@ pub fn create_fallbacks(
                     levels: vec![deep_engine_native::pbr_texture::PreparedTextureLevel {
                         width: 1,
                         height: 1,
-                        data: data.to_vec(),
+                        data: std::borrow::Cow::Owned(data.to_vec()),
                     }],
-                },
+                }, &mips,
             )
         })
         .collect()

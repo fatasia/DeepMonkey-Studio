@@ -72,11 +72,21 @@ export async function buildDeepRuntimePackageBinaryArtifactAsync(input: BuildDee
   const binaryPacket = { ...metadata, geometries, textures,
     instances: packet.instances.map(instance => ({ ...instance, transform: Array.from(instance.transform) })) };
   const draft = createOwnedRuntimePackageCore(input, binaryPacket), resources: RuntimeResourceIndexEntry[] = [], hashes = new Map<string, string>();
-  offset = 0;
-  for (const [index, plane] of planes.entries()) {
+  // Bounded native stream compression overlaps independent planes without a
+  // second Blob snapshot of every full-resolution image.
+  let nextPlane = 0;
+  const encodePlanes = async () => { while (nextPlane < planes.length) {
+    const index = nextPlane++, plane = planes[index]!;
     signal?.throwIfAborted();
     if (plane.length >= 64 * 1024 && typeof CompressionStream !== "undefined") {
-      const stream = new Blob([plane]).stream().pipeThrough(new CompressionStream("deflate"));
+      let cursor = 0;
+      const source = new ReadableStream<Uint8Array<ArrayBuffer>>({ pull(controller) {
+        if (signal?.aborted) { controller.error(signal.reason); return; }
+        if (cursor === plane.length) { controller.close(); return; }
+        const end = Math.min(cursor + 64 * 1024, plane.length);
+        controller.enqueue(plane.subarray(cursor, end)); cursor = end;
+      } });
+      const stream = source.pipeThrough(new CompressionStream("deflate"));
       const compressed = new Uint8Array(await new Response(stream).arrayBuffer());
       signal?.throwIfAborted();
       if (compressed.length < plane.length) {
@@ -84,8 +94,12 @@ export async function buildDeepRuntimePackageBinaryArtifactAsync(input: BuildDee
         Object.assign(sections[index]!, { compression: "deflate", decodedLength: plane.length, length: compressed.length });
       }
     }
-    sections[index]!.offset = offset; offset += planes[index]!.length;
     sections[index]!.sha256 = await sha256(planes[index]!);
+  } };
+  await Promise.all([encodePlanes(), encodePlanes()]);
+  offset = 0;
+  for (let index = 0; index < planes.length; index++) {
+    sections[index]!.offset = offset; offset += planes[index]!.length;
   }
   for (const resource of draft.resources) {
     const value = resource.kind === "render-packet" ? { metadata: draft.payloads[resource.id]!, sections } : draft.payloads[resource.id]!;

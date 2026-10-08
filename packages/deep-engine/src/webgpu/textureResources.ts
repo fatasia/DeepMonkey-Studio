@@ -1,4 +1,5 @@
-import { prepareTextures, sameTextureContent, type DecodedTexture, type PreparedTexture, type PreparedTextureFormat } from "../textures/decodedTexture.js";
+import { prepareTextures, planTextureMips, sameTextureContent, type DecodedTexture, type PreparedTexture, type PreparedTextureFormat } from "../textures/decodedTexture.js";
+import { generateTextureMips } from "./textureMipGeneration.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { createAdmittedTexture } from "./resourceAdmission.js";
 import { runResourceCleanup } from "./resourceCleanup.js";
@@ -106,7 +107,7 @@ export class TextureResources {
   }
 
   stagedArrayEntries(staged: StagedTextureSet): readonly TextureArrayPackingEntry[] {
-    return [...staged.entries].filter(([, value]) => !value.source.requiredFeature).map(([textureId, value]) => ({
+    return [...staged.entries].filter(([, value]) => !value.source.requiredFeature && !value.source.generateMipmaps).map(([textureId, value]) => ({
       textureId, format: value.source.format, width: value.source.levels[0]!.width, height: value.source.levels[0]!.height,
       compatibilityKey: `${value.source.samplerKey}|mips:${value.source.levels.length}`,
     }));
@@ -162,9 +163,10 @@ export class TextureResources {
     }
     try {
       for (const source of prepared) {
+        const mipLevelCount = source.generateMipmaps ? planTextureMips(source.levels[0]!.width, source.levels[0]!.height).length : source.levels.length;
         const previous = this.entries.get(source.id);
         let sampler = samplers.get(source.samplerKey) ?? this.samplers.get(source.samplerKey);
-        if (!sampler) sampler = this.session.device.createSampler({ label: "Deep texture sampler", ...source.sampler, lodMinClamp: 0, lodMaxClamp: source.levels.length - 1 });
+        if (!sampler) sampler = this.session.device.createSampler({ label: "Deep texture sampler", ...source.sampler, lodMinClamp: 0, lodMaxClamp: mipLevelCount - 1 });
         samplers.set(source.samplerKey, sampler);
         if (omitStorage.has(source.id)) {
           if (previous && source.revision === previous.source.revision && previous.binding === undefined) entries.set(source.id, previous);
@@ -184,7 +186,8 @@ export class TextureResources {
         const level = source.levels[0]!;
         const texture = createAdmittedTexture(this.session, { label: `Deep texture ${source.id}`,
           size: { width: level.width, height: level.height, depthOrArrayLayers: 1 }, format: source.format,
-          mipLevelCount: source.levels.length, dimension: "2d", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+          mipLevelCount, dimension: "2d", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+            | (source.generateMipmaps ? GPUTextureUsage.RENDER_ATTACHMENT : 0) });
         created.push(texture);
         for (let index = 0; index < source.levels.length; index++) {
           const mip = source.levels[index]!;
@@ -194,8 +197,9 @@ export class TextureResources {
             { width: source.requiredFeature ? Math.ceil(mip.width / 4) * 4 : mip.width,
               height: source.requiredFeature ? Math.ceil(mip.height / 4) * 4 : mip.height, depthOrArrayLayers: 1 });
         }
+        if (source.generateMipmaps) generateTextureMips(this.session.device, texture, source.format, mipLevelCount);
         entries.set(source.id, { source, binding: Object.freeze({ texture, view: texture.createView(), sampler, format: source.format,
-          width: level.width, height: level.height, mipLevelCount: source.levels.length }) });
+          width: level.width, height: level.height, mipLevelCount }) });
       }
     } catch (error) {
       try { runResourceCleanup("Texture staging rollback failed.",
@@ -247,6 +251,7 @@ export class TextureResources {
 /** GPU texture identity excludes revision, author semantic and sampler state. */
 function sameGpuTexturePayload(left: PreparedTexture, right: PreparedTexture): boolean {
   return left.format === right.format && left.requiredFeature === right.requiredFeature
+    && !!left.generateMipmaps === !!right.generateMipmaps
     && left.levels.length === right.levels.length
     && left.levels.every((level, index) => {
       const other = right.levels[index]!;

@@ -8,7 +8,7 @@ var<private> native_material_transmission: f32 = 0.0;
 fn native_sample_specular(input: VertexOutput) {
   native_specular_factor = material_textures.specular_values.w;
   native_specular_color = material_textures.specular_values.rgb;
-  native_material_transmission = clamp(material_textures.extended1.y, 0.0, 1.0);
+  native_material_transmission = select(0.0, clamp(material_textures.extended1.y, 0.0, 1.0), deep_native_extended);
   if (material_textures.specular_row_0.w > 0.5) {
     native_specular_factor *= textureSample(native_specular_map, native_specular_sampler,
       transformed_uv(input.uv0,input.uv1,material_textures.specular_row_0,material_textures.specular_row_1)).a;

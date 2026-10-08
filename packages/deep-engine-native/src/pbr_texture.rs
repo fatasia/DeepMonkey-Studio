@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 use crate::contract::{
     LayerMaterialParams, PbrMaterial, RenderPacket, StockAdvancedParameters, TextureResource,
@@ -51,20 +51,35 @@ pub struct PreparedSampler {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PreparedTextureLevel {
+pub struct PreparedTextureLevel<'a> {
     pub width: u32,
     pub height: u32,
-    pub data: Vec<u8>,
+    pub data: Cow<'a, [u8]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PreparedTexture {
+pub struct PreparedTexture<'a> {
     pub id: String,
     pub revision: u64,
     pub semantic: TextureSemantic,
     pub encoding: TextureEncoding,
     pub sampler: PreparedSampler,
-    pub levels: Vec<PreparedTextureLevel>,
+    pub levels: Vec<PreparedTextureLevel<'a>>,
+    pub generate_mipmaps: bool,
+}
+
+impl PreparedTexture<'_> {
+    pub fn mip_level_count(&self) -> u32 {
+        if self.generate_mipmaps {
+            self.levels[0].width.max(self.levels[0].height).ilog2() + 1
+        } else { self.levels.len() as u32 }
+    }
+    pub fn gpu_bytes(&self) -> u64 {
+        let base = &self.levels[0];
+        (0..self.mip_level_count()).map(|level|
+            u64::from((base.width >> level).max(1)) * u64::from((base.height >> level).max(1)) * 4
+        ).sum()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -78,6 +93,12 @@ pub struct PreparedMaterial {
     pub layered: Option<PreparedLayeredMaterial>,
 }
 
+impl PreparedMaterial {
+    pub fn uses_extended_response(&self) -> bool {
+        [41, 43, 45, 48, 49, 50].iter().any(|&i| self.uniform[i] != 0.0)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct PreparedLayeredMaterial {
     pub block: [f32; LAYERED_SURFACE_BLOCK_FLOATS],
@@ -85,8 +106,8 @@ pub struct PreparedLayeredMaterial {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct PreparedPbrResources {
-    pub textures: Vec<PreparedTexture>,
+pub struct PreparedPbrResources<'a> {
+    pub textures: Vec<PreparedTexture<'a>>,
     pub materials: Vec<PreparedMaterial>,
 }
 
@@ -99,7 +120,7 @@ pub struct PreparedPbrSummary {
     pub material_bindings: usize,
 }
 
-impl PreparedPbrResources {
+impl PreparedPbrResources<'_> {
     pub fn summary(&self) -> PreparedPbrSummary {
         let srgb_textures = self
             .textures
@@ -354,6 +375,7 @@ fn prepare_texture(texture: &TextureResource) -> Result<PreparedTexture, String>
         encoding,
         sampler: prepare_sampler(texture.sampler.as_ref())?,
         levels,
+        generate_mipmaps: texture.generate_mipmaps,
     })
 }
 
@@ -365,6 +387,9 @@ fn compact_level(
 ) -> PreparedTextureLevel {
     let row = width as usize * 4;
     let pitch = pitch.unwrap_or(width * 4) as usize;
+    if pitch == row {
+        return PreparedTextureLevel { width, height, data: Cow::Borrowed(&source[..row * height as usize]) };
+    }
     let mut data = vec![0; row * height as usize];
     for y in 0..height as usize {
         data[y * row..(y + 1) * row].copy_from_slice(&source[y * pitch..y * pitch + row]);
@@ -372,7 +397,7 @@ fn compact_level(
     PreparedTextureLevel {
         width,
         height,
-        data,
+        data: Cow::Owned(data),
     }
 }
 
@@ -466,6 +491,18 @@ fn write_transform_parts(
 mod tests {
     use super::*;
     use crate::contract::{default_textured_fixture_path, load_and_validate};
+
+    #[test]
+    fn compact_pixels_borrow_and_only_padded_rows_allocate() {
+        let pixels = [1, 2, 3, 4, 5, 6, 7, 8];
+        let compact = compact_level(1, 2, None, &pixels);
+        assert!(matches!(compact.data, Cow::Borrowed(_)));
+        assert_eq!(compact.data.as_ptr(), pixels.as_ptr());
+        let padded = [1, 2, 3, 4, 0, 0, 0, 0, 5, 6, 7, 8, 0, 0, 0, 0];
+        let compact = compact_level(1, 2, Some(8), &padded);
+        assert!(matches!(compact.data, Cow::Owned(_)));
+        assert_eq!(compact.data.as_ref(), &pixels);
+    }
 
     /// C3 快路径行与全量 prepare 的材质段逐字段全等(含纹理索引解析)。
     #[test]

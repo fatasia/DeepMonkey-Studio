@@ -39,8 +39,8 @@ impl GpuScene {
                 batch.alpha_mode, batch.premultiplied, batch.mirrored,
                 batch.double_sided, material.normal_mapped,
             ).is_some() { continue; }
-            pipelines.select(batch.alpha_mode, batch.premultiplied, batch.mirrored,
-                batch.double_sided, material.normal_mapped);
+            pipelines.select_profile(batch.alpha_mode, batch.premultiplied, batch.mirrored,
+                batch.double_sided, material.normal_mapped, material.extended);
         }
     }
 
@@ -324,12 +324,13 @@ impl GpuScene {
             pass.set_bind_group(1, &layered.bind_group, &[]);
             material.normal_mapped
         } else {
-            pass.set_pipeline(pipelines.select(
+            pass.set_pipeline(pipelines.select_profile(
                 batch.alpha_mode,
                 batch.premultiplied,
                 batch.mirrored,
                 batch.double_sided,
                 material.normal_mapped,
+                material.extended,
             ));
             if self.shader_materials.is_some() {
                 frame.bind_builtin(pass);

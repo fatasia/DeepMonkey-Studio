@@ -26,6 +26,7 @@ export interface DeepWebGpuRenderRuntime {
     onFatalLoss?(listener: (reason: DeviceEvent) => void): () => void;
   };
   setPacketValidated(packet: RenderPacket, signal?: AbortSignal): Promise<void>;
+  setPacket?(packet: RenderPacket): void;
   updateInstances(update: InstanceUpdate): void;
   render(view: RenderView): FrameMetrics | undefined;
   validateFrame(view: RenderView): Promise<FrameMetrics>;

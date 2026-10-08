@@ -5,6 +5,15 @@ import { TemporalValidityProvider } from "../postprocess/temporalValidity.js";
 import { DEFAULT_PBR_RENDERER_FEATURES } from "./pbrRendererFeatures.js";
 
 describe("PBR post-process construction", () => {
+  it("does not compile capabilities disabled by the author frame", () => {
+    const session = new Proxy({}, { get: () => { throw new Error("unused capability touched GPU"); } }) as DeviceSession;
+    const chain = new PbrPostProcessChain(session, { ambientOcclusion: true, screenSpaceReflection: true,
+      volumetricFog: true, bloom: true, temporalAa: false, occlusionCulling: false });
+    const color = {} as GPUTexture;
+    expect(chain.encodeOpaque({ targets: { hdrTexture: color }, postProcess: { ambientOcclusion: false } } as never).color).toBe(color);
+    expect(chain.encodeFinal({ authorDirectDisplay: true } as never, color).color).toBe(color);
+    expect(() => chain.dispose()).not.toThrow();
+  });
   it("bypasses allocated effects for direct display and starts fresh TAA when Composer returns", () => {
     const color = { width: 32, height: 16 } as GPUTexture, reset = vi.fn();
     const temporal = { reset, encode: vi.fn(() => ({ texture: color })) };

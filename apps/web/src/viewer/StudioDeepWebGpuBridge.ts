@@ -9,7 +9,8 @@ import { StudioDeepRenderView } from "./StudioDeepRenderView";
 import { StudioDeepEnvironmentCache } from "./StudioDeepEnvironmentCache";
 import { StudioDeepAuthorPacketSync } from "./StudioDeepAuthorPacketSync";
 import { prepareStudioAuthorPacket } from "./prepareStudioAuthorPacket";
-import { StudioDeepInactiveCandidate, STUDIO_DEEP_INACTIVE_MAX_BYTES } from "./StudioDeepInactiveCandidate";
+import { StudioDeepInactiveCandidate } from "./StudioDeepInactiveCandidate";
+import { trimInactiveDeepCandidate, supportsInactiveMaterialProfile, type InactiveDeepCandidate } from "./trimInactiveDeepCandidate";
 import { prepareStudioRendererCandidate } from "./prepareStudioRendererCandidate";
 import { isStudioDeepEnvironmentSourceCurrent } from "./studioDeepEnvironmentSource";
 import type { ViewerEngine } from "./ViewerEngine";
@@ -46,12 +47,6 @@ export { t11PipelineBootstrap, t07DynamicResolutionPolicy, b4HlodClusterEnabled,
   t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled, sdfGiEnabled, ssgiEnabled,
   projectedTexturesEnabled, megaLightsEnabled, rayTracedShadowsEnabled, rayTracedReflectionsEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
 export type { StudioDeepWebGpuBridgeOptions, StudioRendererSwitchResult } from "./studioDeepWebGpuBridgeOptions";
-
-interface InactiveDeepCandidate {
-  backend: DeepWebGpuBackend; canvas: HTMLCanvasElement; environment: PreparedStudioDeepEnvironment;
-  packet: RenderPacket; shadowMapSize: number; qualityProfile: AuthoredQualityProfile | null;
-  deformationSync?: StudioDeformationPoseSync | undefined;
-}
 
 /**
  * Studio 保留唯一的 WebGL 作者 Viewer，Deep 只持有可重建的投影快照和独立画布。
@@ -267,6 +262,7 @@ export class StudioDeepWebGpuBridge {
         const modes = resolveAlphaToCoverageCreateModes({ requested: this.alphaToCoverageRequested, authorRenderPacket: warmPacket, scene: this.viewer.scene,
           maskFallbackActive: this.a2cMaskFallbackRequested });
         if (!warmPacket || (packetUsesDeepAdvancedMaterials(warmPacket) && !this.advancedMaterialsActive)
+          || (warmPacket && !supportsInactiveMaterialProfile(warm.backend, warmPacket))
           || (modes.alphaToCoverage && !this.alphaToCoverageActive)
           || (modes.a2cMaskFallback && !this.a2cMaskFallbackActive)) {
           warm.backend.dispose(); warm = undefined;
@@ -281,9 +277,11 @@ export class StudioDeepWebGpuBridge {
           if (!prepareOnly) this.viewer.setAuthorPacketIndependent(true);
           let packet = warmPacket!;
           this.viewReader.setIndependentPacketBounds(packet);
-          if (packet !== warm!.packet) {
+          if (packet !== warm!.packet || warm!.sceneResourcesEvicted) {
             packet = (warm!.deformationSync ?? StudioDeformationPoseSync.create(warm!.packet, this.viewer))?.prepareReplacement(packet, this.viewer) ?? packet;
-            await prepareStudioAuthorPacket(backend, warm!.packet, packet, this.viewReader.renderViewDirect(canvas), signal);
+            if (warm!.sceneResourcesEvicted) await backend.prepareRenderPacket(packet, this.viewReader.renderViewDirect(canvas), signal);
+            else await prepareStudioAuthorPacket(backend, warm!.packet, packet, this.viewReader.renderViewDirect(canvas), signal);
+            warm!.sceneResourcesEvicted = false;
             this.authorPacketSync.seed(backend, warmPacket!);
             warm!.deformationSync = StudioDeformationPoseSync.create(packet, this.viewer); warm!.packet = warmPacket!;
           }
@@ -377,7 +375,7 @@ export class StudioDeepWebGpuBridge {
     const session = backend?.runtime.session as (RuntimeSession & { resourceMemory?: { estimatedBytes: number; unknownResources: number } }) | undefined;
     const bytes = session?.resourceMemory?.unknownResources === 0 ? session.resourceMemory.estimatedBytes : Number.NaN;
     const canPark = park && backend?.usesIndependentPacket === true && canvas && packet && environment
-      && this.options.authorRenderPacket && !this.syncPending && bytes <= STUDIO_DEEP_INACTIVE_MAX_BYTES;
+      && this.options.authorRenderPacket && !this.syncPending && Number.isFinite(bytes);
     if (park) markSwitchPhase(`deep-webgpu:inactive-park-${canPark ? "eligible" : "rejected"}-bytes-${bytes}-unknown-${session?.resourceMemory?.unknownResources}-pending-${!!this.syncPending}`);
     const shadowMapSize = this.shadowSession?.mapSize ?? 1024, qualityProfile = this.qualityProfile;
     const deformationSync = this.deformationSync;
@@ -391,6 +389,7 @@ export class StudioDeepWebGpuBridge {
   }
 
   private retainInactive(candidate: InactiveDeepCandidate, bytes: number): boolean {
+    bytes = trimInactiveDeepCandidate(candidate, bytes);
     const { backend, canvas, environment } = candidate;
     const session = backend.runtime.session as RuntimeSession | undefined;
     const settings = JSON.stringify(this.viewer.getPostProcessing());

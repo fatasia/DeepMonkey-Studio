@@ -115,6 +115,7 @@ export interface PipelinesBuildOptions {
   readonly layeredMaterials?: boolean;
   /** sheen / iridescence / clearcoat IBL / 体积透射着色变体(材质 uniform 240B);与 layered、textureArrays 互斥。 */
   readonly advancedMaterials?: boolean;
+  readonly advancedMaterialFeatures?: number;
   /** M2 方向光 RT 阴影(opt-in):主 shader 换 sceneShaderRayTracedShadows 变体,group(2)
    *  追加 binding(3) r32float mask 槽。默认关 —— 与默认构建逐管线逐字节一致。 */
   readonly rayTracedShadows?: boolean;
@@ -217,22 +218,28 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
       : (rayTracedShadows ? sceneShaderRayTracedShadows : sceneShader));
   const moduleCode = textureArrays ? composeTextureArraySceneShader(source)
     : layeredMaterials ? composeLayeredMaterialSceneShader(source)
-      : advancedMaterials ? composeAdvancedMaterialSceneShader(source) : source;
+      : advancedMaterials ? composeAdvancedMaterialSceneShader(source, options.advancedMaterialFeatures) : source;
+  // Transmission materials always enter the transparent batch. The opaque pass only needs specular/IOR.
+  const opaqueCode = advancedMaterials && options.advancedMaterialFeatures === 8
+    ? composeAdvancedMaterialSceneShader(source, 0) : moduleCode;
   // C26:逐管线编译走指纹缓存(WGSL 源哈希 + 描述符指纹),命中复用并记录
   // 逐管线编译耗时清单;WGSL 源或描述符变更即指纹漂移,陈旧条目自动失效。
   const compileCache = pipelineCompileCacheForDevice(device, { now: () => performance.now() });
   const createPipeline = (descriptor: GPURenderPipelineDescriptor): Promise<GPURenderPipeline> =>
-    compileCache.create([moduleCode], descriptor, () => device.createRenderPipelineAsync(descriptor));
+    compileCache.create([shaderCodeFor(descriptor)], descriptor, () => device.createRenderPipelineAsync(descriptor));
   // 首帧关键子集的指纹登记:跨会话预热计划据此识别"上次哪些管线是首帧必需"。
   const createCriticalPipeline = (descriptor: GPURenderPipelineDescriptor): Promise<GPURenderPipeline> => {
-    criticalFingerprints.push(renderPipelineFingerprint([moduleCode], descriptor));
+    criticalFingerprints.push(renderPipelineFingerprint([shaderCodeFor(descriptor)], descriptor));
     return createPipeline(descriptor);
   };
   const module = device.createShaderModule({ label: textureArrays ? "Deep PBR texture arrays" : "Deep PBR",
     code: moduleCode });
+  const opaqueModule = opaqueCode === moduleCode ? module
+    : device.createShaderModule({ label: "Deep PBR opaque specular", code: opaqueCode });
+  const shaderCodeFor = (descriptor: GPURenderPipelineDescriptor) => descriptor.fragment?.module === opaqueModule ? opaqueCode : moduleCode;
   const sharedOutput = sharedOutputPipeline(device, format);
-  const [sceneInfo] = await Promise.all([module.getCompilationInfo(), sharedOutput.validated]);
-  const errors = sceneInfo.messages.filter(message => message.type === "error");
+  const [sceneInfo, opaqueInfo] = await Promise.all([module.getCompilationInfo(), opaqueModule.getCompilationInfo(), sharedOutput.validated]);
+  const errors = [...sceneInfo.messages, ...opaqueInfo.messages].filter(message => message.type === "error");
   if (errors.length) throw new Error(errors.map(message => `WGSL ${message.lineNum}: ${message.message}`).join("\n"));
   // B1 Brief-VSM:虚拟阴影页表 meta/layers(storage)与页 atlas(unfilterable float
   // 2d-array)挂 frame 组 0 尾部(仅 virtual 档消费)。级联档剥离这三槽:着色端
@@ -335,11 +342,11 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
         const descriptor: GPURenderPipelineDescriptor = {
           label: `Deep forward PBR ${key}`,
           layout: mode === "plain" ? plainLayout : materialPipelineLayout,
-          vertex: { module, entryPoint: deformation ? mode === "normal" ? "vertexDeformedNormalMapped" : "vertexDeformed"
+          vertex: { module: transparent ? module : opaqueModule, entryPoint: deformation ? mode === "normal" ? "vertexDeformedNormalMapped" : "vertexDeformed"
             : mode === "normal" ? "vertexNormalMapped" : "vertexMain",
             buffers: mode === "normal" && !deformation ? [...buffers, PBR_PREVIOUS_INSTANCE_BUFFER_LAYOUT, tangentBuffer]
               : [...buffers, PBR_PREVIOUS_INSTANCE_BUFFER_LAYOUT] },
-          fragment: { module, entryPoint: transparent
+          fragment: { module: transparent ? module : opaqueModule, entryPoint: transparent
             ? mode === "plain" ? "fragmentMainTransparent" : "fragmentMaterialTransparent"
             : writeGeometryBuffers ? opaqueEntry : `${opaqueEntry}Color`, targets },
           primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : "back", frontFace: raster === "cw" ? "cw" : "ccw" },
@@ -511,7 +518,7 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
       let work = mainRequests.get(key);
       if (!work) {
         work = track(mainPipelines, key, backgroundQueue.enqueue({
-          fingerprint: renderPipelineFingerprint([moduleCode], factory.descriptor),
+          fingerprint: renderPipelineFingerprint([shaderCodeFor(factory.descriptor)], factory.descriptor),
           label: factory.descriptor.label ?? key, priority: "first-frame", create: factory.create,
         }));
         mainRequests.set(key, work);
@@ -533,10 +540,10 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     const warmupStorage = browserLocalStorage();
     const warmupPlan = warmupStorage ? loadPipelineWarmupPlan(warmupStorage) : undefined;
     const orderedDeferredMains = orderDeferredByWarmupPlan(options.onDemandMain ? [] : deferredMains, warmupPlan,
-      ({ descriptor }) => renderPipelineFingerprint([moduleCode], descriptor));
+      ({ descriptor }) => renderPipelineFingerprint([shaderCodeFor(descriptor)], descriptor));
     const pending = orderedDeferredMains.map(({ key, descriptor, create }) =>
       track(mainPipelines, key, backgroundQueue.enqueue({
-        fingerprint: renderPipelineFingerprint([moduleCode], descriptor),
+        fingerprint: renderPipelineFingerprint([shaderCodeFor(descriptor)], descriptor),
         label: descriptor.label ?? key, priority: "background", create,
       })));
     // 分级重上前置②:非虚拟档页管线(release 前零启动)在此补齐——不走预热队列

@@ -4,6 +4,7 @@ import type { PbrRendererFeatures } from "./pbrRendererFeatures.js";
 import { createPipelinesBuild, type Pipelines, type PipelinesBuild } from "./pipelines.js";
 import { resolvePbrMsaaSampleCount } from "./renderTargets.js";
 import type { PipelineCompileRecord } from "./pipelineCache.js";
+import { resolveAdvancedMaterialFeatures } from "./advancedMaterialFeatures.js";
 
 const PIPELINE_SET_SCHEMA = "deep-pbr-pso-v2-reflection-probes";
 
@@ -50,13 +51,14 @@ export async function createPbrPipelineSet(session: DeviceSession, lightingLayou
   const oneCascade = options.shadows?.exactProfile?.cascadeCount === 1;
   // AA-M1:主 pass 采样数是管线集合身份的一部分(fail-closed 解析,非法值直接抛出)。
   const mainSampleCount = resolvePbrMsaaSampleCount(options.msaaSampleCount);
+  const advancedFeatureMask = resolveAdvancedMaterialFeatures(options.advancedMaterialFeatures);
   let byLayout = pipelineSets.get(session.device);
   if (!byLayout) { byLayout = new WeakMap(); pipelineSets.set(session.device, byLayout); }
   let byVariant = byLayout.get(lightingLayout);
   if (!byVariant) { byVariant = new Map(); byLayout.set(lightingLayout, byVariant); }
   const key = [PIPELINE_SET_SCHEMA, session.format, writeGeometry ? 1 : 0, directDisplay ? 1 : 0,
     oneCascade ? 1 : 0, options.deformation === true ? 1 : 0, features.textureArrays ? 1 : 0, features.layeredMaterials ? 1 : 0,
-    options.advancedMaterials === true ? 1 : 0, mainSampleCount, features.rayTracedShadows ? 1 : 0,
+    options.advancedMaterials === true ? 1 : 0, advancedFeatureMask, mainSampleCount, features.rayTracedShadows ? 1 : 0,
     // B1 Brief-VSM 变体化(2026-10-05):shadowMode 进集合身份 —— 主 shader 保留虚拟
     // 采样库(sceneShaderVirtualShadows 家族)与否是模块文本/管线指纹的分野,两档不得共享。
     options.shadowMode === "virtual" ? 1 : 0, options.pipelines?.firstFrameMainKeys === undefined ? 0 : 1].join("/");
@@ -89,7 +91,7 @@ async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBi
   const buildOptions = (firstFrameMainKeys === undefined && !layeredMaterials && !advancedMaterials)
     ? { mainSampleCount, ...virtualShadowOption, ...(rayTracedShadows ? { rayTracedShadows: true } : {}) }
     : { ...(firstFrameMainKeys === undefined ? {} : { firstFrameMainKeys, onDemandMain: true }),
-      ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}),
+      ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true, advancedMaterialFeatures: resolveAdvancedMaterialFeatures(options.advancedMaterialFeatures) } : {}),
       ...virtualShadowOption,
       ...(rayTracedShadows ? { rayTracedShadows: true } : {}),
       mainSampleCount };
@@ -98,7 +100,7 @@ async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBi
   const buildDeformation = () => Promise.all([
     createPipelinesBuild(session.device, session.format, lightingLayout, true, false, oneCascade,
       { deformation: true, ...(layeredMaterials ? { layeredMaterials: true } : {}),
-        ...(advancedMaterials ? { advancedMaterials: true } : {}), ...deformationSubset, ...virtualShadowOption,
+        ...(advancedMaterials ? { advancedMaterials: true, advancedMaterialFeatures: resolveAdvancedMaterialFeatures(options.advancedMaterialFeatures) } : {}), ...deformationSubset, ...virtualShadowOption,
         ...(rayTracedShadows ? { rayTracedShadows: true } : {}), mainSampleCount }),
     textureArrays ? createPipelinesBuild(session.device, session.format, lightingLayout, true, false, oneCascade,
       { deformation: true, textureArrays: true, ...deformationSubset, ...virtualShadowOption,

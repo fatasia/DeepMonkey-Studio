@@ -82,6 +82,7 @@ pub struct GpuSceneCache {
     pub(super) revisions: SceneResourceDomain,
     pub(super) geometries: HashMap<VersionKey, (Weak<GpuGeometry>, u64)>,
     pub(super) textures: HashMap<VersionKey, (Weak<GpuTexture>, u64)>,
+    pub(super) texture_mips: crate::gpu_texture_upload::TextureMipGenerator,
     pub(super) materials: HashMap<MaterialResourceIdentity, Weak<GpuMaterial>>,
     pub(super) instances: HashMap<ContentFingerprint, (Weak<GpuInstanceResource>, u64)>,
     pub(super) latest_instance: Weak<GpuInstanceResource>,
@@ -121,6 +122,7 @@ impl GpuSceneCache {
             budget_bytes: default_budget(device),
             geometries: HashMap::new(),
             textures: HashMap::new(),
+            texture_mips: Default::default(),
             materials: HashMap::new(),
             instances: HashMap::new(),
             latest_instance: Weak::new(),
@@ -187,6 +189,7 @@ impl GpuSceneCache {
     pub fn reset(&mut self, device: &wgpu::Device, epoch: u64) {
         self.epoch = epoch;
         self.device = device.clone();
+        self.texture_mips = Default::default();
         self.revisions.reset(epoch);
         self.domains.clear();
         self.active_domain.clear();

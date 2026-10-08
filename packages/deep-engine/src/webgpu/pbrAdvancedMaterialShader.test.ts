@@ -9,6 +9,20 @@ import { MATERIAL_PARAMETER_ADVANCED_BAND_FLOAT_OFFSET, MATERIAL_PARAMETER_ADVAN
 import type { PreparedMaterialTextures } from "../renderPacketTypes.js";
 
 describe("advancedMaterials shader composition", () => {
+  it("uses a specular-only opaque shader while preserving the transmission shader", () => {
+    const opaque = composeAdvancedMaterialSceneShader(sceneShader, 0);
+    expect(opaque).not.toContain("fn deepAdvancedShade");
+    expect(opaque).toContain("deepAdvSampleSpecular(v, surface.metal)");
+    expect(opaque).toContain("deepAdvCurrentSpecularF90()");
+    const glass = composeAdvancedMaterialSceneShader(sceneShader, 8);
+    expect(glass).toContain("deepSceneTransmissionSample(v.world");
+    expect(glass).toContain("var color = original;");
+    expect(glass).not.toContain("var color = (original - stockBrdf");
+    expect(glass.slice(glass.lastIndexOf("fn extendedShade("))).not.toContain("deepLegacyExtendedShade");
+    expect(composeAdvancedMaterialSceneShader(sceneShader, 16)
+      .slice(composeAdvancedMaterialSceneShader(sceneShader, 16).lastIndexOf("fn extendedShade(")))
+      .toContain("deepLegacyExtendedShade");
+  });
   it.each([["static", sceneShader], ["deformation", deformedSceneShader]] as const)(
     "%s: patches struct + shade F0 + dispatch exactly once and keeps legacy shading reachable", (_name, source) => {
       const composed = composeAdvancedMaterialSceneShader(source);

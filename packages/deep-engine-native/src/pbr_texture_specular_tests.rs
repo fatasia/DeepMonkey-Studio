@@ -15,10 +15,11 @@ fn source() -> Value {
 fn packet(value:&Value)->RenderPacket { serde_json::from_value(value.clone()).unwrap() }
 #[test]
 fn specular_seven_slots_keep_source_rgba_and_independent_uv() {
-    let prepared=prepare_pbr_resources(&packet(&source())).unwrap();
+    let packet = packet(&source());
+    let prepared=prepare_pbr_resources(&packet).unwrap();
     assert_eq!(prepared.textures[0].encoding,TextureEncoding::Linear);
     assert_eq!(prepared.textures[1].encoding,TextureEncoding::Srgb);
-    assert_eq!(prepared.textures[0].levels[0].data,[255,255,255,64]);
+    assert_eq!(prepared.textures[0].levels[0].data.as_ref(), &[255,255,255,64]);
     assert_eq!(prepared.materials[0].texture_indices,[None,None,None,None,None,Some(0),Some(1)]);
     let row=&prepared.materials[0].uniform;
     assert_eq!(row.len(),80); assert_eq!(row[63],1.0); assert_eq!(row[71],2.0);
