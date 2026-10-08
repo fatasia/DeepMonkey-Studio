@@ -36,6 +36,31 @@ function scene(models: SceneModelState[]): SceneSnapshot {
 }
 
 describe("saved scene GLB compilation", () => {
+  it("lets a presenting host own the grid without dropping model resources", async () => {
+    const source: SceneSnapshot = { ...scene([model("one")]), environment: { gridVisible: true, skybox: "studio", backgroundColor: "#17272e" } };
+    const options = { loadModel: async () => box };
+    const published = await compileSceneRenderPacket(source, options);
+    const hosted = await compileSceneRenderPacket(source, { ...options, includeAuxiliaryGrid: false });
+    expect(published.packet.instances.some(instance => instance.id.startsWith("scene.auxiliary-grid."))).toBe(true);
+    expect(hosted.packet.instances.some(instance => instance.id.startsWith("scene.auxiliary-grid."))).toBe(false);
+    expect(hosted.packet.instances).toEqual(published.packet.instances.filter(instance => !instance.id.startsWith("scene.auxiliary-grid.")));
+    expect(hosted.packet.textures ?? []).toEqual(published.packet.textures?.filter(texture => !texture.id.startsWith("scene.auxiliary-grid.")));
+  });
+  it("shares only static decoded assets across live/static hosts and separates decode profiles", async () => {
+    const decodedAssetCache = new Map(), normalizeModel = vi.fn(async (bytes: Uint8Array) => bytes);
+    const source = scene([model("one")]);
+    const live = await compileSceneRenderPacket(source, { loadModel: async () => box, normalizeModel,
+      liveDeformation: true, advancedMaterials: true, textureBudgetBytes: 112 * 1024 * 1024, decodedAssetCache });
+    const frozen = await compileSceneRenderPacket(source, { loadModel: async () => box, normalizeModel,
+      advancedMaterials: true, textureBudgetBytes: 112 * 1024 * 1024, decodedAssetCache });
+    expect(frozen.packet).toEqual(live.packet); expect(normalizeModel).toHaveBeenCalledOnce();
+    await compileSceneRenderPacket(source, { loadModel: async () => box, normalizeModel,
+      advancedMaterials: true, textureBudgetBytes: 8 * 1024 * 1024, decodedAssetCache });
+    expect(normalizeModel).toHaveBeenCalledTimes(2);
+    await compileSceneRenderPacket(source, { loadModel: async () => box, normalizeModel,
+      advancedMaterials: false, textureBudgetBytes: 112 * 1024 * 1024, decodedAssetCache });
+    expect(normalizeModel).toHaveBeenCalledTimes(3);
+  });
   it("reuses a decoded asset across author edits without duplicating resource or deformation IDs", async () => {
     const decodedAssetCache = new Map();
     const first = await compileSceneRenderPacket(scene([model("one")]), { loadModel: async () => box, decodedAssetCache });

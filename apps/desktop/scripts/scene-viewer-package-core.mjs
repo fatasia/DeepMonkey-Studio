@@ -197,7 +197,7 @@ export function createTauriOverlay(options) {
     build: { beforeBuildCommand: "", frontendDist: options.frontendDist },
     app: {
       security: {
-        csp: "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ipc:; worker-src 'self' blob:",
+        csp: "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ipc: blob:; worker-src 'self' blob:",
         capabilities: ["scene-viewer"],
       },
       // 桌面 setup hook 统一创建主窗；只读入口没有编辑器的自绘标题栏。

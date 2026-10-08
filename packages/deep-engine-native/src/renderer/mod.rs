@@ -165,7 +165,7 @@ pub struct Renderer {
     mega_lights: Option<megalights_runtime::MegaLightsFrameRuntime>,
     /// 前向深度视图代(resize 递增;megalights GPU 腿换代重建键)。
     /// v10 studio 渐变背景管线(format 与 forward 目标同;MSAA 4×)。
-    studio_background_pipeline: wgpu::RenderPipeline,
+    studio_background: Option<deep_engine_native::studio_background::StudioBackground>,
     forward_depth_epoch: u64,
     shadow_map: ShadowMap,
     ibl: GpuIblEnvironment,

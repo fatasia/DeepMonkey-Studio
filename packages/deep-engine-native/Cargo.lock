@@ -456,6 +456,7 @@ version = "0.2.0"
 dependencies = [
  "bytemuck",
  "cosmic-text",
+ "flate2",
  "geometry_dag",
  "pollster",
  "rapier3d",

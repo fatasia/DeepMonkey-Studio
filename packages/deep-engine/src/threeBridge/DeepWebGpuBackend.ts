@@ -239,7 +239,18 @@ export class DeepWebGpuBackend {
     try { return await this.prepareRenderPacketTransaction(packet, view, signal); }
     finally { this.packetPreparing = false; }
   }
-  private async prepareRenderPacketTransaction(packet: RenderPacket, view: RenderView, signal?: AbortSignal): Promise<FrameMetrics> {
+  /** Update world-space instances against resident resources, then validate the visible frame. */
+  async prepareInstanceTransforms(instances: RenderPacket["instances"], poses: readonly DeformationPose[] | undefined,
+    view: RenderView, signal?: AbortSignal): Promise<FrameMetrics | undefined> {
+    const previous = this.committedPacket;
+    if (!this.independentPacket || !previous || this.chunks || this.clusterEngine) return undefined;
+    const packet = { ...previous, instances, ...(previous.deformation
+      ? { deformation: { ...previous.deformation, poses: poses ?? previous.deformation.poses } } : {}) };
+    this.packetPreparing = true;
+    try { return await this.prepareRenderPacketTransaction(packet, view, signal, true); }
+    finally { this.packetPreparing = false; }
+  }
+  private async prepareRenderPacketTransaction(packet: RenderPacket, view: RenderView, signal?: AbortSignal, instancesOnly = false): Promise<FrameMetrics> {
     this.assertOpen();
     signal?.throwIfAborted();
     markBackendPhase("packet-localize-start");
@@ -259,7 +270,7 @@ export class DeepWebGpuBackend {
     const staticPacket = localPacket.deformation === undefined
       && localPacket.instances.every(instance => instance.pose === undefined);
     const target = this.runtime as unknown as Partial<AuthorChunkStreamRuntime>;
-    const canStream = this.options.authorChunks === true && staticPacket
+    const canStream = !instancesOnly && this.options.authorChunks === true && staticPacket
       && target.session && target.stageResidentPacketValidated && target.cancelResidentPacketStage;
     if (canStream) {
       const chunks = this.chunks ?? new AuthorChunkStream(target as AuthorChunkStreamRuntime, this.options.meshlets,
@@ -280,7 +291,9 @@ export class DeepWebGpuBackend {
         ? { ...localPacket, instances: applyHlodPlanToInstances(localPacket.instances, clusterPlan,
             this.clusterEngine.allProxyDraws(candidate.origin)) }
         : localPacket;
-      await this.runtime.setPacketValidated(published, signal);
+      if (instancesOnly) this.runtime.updateInstances({ materials: published.materials, instances: published.instances,
+        ...(published.deformation ? { poses: published.deformation.poses } : {}) });
+      else await this.runtime.setPacketValidated(published, signal);
       this.publishedInstances = staticPacket ? undefined : published.instances;
       this.chunks?.fullPacketPublished(staticPacket ? "resident-stage-unavailable" : "deformation");
     }
@@ -506,10 +519,7 @@ export class DeepWebGpuBackend {
     return { status, update: projected.update, packet: projected.packet };
   }
 
-  /**
-   * 独立包路径的宿主驱动动画:只替换已发布带姿态实例的变形姿态(骨骼调色板/形变权重),
-   * 几何、材质与实例表沿用整包发布结果;下一帧起生效。未发布变形包时 fail-closed。
-   */
+  /** Replace live poses on the published independent deformation packet. */
   updateDeformationPoses(poses: readonly DeformationPose[]): void {
     this.assertOpen();
     const packet = this.committedPacket, instances = this.publishedInstances;
@@ -519,13 +529,7 @@ export class DeepWebGpuBackend {
     this.runtime.updateInstances({ materials: packet.materials, instances, poses });
   }
 
-  /**
-   * 独立包路径的宿主驱动对象描边(勾选/取消轮廓、选中对象变化):按作者模型 ID 集合翻转实例 outline 位,
-   * 只走实例位更新(同一批次缓冲写入 / 流送包走 catalog.update 的实例级更新),不重传几何/材质、不重建 packet 资源。
-   * 非流送包在 await 之前同步完成 updateInstances(同一帧可见);流送包经 AuthorChunkStream 实例更新异步生效。
-   * 返回 "unchanged"(与当前一致,零 GPU 工作)、"updated"(下一帧生效)、
-   * "unsupported"(非独立包、变形包或 HLOD 簇包;这些路径由投影桥/整包发布自行携带 outline)。
-   */
+  /** Update outline instance flags; deformation/HLOD packets require a full authored update. */
   async setOutlinedModels(modelIds: ReadonlySet<string>): Promise<"updated" | "unchanged" | "unsupported"> {
     this.assertOpen();
     const packet = this.committedPacket;

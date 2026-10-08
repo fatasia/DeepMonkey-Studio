@@ -105,6 +105,8 @@ export function validateDashboardVideoMedia(value: unknown, path: string): Map<s
 }
 
 export function bytesToBase64(bytes: Uint8Array): string {
+  const encode = (bytes as Uint8Array & { toBase64?: () => string }).toBase64;
+  if (encode) return encode.call(bytes);
   let binary = "";
   for (let offset = 0; offset < bytes.length; offset += 8192)
     binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));

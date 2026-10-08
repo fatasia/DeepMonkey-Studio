@@ -128,8 +128,7 @@ function pixelLayout(input: PixelLevel, expected: MipLayout, rows: number, rowAl
   return pitch;
 }
 
-/** 上传边界取得自有像素副本；预算检查先于所有像素复制。 */
-export function prepareTextures(input: readonly DecodedTexture[], limits: TextureLimits = {}): readonly PreparedTexture[] {
+function inspectTextures(input: readonly DecodedTexture[], limits: TextureLimits) {
   const maxDimension = integer(limits.maxDimension ?? 16384, 16384, "dimension limit");
   const maxBytes = integer(limits.maxBytes ?? DEFAULT_BYTES, DEFAULT_BYTES, "byte limit");
   const maxTextures = integer(limits.maxTextures ?? 4096, 4096, "count limit");
@@ -159,7 +158,17 @@ export function prepareTextures(input: readonly DecodedTexture[], limits: Textur
     const sampler = samplerSettings(source.sampler);
     return { source, levels, sampler, compression };
   });
-  return checked.map(({ source, levels, sampler, compression }) => ({
+  return checked;
+}
+
+/** Validate layouts and budgets without allocating pixel snapshots. */
+export function validateTextures(input: readonly DecodedTexture[], limits: TextureLimits = {}): void {
+  inspectTextures(input, limits);
+}
+
+/** 上传边界取得自有像素副本；预算检查先于所有像素复制。 */
+export function prepareTextures(input: readonly DecodedTexture[], limits: TextureLimits = {}): readonly PreparedTexture[] {
+  return inspectTextures(input, limits).map(({ source, levels, sampler, compression }) => ({
     id: source.id, revision: source.revision, semantic: source.semantic,
     format: isSrgbTextureSemantic(source.semantic)
       ? (compression?.srgb ?? "rgba8unorm-srgb")

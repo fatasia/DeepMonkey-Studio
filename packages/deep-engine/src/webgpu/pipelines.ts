@@ -352,14 +352,15 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
       }
     }
   }
-  // 首帧关键子集立即排队（plain/ccw 恒含）；其余 main 变体等 release 后再排队。
+  // Static passes bind plain/ccw; pose batches select their actual material keys.
   const passMainKey = mainPipelineKey("plain", false, "ccw");
   const firstFrameKeys = options.firstFrameMainKeys;
+  const needsBaseMain = !deformation || !options.onDemandMain;
   const criticalMains = firstFrameKeys
-    ? mainFactories.filter(({ key }) => key === passMainKey || firstFrameKeys.includes(key))
+    ? mainFactories.filter(({ key }) => (needsBaseMain && key === passMainKey) || firstFrameKeys.includes(key))
     : mainFactories;
   const deferredMains = firstFrameKeys
-    ? mainFactories.filter(({ key }) => key !== passMainKey && !firstFrameKeys.includes(key))
+    ? mainFactories.filter(({ key }) => !(needsBaseMain && key === passMainKey) && !firstFrameKeys.includes(key))
     : [];
   const criticalMainReady = Promise.all(criticalMains.map(({ key, descriptor }) =>
     track(mainPipelines, key, createCriticalPipeline(descriptor))))

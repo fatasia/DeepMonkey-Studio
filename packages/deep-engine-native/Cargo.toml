@@ -21,6 +21,9 @@ cosmic-text = { version = "=0.19.0", default-features = false, features = ["std"
 # (rust_backend → miniz_oxide/adler2/crc32fast,geometry_dag/Cargo.lock 同版本集,
 # 85aeef75 字节黄金钉版时已审计;版本经 geometry_dag/Cargo.toml 等号钉死,不引新大版本)。
 geometry_dag = { path = "geometry_dag" }
+# Binary preview planes use the already-audited geometry_dag dependency/version.
+# SHA-256 6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb.
+flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
 pollster = "=1.0.1"
 rapier3d = { version = "=0.35.3", default-features = true, features = ["enhanced-determinism"] }
 serde = { version = "=1.0.228", features = ["derive"] }

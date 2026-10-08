@@ -1,4 +1,4 @@
-import { prepareTextures, TEXTURE_SEMANTICS, isSrgbTextureSemantic, type DecodedTexture, type TextureLimits } from "../textures/decodedTexture.js";
+import { validateTextures, TEXTURE_SEMANTICS, isSrgbTextureSemantic, type DecodedTexture, type TextureLimits } from "../textures/decodedTexture.js";
 import { transcodeKtx2Texture } from "../textures/ktx2Transcode.js";
 import type { GltfDecodedImage, GltfDecodedTextures, GltfEncodedImage, GltfImageDecoder, GltfTextureDecodeOptions, GltfTextureManifest } from "./textureTypes.js";
 import { GltfImportError, MAX_BYTES, budget, invalid, object } from "./validation.js";
@@ -185,7 +185,7 @@ export async function decodeGltfTextureManifest(manifest: GltfTextureManifest, d
   });
   const limits: TextureLimits = { maxDimension, maxBytes, maxTextures };
   try {
-    prepareTextures(sources, limits);
+    validateTextures(sources, limits);
     return sources;
   } catch (error) {
     throw new GltfImportError("invalid", "textureManifest.resources", error instanceof Error ? error.message : String(error));

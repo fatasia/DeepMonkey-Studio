@@ -14,6 +14,7 @@ export {
 } from "./lightProfiles.js";
 export { RuntimePackageError } from "./primitives.js";
 export { buildDeepRuntimePackage, buildDeepRuntimePackageArtifact, buildDeepRuntimePackageArtifactAsync } from "./builder.js";
+export { buildDeepRuntimePackageBinaryArtifactAsync, RUNTIME_BINARY_MAGIC } from "./binaryArtifact.js";
 export { buildDashboardRuntimePackage } from "./dashboard.js";
 export { buildDashboardCompositionRuntimePackage } from "./dashboardComposition.js";
 export { dashboardRuntimePageId } from "./dashboardAuthorIdentity.js";

@@ -1,5 +1,5 @@
 import { DEFAULT_DISPLAY_CONTRACT, type DisplayToneMappingOperator, type KeyframeTransition, type SceneSnapshot } from "@bim-studio/contracts";
-import { buildDeepRuntimePackageArtifactAsync, runtimeContentSha256,
+import { buildDeepRuntimePackageArtifactAsync, buildDeepRuntimePackageBinaryArtifactAsync, runtimeContentSha256,
   type DeepRuntimePackage, type RuntimeJson, type RuntimePrefilteredIbl,
   type RuntimeIrradianceProbe, type RuntimeIrradianceProbeGrid, type RuntimeIrradianceProbeGridSingle } from "@bim-studio/deep-engine/runtime-package";
 import { packNativeProbeGridRecords, packNativeProbeGridLevels, DEEP_GI_PROBE_RECORD_BYTES } from "@bim-studio/deep-engine/lighting";
@@ -135,6 +135,8 @@ export interface SceneIrradianceProbeCascadeBake {
 export type SceneIrradianceProbeBake = SceneIrradianceProbeGridBake | SceneIrradianceProbeCascadeBake;
 
 export interface CompileSceneRuntimeOptions extends CompileSceneRenderOptions {
+  /** Internal preview transport; publications keep the canonical JSON default. */
+  readonly binaryTransport?: boolean;
   readonly packageId: string;
   readonly packageVersion: string;
   /** Called immediately before the synchronous package freeze/hash/serialization stage. */
@@ -168,6 +170,7 @@ export interface SceneCompilationEvidence {
 export interface CompiledSceneRuntime {
   readonly runtimePackage: DeepRuntimePackage;
   readonly packageJson: string;
+  readonly packageBytes: Uint8Array<ArrayBuffer>;
   readonly evidence: SceneCompilationEvidence;
 }
 
@@ -197,6 +200,8 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
   let loadedBytes = environmentSource?.bytes ?? 0;
   if (loadedBytes>(maxSourceBytes ?? 256*1024*1024)) throw new Error("HDR 资源超出场景预算");
   const compiled = await compileSceneRenderPacket(localized.scene, {
+    ...(options.decodedAssetCache ? { decodedAssetCache: options.decodedAssetCache } : {}),
+    ...(options.decodeModel ? { decodeModel: options.decodeModel } : {}),
     ...(options.advancedMaterials === true ? { advancedMaterials: true } : {}),
     ...(options.normalizeModel ? { normalizeModel: options.normalizeModel } : {}),
     ...(imageDecoder ? { imageDecoder } : {}), ...(signal ? { signal } : {}),
@@ -231,7 +236,9 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
   const dynamicRuntime = compileDynamicRuntime(localized.scene, { objectBindings: compiled.objectBindings, coordinateOrigin: localized.frame.origin });
   const customShaders = stage("shader compile", () => compileSceneCustomShaders(localized.scene, compiled.packet));
   options.onPackageBuild?.();
-  const { runtimePackage, packageJson } = await stageAsync("package build", () => (buildDeepRuntimePackageArtifactAsync({ packageId, packageVersion, camera, ...(environment ? { environment } : {}), ...(dynamicRuntime ? { dynamicRuntime } : {}),
+  const buildArtifact = options.binaryTransport && !environment?.staticLightmap
+    ? buildDeepRuntimePackageBinaryArtifactAsync : buildDeepRuntimePackageArtifactAsync;
+  const { runtimePackage, packageJson, packageBytes } = await stageAsync("package build", () => (buildArtifact({ packageId, packageVersion, camera, ...(environment ? { environment } : {}), ...(dynamicRuntime ? { dynamicRuntime } : {}),
     ...(customShaders.shaderPackages.length ? { shaderPackages: customShaders.shaderPackages, materialBindings: customShaders.materialBindings } : {}),
     renderPacket: { id: "scene.main", revision: 1, value: compiled.packet } }, signal ? { signal } : {})));
   const nonJson = findNonJson(runtimePackage); if (nonJson) throw new Error(`runtime package non-JSON at ${nonJson}`);
@@ -247,7 +254,7 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
     renderPacketHash: runtimePackage.resources.find(resource => resource.kind === "render-packet")!.contentHash.value,
     ...(customShaders.shaderPackages.length ? { shaderPackageHashes: customShaders.shaderPackages.map(shader => runtimeContentSha256(shader.value)) } : {}),
     ...(dynamicRuntime ? { dynamicRuntimeHash: runtimePackage.resources.find(resource => resource.kind === "dynamic-runtime")!.contentHash.value } : {}) });
-  const targetArtifactHash = await byteHash(new TextEncoder().encode(packageJson));
+  const targetArtifactHash = await byteHash(packageBytes);
   signal?.throwIfAborted();
   // 雾随 environment v7 编译，但 weather 字段只被部分消费（粒子/曝光因子未接），
   // 必须继续保留在 deferred 列表里，不能因雾已编译而从 deferred 移除。
@@ -272,7 +279,7 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
   const deferredObjectFields = collectDeferredObjectFields(scene).map(item => ({ ...item,
     fields: item.fields.filter(field => !(field === "physics" && compiledPhysicsBodyIds.has(item.nodeId))) }))
     .filter(item => item.fields.length > 0);
-  return { runtimePackage, packageJson, evidence: { schemaVersion: 1, scope: "static-render-packet", recipe,
+  return { runtimePackage, packageJson, packageBytes, evidence: { schemaVersion: 1, scope: "static-render-packet", recipe,
     localCoordinates: localized.frame, maxSourceBytes: maxSourceBytes ?? 256 * 1024 * 1024,
     sourceSemanticHash, compileGraphHash, targetArtifactHash, sourceAssets, ...(sourceTextures.length ? { sourceTextures } : {}), ...(environmentSource ? {environmentSource} : {}),
     objectBindings: compiled.objectBindings, compiledSceneFields: [{ field: "camera", capability: "deep.scene.camera.v1", resourceId: camera.id },

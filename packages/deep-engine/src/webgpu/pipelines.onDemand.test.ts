@@ -22,8 +22,9 @@ it("does not compile unused static or pose mains after publication and admits la
     { deformation, firstFrameMainKeys: keys, onDemandMain: true })));
   for (const build of builds) { await build.criticalReady; build.releaseDeferredQueues(); }
   await Promise.all(builds.map(build => build.ready));
-  expect(f.descriptors.filter(value => value.label?.startsWith("Deep forward"))).toHaveLength(4);
-  expect(builds.every(build => build.pipelines.mainPipelines.size === 2)).toBe(true);
+  expect(f.descriptors.filter(value => value.label?.startsWith("Deep forward"))).toHaveLength(3);
+  expect(builds.map(build => build.pipelines.mainPipelines.size)).toEqual([2, 1]);
+  expect(builds[1]!.pipelines.mainPipelines.has("plain/depth/ccw")).toBe(false);
   for (const build of builds) {
     const prepare = build.pipelines.prepareMainKeys!;
     await Promise.all([prepare(["material/blend/double", "material/blend/double"]), prepare(["material/blend/double"])]);
@@ -31,7 +32,10 @@ it("does not compile unused static or pose mains after publication and admits la
     expect(prepare(["material/blend/double"])).toBeUndefined();
     expect(() => prepare(["material/blend/ccw/a2c"])).toThrow("Missing main pipeline variant");
   }
-  expect(f.descriptors.filter(value => value.label?.startsWith("Deep forward"))).toHaveLength(6);
+  expect(f.descriptors.filter(value => value.label?.startsWith("Deep forward"))).toHaveLength(5);
+  await builds[1]!.pipelines.prepareMainKeys!(["plain/depth/ccw"]);
+  expect(builds[1]!.pipelines.mainPipelines.has("plain/depth/ccw")).toBe(true);
+  expect(builds[1]!.pipelines.main).toBeDefined();
 });
 it("propagates driver compilation failure without publishing the missing key", async () => {
   const f = fixture();

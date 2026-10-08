@@ -26,7 +26,12 @@ describe("author WASM compilation ownership", () => {
     const compiled = await runStudioWasmCompilation(input, controller.signal, () => host);
     const original = await compileStudioWasmRuntimePackageInProcess(scene, { models: [] }, controller.signal, null);
     expect(compiled.bytes).toEqual(original);
-    expect(parseDeepRuntimePackage(new TextDecoder().decode(compiled.bytes)).valid).toBe(true);
+    const headerLength = new DataView(compiled.bytes.buffer).getUint32(8, true);
+    const header = JSON.parse(new TextDecoder().decode(compiled.bytes.subarray(12, 12 + headerLength)));
+    expect(header).toMatchObject({ schema: "deep-engine.runtime-transfer", version: 1 });
+    expect(header.sections.length).toBeGreaterThan(0);
+    // Internal transfer bytes are distinct from the public JSON publication.
+    expect(parseDeepRuntimePackage(new TextDecoder().decode(compiled.bytes)).valid).toBe(false);
     expect(host.terminate).toHaveBeenCalledOnce();
     expect(host.onmessage).toBeNull();
   });

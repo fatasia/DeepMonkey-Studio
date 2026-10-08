@@ -1,88 +1,70 @@
 import type { RenderPacket } from "@bim-studio/deep-engine";
 
-const GRID_HALF_SIZE = 100;
-const GRID_MINOR_STEP = 1;
-const GRID_MAJOR_STEP = 10;
-const GRID_Y = 0.002;
+const HALF = 100, SIZE = 256, Y = 0.002;
+type Texture = NonNullable<RenderPacket["textures"]>[number];
+const layers = [
+  { id: "minor", width: 200 / 2048, alpha: .07, color: [.208, .323, .371], axis: false },
+  { id: "major", width: 1.2 * 200 / 2048, alpha: .17, color: [.275, .407, .456], axis: false },
+  { id: "axis-x", width: 1.5 * 200 / 2048, alpha: .46, color: [.624, .122, .107], axis: true },
+  { id: "axis-z", width: 1.5 * 200 / 2048, alpha: .46, color: [.078, .275, .546], axis: true },
+] as const;
 
-type GridLayer = {
-  readonly id: string;
-  readonly width: number;
-  readonly alpha: number;
-  readonly color: readonly [number, number, number];
-  readonly coordinates: readonly number[];
-  readonly axes: "both" | "x" | "z";
-};
-
-/**
- * 将作者辅助网格降低为普通 RenderPacket 绘制数据。
- * Three WebView 直接消费 scene.environment.gridVisible；Native 消费这里生成的保留 ID，
- * 因而不需要第二套宿主开关或特殊 GPU 管线。
- */
-export function compileSceneAuxiliaryGrid(
-  visible: boolean,
-  origin: { readonly x: number; readonly y: number; readonly z: number } = { x: 0, y: 0, z: 0 },
-): Pick<RenderPacket, "geometries" | "materials" | "instances"> {
-  if (!visible) return { geometries: [], materials: [], instances: [] };
-  const minor: number[] = [], major: number[] = [];
-  for (let coordinate = -GRID_HALF_SIZE; coordinate <= GRID_HALF_SIZE; coordinate += GRID_MINOR_STEP) {
-    if (coordinate === 0) continue;
-    (coordinate % GRID_MAJOR_STEP === 0 ? major : minor).push(coordinate);
+/** Pixel-area coverage survives minification; thin geometry cannot be mip filtered. */
+function gridTexture(layer: typeof layers[number]): Texture {
+  const height = layer.axis ? 1 : SIZE, period = layer.axis ? 2 : 10;
+  const coordinates = layer.id === "minor" ? [1,2,3,4,5,6,7,8,9] : layer.axis ? [1] : [0,10];
+  const coverage = (pixel: number) => {
+    const start = pixel * period / SIZE, end = (pixel + 1) * period / SIZE;
+    return Math.min(1, coordinates.reduce((sum, c) => sum + Math.max(0,
+      Math.min(end, c + layer.width / 2) - Math.max(start, c - layer.width / 2)), 0) / (end - start));
+  };
+  const data = new Uint8Array(SIZE * height * 4);
+  for (let y = 0; y < height; y++) for (let x = 0; x < SIZE; x++) {
+    const a = coverage(x), b = layer.axis ? 0 : coverage(y), offset = (y * SIZE + x) * 4;
+    data.set([255, 255, 255, Math.round(255 * (a + b - a * b))], offset);
   }
-  const layers: readonly GridLayer[] = [
-    { id: "minor", width: 0.025, alpha: 0.075, color: [0.208, 0.323, 0.371], coordinates: minor, axes: "both" },
-    { id: "major", width: 0.045, alpha: 0.18, color: [0.275, 0.407, 0.456], coordinates: major, axes: "both" },
-    { id: "axis-x", width: 0.06, alpha: 0.46, color: [0.624, 0.122, 0.107], coordinates: [0], axes: "x" },
-    { id: "axis-z", width: 0.06, alpha: 0.46, color: [0.078, 0.275, 0.546], coordinates: [0], axes: "z" },
-  ];
-  const geometries = layers.map(layer => gridGeometry(layer));
-  const materials = layers.map(layer => ({
-    id: `scene.auxiliary-grid.material.${layer.id}`,
-    shadingModel: "unlit" as const,
-    baseColor: layer.color,
-    metallic: 0,
-    roughness: 1,
-    baseColorAlpha: layer.alpha,
-    alphaMode: "BLEND" as const,
-    doubleSided: true,
-    fog: false,
-  }));
-  const transform = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0,
-    origin.x, origin.y, origin.z, 1]);
-  const instances = layers.map(layer => ({
-    id: `scene.auxiliary-grid.instance.${layer.id}`,
-    geometry: `scene.auxiliary-grid.geometry.${layer.id}`,
-    material: `scene.auxiliary-grid.material.${layer.id}`,
-    transform,
-    castShadow: false,
-    receiveShadow: false,
-  }));
-  return { geometries, materials, instances };
+  const mipmaps: { width: number; height: number; data: Uint8Array }[] = [];
+  let previous = { width: SIZE, height, data };
+  while (previous.width > 1 || previous.height > 1) {
+    const width = Math.max(1, previous.width / 2), height = Math.max(1, previous.height / 2);
+    const data = new Uint8Array(width * height * 4);
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      let alpha = 0;
+      for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++)
+        alpha += previous.data[(Math.min(previous.height - 1, y * 2 + dy) * previous.width + Math.min(previous.width - 1, x * 2 + dx)) * 4 + 3]!;
+      data.set([255,255,255,Math.round(alpha / 4)], (y * width + x) * 4);
+    }
+    previous = { width, height, data }; mipmaps.push(previous);
+  }
+  return { id: `scene.auxiliary-grid.texture.${layer.id}`, revision: 1, semantic: "baseColor", width: SIZE,
+    height, data, mipmaps, sampler: { addressModeU: layer.axis ? "clamp-to-edge" : "repeat",
+      addressModeV: layer.axis ? "clamp-to-edge" : "repeat", magFilter: "linear", minFilter: "linear",
+      mipmapFilter: "linear", maxAnisotropy: 8 } };
 }
 
-function gridGeometry(layer: GridLayer): RenderPacket["geometries"][number] {
-  const quads = layer.coordinates.length * (layer.axes === "both" ? 2 : 1);
-  const vertices = new Float32Array(quads * 4 * 6);
-  const indices = new Uint32Array(quads * 6);
-  let quad = 0;
-  const write = (x0: number, z0: number, x1: number, z1: number, x2: number, z2: number, x3: number, z3: number) => {
-    const vertex = quad * 24;
-    vertices.set([x0, GRID_Y, z0, 0, 1, 0, x1, GRID_Y, z1, 0, 1, 0,
-      x2, GRID_Y, z2, 0, 1, 0, x3, GRID_Y, z3, 0, 1, 0], vertex);
-    const base = quad * 4;
-    indices.set([base, base + 1, base + 2, base, base + 2, base + 3], quad * 6);
-    quad += 1;
-  };
-  for (const coordinate of layer.coordinates) {
-    const halfWidth = layer.width / 2;
-    if (layer.axes === "both" || layer.axes === "x") {
-      write(-GRID_HALF_SIZE, coordinate - halfWidth, -GRID_HALF_SIZE, coordinate + halfWidth,
-        GRID_HALF_SIZE, coordinate + halfWidth, GRID_HALF_SIZE, coordinate - halfWidth);
-    }
-    if (layer.axes === "both" || layer.axes === "z") {
-      write(coordinate - halfWidth, -GRID_HALF_SIZE, coordinate - halfWidth, GRID_HALF_SIZE,
-        coordinate + halfWidth, GRID_HALF_SIZE, coordinate + halfWidth, -GRID_HALF_SIZE);
-    }
-  }
-  return { id: `scene.auxiliary-grid.geometry.${layer.id}`, revision: 1, vertices, indices };
+// Immutable compiler-owned pixels are shared across scene versions.
+let textures: Texture[] | undefined;
+export function compileSceneAuxiliaryGrid(visible: boolean,
+  origin: { readonly x: number; readonly y: number; readonly z: number } = { x: 0, y: 0, z: 0 },
+): Pick<RenderPacket, "geometries" | "materials" | "instances" | "textures"> {
+  if (!visible) return { geometries: [], materials: [], instances: [] };
+  textures ??= layers.map(gridTexture);
+  const geometries = layers.map(layer => {
+    // Match sceneGrid's Canvas plane: its red center column runs along world Z.
+    const x = layer.id === "axis-x" ? 1 : HALF, z = layer.id === "axis-z" ? 1 : HALF;
+    const vertices = new Float32Array([-x,Y,-z,0,1,0, -x,Y,z,0,1,0, x,Y,z,0,1,0, x,Y,-z,0,1,0]);
+    const uv0 = new Float32Array(layer.id === "axis-z" ? [0,0,1,0,1,1,0,1]
+      : layer.id === "axis-x" ? [0,0,0,1,1,1,1,0] : [0,0,0,20,20,20,20,0]);
+    return { id: `scene.auxiliary-grid.geometry.${layer.id}`, revision: 1, vertices, uv0,
+      indices: new Uint32Array([0,1,2,0,2,3]) };
+  });
+  const materials = layers.map(layer => ({ id: `scene.auxiliary-grid.material.${layer.id}`,
+    shadingModel: "unlit" as const, baseColor: layer.color, metallic: 0, roughness: 1,
+    baseColorAlpha: layer.alpha, alphaMode: "BLEND" as const, doubleSided: true, fog: true,
+    baseColorTexture: { texture: `scene.auxiliary-grid.texture.${layer.id}` } }));
+  const transform = new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,origin.x,origin.y,origin.z,1]);
+  const instances = layers.map(layer => ({ id: `scene.auxiliary-grid.instance.${layer.id}`,
+    geometry: `scene.auxiliary-grid.geometry.${layer.id}`, material: `scene.auxiliary-grid.material.${layer.id}`,
+    transform, castShadow: false, receiveShadow: false }));
+  return { geometries, materials, instances, textures };
 }

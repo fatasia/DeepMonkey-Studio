@@ -49,6 +49,8 @@ export function validateRuntimeTexturePlaneBytes(level: Record<string, unknown>,
 }
 
 export function decodeRuntimeTextureBytes(value: string): Uint8Array {
+  const decode = (Uint8Array as typeof Uint8Array & { fromBase64?: (text: string) => Uint8Array }).fromBase64;
+  if (decode) return decode.call(Uint8Array, value);
   const binary = atob(value), bytes = new Uint8Array(binary.length);
   for (let index = 0; index < bytes.length; index++) bytes[index] = binary.charCodeAt(index);
   return bytes;

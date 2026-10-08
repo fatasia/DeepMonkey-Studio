@@ -52,11 +52,18 @@ vi.mock("react", () => ({
   },
 }));
 vi.mock("./useAppInteractionEffects", () => ({ useAppInteractionEffects: vi.fn() }));
+vi.mock("../delivery/compileSceneRenderPacket", () => ({ compileSceneRenderPacket: vi.fn(async () => ({
+  packet: { schema: "deep-engine.render-packet", version: 1, geometries: [], materials: [], instances: [] },
+})) }));
 vi.mock("../viewer/StudioDeepWebGpuBridge", () => ({ StudioDeepWebGpuBridge: vi.fn(function (_engine: unknown, _viewport: unknown, options: { onRuntimeFailure(error: Error): void }) {
   harness.runtimeFailures.webgpu = options.onRuntimeFailure; return harness.deep;
 }), b4HlodClusterEnabled: vi.fn() }));
-vi.mock("../viewer/StudioDeepWasmBridge", () => ({ StudioDeepWasmBridge: vi.fn(function (_engine: unknown, _viewport: unknown, options: { onRuntimeFailure(error: Error): void; compilePackage(signal: AbortSignal): Promise<{ bytes: Uint8Array; canonicalHash?: string }> }) {
-  harness.runtimeFailures.wasm = options.onRuntimeFailure; harness.compilePackage = options.compilePackage; return harness.wasm;
+vi.mock("../viewer/StudioDeepWasmBridge", () => ({ StudioDeepWasmBridge: vi.fn(function (_engine: unknown, _viewport: unknown, options: import("../viewer/StudioDeepWasmBridge").StudioDeepWasmBridgeOptions) {
+  harness.runtimeFailures.wasm = options.onRuntimeFailure!;
+  harness.compilePackage = async signal => {
+    const result = await options.compilePackage(signal);
+    options.onPackageAccepted?.(result, options.packageKey?.() ?? ""); return result;
+  }; return harness.wasm;
 }) }));
 vi.mock("../viewer/studioWasmRuntimePackage", () => ({ compileStudioWasmRuntimePackage: vi.fn(async () => ({ bytes: new Uint8Array([1]) })), normalizeStudioWasmModel: vi.fn() }));
 vi.mock("../viewer/deepOutlineSupport", () => ({ deepSupportsObjectOutline: () => harness.outlineSupported }));
@@ -71,7 +78,7 @@ function deferred() {
   const promise = new Promise<Result>((done, fail) => { resolve = done; reject = fail; });
   return { promise, resolve, reject };
 }
-async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
+async function flush() { for (let i = 0; i < 32; i++) await Promise.resolve(); }
 
 function fixture() {
   const switching: boolean[] = [];

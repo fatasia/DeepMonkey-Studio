@@ -11,7 +11,7 @@
   },
   "app": {
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http: https: data: blob:; media-src 'self' http: https: blob:; connect-src 'self' ipc: http: https: ws: wss:; worker-src 'self' blob:",
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http: https: data: blob:; media-src 'self' http: https: blob:; connect-src 'self' ipc: blob: http: https: ws: wss:; worker-src 'self' blob:",
       "capabilities": ["desktop-main", "desktop-script-editor", "scene-viewer"]
     },
     "windows": [

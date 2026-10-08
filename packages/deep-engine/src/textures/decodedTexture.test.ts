@@ -1,10 +1,32 @@
-import { describe, expect, it } from "vitest";
-import { planCompressedTextureMips, planTextureMips, prepareTextures, sameTextureContent, type DecodedTexture } from "./decodedTexture.js";
+import { describe, expect, it, vi } from "vitest";
+import { planCompressedTextureMips, planTextureMips, prepareTextures, validateTextures, sameTextureContent, type DecodedTexture } from "./decodedTexture.js";
 
 const source = (changes: Partial<DecodedTexture> = {}): DecodedTexture => ({ id: "color", revision: 0,
   semantic: "baseColor", width: 2, height: 2, data: new Uint8Array(16).fill(128), ...changes });
 
 describe("decoded RGBA8 texture contract", () => {
+  it("validates without touching pixel rows, while preparation still owns its pixels", () => {
+    const texture = source();
+    const reads = vi.spyOn(texture.data, "subarray");
+    validateTextures([texture]);
+    expect(reads).not.toHaveBeenCalled();
+    const prepared = prepareTextures([texture]);
+    expect(reads).toHaveBeenCalled();
+    texture.data.fill(0);
+    expect(prepared[0]!.levels[0]!.data[0]).toBe(128);
+    reads.mockRestore();
+  });
+  it.each([
+    { data: new Uint8Array(15) }, { revision: -1 }, { semantic: "invalid" },
+    { bytesPerRow: 7 }, { mipmaps: [{ width: 2, height: 1, data: new Uint8Array(8) }] },
+    { sampler: { maxAnisotropy: 4, minFilter: "nearest" } },
+  ])("uses the same rejection for validation and preparation: %j", change => {
+    const textures = [source(change as Partial<DecodedTexture>)];
+    let expected: unknown;
+    try { prepareTextures(textures); } catch (error) { expected = error; }
+    expect(expected).toBeInstanceOf(Error);
+    expect(() => validateTextures(textures)).toThrow((expected as Error).message);
+  });
   it("plans rectangular non-power-of-two mips without leaving zero dimensions", () => {
     expect(planTextureMips(7, 3)).toEqual([
       { width: 7, height: 3, bytesPerRow: 28, byteLength: 84 },

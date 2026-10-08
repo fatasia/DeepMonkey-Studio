@@ -190,13 +190,13 @@ fn decode_environment(
 ) -> Result<crate::ibl::PreparedIblEnvironment, RuntimePackageError> {
     let descriptor = descriptor(package, id, RuntimeResourceKind::IblEnvironment)?;
     if decode_background(package, id)?.is_some() {
-        // v8/v9 都是内置 IBL 的 studio 语义（v9 仅追加作者色彩分级）。
-        if payload(package, id)?
-            .get("schemaVersion")
-            .and_then(Value::as_u64)
-            .map(|version| version == 8 || version == 9)
-            .unwrap_or(false)
+        // Studio v10 retains its declared IBL; grading v9 can explicitly disable it.
+        if payload(package, id)?.get("kind").and_then(Value::as_str)
+            == Some("solid-background-builtin-ibl")
         {
+            if payload(package, id)?.get("schemaVersion").and_then(Value::as_u64) == Some(10) {
+                return Ok(crate::ibl::author_studio_environment());
+            }
             return Ok(builtin_default_environment());
         }
         if let Some(ibl) = payload(package, id)?.get("ibl") {
@@ -287,6 +287,52 @@ pub(super) fn payload<'a>(
         .payloads
         .get(id)
         .ok_or_else(|| RuntimePackageError(format!("resource {id} payload is missing")))
+}
+
+#[cfg(test)]
+mod environment_consumption_tests {
+    use super::*;
+
+    fn environment(version: u32, kind: &str) -> RuntimePackageEnvelope {
+        let mut package: RuntimePackageEnvelope = serde_json::from_str(include_str!(
+            "../../tests/fixtures/runtime-package-v1.json"
+        )).unwrap();
+        let previous = package.entrypoints.environment.clone();
+        let id = "scene.environment".to_owned();
+        package.payloads.remove(&previous);
+        package.resources.iter_mut().find(|entry| entry.id == previous).unwrap().id = id.clone();
+        package.entrypoints.environment = id.clone();
+        let mut source = serde_json::json!({"schema":"deep-engine.solid-environment",
+            "schemaVersion":version,"id":id,"revision":1,"kind":kind,
+            "backgroundSrgb":[0.04,0.08,0.12],"outputTransform":if version == 10 {
+                "native-aces-studio-gradient-v10"
+            } else { "native-aces-grading-v9" }});
+        if version == 9 {
+            source["colorGrading"] = serde_json::json!({"hue":0,"saturation":0,
+                "brightness":0,"contrast":0,"temperature":0,"tint":0});
+        }
+        package.payloads.insert(id, source);
+        package
+    }
+
+    #[test]
+    fn studio_v10_loads_the_declared_reflection_environment() {
+        let package = environment(10, "solid-background-builtin-ibl");
+        let loaded = decode_environment(&package, &package.entrypoints.environment).unwrap();
+        assert_eq!(loaded.provenance, crate::ibl::IblProvenance::BuiltInDefault);
+        assert!(loaded.specular.mips.iter().flat_map(|mip| &mip.texels)
+            .any(|pixel| pixel[0] > 0.001));
+        assert_eq!(loaded.id, "deep.builtin.author-studio-ibl.v1");
+    }
+
+    #[test]
+    fn grading_without_ibl_keeps_reflections_disabled() {
+        let package = environment(9, "solid-background-no-ibl");
+        let loaded = decode_environment(&package, &package.entrypoints.environment).unwrap();
+        assert_eq!(loaded.provenance, crate::ibl::IblProvenance::DisabledProbe);
+        assert!(loaded.specular.mips.iter().flat_map(|mip| &mip.texels)
+            .all(|pixel| pixel[..3] == [0.0, 0.0, 0.0]));
+    }
 }
 
 #[cfg(test)]

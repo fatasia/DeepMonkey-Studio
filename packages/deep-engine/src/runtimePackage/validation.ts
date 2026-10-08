@@ -21,7 +21,7 @@ function hash(value: unknown, path: string): string {
   requireValue(object.algorithm === "sha256" && typeof object.value === "string" && /^[a-f0-9]{64}$/.test(object.value), path, "Expected lowercase SHA-256.");
   return object.value;
 }
-interface OwnedRuntimeHashes { readonly packageHash: string; readonly resources: ReadonlyMap<string, string> }
+interface OwnedRuntimeHashes { readonly packageHash: string; readonly resources: ReadonlyMap<string, string>; readonly binaryRenderValidated?: true }
 function validate(input: unknown, owned?: OwnedRuntimeHashes): DeepRuntimePackage {
   const value = record(owned ? input : snapshotJson(input), "$");
   const entrypointShape = record(value.entrypoints, "$.entrypoints");
@@ -90,7 +90,7 @@ function validate(input: unknown, owned?: OwnedRuntimeHashes): DeepRuntimePackag
       && environment.kind === "builtin-default", "$.entrypoints.environment", "Dashboard requires the builtin environment.");
   }
   requireValue(used.size === index.size, "$.entrypoints", "Every resource needs exactly one entrypoint role.");
-  validateRuntimeRenderPacket(payloads[renderId], `$.payloads.${renderId}`);
+  if (!owned?.binaryRenderValidated) validateRuntimeRenderPacket(payloads[renderId], owned ? "$.renderPacket" : `$.payloads.${renderId}`);
   if (value.objectBindings !== undefined) validateRuntimeObjectBindings(value.objectBindings);
   if (cameraId !== null) {
     const camera = validateRuntimeSceneCamera(payloads[cameraId]);

@@ -13,7 +13,7 @@ const FOOTER_MAGIC: &[u8; 8] = b"DMTHREE1";
 const FOOTER_BYTES: u64 = 48;
 const MAX_PAYLOAD_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_HEADER_BYTES: usize = 1024 * 1024;
-const VIEWER_CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ipc:; worker-src 'self' blob:";
+const VIEWER_CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ipc: blob:; worker-src 'self' blob:";
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

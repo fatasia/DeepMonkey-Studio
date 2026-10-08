@@ -1,5 +1,6 @@
 import type { RenderPacket } from "@bim-studio/deep-engine";
 import type { RenderView } from "@bim-studio/deep-engine/webgpu";
+import { prepareStudioAuthorPacket } from "./prepareStudioAuthorPacket";
 
 interface Target {
   prepareRenderPacket(packet: RenderPacket, view: RenderView, signal?: AbortSignal): Promise<unknown>;
@@ -32,7 +33,7 @@ export class StudioDeepAuthorPacketSync {
       if (!packet) throw new Error("作者外观已超出当前独立包能力，请切换引擎后重试。");
       if (this.packets.get(target) === packet) return undefined;
       const candidate = prepareCandidate?.(packet) ?? packet;
-      await target.prepareRenderPacket(candidate, readView(), controller.signal);
+      await prepareStudioAuthorPacket(target, this.packets.get(target), candidate, readView(), controller.signal);
       controller.signal.throwIfAborted();
       this.packets.set(target, packet);
       return candidate;

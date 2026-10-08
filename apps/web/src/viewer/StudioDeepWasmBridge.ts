@@ -96,6 +96,7 @@ export class StudioDeepWasmBridge {
   private lastCameraSnapshot: readonly number[] | undefined;
   private lastOverlayRevision = -1;
   private generation = 0;
+  private presentationGeneration = 0;
   private closed = false;
   private controller: DeepCameraController | undefined;
   private inputSession: DeepCameraInputSession | undefined;
@@ -153,7 +154,9 @@ export class StudioDeepWasmBridge {
     return pose as DeepWasmPhysicsPose;
   }
 
-  cancelPendingSwitch(): void {
+  cancelPendingSwitch(preservePreparation = false): void {
+    this.presentationGeneration++;
+    if (preservePreparation && this.warmup) return;
     this.generation++;
     this.pending?.abort();
     this.pending = undefined;
@@ -161,9 +164,10 @@ export class StudioDeepWasmBridge {
 
   switchTo(target: "webgl" | "wasm",
     beforePublish?: (signal: AbortSignal) => Promise<void>): Promise<StudioWasmSwitchResult> {
+    if (target === this.activeBackendValue && this.warmup) return Promise.resolve(this.result("unchanged"));
     if (target === "wasm" && this.warmup) {
-      const generation = this.generation;
-      return this.warmup.then(() => generation === this.generation && !this.closed
+      const generation = this.generation, presentation = this.presentationGeneration;
+      return this.warmup.then(() => generation === this.generation && presentation === this.presentationGeneration && !this.closed
         ? this.runSwitch(target, beforePublish) : this.result("cancelled"));
     }
     return this.runSwitch(target, beforePublish);

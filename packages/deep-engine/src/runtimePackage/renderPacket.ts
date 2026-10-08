@@ -174,6 +174,14 @@ export function validateRuntimeRenderPacket(input: unknown, path: string): void 
   assertNativePacketDeformationSupported(parseRuntimeRenderPacket(input, path));
 }
 
+/** Check fields changed by normalization before discarding their source representation. */
+export function validateRuntimeRenderPacketSource(input: unknown, path: string): void {
+  const value = record(input, path);
+  requireValue(value.schema === undefined || value.schema === "deep-engine.render-packet", path, "Unsupported RenderPacket schema.");
+  requireValue(value.version === undefined || value.version === 1, path, "Unsupported RenderPacket version.");
+  array(value.materials, `${path}.materials`, 16_384).forEach((item, index) => material(item, `${path}.materials[${index}]`, false));
+}
+
 /** Rehydrates the validated JSON payload into the typed arrays required by Browser residency upload. */
 export function materializeRuntimeRenderPacket(input: unknown, path: string): RenderPacket {
   return parseRuntimeRenderPacket(input, path, true);

@@ -5,7 +5,7 @@ import { browserImageDecoder } from "../delivery/browserImageDecoder";
 import { compileSceneRuntimePackage, type SceneIrradianceProbeBake } from "../delivery/compileSceneRuntimePackage";
 import { probeGridBakeForPayload } from "../delivery/probeGridBakePublicationSession";
 import { loadViewerAssetBuffer } from "./viewerAssetTransport";
-import type { StudioWasmCompilationProgress } from "./studioWasmCompilationClient";
+import type { StudioWasmCompilationProgress, StudioDecodedAsset } from "./studioWasmCompilationClient";
 
 /** Compile through the same runtime-package path used by Native publication. */
 export async function compileStudioWasmRuntimePackageInProcess(
@@ -14,6 +14,7 @@ export async function compileStudioWasmRuntimePackageInProcess(
   signal: AbortSignal,
   irradianceProbes: SceneIrradianceProbeBake | null = probeGridBakeForPayload(scene) ?? null,
   onProgress?: (progress: StudioWasmCompilationProgress) => void,
+  decodedAssets?: readonly StudioDecodedAsset[],
 ): Promise<Uint8Array> {
   const progress = (stage: StudioWasmCompilationProgress["stage"]) => {
     signal.throwIfAborted(); onProgress?.({ kind: "progress", stage });
@@ -22,6 +23,8 @@ export async function compileStudioWasmRuntimePackageInProcess(
   const compiled = await compileSceneRuntimePackage(scene, {
     packageId: `studio.${runtimeContentSha256(scene.id)}`,
     packageVersion: "1.0.0",
+    binaryTransport: true,
+    ...(decodedAssets?.length ? { decodedAssetCache: new Map(decodedAssets) } : {}),
     // Share the publication session's strict scene-semantic key: restored bakes
     // flow to WASM through the same validated Runtime Package environment.
     irradianceProbes,
@@ -47,7 +50,7 @@ export async function compileStudioWasmRuntimePackageInProcess(
     },
   });
   signal.throwIfAborted();
-  const bytes = new TextEncoder().encode(compiled.packageJson);
+  const bytes = compiled.packageBytes;
   progress("complete");
   return bytes;
 }

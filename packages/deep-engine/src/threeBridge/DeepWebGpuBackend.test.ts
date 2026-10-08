@@ -7,6 +7,24 @@ import { BackendSwitchCoordinator, type SwitchableBackend } from "../backendSwit
 import { deformationBridge, morphMesh } from "./deformation.testUtils.js";
 
 describe("DeepWebGpuBackend", () => {
+  it("admits resident instance transforms without another resource upload and preserves coordinate rebasing", async () => {
+    const author = mesh(), source = bridge(); author.updateWorldMatrix(true, true);
+    const projected = source.project(author, { cameraLayerMask: 1 });
+    if (!projected.ok) throw Error("projection failed");
+    const target = runtime(), largeView = { ...view, eye: [1_000_000, 0, 4] as const, target: [1_000_000, 0, 0] as const };
+    const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      view: largeView, renderPacket: projected.packet }, { create: vi.fn(async () => target) });
+    const instances = projected.packet.instances.map(instance => {
+      const transform = Array.from(instance.transform); transform[12] = 1_000_007;
+      return { ...instance, transform };
+    });
+    const frame = await backend.prepareInstanceTransforms(instances, undefined, largeView);
+    expect(frame).toBeDefined(); expect(target.setPacketValidated).toHaveBeenCalledOnce();
+    expect(target.updateInstances).toHaveBeenCalledOnce();
+    const initial = target.packets[0]!.instances[0]!.transform[12]!;
+    expect(target.updates[0]!.instances[0]!.transform[12]! - initial).toBe(1_000_007);
+    expect(target.validateFrame).toHaveBeenCalledTimes(2); backend.dispose();
+  });
   it("forwards changed author poses on the incremental path", async () => {
     const target = runtime(), author = morphMesh();
     const backend = new DeepWebGpuBackend(target, deformationBridge());

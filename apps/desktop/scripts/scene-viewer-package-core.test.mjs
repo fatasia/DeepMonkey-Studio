@@ -22,6 +22,10 @@ test("read-only installers exclude editor API resources and retain offline WebVi
   assert.deepEqual(overlay.app.security.capabilities, ["scene-viewer"]);
   assert.deepEqual(overlay.app.windows[0].backgroundColor, [11, 17, 20, 255]);
   assert.equal(overlay.bundle.windows.webviewInstallMode, undefined);
+  const connect = overlay.app.security.csp.split(';').find(rule => rule.trim().startsWith('connect-src'));
+  // ImageBitmapLoader fetches embedded GLB images through Blob URLs.
+  assert.equal(connect?.trim(), "connect-src 'self' ipc: blob:");
+  assert(!/https?:|wss?:|\*/.test(connect));
 });
 
 test("isolates generated viewer output from the regular Web dist", () => {

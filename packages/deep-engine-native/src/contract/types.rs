@@ -28,7 +28,7 @@ pub struct RenderPacket {
     pub textures: Vec<TextureResource>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct GeometryResource {
     pub id: String,
@@ -384,7 +384,7 @@ pub struct RenderLodLevel {
     pub resident: Option<bool>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct TextureResource {
     pub id: String,
@@ -414,7 +414,7 @@ pub enum TextureSemantic {
     SpecularColor,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct PixelLevel {
     pub width: u32,
@@ -425,7 +425,7 @@ pub struct PixelLevel {
     pub bytes_per_row: Option<u32>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct TextureSampler {
     #[serde(default, deserialize_with = "present")]

@@ -111,40 +111,46 @@ fn create_raster_pipelines(
     capture: CaptureMode,
     layered_entries: bool,
 ) -> RasterPipelines {
+    let slot = |raster| {
+        if capture.enabled() {
+            return create_mesh_pipeline(device, frame_layout, material_layout, shader,
+                raster, semantic, normal_mapped, capture, layered_entries).into();
+        }
+        super::PipelineSlot::Mesh(std::sync::Arc::new(DeferredMeshPipeline {
+        device: device.clone(), frame_layout: frame_layout.clone(),
+        material_layout: material_layout.clone(), shader: shader.clone(),
+        raster, semantic, normal_mapped, capture, layered_entries,
+        pipeline: std::sync::OnceLock::new(),
+        }))
+    };
     RasterPipelines {
-        regular: create_mesh_pipeline(
-            device,
-            frame_layout,
-            material_layout,
-            shader,
-            RasterState::REGULAR,
-            semantic,
-            normal_mapped,
-            capture,
-            layered_entries,
-        ),
-        mirrored: create_mesh_pipeline(
-            device,
-            frame_layout,
-            material_layout,
-            shader,
-            RasterState::MIRRORED,
-            semantic,
-            normal_mapped,
-            capture,
-            layered_entries,
-        ),
-        double_sided: create_mesh_pipeline(
-            device,
-            frame_layout,
-            material_layout,
-            shader,
-            RasterState::DOUBLE_SIDED,
-            semantic,
-            normal_mapped,
-            capture,
-            layered_entries,
-        ),
+        regular: slot(RasterState::REGULAR),
+        mirrored: slot(RasterState::MIRRORED),
+        double_sided: slot(RasterState::DOUBLE_SIDED),
+    }
+}
+
+/// Shared recipes compile once; renderer transactions warm scene keys before publishing.
+pub(super) struct DeferredMeshPipeline {
+    device: wgpu::Device,
+    frame_layout: wgpu::BindGroupLayout,
+    material_layout: wgpu::BindGroupLayout,
+    shader: wgpu::ShaderModule,
+    raster: RasterState,
+    semantic: BlendSemantic,
+    normal_mapped: bool,
+    capture: CaptureMode,
+    layered_entries: bool,
+    pipeline: std::sync::OnceLock<wgpu::RenderPipeline>,
+}
+impl DeferredMeshPipeline {
+    #[cfg(test)]
+    pub(super) fn is_ready(&self) -> bool { self.pipeline.get().is_some() }
+    pub(super) fn get(&self) -> &wgpu::RenderPipeline {
+        self.pipeline.get_or_init(|| create_mesh_pipeline(
+            &self.device, &self.frame_layout, &self.material_layout, &self.shader,
+            self.raster, self.semantic, self.normal_mapped, self.capture, self.layered_entries,
+        ))
     }
 }
 

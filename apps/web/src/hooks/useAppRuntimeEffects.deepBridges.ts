@@ -7,6 +7,8 @@ import type { RenderPacket } from "@bim-studio/deep-engine";
 import { b4HlodClusterEnabled, StudioDeepWebGpuBridge } from "../viewer/StudioDeepWebGpuBridge";
 import { StudioDeepWasmBridge } from "../viewer/StudioDeepWasmBridge";
 import { StudioSceneCompilationCache } from "../viewer/StudioSceneCompilationCache";
+import { StudioWasmTransformCache } from "../viewer/StudioWasmTransformCache";
+import { sceneTransformIndependentKey, transformSceneInstances } from "../viewer/sceneInstanceTransforms";
 import { clearStudioRendererPreparation, publishStudioRendererPreparation, readStudioRendererPreparation,
   startStudioRendererPrewarm } from "../viewer/studioRendererPreparation";
 import { compileStudioWasmRuntimePackage, normalizeStudioWasmModel } from "../viewer/studioWasmRuntimePackage";
@@ -106,6 +108,7 @@ export function useDeepBridgesSetup(context: AppRuntimeEffectsContext, refs: Dee
       },
     };
     let cachedPacket: { key: string; packet: RenderPacket | undefined; clusters?: readonly HlodClusterStreamBinding[] } | undefined;
+    let transformBaseline: { key: string; scene: SceneSnapshot; packet: RenderPacket } | undefined;
     const authorCompilation = new StudioSceneCompilationCache<NonNullable<typeof cachedPacket> | undefined>();
     let appearanceNoticeKey: string | undefined;
     const compileAuthorSceneUncached = async (signal: AbortSignal) => {
@@ -115,10 +118,16 @@ export function useDeepBridgesSetup(context: AppRuntimeEffectsContext, refs: Dee
       if (!scene || !project) return undefined;
       const key = studioAuthorRenderPacketKey(scene, project.models);
       if (cachedPacket?.key === key) return cachedPacket;
+      const transformKey = sceneTransformIndependentKey(scene, project.models);
+      if (transformBaseline?.key === transformKey && transformBaseline.packet.objectBindings) {
+        const instances = transformSceneInstances(transformBaseline.scene, scene, transformBaseline.packet.objectBindings, transformBaseline.packet.instances);
+        if (instances) return cachedPacket = { key, packet: { ...transformBaseline.packet, instances } };
+      }
       const hlodPackages = b4HlodClusterEnabled() ? await loadSceneHlodPackages(scene, project.models, signal) : undefined;
       try {
         const compiled = await compileSceneRenderPacket(scene, {
           signal,
+          includeAuxiliaryGrid: false, // StudioDeepGridSession owns the filtered author grid.
           // 编辑器逐帧把 Three AnimationMixer 的骨骼/形变姿态同步给 Deep,含蒙皮/形变目标的模型保留为活体。
           liveDeformation: true,
           advancedMaterials: true,
@@ -151,6 +160,8 @@ export function useDeepBridgesSetup(context: AppRuntimeEffectsContext, refs: Dee
         deformationNoticeRef.current = describeDeepCompileNotice(compiled);
         appearanceNoticeKey = undefined;
         cachedPacket = { key, packet: compiled.packet, ...(compiled.hlodClusters ? { clusters: compiled.hlodClusters } : {}) };
+        transformBaseline = compiled.hlodClusters?.length ? undefined
+          : { key: transformKey, scene: structuredClone(scene), packet: compiled.packet };
         return cachedPacket;
       } catch (reason) {
         // 取消与未知编译失败照旧向上传播(取消由候选事务静默,未知失败使切换失败并回 WebGL)。
@@ -199,6 +210,7 @@ export function useDeepBridgesSetup(context: AppRuntimeEffectsContext, refs: Dee
     // 编译前短路:作者指纹未变时直接复用上次 Worker 编译产物,不再重跑
     // 15 秒级编译(切换桥内的字节缓存随后 matches 命中,连 set 都跳过)。
     const wasmCompilation = new StudioSceneCompilationCache<Awaited<ReturnType<typeof compileStudioWasmRuntimePackage>>>();
+    const wasmTransformCache = new StudioWasmTransformCache();
     const wasmPackageKey = () => {
       const latest = rendererRecoveryContextRef.current;
       const scene = latest.captureSceneSnapshot() ?? latest.activeScene;
@@ -209,10 +221,21 @@ export function useDeepBridgesSetup(context: AppRuntimeEffectsContext, refs: Dee
       const scene = latest.captureSceneSnapshot() ?? latest.activeScene;
       if (!scene || !latest.project) throw new Error("当前工作区没有可编译的场景或项目资源");
       const key = `${latest.project.id}:${studioAuthorRenderPacketKey(scene, latest.project.models)}`;
-      return wasmCompilation.get(key, signal, compileSignal => compileStudioWasmRuntimePackage(scene, latest.project!, compileSignal, { onProgress: progress => {
+      return wasmCompilation.get(key, signal, async compileSignal => {
+        const transformed = await wasmTransformCache.compile(scene, latest.project!.models, compileSignal);
+        if (transformed) return transformed;
+        await compileAuthorScene(compileSignal);
+        compileSignal.throwIfAborted();
+        const decodedAssets = [...decodedAssetCache.entries()]
+          .map(([assetKey, { decodedBytes, decoded }]) => [assetKey, { decodedBytes, decoded }] as const);
+        const compiled = await compileStudioWasmRuntimePackage(scene, latest.project!, compileSignal, { decodedAssets, onProgress: progress => {
         if (compileSignal.aborted || rendererSwitchOwnerRef.current === undefined || callbacks.current.rendererBackend !== "wasm") return;
         callbacks.current.setRendererSwitchMessage(STUDIO_WASM_COMPILATION_LABELS[progress.stage]);
-      } })).then(result => {
+        } });
+        compileSignal.throwIfAborted();
+        wasmTransformCache.remember(scene, latest.project!.models, compiled);
+        return compiled;
+      }).then(result => {
         signal.throwIfAborted();
         return result;
       });
@@ -284,6 +307,7 @@ export function useDeepBridgesSetup(context: AppRuntimeEffectsContext, refs: Dee
       clearStudioRendererPreparation();
       authorCompilation.clear();
       wasmCompilation.clear();
+      wasmTransformCache.clear();
       wasmOverlay.dispose();
       if (deepBridgeRef.current === bridge) deepBridgeRef.current = undefined;
       if (wasmBridgeRef.current === wasmBridge) wasmBridgeRef.current = undefined;

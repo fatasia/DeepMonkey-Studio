@@ -14,7 +14,7 @@ import type {
 } from "./renderPacketTypes.js";
 import { uniqueById } from "./renderPacketValidation.js";
 import type { MaterialInstanceOptions } from "./materialInstanceAbi.js";
-import { prepareTextures, type TextureSemantic } from "./textures/decodedTexture.js";
+import { prepareTextures, validateTextures, type TextureSemantic } from "./textures/decodedTexture.js";
 import type { DeformationSnapshot } from "./deformation/types.js";
 import { preparePacketDeformation, prepareDeformationPoseUpdate } from "./renderPacketDeformation.js";
 export { assertPacketDeformationSupported, prepareDeformationPoseUpdate } from "./renderPacketDeformation.js";
@@ -48,24 +48,35 @@ export type {
   TextureSlot,
 } from "./renderPacketTypes.js";
 
-export function prepareRenderPacket(packet: RenderPacket, options: MaterialInstanceOptions = {}): PreparedPacket {
+function preparePacketStructure(packet: RenderPacket, options: MaterialInstanceOptions) {
   if (packet.instances.length > 16_384
     || packet.geometries.length > 4096
     || packet.materials.length > 16_384) {
     throw new Error("Render packet exceeds resource limits.");
   }
   const geometries = uniqueById(packet.geometries, "geometry");
-  const textures = prepareTextures(packet.textures === undefined ? [] : packet.textures);
+  const textures = packet.textures === undefined ? [] : packet.textures;
+  validateTextures(textures);
   validateGeometries(geometries);
   const deformation = preparePacketDeformation(packet.deformation, geometries, packet.instances);
   const textureSemantics = new Map(textures.map(texture => [texture.id, texture.semantic]));
   const batches = prepareInstanceUpdate(geometryFeatureMap(geometries), { materials: packet.materials, instances: packet.instances,
     ...(deformation ? { poses: deformation.poses } : {}) }, textureSemantics, deformation, options);
+  return { geometries, deformation, batches };
+}
+
+/** Same admission rules as preparation, without unused geometry or pixel snapshots. */
+export function validateRenderPacket(packet: RenderPacket, options: MaterialInstanceOptions = {}): void {
+  preparePacketStructure(packet, options);
+}
+
+export function prepareRenderPacket(packet: RenderPacket, options: MaterialInstanceOptions = {}): PreparedPacket {
+  const { geometries, deformation, batches } = preparePacketStructure(packet, options);
   const usedTextures = collectUsedTextures(batches);
   return {
     geometries: snapshotUsedGeometries(geometries, batches, deformation?.sources.map(source => source.geometry)),
     ...(deformation ? { deformation } : {}),
-    textures: textures.filter(texture => usedTextures.has(texture.id)),
+    textures: prepareTextures((packet.textures ?? []).filter(texture => usedTextures.has(texture.id))),
     batches,
   };
 }

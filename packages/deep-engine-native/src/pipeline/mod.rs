@@ -48,9 +48,26 @@ struct MaterialPipelines {
 
 #[derive(Clone)]
 struct RasterPipelines {
-    regular: wgpu::RenderPipeline,
-    mirrored: wgpu::RenderPipeline,
-    double_sided: wgpu::RenderPipeline,
+    regular: PipelineSlot,
+    mirrored: PipelineSlot,
+    double_sided: PipelineSlot,
+}
+
+#[derive(Clone)]
+enum PipelineSlot {
+    Ready(wgpu::RenderPipeline),
+    Mesh(std::sync::Arc<mesh::DeferredMeshPipeline>),
+}
+impl PipelineSlot {
+    fn get(&self) -> &wgpu::RenderPipeline {
+        match self {
+            Self::Ready(pipeline) => pipeline,
+            Self::Mesh(recipe) => recipe.get(),
+        }
+    }
+}
+impl From<wgpu::RenderPipeline> for PipelineSlot {
+    fn from(pipeline: wgpu::RenderPipeline) -> Self { Self::Ready(pipeline) }
 }
 
 struct ShadowPipelines {
@@ -62,11 +79,11 @@ struct ShadowPipelines {
 impl RasterPipelines {
     fn select(&self, mirrored: bool, double_sided: bool) -> &wgpu::RenderPipeline {
         if double_sided {
-            &self.double_sided
+            self.double_sided.get()
         } else if mirrored {
-            &self.mirrored
+            self.mirrored.get()
         } else {
-            &self.regular
+            self.regular.get()
         }
     }
 }
@@ -79,6 +96,7 @@ impl MeshPipelines {
         }
     }
 
+    /// Supported variant budget; deferred variants need not be resident.
     pub fn counts(&self) -> (usize, usize) {
         if self.active.is_some() {
             if self.active.as_ref().is_some_and(|p| p.shadow.is_some()) {
@@ -289,4 +307,42 @@ pub fn create_mesh_pipelines_with_layered(
         ),
     });
     pipelines
+}
+
+#[cfg(test)]
+mod demand_tests {
+    use super::*;
+    #[test]
+    #[ignore = "requires a real GPU"]
+    fn color_variants_compile_once_and_share_cloned_slots() {
+        pollster::block_on(async {
+            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+            let adapter = instance.request_adapter(&Default::default()).await.unwrap();
+            let (device, _) = adapter.request_device(&Default::default()).await.unwrap();
+            let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+            let frame = crate::frame_bindings::create_frame_layouts(&device);
+            let material = crate::gpu_textures::create_material_layout(&device);
+            let shader = crate::frame_bindings::create_native_mesh_shader(&device);
+            let pipelines = create_mesh_pipelines(&device, &frame.frame, &frame.shadow, &material, &shader);
+            let active = pipelines.active.as_ref().unwrap();
+            let PipelineSlot::Mesh(recipe) = &active.solid.standard.regular else { panic!("must defer") };
+            assert!(!recipe.is_ready());
+            let clone = active.solid.standard.regular.clone();
+            let first = pipelines.select(AlphaMode::Opaque, false, false, false, false);
+            assert!(recipe.is_ready());
+            assert!(std::ptr::eq(first, clone.get()));
+            let PipelineSlot::Mesh(unused) = &active.blend.normal_mapped.mirrored else { panic!("must defer") };
+            assert!(!unused.is_ready(), "unused material variants must stay uncompiled");
+            for alpha in [AlphaMode::Opaque, AlphaMode::Blend] {
+                for premultiplied in [false, true] {
+                    for (mirrored, double_sided) in [(false, false), (true, false), (false, true)] {
+                        for normal in [false, true] {
+                            pipelines.select(alpha, premultiplied, mirrored, double_sided, normal);
+                        }
+                    }
+                }
+            }
+            assert!(scope.pop().await.is_none(), "all deferred variants must remain valid");
+        });
+    }
 }

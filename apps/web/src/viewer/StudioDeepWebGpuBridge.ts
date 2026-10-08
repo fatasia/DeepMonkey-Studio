@@ -8,6 +8,7 @@ import { publishStudioQualityTelemetry, type StudioDeepQualityTelemetrySampler }
 import { StudioDeepRenderView } from "./StudioDeepRenderView";
 import { StudioDeepEnvironmentCache } from "./StudioDeepEnvironmentCache";
 import { StudioDeepAuthorPacketSync } from "./StudioDeepAuthorPacketSync";
+import { prepareStudioAuthorPacket } from "./prepareStudioAuthorPacket";
 import { StudioDeepInactiveCandidate, STUDIO_DEEP_INACTIVE_MAX_BYTES } from "./StudioDeepInactiveCandidate";
 import { prepareStudioRendererCandidate } from "./prepareStudioRendererCandidate";
 import { isStudioDeepEnvironmentSourceCurrent } from "./studioDeepEnvironmentSource";
@@ -28,7 +29,8 @@ import { DeepGizmoInteraction } from "./deepGizmoInteraction";
 import { createDeepCanvas, prepareAuthorInputCanvas, captureAuthorStyle, restoreAuthorStyle,
   type AuthorCanvasStyle } from "./studioDeepPresentationCanvas";
 import { collectDeepOverlayPrimitives } from "./deepOverlayPrimitiveSource";
-import { isAlphaToCoverageRejection, isDeepAdvancedMaterialsRejection } from "./studioDeepAdvancedMaterials";
+import { isAlphaToCoverageRejection, isDeepAdvancedMaterialsRejection, packetUsesDeepAdvancedMaterials,
+  resolveAlphaToCoverageCreateModes } from "./studioDeepAdvancedMaterials";
 import type { FrameCaptureSession, RenderPacket } from "@bim-studio/deep-engine";
 import { publishDeepPresentation, publishWebGlPresentation, releaseDeepPresentation,
   type StudioDeepBridgePresentationHost } from "./studioDeepWebGpuBridgePresentation";
@@ -48,7 +50,7 @@ export type { StudioDeepWebGpuBridgeOptions, StudioRendererSwitchResult } from "
 interface InactiveDeepCandidate {
   backend: DeepWebGpuBackend; canvas: HTMLCanvasElement; environment: PreparedStudioDeepEnvironment;
   packet: RenderPacket; shadowMapSize: number; qualityProfile: AuthoredQualityProfile | null;
-  deformationSync?: StudioDeformationPoseSync;
+  deformationSync?: StudioDeformationPoseSync | undefined;
 }
 
 /**
@@ -65,6 +67,7 @@ export class StudioDeepWebGpuBridge {
   private pending: AbortController | undefined;
   private unsubscribeFrame: (() => void) | undefined;
   private generation = 0;
+  private presentationGeneration = 0;
   private syncPending: DeepWebGpuBackend | undefined;
   private syncAgain: DeepWebGpuBackend | undefined;
   private lastCameraSnapshot: readonly number[] | undefined;
@@ -81,6 +84,7 @@ export class StudioDeepWebGpuBridge {
   private readonly environmentCache = new StudioDeepEnvironmentCache();
   private readonly authorPacketSync = new StudioDeepAuthorPacketSync();
   private readonly inactive = new StudioDeepInactiveCandidate<InactiveDeepCandidate>(null);
+  private inactiveAuthorKey: string | undefined;
   private warmup: Promise<StudioRendererSwitchResult> | undefined;
   private backgroundPreparation = false;
   private projectionBridge: import("@bim-studio/deep-engine/three-bridge").ThreeProjectionBridge | undefined;
@@ -103,9 +107,7 @@ export class StudioDeepWebGpuBridge {
   /** 控制器最后写回/采纳的姿态:区分"手势收敛中"与"宿主程序性变更"(与 WASM 桥同族)。 */
   private lastAppliedPose: import("./deepCameraController").CameraPose | undefined;
   private readonly gizmoInteraction: DeepGizmoInteraction;
-  /** True after an immutable SceneSnapshot packet was accepted for this session. */
   private independentPacketPath = false;
-  /** 带变形姿态的作者包:候选发布成功后据此建立逐帧姿态同步。 */
   private pendingDeformationPacket: RenderPacket | undefined;
   private deformationSync: StudioDeformationPoseSync | undefined;
   /** 独立包路径的描边实时同步(勾选"轮廓"/选中变化 → 仅翻转实例 outline 位)。 */
@@ -114,11 +116,7 @@ export class StudioDeepWebGpuBridge {
   private settledViewKey = "";
   /** 上次读到的 renderDemand 修订号:静置短路的变化信号(不可用时为 -1)。 */
   private lastDemandRevision = -1;
-  /**
-   * I-C21:构造期冻结的 HDR 请求快照。模块加载/设备创建是异步窗口,宿主在此
-   * 窗口内改动传入对象不得改变实际下发的请求——每次 switchTo 重放同一份冻结
-   * 快照,面板诊断可与之逐字段对账。
-   */
+  /** 构造期冻结 HDR 请求，异步设备创建与后续切换使用同一份配置。 */
   private readonly hdrDisplayRequest: HdrDisplayRequest | undefined;
   private replacementBudget: number | undefined;
   /** 当前 backend 是否以 advancedMaterials 变体创建(创建时判定,见 switchTo)。 */
@@ -178,7 +176,9 @@ export class StudioDeepWebGpuBridge {
       limit: this.cameraFrameInFlightLimit } };
   }
 
-  cancelPendingSwitch(): void {
+  cancelPendingSwitch(preservePreparation = false): void {
+    this.presentationGeneration++;
+    if (preservePreparation && this.warmup) return;
     this.generation++;
     this.pending?.abort();
     this.pending = undefined;
@@ -186,9 +186,10 @@ export class StudioDeepWebGpuBridge {
 
   switchTo(target: RendererBackend,
     beforePublish?: (signal: AbortSignal) => Promise<void>): Promise<StudioRendererSwitchResult> {
+    if (target === this.activeBackendValue && this.warmup) return Promise.resolve(this.result("unchanged"));
     if (target === "webgpu" && this.warmup) {
-      const generation = this.generation;
-      return this.warmup.then(() => generation === this.generation && !this.closed
+      const generation = this.generation, presentation = this.presentationGeneration;
+      return this.warmup.then(() => generation === this.generation && presentation === this.presentationGeneration && !this.closed
         ? this.runSwitch(target, beforePublish) : this.result("cancelled"));
     }
     return this.runSwitch(target, beforePublish);
@@ -198,7 +199,8 @@ export class StudioDeepWebGpuBridge {
   prewarm(signal: AbortSignal): Promise<StudioRendererSwitchResult> {
     if (this.warmup) return this.warmup;
     if (this.pending) return Promise.resolve(this.result("cancelled"));
-    if (this.activeBackendValue === "webgpu" || this.inactive.available) return Promise.resolve(this.result("unchanged"));
+    if (this.activeBackendValue === "webgpu" || (this.inactive.available
+      && this.inactiveAuthorKey === this.options.authorPacketKey?.())) return Promise.resolve(this.result("unchanged"));
     signal.throwIfAborted();
     const abort = () => this.cancelPendingSwitch();
     signal.addEventListener("abort", abort, { once: true });
@@ -244,7 +246,7 @@ export class StudioDeepWebGpuBridge {
     this.pending = controller;
     markSwitchPhase("deep-webgpu:switch-start");
     const authorKey = this.options.authorPacketKey?.();
-    const warm = this.inactive.take();
+    let warm = this.inactive.take();
     const canvas = warm?.canvas ?? createDeepCanvas(this.container);
     canvas.dataset.rendererPreparing = "true";
     // 单次事务内 create 写入、尾部与 finally 读回的可变局部量(原 switchTo 闭包 let)。
@@ -253,19 +255,41 @@ export class StudioDeepWebGpuBridge {
     // create/prepare 候选事务本体在 studioDeepWebGpuBridgeSwitchCandidate(本桥实例
     // 以类型层映射传入,字段读写语义与桥内一致)。
     try {
+      let warmPacket: RenderPacket | undefined;
+      try {
+        warmPacket = warm ? await this.options.authorRenderPacket!(controller.signal) : undefined;
+        controller.signal.throwIfAborted();
+      } catch (error) {
+        try { warm?.backend.dispose(); } finally { canvas.remove(); }
+        return this.result(controller.signal.aborted ? "cancelled" : "failed", error instanceof Error ? error.message : String(error));
+      }
+      if (warm) {
+        const modes = resolveAlphaToCoverageCreateModes({ requested: this.alphaToCoverageRequested, authorRenderPacket: warmPacket, scene: this.viewer.scene,
+          maskFallbackActive: this.a2cMaskFallbackRequested });
+        if (!warmPacket || (packetUsesDeepAdvancedMaterials(warmPacket) && !this.advancedMaterialsActive)
+          || (modes.alphaToCoverage && !this.alphaToCoverageActive)
+          || (modes.a2cMaskFallback && !this.a2cMaskFallbackActive)) {
+          warm.backend.dispose(); warm = undefined;
+        }
+      }
       const prepared = warm ? await prepareStudioRendererCandidate({ signal: controller.signal,
         timeoutMs: this.options.preparationTimeoutMs ?? 30_000, loadModule: async () => undefined,
-        create: async () => warm.backend,
+        create: async () => warm!.backend,
         prepare: async (backend, signal) => {
           markSwitchPhase("deep-webgpu:inactive-reused");
-          this.qualityProfile = warm.qualityProfile; this.independentPacketPath = true;
-          this.viewer.setAuthorPacketIndependent(true);
-          this.viewReader.setIndependentPacketBounds(warm.packet);
-          const packet = await this.options.authorRenderPacket!(signal);
-          if (packet !== warm.packet) throw new Error("作者包在热切换期间改变。");
+          this.qualityProfile = warm!.qualityProfile; this.independentPacketPath = true;
+          if (!prepareOnly) this.viewer.setAuthorPacketIndependent(true);
+          let packet = warmPacket!;
+          this.viewReader.setIndependentPacketBounds(packet);
+          if (packet !== warm!.packet) {
+            packet = (warm!.deformationSync ?? StudioDeformationPoseSync.create(warm!.packet, this.viewer))?.prepareReplacement(packet, this.viewer) ?? packet;
+            await prepareStudioAuthorPacket(backend, warm!.packet, packet, this.viewReader.renderViewDirect(canvas), signal);
+            this.authorPacketSync.seed(backend, warmPacket!);
+            warm!.deformationSync = StudioDeformationPoseSync.create(packet, this.viewer); warm!.packet = warmPacket!;
+          }
           await backend.prepareView(this.viewReader.renderViewDirect(canvas), signal, true);
-          frame.environment = warm.environment; frame.shadowMapSize = warm.shadowMapSize;
-          this.pendingDeformationPacket = warm.packet.deformation ? warm.packet : undefined;
+          frame.environment = warm!.environment; frame.shadowMapSize = warm!.shadowMapSize;
+          this.pendingDeformationPacket = packet.deformation ? packet : undefined;
         }, dispose: backend => backend.dispose(), removeCanvas: () => canvas.remove(),
       }) : await prepareStudioDeepSwitchCandidate(this as unknown as StudioDeepBridgeSwitchHost, canvas,
         controller.signal, generation, replacementBudget, this.options.preparationTimeoutMs ?? 30_000, frame);
@@ -304,7 +328,8 @@ export class StudioDeepWebGpuBridge {
         const memory = runtime.session?.resourceMemory;
         const bytes = memory?.unknownResources === 0 ? memory.estimatedBytes : Number.NaN;
         if (!packet || !frame.environment || !this.retainInactive({ backend, canvas, packet,
-          environment: frame.environment, shadowMapSize: frame.shadowMapSize, qualityProfile: this.qualityProfile }, bytes)) {
+          environment: frame.environment, shadowMapSize: frame.shadowMapSize, qualityProfile: this.qualityProfile,
+          deformationSync: warm?.deformationSync ?? StudioDeformationPoseSync.create(this.pendingDeformationPacket ?? packet, this.viewer) }, bytes)) {
           try { backend.dispose(); } finally { canvas.remove(); }
           return this.result("failed", `后台渲染器未保留：资源 ${bytes} 字节，未知资源 ${memory?.unknownResources}，设备 ${runtime.session?.state}，场景 ${!!packet}，环境 ${!!frame.environment && isStudioDeepEnvironmentSourceCurrent(this.viewer.scene, frame.environment)}。`);
         }
@@ -312,7 +337,7 @@ export class StudioDeepWebGpuBridge {
         return this.result("switched");
       }
       this.publishDeep(canvas, backend, frame.environment!, frame.shadowMapSize, frame.frameCaptureSession);
-      if (warm?.deformationSync) this.deformationSync = warm.deformationSync;
+      if (warm?.deformationSync && warmPacket === warm.packet) this.deformationSync = warm.deformationSync;
       const currentPacket = this.authorPacketSync.current(backend);
       if (currentPacket) this.viewReader.setIndependentPacketBounds(currentPacket);
       markSwitchPhase("deep-webgpu:published");
@@ -356,7 +381,6 @@ export class StudioDeepWebGpuBridge {
     if (park) markSwitchPhase(`deep-webgpu:inactive-park-${canPark ? "eligible" : "rejected"}-bytes-${bytes}-unknown-${session?.resourceMemory?.unknownResources}-pending-${!!this.syncPending}`);
     const shadowMapSize = this.shadowSession?.mapSize ?? 1024, qualityProfile = this.qualityProfile;
     const deformationSync = this.deformationSync;
-    const settings = JSON.stringify(this.viewer.getPostProcessing());
     publishWebGlPresentation(this as unknown as StudioDeepBridgePresentationHost, !!canPark);
     if (!canPark || !backend || !canvas || !packet || !environment) return;
     canvas.style.opacity = "0"; canvas.style.visibility = "hidden";
@@ -370,17 +394,10 @@ export class StudioDeepWebGpuBridge {
     const { backend, canvas, environment } = candidate;
     const session = backend.runtime.session as RuntimeSession | undefined;
     const settings = JSON.stringify(this.viewer.getPostProcessing());
-    let revision = this.viewer.getRenderDemandDiagnostics?.().invalidationRevision;
-    const authorKey = this.options.authorPacketKey?.();
-    let authorCurrent = true;
+    this.inactiveAuthorKey = this.options.authorPacketKey?.();
     return this.inactive.retain(candidate, bytes,
       () => {
-        const currentRevision = this.viewer.getRenderDemandDiagnostics?.().invalidationRevision;
-        if (currentRevision !== revision) {
-          authorCurrent = authorKey !== undefined && this.options.authorPacketKey?.() === authorKey;
-          revision = currentRevision;
-        }
-        return session?.state === "ready" && revision !== undefined && authorCurrent
+        return session?.state === "ready"
           && JSON.stringify(this.viewer.getPostProcessing()) === settings
           && isStudioDeepEnvironmentSourceCurrent(this.viewer.scene, environment);
       },

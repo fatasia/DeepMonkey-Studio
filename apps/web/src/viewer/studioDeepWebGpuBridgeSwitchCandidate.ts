@@ -1,3 +1,7 @@
+import type { Object3D } from "three";
+import type { PbrRendererOptions } from "@bim-studio/deep-engine/webgpu";
+import { studioDeepPipelineHints } from "./studioDeepPipelineHints";
+import { StudioDeepRuntimePreparation } from "./StudioDeepRuntimePreparation";
 import { DEFAULT_DISPLAY_CONTRACT } from "@bim-studio/contracts";
 import type { DeepWebGpuBackend, ThreeObjectSource, ThreeProjectionBridge } from "@bim-studio/deep-engine/three-bridge";
 import type { AuthoredQualityProfile, HdrDisplayRequest } from "@bim-studio/deep-engine/webgpu";
@@ -103,50 +107,9 @@ export async function prepareStudioDeepSwitchCandidate(host: StudioDeepBridgeSwi
       // Z1 P1：阴影分配档跟随作者质量档（引擎既有 PROFILES 表映射，零契约漂移）。
       const shadowTier = studioDeepShadowTier(host.qualityProfile);
       const shadowTierAllocation = studioDeepShadowAllocation(shadowTier);
-      const authorRenderPacket = (await packetTask) ?? undefined;
-      // 刀 C 首帧归因:作者包编译与 environment 并行的真实完成点(此前只有
-      // environment-ready,包编译耗时长短无从归因)。
-      if (authorRenderPacket) markSwitchPhase("deep-webgpu:packet-compiled");
-      const pipelineBootstrap = t11PipelineBootstrap(authorRenderPacket !== undefined);
-      host.independentPacketPath = authorRenderPacket !== undefined;
-      host.pendingDeformationPacket = authorRenderPacket?.deformation ? authorRenderPacket : undefined;
-      if (!host.backgroundPreparation) host.viewer.setAuthorPacketIndependent(host.independentPacketPath);
-      if (!authorRenderPacket) updateAuthorProjectionState(host.viewer.scene, host.viewer.camera, signal);
-      else host.viewReader.setIndependentPacketBounds(authorRenderPacket);
-      // B4 簇级 HLOD(opt-in):仅独立作者包路径消费;默认关闭不改变现网行为。
-      const authorHlodClusters = b4HlodClusterEnabled() && authorRenderPacket
-        ? (await host.options.authorHlodClusters?.(signal)) ?? undefined : undefined;
-      // Production packet sections retain their PBR pipeline and instance records.
-      // The position-only white diagnostic slot is never staged by Studio.
       const clusterLodEnabled = g1ClusterLodEnabled();
-      if (clusterLodEnabled) markSwitchPhase("deep-webgpu:g1-cluster-lod-production");
-      // 刀 C 首帧:独立包路径 create 与 prepare 用同一 view 构造器。此前
-      // create 走 threeRenderView(不携带 editorOverlay),prepare 走
-      // renderViewDirect(恒收集 Deep 原生辅助图形顶点),两条路径构造的
-      // view 语义不同 → prepareView 的视图复用判定永不通过,每次切换都
-      // 白付一次完整首帧验证(实测 ~270ms)。同源后,视口未变时 prepare
-      // 直接复用 create 已验证的帧。
-      const view = authorRenderPacket ? host.viewReader.renderViewDirect(canvas)
-        : host.viewReader.renderView(module, canvas);
-      frame.shadowMapSize = view.lights?.directional?.[0]?.shadow?.mapSize
-        ?? studioDeepShadowMapSize(host.viewer.scene, host.viewer.camera.layers.mask, shadowTierAllocation.shadowMapSize);
+      frame.shadowMapSize = studioDeepShadowMapSize(host.viewer.scene, host.viewer.camera.layers.mask, shadowTierAllocation.shadowMapSize);
       frame.frameCaptureSession = createRequestedStudioFrameCaptureSession();
-      // A compiled SceneSnapshot packet is a complete Deep input. Keep the
-      // Three projection bridge out of this path so geometry, materials,
-      // hierarchy and transforms are never read from the author scene.
-      // 仅当场景含激活的 clearcoat/sheen/iridescence/transmission lobe 时才启用 advancedMaterials 着色变体(按需编译,零开销默认)。
-      const advancedMaterials = host.advancedMaterialsRequested || (authorRenderPacket
-        ? packetUsesDeepAdvancedMaterials(authorRenderPacket) : sceneUsesDeepAdvancedMaterials(host.viewer.scene));
-      // a2c 双模式判定与合同注释见 studioDeepAdvancedMaterials.resolveAlphaToCoverageCreateModes。
-      const { alphaToCoverage, a2cMaskFallback } = resolveAlphaToCoverageCreateModes({
-        requested: host.alphaToCoverageRequested, authorRenderPacket,
-        scene: host.viewer.scene, maskFallbackActive: host.a2cMaskFallbackRequested });
-      host.projectionBridge = authorRenderPacket ? undefined : new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(),
-        capabilities: { authorDeformation: true, authorLod: true, ...(advancedMaterials ? { advancedMaterials: true } : {}),
-          ...(alphaToCoverage ? { alphaToCoverage: true } : {}),
-          ...(a2cMaskFallback ? { alphaToCoverageMaskFallback: true } : {}) },
-        authorTransformResolver: source => resolveAuthorWorldTransform(host.viewer, source),
-      });
       // T07 动态分辨率与 T25 逐 pass 计时均为 opt-in；缺省字段不进快照。
       const resolutionScalePolicy = t07DynamicResolutionPolicy();
       const gpuPassTiming = t25GpuPassTimingEnabled();
@@ -157,13 +120,9 @@ export async function prepareStudioDeepSwitchCandidate(host: StudioDeepBridgeSwi
       const megaLights = megaLightsEnabled();
       const rayTracedShadows = rayTracedShadowsEnabled();
       const rayTracedReflections = rayTracedReflectionsEnabled();
-      const backend = await module.DeepWebGpuBackend.create({
-        canvas, gpu: navigator.gpu,
-        ...(host.projectionBridge ? { projection: host.projectionBridge, root: host.projectionRoot() } : {}),
-        view, authorChunks: true,
-        ...(authorRenderPacket ? { renderPacket: authorRenderPacket } : {}),
-        ...(authorHlodClusters?.length ? { hlodClusters: authorHlodClusters } : {}),
-        renderer: { environment: frame.environment.source, deformation: true, meshlets: true,
+      const rendererOptions = (advancedMaterials: boolean, alphaToCoverage: boolean, independent: boolean): PbrRendererOptions => {
+        const pipelineBootstrap = t11PipelineBootstrap(independent);
+        return { environment: frame.environment!.source, deformation: true, meshlets: true,
           ...(advancedMaterials ? { advancedMaterials: true } : {}),
           ...(alphaToCoverage ? { msaaSampleCount: 4 } : {}),
           // Studio uses the author's live exposure across engines. Automatic
@@ -214,9 +173,73 @@ export async function prepareStudioDeepSwitchCandidate(host: StudioDeepBridgeSwi
             toneMapping: DEFAULT_DISPLAY_CONTRACT.toneMapping.operator },
           ...(frame.frameCaptureSession ? { frameCapture: { session: frame.frameCaptureSession,
             readbacks: { requests: studioFrameReadbackRequests() },
-            onReadbackResults: createStudioFrameReadbackListener(frame.frameCaptureSession) } } : {}) },
-        cameraLayerMask: host.viewer.camera.layers.mask, signal,
+            onReadbackResults: createStudioFrameReadbackListener(frame.frameCaptureSession) } } : {}) };
+      };
+      const hints = host.options.authorRenderPacket && !host.options.loadModule
+        && typeof navigator.gpu?.requestAdapter === "function"
+        ? studioDeepPipelineHints(host.viewer.getDeepProjectionRoot() as Object3D, host.viewer.camera.layers.mask) : undefined;
+      let early: StudioDeepRuntimePreparation | undefined;
+      try {
+        if (hints && navigator.gpu) {
+          const { PbrRenderer } = await import("@bim-studio/deep-engine/webgpu");
+          signal.throwIfAborted();
+          const modes = resolveAlphaToCoverageCreateModes({ requested: host.alphaToCoverageRequested, authorRenderPacket: undefined,
+            scene: host.viewer.scene, maskFallbackActive: host.a2cMaskFallbackRequested });
+          const options = rendererOptions(host.advancedMaterialsRequested || sceneUsesDeepAdvancedMaterials(host.viewer.scene), modes.alphaToCoverage, true);
+          early = new StudioDeepRuntimePreparation(PbrRenderer, canvas, navigator.gpu, signal,
+            { ...options, pipelines: { ...options.pipelines, ...hints } });
+          markSwitchPhase("deep-webgpu:early-runtime-start");
+        }
+      const authorRenderPacket = (await packetTask) ?? undefined;
+      // 刀 C 首帧归因:作者包编译与 environment 并行的真实完成点(此前只有
+      // environment-ready,包编译耗时长短无从归因)。
+      if (authorRenderPacket) markSwitchPhase("deep-webgpu:packet-compiled");
+      host.independentPacketPath = authorRenderPacket !== undefined;
+      host.pendingDeformationPacket = authorRenderPacket?.deformation ? authorRenderPacket : undefined;
+      if (!host.backgroundPreparation) host.viewer.setAuthorPacketIndependent(host.independentPacketPath);
+      if (!authorRenderPacket) updateAuthorProjectionState(host.viewer.scene, host.viewer.camera, signal);
+      else host.viewReader.setIndependentPacketBounds(authorRenderPacket);
+      // B4 簇级 HLOD(opt-in):仅独立作者包路径消费;默认关闭不改变现网行为。
+      const authorHlodClusters = b4HlodClusterEnabled() && authorRenderPacket
+        ? (await host.options.authorHlodClusters?.(signal)) ?? undefined : undefined;
+      // Production packet sections retain their PBR pipeline and instance records.
+      // The position-only white diagnostic slot is never staged by Studio.
+      if (clusterLodEnabled) markSwitchPhase("deep-webgpu:g1-cluster-lod-production");
+      // 刀 C 首帧:独立包路径 create 与 prepare 用同一 view 构造器。此前
+      // create 走 threeRenderView(不携带 editorOverlay),prepare 走
+      // renderViewDirect(恒收集 Deep 原生辅助图形顶点),两条路径构造的
+      // view 语义不同 → prepareView 的视图复用判定永不通过,每次切换都
+      // 白付一次完整首帧验证(实测 ~270ms)。同源后,视口未变时 prepare
+      // 直接复用 create 已验证的帧。
+      const view = authorRenderPacket ? host.viewReader.renderViewDirect(canvas)
+        : host.viewReader.renderView(module, canvas);
+      frame.shadowMapSize = view.lights?.directional?.[0]?.shadow?.mapSize
+        ?? studioDeepShadowMapSize(host.viewer.scene, host.viewer.camera.layers.mask, shadowTierAllocation.shadowMapSize);
+      // The packet owns render resources. Earlier author metadata only schedules
+      // pipeline preparation; it never supplies geometry or material bindings.
+      // 仅当场景含激活的 clearcoat/sheen/iridescence/transmission lobe 时才启用 advancedMaterials 着色变体(按需编译,零开销默认)。
+      const advancedMaterials = host.advancedMaterialsRequested || (authorRenderPacket
+        ? packetUsesDeepAdvancedMaterials(authorRenderPacket) : sceneUsesDeepAdvancedMaterials(host.viewer.scene));
+      // a2c 双模式判定与合同注释见 studioDeepAdvancedMaterials.resolveAlphaToCoverageCreateModes。
+      const { alphaToCoverage, a2cMaskFallback } = resolveAlphaToCoverageCreateModes({
+        requested: host.alphaToCoverageRequested, authorRenderPacket,
+        scene: host.viewer.scene, maskFallbackActive: host.a2cMaskFallbackRequested });
+      host.projectionBridge = authorRenderPacket ? undefined : new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(),
+        capabilities: { authorDeformation: true, authorLod: true, ...(advancedMaterials ? { advancedMaterials: true } : {}),
+          ...(alphaToCoverage ? { alphaToCoverage: true } : {}),
+          ...(a2cMaskFallback ? { alphaToCoverageMaskFallback: true } : {}) },
+        authorTransformResolver: source => resolveAuthorWorldTransform(host.viewer, source),
       });
+      const request: Parameters<typeof module.DeepWebGpuBackend.create>[0] = {
+        canvas, gpu: navigator.gpu,
+        ...(host.projectionBridge ? { projection: host.projectionBridge, root: host.projectionRoot() } : {}),
+        view, authorChunks: true,
+        ...(authorRenderPacket ? { renderPacket: authorRenderPacket } : {}),
+        ...(authorHlodClusters?.length ? { hlodClusters: authorHlodClusters } : {}),
+        renderer: rendererOptions(advancedMaterials, alphaToCoverage, authorRenderPacket !== undefined),
+        cameraLayerMask: host.viewer.camera.layers.mask, signal,
+      };
+      const backend = await (early ? module.DeepWebGpuBackend.create(request, early) : module.DeepWebGpuBackend.create(request));
       markSwitchPhase("deep-webgpu:scene-uploaded");
       host.advancedMaterialsActive = advancedMaterials;
       host.alphaToCoverageActive = alphaToCoverage;
@@ -224,6 +247,7 @@ export async function prepareStudioDeepSwitchCandidate(host: StudioDeepBridgeSwi
       if (authorRenderPacket) host.authorPacketSync.seed(backend, authorRenderPacket);
       if (replacementBudget !== undefined && !signal.aborted) frame.candidateObserver = observeRecoveryCandidate(backend, signal);
       return backend;
+      } finally { early?.dispose(); }
     },
     prepare: async (backend, signal) => {
       try {

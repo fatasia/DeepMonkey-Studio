@@ -18,6 +18,11 @@ let canonicalHashModule: CanonicalHashModule | undefined;
  */
 async function computeCanonicalHash(bytes: Uint8Array): Promise<string | undefined> {
   try {
+    if (new TextDecoder().decode(bytes.subarray(0, 8)) === "DMPBIN1\n") {
+      const length = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(8, true);
+      const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes.subarray(0, 12 + length) as Uint8Array<ArrayBuffer>));
+      return Array.from(digest, byte => byte.toString(16).padStart(2, "0")).join("");
+    }
     if (!canonicalHashModule) {
       const runtimeUrl = new URL(`${import.meta.env.BASE_URL}engine-wasm/deep_engine_wasm.js`, self.location.href).href;
       const module = await import(/* @vite-ignore */ runtimeUrl) as CanonicalHashModule & { default(): Promise<void> };
@@ -34,7 +39,7 @@ worker.onmessage = async ({ data }) => {
   try {
     const bytes = await compileStudioWasmRuntimePackageInProcess(data.scene,
       { models: data.models as ProjectRecord["models"] }, new AbortController().signal, data.irradianceProbes,
-      (progress: StudioWasmCompilationProgress) => worker.postMessage(progress));
+      (progress: StudioWasmCompilationProgress) => worker.postMessage(progress), data.decodedAssets);
     const canonicalHash = await computeCanonicalHash(bytes);
     worker.postMessage(canonicalHash ? { bytes, canonicalHash } : { bytes }, [bytes.buffer as ArrayBuffer]);
   } catch (error) {

@@ -6,6 +6,7 @@ pub mod benchmark_workload;
 /// 登记 supported/harness-only,生产背景 pass 接线为后继切片)。
 pub mod atmosphere_sky;
 pub mod studio_background;
+mod half_float;
 pub mod ground_preview;
 pub mod asset_package;
 pub mod author_grading;

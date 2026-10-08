@@ -1,7 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import sharp from "sharp";
 import { authorTextureTestGlb } from "../delivery/sceneAuthorTextureTestFixture";
-import { parseDeepRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
 import type { StudioWasmCompilationInput, StudioWasmCompilationOutput } from "./studioWasmCompilationClient";
 
 afterEach(()=>{vi.unstubAllGlobals();vi.resetModules();});
@@ -33,11 +32,12 @@ it("runs the production worker body with credentialed HTTP, worker image decodin
   const response=received.find(output=>"bytes" in output);
   expect(response).toBeDefined();
   if(!response||!("bytes" in response)) throw new Error(JSON.stringify(received));
-  const result=parseDeepRuntimePackage(response.bytes);
-  expect(result.valid).toBe(true);
-  if(!result.valid) throw new Error(result.issues[0]?.message);
-  const packet=result.value.payloads[result.value.entrypoints.renderPacket] as {textures:{data:number[]}[]};
-  expect(packet.textures[0]!.data.slice(0,4)).toEqual([200,100,220,255]);
+  expect(new TextDecoder().decode(response.bytes.subarray(0,8))).toBe("DMPBIN1\n");
+  const length=new DataView(response.bytes.buffer).getUint32(8,true);
+  const header=JSON.parse(new TextDecoder().decode(response.bytes.subarray(12,12+length)));
+  const plane=header.sections.find((value:{path:string})=>value.path==="/textures/0/data");
+  expect([...response.bytes.subarray(12+length+plane.offset,12+length+plane.offset+4)]).toEqual([200,100,220,255]);
+  expect(response.canonicalHash).toMatch(/^[0-9a-f]{64}$/);
   expect(createBitmap).toHaveBeenCalledOnce(); expect(draw).toHaveBeenCalledOnce(); expect(bitmap.close).toHaveBeenCalledOnce();
   expect(requests.mock.calls.map(([url])=>url)).toEqual(["/box.glb","/base.png"]);
   for(const call of requests.mock.calls) expect(call[1]).toMatchObject({credentials:"same-origin",signal:expect.any(AbortSignal)});

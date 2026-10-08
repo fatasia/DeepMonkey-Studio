@@ -35,6 +35,8 @@ export function resourceId(value: unknown, path: string): string {
 }
 export function revision(value: unknown, path: string): number { return integer(value, 1, Number.MAX_SAFE_INTEGER, path); }
 export function wellFormedUnicode(text: string): boolean {
+  const check = (text as string & { isWellFormed?: () => boolean }).isWellFormed;
+  if (check) return check.call(text);
   for (let index = 0; index < text.length; index += 1) {
     const code = text.charCodeAt(index);
     if (code >= 0xd800 && code <= 0xdbff) {
@@ -58,7 +60,9 @@ export function snapshotJson(input: unknown, typedArrays = false): RuntimeJson {
     }
     if (typeof value === "string") {
       requireValue(wellFormedUnicode(value), path, "Unpaired Unicode surrogate.");
-      bytes += new TextEncoder().encode(value).length + 2;
+      // Compact texture planes are ASCII; count their wire bytes without allocating
+      // another complete decoded transport-sized buffer.
+      bytes += (/^[\x00-\x7f]*$/.test(value) ? value.length : new TextEncoder().encode(value).length) + 2;
       requireValue(bytes <= LIMITS.inputBytes, path, "Input byte budget exceeded.");
       return value;
     }

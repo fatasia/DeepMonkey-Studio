@@ -104,6 +104,7 @@ export type { BackendPreferenceResult, BackendPreferenceSnapshot,
   BackendPreferenceStore } from "./backendPreference.js";
 export { MAX_EMISSIVE_STRENGTH, prepareInstanceUpdate, prepareRenderPacket } from "./renderPacket.js";
 export { prepareRenderPacketAsync } from "./packetPreparationAsync.js";
+export { validateRenderPacketAsync } from "./packetValidationAsync.js";
 export type {
   AlphaMode,
   GeometryFeatures,

@@ -10,9 +10,23 @@ thread_local! {
 
 /// A timer is a browser task boundary. Promise.resolve alone would starve input.
 async fn yield_task() {
+    // Scheduler tasks preserve input/cancellation boundaries without the nested
+    // setTimeout minimum delay on long texture/hash preparations.
+    let window = web_sys::window().expect("scene preparation runs on the window");
+    if let Ok(scheduler) = js_sys::Reflect::get(&window, &JsValue::from_str("scheduler")) {
+        if let Ok(method) = js_sys::Reflect::get(&scheduler, &JsValue::from_str("yield")) {
+            if let Some(method) = method.dyn_ref::<js_sys::Function>() {
+                if let Ok(value) = method.call0(&scheduler) {
+                    if let Ok(promise) = value.dyn_into::<js_sys::Promise>() {
+                        let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+                        return;
+                    }
+                }
+            }
+        }
+    }
     let promise = js_sys::Promise::new(&mut |resolve, _reject| {
-        web_sys::window()
-            .expect("scene preparation runs on the window")
+        window
             .set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, 0)
             .expect("browser task scheduling");
     });

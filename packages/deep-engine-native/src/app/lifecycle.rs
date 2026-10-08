@@ -196,6 +196,10 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
                 self.physics_stage_pending = false;
                 self.physics_present_pending = false;
                 let content = (*package).into_content();
+                let content = match self.begin_wasm_package_stage(content) {
+                    Ok(()) => return,
+                    Err(content) => content,
+                };
                 let view = content.view_after_reload(self.content.active(), self.state.view);
                 let controls = content.camera_controls();
                 self.product_physics_playback =

@@ -502,6 +502,7 @@ pub(super) async fn create_renderer(
                     &shadow_map,
                     &ibl,
                 )?;
+                scene.scene().prepare_color_pipelines(&pipelines);
                 let mut culling = GpuCulling::new(
                     &device,
                     &scene.scene().instance_buffer,
@@ -697,14 +698,14 @@ pub(super) async fn create_renderer(
     let initial_preparation = initial_preparation_clock
         .map(|clock| clock.finish(renderer_id))
         .transpose()?;
-    let studio_background_pipeline = deep_engine_native::studio_background::create_studio_background_pipeline(
-        &device,
+    let studio_background = content.studio_background_gradient.then(|| deep_engine_native::studio_background::StudioBackground::new(
+        &device, &queue, &frame_buffer,
         deep_engine_native::mesh_abi::FORWARD_COLOR_FORMAT,
         deep_engine_native::mesh_abi::FORWARD_SAMPLE_COUNT,
-    );
+    ));
     Ok(Renderer {
         id: renderer_id,
-        studio_background_pipeline,
+        studio_background,
         instance,
         window,
         surface,

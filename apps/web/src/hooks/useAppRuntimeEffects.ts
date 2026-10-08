@@ -266,7 +266,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     }).finally(() => {
       if (!cancelled) finishLoading();
     });
-    return () => { cancelled = true; bridge.cancelPendingSwitch(); wasmBridge.cancelPendingSwitch(); };
+    return () => { cancelled = true; bridge.cancelPendingSwitch(true); wasmBridge.cancelPendingSwitch(true); };
   // A scene save or progress notification is not a new backend request.
   }, [engine, rendererBackend, rendererActiveBackend,
     rendererBackend === "webgpu" && rendererOutlineRequired && !deepSupportsObjectOutline()]);

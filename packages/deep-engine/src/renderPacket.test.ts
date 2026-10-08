@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { packTransform } from "./instanceTransform.js";
-import { prepareInstanceUpdate, prepareRenderPacket, type RenderPacket } from "./renderPacket.js";
+import { prepareInstanceUpdate, prepareRenderPacket, validateRenderPacket, type RenderPacket } from "./renderPacket.js";
 
 const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 function packet(): RenderPacket {
@@ -10,6 +10,22 @@ function packet(): RenderPacket {
 }
 
 describe("render packet projection", () => {
+  it("keeps validation equivalent for resource references and unused invalid textures", () => {
+    expect(() => validateRenderPacket(packet())).not.toThrow();
+    const p = packet();
+    const cases: RenderPacket[] = [
+      { ...p, textures: null as unknown as RenderPacket["textures"] },
+      { ...p, instances: [{ ...p.instances[0]!, material: "absent" }] },
+      { ...p, geometries: [{ ...p.geometries[0]!, indices: new Uint32Array([0, 1, 30]) }] },
+      { ...p, textures: [{ id: "unused", revision: 0, semantic: "baseColor", width: 2, height: 2, data: new Uint8Array(3) }] },
+    ];
+    for (const candidate of cases) {
+      let expected: unknown;
+      try { prepareRenderPacket(candidate); } catch (error) { expected = error; }
+      expect(expected).toBeInstanceOf(Error);
+      expect(() => validateRenderPacket(candidate)).toThrow((expected as Error).message);
+    }
+  });
   it("packs outline per object without splitting a shared material batch", () => {
     const p = packet();
     const result = prepareRenderPacket({ ...p, instances: [p.instances[0]!,

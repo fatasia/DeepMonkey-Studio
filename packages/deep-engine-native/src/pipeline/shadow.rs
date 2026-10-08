@@ -54,7 +54,7 @@ fn create_shadow_raster_pipelines(
             shader,
             mode,
             RasterState::REGULAR,
-        ),
+        ).into(),
         mirrored: create_shadow_pipeline(
             device,
             frame_layout,
@@ -62,7 +62,7 @@ fn create_shadow_raster_pipelines(
             shader,
             mode,
             RasterState::MIRRORED,
-        ),
+        ).into(),
         double_sided: create_shadow_pipeline(
             device,
             frame_layout,
@@ -70,7 +70,7 @@ fn create_shadow_raster_pipelines(
             shader,
             mode,
             RasterState::DOUBLE_SIDED,
-        ),
+        ).into(),
     }
 }
 

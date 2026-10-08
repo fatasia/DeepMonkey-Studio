@@ -43,7 +43,7 @@ const config = JSON.parse(await readFile(configPath, "utf8"));
 assert(config.app?.security?.capabilities?.join(",") === "scene-viewer", "Tauri 未使用只读 capability");
 assert(!JSON.stringify(config).includes("desktop-main"), "只读包意外继承编辑器 capability");
 const csp = config.app?.security?.csp ?? "";
-assert(/connect-src\s+'self'\s+ipc:;/.test(csp), "只读包 CSP 未限制为本地资源和 Tauri IPC");
+assert(/connect-src\s+'self'\s+ipc:\s+blob:;/.test(csp), "只读包 CSP 必须支持内嵌图片的 Blob 下载，并限制为本地资源和 Tauri IPC");
 assert(!/connect-src[^;]*(?:https?:|wss?:)/.test(csp), "只读包 CSP 意外允许远程网络连接");
 
 process.stdout.write(`${JSON.stringify({

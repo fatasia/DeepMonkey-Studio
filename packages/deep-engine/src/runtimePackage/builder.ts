@@ -1,9 +1,7 @@
-import { STOCK_MATERIAL_INSTANCE_OPTIONS } from "../materialInstanceAbi.js";
-import { prepareRenderPacket } from "../renderPacket.js";
 import { hashOwnedRuntimeJson, orderedRuntimeJson, runtimeContentSha256, runtimePackageSha256 } from "./hash.js";
 import { normalizeRuntimeMaterialBindings } from "./materialBindings.js";
 import { record, requireValue, snapshotJson } from "./primitives.js";
-import { assertNativePacketDeformationSupported, normalizeRuntimeRenderPacket, validateRuntimeRenderPacket } from "./renderPacket.js";
+import { assertNativePacketDeformationSupported, normalizeRuntimeRenderPacket, validateRuntimeRenderPacketSource } from "./renderPacket.js";
 import { compactRuntimePacketTextures } from "./renderPacketTextureBytes.js";
 import { BUILTIN_RUNTIME_IBL_ID, validateDeepRuntimePackage, validateOwnedBuiltRuntimePackage } from "./validation.js";
 import { validateRuntimeStaticLightmapBinding } from "./environment.js";
@@ -20,7 +18,7 @@ export function buildDeepRuntimePackage(input: BuildDeepRuntimePackageInput): De
   return result.value;
 }
 
-function createOwnedRuntimePackageCore(input: BuildDeepRuntimePackageInput) {
+export function createOwnedRuntimePackageCore(input: BuildDeepRuntimePackageInput, binaryPacket?: Record<string, unknown>) {
   assertNativePacketDeformationSupported(input.renderPacket.value);
   // Three keeps world matrices in Float64 until packet validation. Runtime JSON has no typed-array
   // identity, so normalize only that authoring representation before taking the immutable snapshot.
@@ -30,9 +28,10 @@ function createOwnedRuntimePackageCore(input: BuildDeepRuntimePackageInput) {
   const packetSource = { ...packetValue, instances: packetValue.instances.map(instance => ({
     ...instance, transform: instance.transform instanceof Float64Array ? Array.from(instance.transform) : instance.transform,
   })) };
-  const packet = record(snapshotJson(compactRuntimePacketTextures(packetSource), true), "$.renderPacket");
-  validateRuntimeRenderPacket(packet, "$.renderPacket");
-  prepareRenderPacket(input.renderPacket.value, STOCK_MATERIAL_INSTANCE_OPTIONS);
+  const packet = record(snapshotJson(binaryPacket ?? compactRuntimePacketTextures(packetSource), true), "$.renderPacket");
+  // The final package validator checks this owned payload after normalization.
+  // Rehydrating it here would allocate and decode every texture a second time.
+  validateRuntimeRenderPacketSource(packet, "$.renderPacket");
   normalizeRuntimeRenderPacket(packet);
   const payloads: Record<string, RuntimeJson> = Object.create(null), resources: RuntimeResourceIndexEntry[] = [];
   const add = (id: string, revision: number, kind: RuntimeResourceKind, value: unknown, owned = false): void => {
@@ -107,7 +106,7 @@ export function buildDeepRuntimePackageArtifact(input: BuildDeepRuntimePackageIn
 
 /** Background compiler owns every input before yielding; public validation still rechecks external packages. */
 export async function buildDeepRuntimePackageArtifactAsync(input: BuildDeepRuntimePackageInput,
-  options: { readonly signal?: AbortSignal } = {}): Promise<{ readonly runtimePackage: DeepRuntimePackage; readonly packageJson: string }> {
+  options: { readonly signal?: AbortSignal } = {}): Promise<{ readonly runtimePackage: DeepRuntimePackage; readonly packageJson: string; readonly packageBytes: Uint8Array<ArrayBuffer> }> {
   options.signal?.throwIfAborted();
   const draft = createOwnedRuntimePackageCore(input), resources: RuntimeResourceIndexEntry[] = [];
   const hashes = new Map<string, string>();
@@ -122,8 +121,9 @@ export async function buildDeepRuntimePackageArtifactAsync(input: BuildDeepRunti
   const runtimePackage = validateOwnedBuiltRuntimePackage({ ...core,
     packageHash: { algorithm: "sha256", value: packageHash } }, { packageHash, resources: hashes });
   const packageJson = orderedRuntimeJson(runtimePackage as unknown as RuntimeJson);
-  requireValue(new TextEncoder().encode(packageJson).length <= DEEP_RUNTIME_PACKAGE_BUDGETS.inputBytes,
+  const packageBytes = new TextEncoder().encode(packageJson);
+  requireValue(packageBytes.length <= DEEP_RUNTIME_PACKAGE_BUDGETS.inputBytes,
     "$", "Serialized package exceeds 256 MiB.");
   options.signal?.throwIfAborted();
-  return { runtimePackage, packageJson };
+  return { runtimePackage, packageJson, packageBytes };
 }

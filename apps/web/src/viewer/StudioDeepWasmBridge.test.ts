@@ -206,6 +206,23 @@ describe("StudioDeepWasmBridge", () => {
     expect(runtime.start).not.toHaveBeenCalled(); expect(bridge.activeBackend).toBe("webgl");
   });
 
+  it("cancels only the foreground waiter while preserving valid background preparation", async () => {
+    let finish!: (value: StudioWasmCompiledPackage) => void;
+    const runtime = fakeRuntime();
+    const { bridge } = fixture(runtime.module, { packageKey: () => "scene",
+      compilePackage: () => new Promise(resolve => { finish = resolve; }) });
+    const background = bridge.prewarm(new AbortController().signal);
+    await Promise.resolve(); await Promise.resolve();
+    const foreground = bridge.switchTo("wasm"); bridge.cancelPendingSwitch(true);
+    expect((await bridge.switchTo("webgl")).status).toBe("unchanged");
+    finish({ bytes: new Uint8Array([1]) });
+    expect((await background).status).toBe("switched");
+    expect((await foreground).status).toBe("cancelled");
+    expect(bridge.activeBackend).toBe("webgl"); expect(runtime.start).toHaveBeenCalledOnce();
+    expect((await bridge.switchTo("wasm")).status).toBe("switched");
+    expect(runtime.start).toHaveBeenCalledOnce();
+  });
+
   it("retires a scene receipt when a native update starts, even if the update is then cancelled", async () => {
     const runtime = fakeRuntime(); let key = "old";
     const { bridge, compilePackage } = fixture(runtime.module, { packageKey: () => key });

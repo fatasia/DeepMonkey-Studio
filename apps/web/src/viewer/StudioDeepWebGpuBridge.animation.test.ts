@@ -89,9 +89,10 @@ describe("Studio author animation integration", () => {
   }
   async function notify(f: ReturnType<typeof fixture>) { for (const callback of f.authorFrames) callback(); await microtasks(); }
 
-  it("keeps all three live pose revisions monotonic across two fresh asset replacements", async () => {
+  it.each([false, true])("keeps live pose revisions monotonic across fresh replacements (parked: %s)", async parked => {
     const f = fixture(undefined, true, 3); let revision = 1;
     Object.assign(f.viewer, { getRenderDemandDiagnostics: () => ({ invalidationRevision: revision }) });
+    Object.assign(f.runtime.session, { resourceMemory: { estimatedBytes: 1024, unknownResources: 0 } });
     let live: RenderPacket["deformation"];
     f.runtime.setPacketValidated.mockImplementation(async packet => {
       assertSnapshotRevisions(packet.deformation!, live); live = structuredClone(packet.deformation!);
@@ -106,8 +107,11 @@ describe("Studio author animation integration", () => {
         await notify(f);
       }
       const before = live!.poses.map(pose => pose.revision);
+      if (parked) { const park = f.bridge.switchTo("webgl"); await frame(); await park; }
       (f.author.material as THREE.MeshStandardMaterial).color.set(round === 1 ? "#224466" : "#664422"); revision++;
       await notify(f); await notify(f);
+      if (parked) await activate(f);
+      expect(f.createRuntime).toHaveBeenCalledOnce();
       expect(f.failure).not.toHaveBeenCalled(); expect(f.bridge.activeBackend).toBe("webgpu");
       expect(live!.poses.every((pose, index) => pose.revision > before[index]!)).toBe(true);
       expect(live!.poses.map(pose => pose.morphWeights!.values[0]))
@@ -120,8 +124,10 @@ describe("Studio author animation integration", () => {
     Object.assign(f.viewer, { getRenderDemandDiagnostics: () => ({ invalidationRevision: revision }) });
     await activate(f);
     let finish!: () => void; let pending = false;
-    f.runtime.setPacketValidated.mockImplementationOnce(async () => {
+    const validFrame = await f.runtime.validateFrame();
+    f.runtime.validateFrame.mockImplementationOnce(async () => {
       pending = true; await new Promise<void>(resolve => { finish = resolve; }); pending = false;
+      return validFrame;
     });
     f.runtime.updateInstances.mockImplementation(() => {
       if (pending) throw new DOMException("Packet update cancelled or superseded.", "AbortError");

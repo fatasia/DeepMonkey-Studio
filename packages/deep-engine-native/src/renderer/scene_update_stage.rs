@@ -419,6 +419,7 @@ impl Renderer {
                     &self.shadow_map,
                     ibl,
                 )?;
+                scene.scene().prepare_color_pipelines(&self.pipelines);
                 let mut next_culling = GpuCulling::new(
                     &self.device,
                     &scene.scene().instance_buffer,
@@ -550,6 +551,7 @@ impl Renderer {
                     &self.shadow_map,
                     ibl,
                 )?;
+                scene.scene().prepare_color_pipelines(&self.pipelines);
                 let mut next_culling = GpuCulling::new(
                     &self.device,
                     &scene.scene().instance_buffer,

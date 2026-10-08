@@ -250,12 +250,12 @@ impl Renderer {
         }
         // v10 studio 渐变档:opaque 前(background pass 清屏+画渐变;
         // mesh pass 颜色 Load,深度照常自 Clear)。
-        if self.forward_targets.studio_gradient {
+        if self.forward_targets.studio_gradient && let Some(background) = &self.studio_background {
             deep_engine_native::studio_background::encode_studio_background_pass(
                 &mut encoder,
                 &self.forward_targets.msaa_view,
                 &self.forward_targets.hdr_view,
-                &self.studio_background_pipeline,
+                background,
             );
         }
         let opaque = timer(token);

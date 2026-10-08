@@ -19,6 +19,9 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = bool>,
 {
+    if bytes.starts_with(super::binary::MAGIC) {
+        return super::binary::parse_owned(bytes.to_vec(), expected_hash, yield_task).await;
+    }
     validate::input_size(bytes)?;
     if expected_hash.is_some_and(|hash| !super::is_lowercase_sha256(hash)) {
         return fail("expected runtime package hash must be lowercase SHA-256");
@@ -43,6 +46,9 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = bool>,
 {
+    if bytes.starts_with(super::binary::MAGIC) {
+        return super::binary::parse_owned(bytes, expected_hash, yield_task).await;
+    }
     validate::input_size(&bytes)?;
     if expected_hash.is_some_and(|hash| !super::is_lowercase_sha256(hash)) {
         return fail("expected runtime package hash must be lowercase SHA-256");

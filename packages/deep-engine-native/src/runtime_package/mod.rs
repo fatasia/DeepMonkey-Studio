@@ -1,4 +1,5 @@
 mod content_payloads;
+mod binary;
 mod cooperative;
 mod cooperative_hash;
 mod dashboard;
@@ -133,6 +134,9 @@ pub fn read_runtime_package_bytes(path: impl AsRef<Path>) -> Result<Vec<u8>, Run
 pub fn parse_and_validate_runtime_package(
     bytes: &[u8],
 ) -> Result<LoadedRuntimePackage, RuntimePackageError> {
+    if bytes.starts_with(binary::MAGIC) {
+        return pollster::block_on(binary::parse_owned(bytes.to_vec(), None, || std::future::ready(false)));
+    }
     let package = validated_envelope(bytes)?;
     finish_envelope(package)
 }
@@ -147,6 +151,13 @@ pub fn parse_and_validate_runtime_package(
 pub fn compute_runtime_package_canonical_hash(
     bytes: &[u8],
 ) -> Result<String, RuntimePackageError> {
+    if bytes.starts_with(binary::MAGIC) {
+        validate::input_size(bytes)?;
+        if bytes.len() < 12 { return fail("invalid binary runtime header length"); }
+        let length = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+        if length == 0 || length > 4 * 1024 * 1024 || length > bytes.len() - 12 { return fail("invalid binary runtime header length"); }
+        return Ok(crate::shader_package::hash::sha256(&bytes[..12 + length]));
+    }
     validate::input_size(bytes)?;
     let mut value: Value = unique_json::parse(bytes).map_err(|error| {
         RuntimePackageError(format!("invalid Deep Runtime Package JSON: {error}"))
@@ -175,6 +186,9 @@ pub fn parse_and_validate_runtime_package_with_expected_hash(
     bytes: &[u8],
     expected_hash: &str,
 ) -> Result<LoadedRuntimePackage, RuntimePackageError> {
+    if bytes.starts_with(binary::MAGIC) {
+        return pollster::block_on(binary::parse_owned(bytes.to_vec(), Some(expected_hash), || std::future::ready(false)));
+    }
     validate::input_size(bytes)?;
     if !is_lowercase_sha256(expected_hash) {
         return fail("expected runtime package hash must be lowercase SHA-256");

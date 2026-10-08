@@ -268,15 +268,14 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     f.bridge.dispose(); expect(f.first.dispose).toHaveBeenCalledOnce();
   });
 
-  it.each(["scene", "loss"])("retires the parked GPU owner on %s before a new switch", async cause => {
+  it("retires the parked GPU owner on device loss before a new switch", async () => {
     const packet = { geometries: [], materials: [], instances: [] } as RenderPacket;
     const f = setup(undefined, async () => packet); let revision = 1;
     Object.assign(f.first, { usesIndependentPacket: true, prepareView: vi.fn().mockResolvedValue({ frame: 1 }) });
     Object.assign(f.first.runtime.session, { resourceMemory: { estimatedBytes: 1024, unknownResources: 0 } });
     Object.assign(f.viewer, { getRenderDemandDiagnostics: () => ({ invalidationRevision: revision }) });
     await activate(f.bridge); const park = f.bridge.switchTo("webgl"); await frame(); await park;
-    if (cause === "scene") { revision++; await frame(); }
-    else { f.first.deviceLoss.resolve({ reason: "unknown", message: "lost" }); await microtasks(); }
+    f.first.deviceLoss.resolve({ reason: "unknown", message: "lost" }); await microtasks();
     expect(f.first.dispose).toHaveBeenCalledOnce();
     await activate(f.bridge); expect(f.create).toHaveBeenCalledTimes(2);
   });
@@ -303,16 +302,52 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     expect(f.second.dispose).not.toHaveBeenCalled();
   });
 
-  it("keeps a parked device for chrome render requests and retires it for semantic author changes", async () => {
-    const packet = { geometries: [], materials: [], instances: [] } as RenderPacket;
+  it("updates a parked device after semantic edits without rebuilding or publishing in the background", async () => {
+    let packet = { geometries: [], materials: [], instances: [] } as RenderPacket;
     let key = "author-v1", revision = 1;
     const f = setup(undefined, async () => packet, () => key);
-    Object.assign(f.first, { usesIndependentPacket: true, prepareView: vi.fn().mockResolvedValue({ frame: 1 }) });
+    const update = vi.fn().mockResolvedValue({ frame: 2 });
+    Object.assign(f.first, { usesIndependentPacket: true, prepareView: vi.fn().mockResolvedValue({ frame: 1 }), prepareRenderPacket: update });
     Object.assign(f.first.runtime.session, { resourceMemory: { estimatedBytes: 1024, unknownResources: 0 } });
     Object.assign(f.viewer, { getRenderDemandDiagnostics: () => ({ invalidationRevision: revision }) });
     await activate(f.bridge); const park = f.bridge.switchTo("webgl"); await frame(); await park;
     revision++; await frame(); expect(f.first.dispose).not.toHaveBeenCalled();
-    key = "author-v2"; revision++; await frame(); expect(f.first.dispose).toHaveBeenCalledOnce();
+    key = "author-v2"; packet = { ...packet }; revision++; await frame();
+    expect(f.first.dispose).not.toHaveBeenCalled();
+    f.presentation.mockClear(); vi.mocked(f.viewer.setAuthorPacketIndependent).mockClear();
+    const warm = f.bridge.prewarm(new AbortController().signal); await microtasks(); await frame();
+    expect(await warm).toMatchObject({ status: "switched", activeBackend: "webgl" });
+    expect(update).toHaveBeenCalledOnce(); expect(update.mock.calls[0]?.[0]).toBe(packet);
+    expect(f.presentation).not.toHaveBeenCalled();
+    expect(f.viewer.setAuthorPacketIndependent).not.toHaveBeenCalledWith(true);
+    await activate(f.bridge); expect(f.create).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledOnce(); expect(f.first.dispose).not.toHaveBeenCalled();
+  });
+
+  it.each(["advanced", "coverage"])("rebuilds a parked renderer only when the edited packet needs new %s capabilities", async kind => {
+    let packet = { geometries: [], materials: [], instances: [] } as RenderPacket, key = "v1";
+    const f = setup(undefined, async () => packet, () => key);
+    Object.assign(f.first, { usesIndependentPacket: true, prepareView: vi.fn().mockResolvedValue({ frame: 1 }) });
+    Object.assign(f.first.runtime.session, { resourceMemory: { estimatedBytes: 1024, unknownResources: 0 } });
+    await activate(f.bridge); const park = f.bridge.switchTo("webgl"); await frame(); await park;
+    packet = { ...packet, materials: [{ id: "m", baseColor: [1, 1, 1], metallic: 0, roughness: 1,
+      ...(kind === "advanced" ? { specularFactor: 0.5 } : { alphaToCoverage: true }) }] };
+    key = "v2"; await activate(f.bridge);
+    expect(f.first.dispose).toHaveBeenCalledOnce(); expect(f.create).toHaveBeenCalledTimes(2);
+    const renderer = f.create.mock.calls[1]?.[0]?.renderer;
+    expect(kind === "advanced" ? renderer.advancedMaterials : renderer.msaaSampleCount).toBe(kind === "advanced" ? true : 4);
+  });
+
+  it("releases a parked candidate when compiling the edited snapshot fails", async () => {
+    const packet = { geometries: [], materials: [], instances: [] } as RenderPacket;
+    let broken = false;
+    const f = setup(undefined, async () => { if (broken) throw Error("invalid snapshot"); return packet; });
+    Object.assign(f.first, { usesIndependentPacket: true, prepareView: vi.fn().mockResolvedValue({ frame: 1 }) });
+    Object.assign(f.first.runtime.session, { resourceMemory: { estimatedBytes: 1024, unknownResources: 0 } });
+    await activate(f.bridge); const park = f.bridge.switchTo("webgl"); await frame(); await park;
+    broken = true;
+    expect(await f.bridge.switchTo("webgpu")).toMatchObject({ status: "failed", activeBackend: "webgl", error: "invalid snapshot" });
+    expect(f.first.dispose).toHaveBeenCalledOnce(); expect(f.create).toHaveBeenCalledOnce();
   });
 
   function recoverySetup() {

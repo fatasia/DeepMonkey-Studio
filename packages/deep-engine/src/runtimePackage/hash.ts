@@ -20,7 +20,12 @@ function canonical(value: RuntimeJson, binaryNumbers = true, numberBytes = new D
     return `n${numberBytes.getUint32(0).toString(16).padStart(8, "0")}${numberBytes.getUint32(4).toString(16).padStart(8, "0")}`;
   }
   if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(item => canonical(item, binaryNumbers, numberBytes)).join(",")}]`;
+  if (Array.isArray(value)) {
+    // Geometry arrays contain millions of scalar values. Native JSON serialization
+    // retains the same bytes without a string allocation for every scalar.
+    if (!binaryNumbers && value.every(item => item === null || typeof item !== "object")) return JSON.stringify(value);
+    return `[${value.map(item => canonical(item, binaryNumbers, numberBytes)).join(",")}]`;
+  }
   const object = value as Readonly<Record<string, RuntimeJson>>;
   return `{${Object.keys(object).sort(compareRuntimeStrings).map(key => `${JSON.stringify(key)}:${canonical(object[key]!, binaryNumbers, numberBytes)}`).join(",")}}`;
 }

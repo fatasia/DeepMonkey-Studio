@@ -26,7 +26,8 @@ it("produces the same native WebCrypto digest and wire as the public synchronous
   expect(globalThis.crypto?.subtle).toBeDefined();
   const source=input(), ordinary=buildDeepRuntimePackageArtifact(source);
   const artifact=await buildDeepRuntimePackageArtifactAsync(source);
-  expect(artifact).toEqual(ordinary);
+  expect(artifact).toMatchObject(ordinary);
+  expect(new TextDecoder().decode(artifact.packageBytes)).toBe(ordinary.packageJson);
   expect(serializeDeepRuntimePackage(artifact.runtimePackage)).toBe(artifact.packageJson);
   (artifact.runtimePackage.payloads.scene as {version:number}).version=9;
   expect(()=>serializeDeepRuntimePackage(artifact.runtimePackage)).toThrow();
@@ -41,7 +42,7 @@ it("owns all caller data before the first asynchronous digest yields",async()=>{
   (packet.materials[0]! as {roughness:number}).roughness=3;
   bindings[0]!.nodeId="changed";
   bindings[0]!.instanceIds.push("late");
-  expect(await pending).toEqual(ordinary);
+  expect(await pending).toMatchObject(ordinary);
 });
 it("rejects cancellation during the digest without publishing an artifact",async()=>{
   const controller=new AbortController();

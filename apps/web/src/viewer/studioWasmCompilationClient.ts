@@ -1,8 +1,12 @@
 import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
 import type { SceneIrradianceProbeBake } from "../delivery/compileSceneRuntimePackage";
+import type { CompileSceneRenderOptions } from "../delivery/compileSceneRenderPacket";
+
+export type StudioDecodedAsset = readonly [string, ReturnType<NonNullable<CompileSceneRenderOptions["decodedAssetCache"]>["get"]> & {}];
 
 type Model = ProjectRecord["models"][number];
 export interface StudioWasmCompilationInput {
+  readonly decodedAssets?: readonly StudioDecodedAsset[];
   readonly scene: SceneSnapshot;
   readonly models: readonly Pick<Model, "id" | "name" | "status" | "manifest">[];
   readonly irradianceProbes: SceneIrradianceProbeBake | null;

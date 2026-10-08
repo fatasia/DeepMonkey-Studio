@@ -16,7 +16,7 @@ import type { ThreeProjectionBridge } from "./ThreeProjectionBridge.js";
  * - `mirrored`：实例变换左上 3×3 行列式为负（列主序 16 元素）。
  *
  * 阴影/显示/输出管线始终在关键作用域内，这里只返回 main 键；
- * plain/ccw 由 createPipelinesBuild 恒定并入。推导只可能多选、不会漏选，
+ * 静态族的 plain/ccw 由 createPipelinesBuild 并入；按需变形族只准备实际批次键。推导只可能多选、不会漏选，
  * 多选的代价只是关键集稍大，漏选才会让首帧绘制抛错。
  */
 export function firstFramePipelineMainKeys(packet: RenderPacket, kind: "all" | "static" | "deformed" = "all", advancedMaterials = false): readonly string[] {
