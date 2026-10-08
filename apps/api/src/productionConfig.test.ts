@@ -3,6 +3,15 @@ import type { AppConfig } from "./config.js";
 import { validateProductionConfig } from "./productionConfig.js";
 
 describe("production config", () => {
+  it("accepts explicit standalone storage while enforcing authentication secrets", () => {
+    const config = baseConfig();
+    const environment = { NODE_ENV: "production", BIM_STUDIO_STORAGE_MODE: "standalone",
+      BIM_STUDIO_ADMIN_PASSWORD: "strong-password", BIM_STUDIO_SESSION_SECRET: "0123456789abcdef0123456789abcdef" };
+    expect(() => validateProductionConfig(config, environment)).not.toThrow();
+    expect(() => validateProductionConfig(config, { ...environment, BIM_STUDIO_ADMIN_PASSWORD: "admin" })).toThrow(/ADMIN_PASSWORD/);
+    config.objects.provider = "minio";
+    expect(() => validateProductionConfig(config, environment)).toThrow(/standalone/);
+  });
   it("requires PostgreSQL, MinIO and non-default secrets in production", () => {
     const config = baseConfig();
     expect(() => validateProductionConfig(config, { NODE_ENV: "production" })).toThrow(/METADATA_STORE.*OBJECT_STORE.*SESSION_SECRET/);

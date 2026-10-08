@@ -34,8 +34,10 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET:-bim-studio}
       BIM_STUDIO_ADMIN_PASSWORD: ${BIM_STUDIO_ADMIN_PASSWORD:?BIM_STUDIO_ADMIN_PASSWORD required}
       BIM_STUDIO_SESSION_SECRET: ${BIM_STUDIO_SESSION_SECRET:?BIM_STUDIO_SESSION_SECRET required}
+      ASSET_LIBRARY_DIR: /opt/studio/asset-library
     volumes:
       - studio-data:/var/lib/studio
+      - ${STUDIO_ASSET_LIBRARY_DIR:-./assets}:/opt/studio/asset-library:ro
 volumes:
   studio-data:
     name: ${BIM_STUDIO_DATA_VOLUME:-bim_studio_application_data}

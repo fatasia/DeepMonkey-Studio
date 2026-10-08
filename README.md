@@ -423,17 +423,26 @@ pnpm studio status
 
 `deploy` 使用 systemd 托管 Web/API；停止部署使用 `pnpm studio undeploy`。完整生产、备份、恢复、HTTPS 和回滚步骤见[从零开发与原生部署](docs/native-deployment.md)。
 
-### 8. 用 Docker 启动存储基础设施
+### 8. 用 Docker 一键部署
 
-仓库根的 `docker-compose.yml` 只交付 PostgreSQL + MinIO 两个存储服务（固定镜像版本、显式命名持久卷、`pg_isready`/`mc ready` 健康检查、凭据仅经 `.env` 注入）。应用本体（Web、API、桌面客户端）目前没有官方镜像，仍按上面的 `pnpm studio` 入口运行：
+从 [0.2.0 Release](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/v0.2.0) 下载 Docker 镜像归档和 deployment ZIP，解压到同一目录。启动脚本核对镜像哈希、导入镜像、生成本地凭据，并启动 Web/API、PostgreSQL 与 MinIO：
 
 ```bash
-cp .env.example .env   # 填好 POSTGRES_PASSWORD 与 MINIO_ROOT_* 等凭据
-docker compose up -d   # 启动 PostgreSQL + MinIO
-pnpm run init          # 初始化系统元数据并启动 Web/API
+# Windows
+powershell -File ./start.ps1
+# Linux / macOS
+sh ./start.sh
 ```
 
-健康检查、备份恢复、升级注意与镜像来源说明（MinIO 官方社区镜像已停止发布，本仓库使用 digest 固定的兼容快照）见[部署指南](docs/deployment.md)。
+打开 `http://localhost:4100`；账号 `admin`，密码见生成的 `.env` 中 `BIM_STUDIO_ADMIN_PASSWORD`。已有配置和数据卷在重启时保留。
+
+快速试用也可单独启动应用镜像，工程保存在本地持久卷：
+
+```bash
+docker run -d --name deepmonkey-studio --restart unless-stopped -p 4100:4100 -v deepmonkey-studio-data:/var/lib/studio -e BIM_STUDIO_STORAGE_MODE=standalone deep-monkey-studio:0.2.0
+```
+
+完整 Compose 命令、单容器登录和素材库挂载见 [Docker 应用部署](docs/docker-application.md)。仓库根 `docker-compose.yml` 单独运行只启动存储，源码开发配合 `pnpm studio`；加上 `docker-compose.app.yml` 才是完整应用部署。备份与升级见[部署指南](docs/deployment.md)。
 
 ### 9. 常用命令
 
@@ -489,4 +498,3 @@ Deep Engine 包含 TypeScript WebGPU 内核、Rust `wgpu` 原生执行器与 WAS
 ## 联系我
 
 邮箱 15184552744@163.com 或提交issues，有时会看一下。
-

@@ -34,6 +34,8 @@ COPY --from=minio-client /opt/bitnami/minio-client/bin/mc /usr/local/bin/mc
 WORKDIR /opt/studio
 COPY --from=build --chown=node:node /out/apps/api apps/api
 COPY --from=build --chown=node:node /workspace/apps/web/dist apps/web/dist
+COPY --from=build --chown=node:node /workspace/apps/web/public/assets/nature-kit apps/web/public/assets/nature-kit
+COPY --chown=node:node scripts/docker-entrypoint.mjs scripts/docker-entrypoint.mjs
 COPY --from=build /workspace/LICENSE /workspace/LICENSE.zh-CN.md /workspace/LICENSING.md /workspace/THIRD_PARTY_NOTICES.md ./
 RUN mkdir -p /var/lib/studio && chown node:node /var/lib/studio
 RUN dpkg-query -W > /opt/studio/DEPENDENCIES.txt
@@ -44,4 +46,4 @@ USER node
 EXPOSE 4100
 HEALTHCHECK --interval=15s --timeout=5s --start-period=90s --retries=6 \
     CMD node -e "fetch('http://127.0.0.1:4100/api/meta').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["node", "apps/api/dist/index.js"]
+CMD ["node", "scripts/docker-entrypoint.mjs"]

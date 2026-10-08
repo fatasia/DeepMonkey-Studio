@@ -10,6 +10,23 @@
 docker build --build-arg VERSION=0.2.0 --build-arg REVISION=$(git rev-parse HEAD) -t deep-monkey-studio:0.2.0 .
 ```
 
+## 单容器启动
+
+导入 Release 镜像后，一条命令启动 Web/API，使用显式本地 JSON 元数据和文件对象存储；数据库模式仍使用后面的 Compose 配置。
+
+```sh
+docker run -d --name deepmonkey-studio --restart unless-stopped -p 4100:4100 -v deepmonkey-studio-data:/var/lib/studio -e BIM_STUDIO_STORAGE_MODE=standalone deep-monkey-studio:0.2.0
+docker exec deepmonkey-studio node -e "console.log(JSON.parse(require('fs').readFileSync('/var/lib/studio/standalone-credentials.json','utf8')).adminPassword)"
+```
+
+第二条命令读取自动生成的管理员密码；账号为 `admin`。密码和会话密钥仅首次创建，随数据卷保留；重启不会重新生成。自定义端口时设置 `WEB_ORIGIN` 为实际访问地址。默认生产模式继续要求 PostgreSQL、MinIO 和非默认凭据。
+
+## 素材库
+
+大型素材包单独发布在 [asset-library-v1](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/asset-library-v1)。下载三个分卷并从 `.7z.001` 解压；将目录中含 `catalog.json` 与审核清单的素材根目录设为 `.env` 的 `STUDIO_ASSET_LIBRARY_DIR`。Compose 将它只读挂载到应用，素材导入后进入工程持久存储。内置 Nature Kit 随应用镜像交付。
+
+单容器可增加 `-v /path/to/library:/opt/studio/asset-library:ro -e ASSET_LIBRARY_DIR=/opt/studio/asset-library`。Pages 的素材列表、预览和导入复用同一 API；四 GB 素材分卷放在 Release 下载。
+
 ## 启动
 
 部署目录放仓库的 `docker-compose.yml`、`docker-compose.app.yml` 和私有 `.env`。配置 `POSTGRES_PASSWORD`、`MINIO_ROOT_USER`、`MINIO_ROOT_PASSWORD`，管理员密码至少 12 位、会话密钥至少 32 位；完整变量参考 `.env.example`。自定义端口用 `STUDIO_PORT`，相应设置 `STUDIO_PUBLIC_ORIGIN`。

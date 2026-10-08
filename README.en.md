@@ -419,17 +419,26 @@ pnpm studio status
 
 `deploy` manages Web and API through systemd. Remove the deployment with `pnpm studio undeploy`. See [Native development and deployment](docs/native-deployment.md) for production, backup, restore, HTTPS, and rollback procedures.
 
-### 8. Start the storage infrastructure with Docker
+### 8. Deploy with Docker
 
-The root `docker-compose.yml` provides only the two storage services, PostgreSQL and MinIO (pinned image versions, explicitly named persistent volumes, `pg_isready`/`mc ready` health checks, credentials injected only through `.env`). The application itself (Web, API, desktop client) has no official image yet and still runs through the `pnpm studio` entry above:
+Download the Docker image archive and deployment ZIP from [Release 0.2.0](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/v0.2.0), then extract them into the same directory. The startup script verifies and imports the images, generates local credentials and starts Web/API, PostgreSQL and MinIO:
 
 ```bash
-cp .env.example .env   # fill in POSTGRES_PASSWORD, MINIO_ROOT_*, and other credentials
-docker compose up -d   # start PostgreSQL + MinIO
-pnpm run init          # initialize system metadata and start Web/API
+# Windows
+powershell -File ./start.ps1
+# Linux / macOS
+sh ./start.sh
 ```
 
-Health checks, backup/restore, upgrade cautions and the image provenance note (MinIO stopped publishing official community images; this repository pins a digest-fixed compatible snapshot) are covered in the [Deployment guide](docs/deployment.md).
+Open `http://localhost:4100`. Sign in as `admin` using `BIM_STUDIO_ADMIN_PASSWORD` from the generated `.env`. Existing configuration and persistent volumes are retained on restart.
+
+For a quick trial, run the application image with local persistent storage:
+
+```bash
+docker run -d --name deepmonkey-studio --restart unless-stopped -p 4100:4100 -v deepmonkey-studio-data:/var/lib/studio -e BIM_STUDIO_STORAGE_MODE=standalone deep-monkey-studio:0.2.0
+```
+
+See [Docker application deployment](docs/docker-application.md) for Compose commands, standalone login and asset-library mounts. The root `docker-compose.yml` alone starts storage for source development with `pnpm studio`; add `docker-compose.app.yml` to deploy the complete application. See the [Deployment guide](docs/deployment.md) for backup and upgrades.
 
 ### 9. Common commands
 
@@ -485,4 +494,3 @@ Thanks to the maintainers and contributors of every project we depend on, especi
 ## Contact me
 
 Email 15184552744@163.com or open an Issue — I check in now and then.
-
