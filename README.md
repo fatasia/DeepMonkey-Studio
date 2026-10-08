@@ -15,6 +15,8 @@
 
 [在线体验 SMT 场景](https://fatasia.github.io/DeepMonkey-Studio/) · [下载 0.2.0](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/v0.2.0) · [Docker 一键部署](docs/docker-application.md) · [Codex / Claude：Skill、MCP 与 SDK](docs/ai-development.md)
 
+> 演示地址仅供部分功能体验，**不包含全部功能**。完整体验请下载 Windows 编辑器或使用 Docker / Docker Compose 部署。
+
 在线版内置 SMT 产线、275 项模型与环境材质、30 行示例数据，无需登录。编辑保存在当前浏览器；完整素材库通过 [素材包 Release](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/asset-library-v1) 下载。后端数据处理与 AI 服务使用 Windows 或 Docker 完整版。
 
 [![Deep Engine](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/deep-engine.yml/badge.svg?branch=main)](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/deep-engine.yml)

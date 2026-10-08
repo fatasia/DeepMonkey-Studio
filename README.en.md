@@ -15,6 +15,8 @@ From Vibe Coding to Vibe World: an AI-native, programmable 3D world for metavers
 
 [Try the SMT scene](https://fatasia.github.io/DeepMonkey-Studio/) · [Download 0.2.0](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/v0.2.0) · [Deploy with Docker](docs/docker-application.md) · [Codex / Claude: Skills, MCP and SDK](docs/ai-development.md)
 
+> The online demo includes **only a subset of features**. Download the Windows editor or deploy with Docker / Docker Compose for the full application.
+
 The browser demo includes an SMT line, 275 models and environment/material assets, and 30 sample data rows. No login is needed; edits stay in this browser. Download the full library from the [asset release](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/asset-library-v1). Use Windows or Docker for backend data processing and AI services.
 
 [![Deep Engine](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/deep-engine.yml/badge.svg?branch=main)](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/deep-engine.yml)
