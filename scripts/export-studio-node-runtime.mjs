@@ -58,6 +58,8 @@ await cp(join(root, 'apps/desktop/src-tauri/icons/icon.ico'), join(stage, 'apps/
 await mkdir(join(stage, 'scripts'));
 await cp(join(root, 'scripts/docker-entrypoint.mjs'), join(stage, 'scripts/docker-entrypoint.mjs'));
 await cp(join(root, 'apps/desktop/src-tauri/target/release/local-api/publication/native'), join(stage, 'publication/native'), { recursive: true });
+await mkdir(join(stage, 'publication/webview'), { recursive: true });
+await cp(join(root, 'apps/desktop/src-tauri/target/release/bim-studio-desktop.exe'), join(stage, 'publication/webview/scene-viewer.exe'));
 await cp(join(root, 'tools/libredwg'), join(stage, 'tools/libredwg'), { recursive: true });
 const seed = JSON.parse(await readFile(join(root, 'examples/open-source/database.seed.json'), 'utf8'));
 const showcases = JSON.parse(await readFile(join(root, 'examples/open-source/showcases.seed.json'), 'utf8'));

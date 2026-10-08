@@ -22,7 +22,7 @@ npx deepmonkey-studio --port 4200 --data-dir ./my-studio-data
 
 Read `adminPassword` in the printed `standalone-credentials.json` file to sign in. `--prepare-only` downloads and prepares the runtime; `--cache-dir` selects its cache. Ctrl+C stops the server.
 
-The Web/API runtime is about 111 MB. Windows x64 adds about 151 MB of native tools and dependencies. Each component is cached separately. Studio installation no longer requires a GitHub Releases download.
+The Web/API runtime is about 111 MB. Windows x64 adds about 151 MB of native tools and dependencies and a 13 MB client exporter. Each component is cached separately. Studio installation no longer requires a GitHub Releases download.
 
 ## Use AI or build an application
 

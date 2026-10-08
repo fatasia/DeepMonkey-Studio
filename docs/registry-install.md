@@ -24,7 +24,7 @@ npx deepmonkey --prepare-only
 
 这是本地 Web/API 部署；AI Provider、外部数据源与云渲染仍需配置对应服务。Windows 包含预编译的 Deep Native 播放器与 LibreDWG；其他平台的原生目标需按能力配置。Windows 桌面窗口、Android 和签名发布使用对应 Release 或源码构建链。
 
-SDK npm 压缩包约 3.1 MB，脚手架约 3.3 MB；启动器约 18 KB。Web/API 运行组件约 111 MB，Windows x64 原生工具与依赖组件约 151 MB，分别缓存。其他平台安装基础组件后再安装本机依赖。
+SDK npm 压缩包约 3.2 MB，脚手架约 3.3 MB；启动器约 140 KB。Web/API 运行组件约 111 MB，Windows x64 原生工具与依赖约 151 MB，客户端导出组件约 13 MB，分别缓存。其他平台安装基础组件后再安装本机依赖。
 
 更新启动器使用 `npx deepmonkey@latest`。若镜像尚未同步新版本，可临时使用官方源：`npx --registry=https://registry.npmjs.org deepmonkey@latest`。
 

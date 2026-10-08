@@ -22,7 +22,7 @@
 | Add the TypeScript SDK to your project | `npm i deepmonkey` |
 | Generate an editable 3D app with AI Skills | `npx create-deepmonkey my-world` |
 
-The npm SDK archive is about **3.1 MB**. Starting Studio installs its Web/API runtime (**111 MB**) and, on Windows x64, native tools and dependencies (**151 MB**) through your configured npm registry. SDK-only installation does not download Studio.
+The npm SDK archive is about **3.2 MB**. Starting Studio installs its Web/API runtime (**111 MB**) and, on Windows x64, native tools and dependencies (**151 MB**) plus the client exporter (**13 MB**) through your configured npm registry. SDK-only installation does not download Studio.
 
 ## Start Studio
 

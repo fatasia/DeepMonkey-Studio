@@ -94,7 +94,8 @@ const native = join(runtime, 'publication/native/deep-engine-native.exe');
 const child = spawn(process.execPath, ['scripts/docker-entrypoint.mjs'], { cwd: runtime, stdio: 'inherit', windowsHide: true,
   env: { ...process.env, NODE_ENV: 'production', BIM_STUDIO_STORAGE_MODE: 'standalone', API_HOST: '127.0.0.1', API_PORT: String(port),
     DATA_DIR: data, WEB_DIST_DIR: join(runtime, 'apps/web/dist'), WEB_ORIGIN: origin,
-    ...(process.platform === 'win32' ? { NATIVE_SCENE_VERIFIER_EXECUTABLE: native } : {}) } });
+    ...(process.platform === 'win32' ? { NATIVE_SCENE_VERIFIER_EXECUTABLE: native,
+      THREE_SCENE_VIEWER_LAUNCHER_EXECUTABLE: join(runtime, 'publication/webview/scene-viewer.exe') } : {}) } });
 let launched = false;
 const poll = setInterval(async () => {
   try {
