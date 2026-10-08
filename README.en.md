@@ -13,12 +13,6 @@
 
 From Vibe Coding to Vibe World: an AI-native, programmable 3D world for metaverses, Science, and world models.
 
-[Try the SMT scene](https://fatasia.github.io/DeepMonkey-Studio/) · [Download 0.2.0](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/v0.2.0) · [Deploy with Docker](docs/docker-application.md) · [Codex / Claude: Skills, MCP and SDK](docs/ai-development.md)
-
-> The online demo includes **only a subset of features**. Download the Windows editor or deploy with Docker / Docker Compose for the full application.
-
-The browser demo includes an SMT line, 275 models and environment/material assets, and 30 sample data rows. No login is needed; edits stay in this browser. Download the full library from the [asset release](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/asset-library-v1). Use Windows or Docker for backend data processing and AI services.
-
 [![Deep Engine](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/deep-engine.yml/badge.svg?branch=main)](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/deep-engine.yml)
 [![Studio web + API](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/studio.yml/badge.svg?branch=main)](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/studio.yml)
 [![Repository governance](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/repository-governance.yml/badge.svg?branch=main)](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/repository-governance.yml)
@@ -52,6 +46,37 @@ The project uses the broadest possible MIT license so anyone can use it freely (
 https://github.com/user-attachments/assets/b6059d6a-04c1-4fe1-b11e-9a46a42184d2
 
 https://github.com/user-attachments/assets/d562bbec-f85a-4d75-890c-1aaa7f561105
+
+## Try it online and download
+
+[Try the project workspace](https://fatasia.github.io/DeepMonkey-Studio/) · [Download 0.2.0](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/v0.2.0) · [Deploy with Docker](docs/docker-application.md) · [Codex / Claude: Skills, MCP and SDK](docs/ai-development.md)
+
+> The online demo includes **only a subset of features**. Download the Windows editor or deploy with Docker / Docker Compose for the full application.
+
+The browser demo includes an SMT line, 275 models and environment/material assets, and 30 sample data rows. No login is needed; edits stay in this browser. Download the full library from the [asset release](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/asset-library-v1).
+
+Pages requires no username or password. Source development defaults to `admin / admin`; Docker uses `admin` with a password obtained through the [deployment guide](docs/docker-application.md).
+
+## Connect Codex / Claude
+
+Clone this repository and start Codex or Claude Code in its directory. Skills are included in `.agents/skills/` and `.claude/skills/`:
+
+- Codex: `$deep-engine-3d build a 3D workshop`
+- Claude Code: `/deep-engine-3d build a 3D workshop`
+
+To connect to a running Studio instance, follow the [login instructions](docs/ai-development.md) and set `DEEPMONKEY_TOKEN`, then add MCP:
+
+```sh
+codex mcp add deepmonkey --url http://127.0.0.1:4100/api/mcp --bearer-token-env-var DEEPMONKEY_TOKEN
+```
+
+In Claude Code, add this to the project's `.mcp.json` and check the connection with `/mcp`:
+
+```json
+{"mcpServers":{"deepmonkey":{"type":"http","url":"http://127.0.0.1:4100/api/mcp","headers":{"Authorization":"Bearer ${DEEPMONKEY_TOKEN}"}}}}
+```
+
+See the [Skill, MCP and SDK guide](docs/ai-development.md) for standalone SDK development and eight example templates.
 
 License designation: **MIT License + Ethical Restrictions** (source-available).
 
@@ -254,7 +279,6 @@ Grouped by product subsystem. Format targets, experimental modules, and capabili
 
 ## Quick start
 
-Develop with AI: after cloning, run `$deep-engine-3d Build a 3D factory` in Codex or `/deep-engine-3d Build a 3D factory` in Claude Code. The repository includes both Skills, eight templates and API references. The [integration guide](docs/ai-development.md) covers SDK installation and MCP access to a running Studio editor.
 
 Three commands to run (Git + Node.js 24+ only; no PostgreSQL / MinIO / Docker needed):
 

@@ -27,6 +27,23 @@ function seed(): PagesDemoManifest {
   return { schemaVersion: 1, state, library: [{ item, maps: [] }], sensorRows: [{ temperature: 26 }], defaultPath: '/projects' };
 }
 describe('Pages browser workspace', () => {
+  it.each([
+    ['/api/ai/assistant', 'POST'],
+    ['/api/cloud-render/capability', 'GET'],
+    ['/api/projects/local-project/scenes/smt/native-candidates', 'POST'],
+    ['/api/projects/local-project/scenes/smt/publications/1/dependencies', 'GET'],
+    ['/api/projects/local-project/scenes/smt/publications/1/native-executable', 'POST'],
+    ['/api/projects/local-project/data-pipelines', 'POST'],
+    ['/api/projects/local-project/data-endpoints', 'POST'],
+  ])('reports the server requirement for %s without calling a remote API', async (path, method) => {
+    vi.stubGlobal('window', { location: { origin: 'https://example.test' } });
+    const transport = vi.fn(), api = new PagesDemoApi(seed(), new Store(), transport);
+    await api.initialize();
+    const response = await api.handle(path, { method, body: method === 'POST' ? '{}' : undefined });
+    expect(response.status).toBe(409);
+    expect(transport).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
   it('seeds once, then preserves edits across runtime restarts', async () => {
     const store = new Store(), first = new PagesDemoApi(seed(), store);
     await first.initialize();

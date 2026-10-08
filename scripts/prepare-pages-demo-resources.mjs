@@ -93,7 +93,7 @@ project.datasets = [{ id: 'pages-demo-telemetry', projectId: project.id, connect
     { key: 'running', label: '运行中', type: 'boolean' }], createdAt: now, updatedAt: now }];
 await writeFile(join(output, 'workspace.json'), JSON.stringify({ schemaVersion: 1,
   state: { schemaVersion: 1, projects: [project], scenes: [scene], applications, scenePublications: [], applicationPublications: [] },
-  library, sensorRows, defaultPath: applications.length ? `/studio/${project.id}/applications/${scene.id}/scenes/${scene.id}` : `/scene/${scene.id}` }));
+  library, sensorRows, defaultPath: '/' }));
 await writeFile(join(output, 'resources.json'), JSON.stringify({ schemaVersion: 1, sourcePublicationSha256: manifest.sourcePublicationSha256,
   libraryItems: library.length, candidateItems: candidates.length, totalBytes, skippedForSizeBudget: skipped, sensorRows: sensorRows.length, files }, null, 2));
 console.log(JSON.stringify({ output, libraryItems: library.length, totalBytes, applications: applications.length, sensorRows: sensorRows.length }));

@@ -1,4 +1,5 @@
 import { CloudRenderQualityEntry } from "./CloudRenderQualityDialog";
+import { PagesDemoNotice } from "./PagesDemoNotice";
 import { routePath } from "../appRoute";
 import {
   Activity,
@@ -271,6 +272,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
       </header>
 
       <section className="manager-content">
+        <PagesDemoNotice locale={locale} />
         {navigationNotice && <div className="manager-navigation-notice" role="status">
           <span>{navigationNotice}</span>
           <button aria-label={tr(locale, "关闭页面提示", "Dismiss page notice")} onClick={onDismissNavigationNotice}><X size={16} /></button>

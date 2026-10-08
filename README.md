@@ -13,12 +13,6 @@
 
 从 Vibe Coding 到 Vibe World：AI原生的可编程三维世界，面向元宇宙、Science、世界模型的开源底座。
 
-[在线体验 SMT 场景](https://fatasia.github.io/DeepMonkey-Studio/) · [下载 0.2.0](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/v0.2.0) · [Docker 一键部署](docs/docker-application.md) · [Codex / Claude：Skill、MCP 与 SDK](docs/ai-development.md)
-
-> 演示地址仅供部分功能体验，**不包含全部功能**。完整体验请下载 Windows 编辑器或使用 Docker / Docker Compose 部署。
-
-在线版内置 SMT 产线、275 项模型与环境材质、30 行示例数据，无需登录。编辑保存在当前浏览器；完整素材库通过 [素材包 Release](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/asset-library-v1) 下载。后端数据处理与 AI 服务使用 Windows 或 Docker 完整版。
-
 [![Deep Engine](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/deep-engine.yml/badge.svg?branch=main)](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/deep-engine.yml)
 [![Studio web + API](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/studio.yml/badge.svg?branch=main)](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/studio.yml)
 [![Repository governance](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/repository-governance.yml/badge.svg?branch=main)](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/repository-governance.yml)
@@ -60,6 +54,37 @@ https://github.com/user-attachments/assets/b6059d6a-04c1-4fe1-b11e-9a46a42184d2
 ### 系统核心功能录屏
 
 https://github.com/user-attachments/assets/d562bbec-f85a-4d75-890c-1aaa7f561105
+
+## 在线体验与下载
+
+[在线体验工作台](https://fatasia.github.io/DeepMonkey-Studio/) · [下载 0.2.0](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/v0.2.0) · [Docker 一键部署](docs/docker-application.md) · [Codex / Claude：Skill、MCP 与 SDK](docs/ai-development.md)
+
+> 演示地址仅供部分功能体验，**不包含全部功能**。完整体验请下载 Windows 编辑器或使用 Docker / Docker Compose 部署。
+
+在线版内置 SMT 产线、275 项模型与环境材质、30 行示例数据，无需登录。编辑保存在当前浏览器；完整素材库通过 [素材包 Release](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/asset-library-v1) 下载。
+
+Pages 无需账号或密码。源码开发默认 `admin / admin`；Docker 账号为 `admin`，密码按[部署说明](docs/docker-application.md)获取。
+
+## Codex / Claude 接入
+
+克隆仓库后，从仓库目录启动 Codex 或 Claude Code。Skill 已分别放在 `.agents/skills/` 和 `.claude/skills/`，可直接调用：
+
+- Codex：`$deep-engine-3d 做一个三维车间`
+- Claude Code：`/deep-engine-3d 做一个三维车间`
+
+连接运行中的 Studio：先按[接入教程](docs/ai-development.md#3-连接-studio-mcp)登录并设置 `DEEPMONKEY_TOKEN`，然后配置 MCP。
+
+```sh
+codex mcp add deepmonkey --url http://127.0.0.1:4100/api/mcp --bearer-token-env-var DEEPMONKEY_TOKEN
+```
+
+Claude Code 在项目 `.mcp.json` 中添加以下配置，再用 `/mcp` 检查连接：
+
+```json
+{"mcpServers":{"deepmonkey":{"type":"http","url":"http://127.0.0.1:4100/api/mcp","headers":{"Authorization":"Bearer ${DEEPMONKEY_TOKEN}"}}}}
+```
+
+独立开发项目可使用引擎 SDK 和八个示例模板，见 [Skill、MCP 与 SDK 教程](docs/ai-development.md)。
 
 ## 功能亮点
 
@@ -256,7 +281,6 @@ https://github.com/user-attachments/assets/d562bbec-f85a-4d75-890c-1aaa7f561105
 
 ## 快速开始
 
-用 AI 开发：克隆后在 Codex 输入 `$deep-engine-3d 做一个三维车间`，或在 Claude Code 输入 `/deep-engine-3d 做一个三维车间`。仓库已包含两种客户端的 Skill、八个模板和 API 速查；[接入教程](docs/ai-development.md)包含 SDK 安装和 MCP 配置，可直接读取并修改 Studio 场景。
 
 三条命令跑起来（只需 Git + Node.js 24+，不需要 PostgreSQL / MinIO / Docker）：
 

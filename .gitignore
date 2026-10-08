@@ -17,7 +17,6 @@ apps/web/public/basis/
 apps/web/public/brand/logo.webp
 apps/web/public/brand/backups/
 https/*
-!https/README.md
 auto.crt
 auto.key
 .chrome-ui-check*/
@@ -45,6 +44,8 @@ tools/unity/.smoke-runs/
 .gstack/
 .runtime-logs/
 /artifacts/
+/deliverables/
+/r10-compat-check/
 test-output*.mjs
 .idea/
 .vscode/

@@ -17,6 +17,8 @@
 | 使用 AI | [AI 助手与视觉能力](../apps/web/src/docs/ai-workflows.md)、[视觉 AI 上手](vision-quickstart.md) |
 | 发布与交付 | [预览、体检与发布](../apps/web/src/docs/server-publish.md) |
 | 排障 | [交付自检与故障恢复](../apps/web/src/docs/troubleshooting.md)、[常见问题](../apps/web/src/docs/faq.md) |
+| 浏览器在线体验 | [工作台与本地保存](guides/online-browser.md) |
+| 本地 HTTPS | [开发证书与启动](local-https.md) |
 | Docker / Compose 一键启动 | [应用镜像与离线启动包](docker-application.md) |
 
 ## 渲染引擎与 SDK

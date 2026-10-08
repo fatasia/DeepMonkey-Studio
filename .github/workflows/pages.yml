@@ -7,6 +7,7 @@ on:
       - "docs/video.html"
       - "docs/poster.png"
       - "scripts/prepare-full-editor-pages.mjs"
+      - "scripts/pages-ui-update.py"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
     inputs:
@@ -35,6 +36,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Test Pages UI updates
+        run: python -m unittest discover -s scripts -p pages_ui_update_test.py
       - uses: actions/configure-pages@v5
       - name: Prepare site
         env:
@@ -78,6 +81,20 @@ jobs:
           archives = {'deepmonkey-studio-browser.zip', 'deepmonkey-studio-editor.zip'}
           if sum(p.stat().st_size for p in root.rglob('*') if p.is_file() and p.name not in archives) > 1_000_000_000:
               raise ValueError('Pages site exceeds total size budget')
+          PY
+          cd ..
+          UI_MANIFEST=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[] | select(.name == "PAGES-UI-MANIFEST.json") | .name')
+          if [[ -n "$UI_MANIFEST" ]]; then
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir _site --pattern 'PAGES-UI-MANIFEST.json' --pattern 'deepmonkey-studio-pages-ui.zip'
+            python scripts/pages-ui-update.py apply _site _site/deepmonkey-studio-editor.zip _site/deepmonkey-studio-pages-ui.zip _site/PAGES-UI-MANIFEST.json
+            rm _site/deepmonkey-studio-pages-ui.zip
+          fi
+          cd _site
+          python - <<'PY'
+          import pathlib
+          archives = {'deepmonkey-studio-browser.zip', 'deepmonkey-studio-editor.zip'}
+          if sum(p.stat().st_size for p in pathlib.Path('.').rglob('*') if p.is_file() and p.name not in archives) > 1_000_000_000:
+              raise ValueError('Updated Pages site exceeds total size budget')
           PY
           rm deepmonkey-studio-browser.zip deepmonkey-studio-editor.zip
       - uses: actions/upload-pages-artifact@v3

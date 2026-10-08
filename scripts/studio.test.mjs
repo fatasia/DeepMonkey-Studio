@@ -47,7 +47,7 @@ test("user-facing operations guidance only exposes the canonical studio command"
     "apps/web/src/docs/deployment-operations.md",
     "scripts/backup-production.mjs",
     "scripts/restore-production.mjs",
-    "https/README.md",
+    "docs/local-https.md",
   ];
   const legacyCommand = /pnpm (?:dev:local(?::\w+)?|deploy:cloud(?::\w+)?|dev:all)|bim-studio\.ps1/;
 

@@ -38,5 +38,5 @@ export function notFound(message: string): Response { return jsonResponse({ mess
 export function conflict(message: string): Response { return jsonResponse({ message }, 409); }
 export function methodNotAllowed(): Response { return jsonResponse({ message: "本地工作台不支持该请求方法" }, 405); }
 export function serverOnly(path: string): Response {
-  return jsonResponse({ message: `“${path}”需要连接在线服务器；本地工作台不会伪造云端、AI 或工业数据服务` }, 409);
+  return jsonResponse({ message: `“${path}”需要连接在线服务器。请使用完整 Web/API 部署。` }, 409);
 }

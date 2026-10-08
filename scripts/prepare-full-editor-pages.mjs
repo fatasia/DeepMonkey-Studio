@@ -32,6 +32,8 @@ if (demoArg) {
   const manifest = JSON.parse(await readFile(join(demo, 'workspace.json'), 'utf8'));
   if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.state?.projects)) throw new Error('Invalid browser demo seed');
   await cp(demo, join(output, 'demo'), { recursive: true });
+  // Root opens the project workspace; a scene remains an explicit user choice.
+  await writeFile(join(output, 'demo', 'workspace.json'), JSON.stringify({ ...manifest, defaultPath: '/' }));
   html = html.replace('</head>', `<meta name="studio-pages-workspace" content="${base}demo/workspace.json">\n</head>`);
 }
 await writeFile(join(output, 'index.html'), html);
