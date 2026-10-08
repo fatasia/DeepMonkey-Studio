@@ -23,7 +23,7 @@ cosmic-text = { version = "=0.19.0", default-features = false, features = ["std"
 geometry_dag = { path = "geometry_dag" }
 pollster = "=1.0.1"
 rapier3d = { version = "=0.35.3", default-features = true, features = ["enhanced-determinism"] }
-serde = { version = "=1.0.228", features = ["derive"] }
+serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
 # deep2d 刀2 组件布局(flexbox)。开源依赖门槛审计结论:taffy 0.14.0(MIT,crates.io
 # SHA-256 639627c87f43b9181c811f40a6296409e093a17bc761214cba3c15df74f86b99),
