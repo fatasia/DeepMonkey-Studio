@@ -9,6 +9,7 @@ import type { ProbeGridBakeCandidate } from "./probeGridBakeStore.js";
 export interface NativeSceneCandidateInput {
   scene: SceneSnapshot;
   models: ReadonlyMap<string, Uint8Array>;
+  textures?: ReadonlyMap<string, Uint8Array>;
   hdrSource?:{bytes:Uint8Array;license:string};
   /**
    * F3 探针烘焙持久化候选（gzip 原始字节，键=浏览器端编译器严格源投影哈希）。
@@ -55,12 +56,17 @@ async function compileCandidate(input: NativeSceneCandidateInput, directory: URL
   input.signal?.throwIfAborted();
   const maxSourceBytes = input.maxSourceBytes ?? 256 * 1024 ** 2;
   if (!Number.isSafeInteger(maxSourceBytes) || maxSourceBytes < 1 || maxSourceBytes > 256 * 1024 ** 2) throw new Error("候选资源预算无效");
-  const scene = structuredClone(input.scene), models: Array<[string, Uint8Array]> = [];
+  const scene = structuredClone(input.scene), models: Array<[string, Uint8Array]> = [], textures: Array<[string, Uint8Array]> = [];
   let bytes = 0;
   for (const [id, value] of input.models) {
     bytes += value.byteLength;
     if (!id.trim() || bytes > maxSourceBytes) throw new Error("候选资源缺少身份或超出预算");
     models.push([id, Uint8Array.from(value)]);
+  }
+  for (const [url, value] of input.textures ?? []) {
+    bytes += value.byteLength;
+    if (!url.trim() || bytes > maxSourceBytes) throw new Error("候选贴图缺少身份或超出预算");
+    textures.push([url, Uint8Array.from(value)]);
   }
   // src 与 dist 使用同一个部署产物；缺失时不在请求期间构建或读取 Web 源码。
   let module: Buffer, manifest: { schemaVersion: number; compilerSha256: string };
@@ -79,7 +85,7 @@ async function compileCandidate(input: NativeSceneCandidateInput, directory: URL
     (_match, name: string) => `from ${JSON.stringify(pathToFileURL(require.resolve(name)).href)}`);
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`), {
-      workerData: { scene, models, packageId: input.packageId, packageVersion: input.packageVersion, maxSourceBytes,
+      workerData: { scene, models, textures, packageId: input.packageId, packageVersion: input.packageVersion, maxSourceBytes,
         hdrSource:input.hdrSource,nativeExecutable:input.nativeExecutable,
         ...(input.probeBakeCandidates ? { probeBakeCandidates: input.probeBakeCandidates } : {}),
         ...(assessment ? { assessmentOnly: true, ...assessment } : {}) },

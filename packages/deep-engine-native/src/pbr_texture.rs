@@ -15,6 +15,9 @@ use crate::pbr_layered::{
 
 pub use crate::mesh_abi::MATERIAL_UNIFORM_FLOATS;
 pub use crate::pbr_reference::{decode_tangent_normal, occlusion_factor, srgb_channel_to_linear};
+#[cfg(test)]
+#[path = "pbr_texture_specular_tests.rs"]
+mod specular_tests;
 
 type TextureTransformParts = (Option<u8>, Option<[f32; 2]>, Option<[f32; 2]>, Option<f32>);
 
@@ -68,7 +71,7 @@ pub struct PreparedTexture {
 pub struct PreparedMaterial {
     pub id: String,
     pub normal_mapped: bool,
-    pub texture_indices: [Option<usize>; 5],
+    pub texture_indices: [Option<usize>; 7],
     pub uniform: MaterialUniformRow,
     /// I-C23 分层材质:304B 块 + 按槽纹理索引 [base0, mr0, base1, mr1]。
     /// 无层材质为 None;层的数组层码在 native D2 借用下恒 0(打包已固定)。
@@ -174,6 +177,8 @@ fn prepare_material_rows_with(
                     lookup(normal.map(|slot| slot.texture.as_str()), indices)?,
                     lookup(ao.map(|slot| slot.texture.as_str()), indices)?,
                     lookup(emissive.map(|slot| slot.texture.as_str()), indices)?,
+                    lookup(material.specular_texture.as_ref().map(|slot|slot.texture.as_str()),indices)?,
+                    lookup(material.specular_color_texture.as_ref().map(|slot|slot.texture.as_str()),indices)?,
                 ],
                 uniform,
                 layered,
@@ -289,6 +294,10 @@ pub fn prepare_material_uniform(material: &PbrMaterial) -> Result<MaterialUnifor
         uniform[MATERIAL_ADVANCED_BAND_FLOAT_OFFSET..MATERIAL_ADVANCED_BAND_FLOAT_OFFSET + 4]
             .copy_from_slice(&sheen_band_words(advanced));
     }
+    write_transform(&mut uniform,60,material.specular_texture.as_ref(),material.specular_texture.is_some())?;
+    write_transform(&mut uniform,68,material.specular_color_texture.as_ref(),material.specular_color_texture.is_some())?;
+    let color=material.specular_color_factor.unwrap_or([1.0;3]);
+    uniform[76..80].copy_from_slice(&[color[0],color[1],color[2],material.specular_factor.unwrap_or(1.0)]);
     Ok(uniform)
 }
 
@@ -333,10 +342,10 @@ fn prepare_texture(texture: &TextureResource) -> Result<PreparedTexture, String>
             .map(|mip| compact_level(mip.width, mip.height, mip.bytes_per_row, &mip.data)),
     );
     let encoding = match texture.semantic {
-        TextureSemantic::BaseColor | TextureSemantic::Emissive => TextureEncoding::Srgb,
+        TextureSemantic::BaseColor | TextureSemantic::Emissive | TextureSemantic::SpecularColor => TextureEncoding::Srgb,
         TextureSemantic::MetallicRoughness
         | TextureSemantic::Normal
-        | TextureSemantic::Occlusion => TextureEncoding::Linear,
+        | TextureSemantic::Occlusion | TextureSemantic::Specular => TextureEncoding::Linear,
     };
     Ok(PreparedTexture {
         id: texture.id.clone(),
@@ -550,6 +559,8 @@ mod tests {
             occlusion_texture: None,
             emissive_factor: None,
             emissive_texture: None,
+            specular_factor: None, specular_color_factor: None,
+            specular_texture: None, specular_color_texture: None,
             base_color_alpha: None,
             alpha_mode: None,
             alpha_cutoff: None,
@@ -570,7 +581,7 @@ mod tests {
         };
         let rows = prepare_material_uniform_rows(&packet).unwrap();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].texture_indices, [None; 5]);
+        assert_eq!(rows[0].texture_indices, [None; 7]);
         // selector 0(禁用)+ strength 缺省 1.0,与 prepare_material_uniform 合同一致。
         assert_eq!(rows[0].uniform[3], 0.0);
         assert_eq!(rows[0].uniform[23], 1.0);
@@ -588,12 +599,12 @@ mod tests {
         let rows = prepare_material_uniform_rows(&packet).unwrap();
         for row in &rows {
             assert!(
-                row.uniform[MATERIAL_EXTENDED_BAND_FLOAT_OFFSET..].iter().all(|value| *value == 0.0),
+                row.uniform[MATERIAL_EXTENDED_BAND_FLOAT_OFFSET..60].iter().all(|value| *value == 0.0),
                 "material {} extension band must stay zero without extendedParameters",
                 row.id
             );
             assert!(
-                row.uniform[MATERIAL_ADVANCED_BAND_FLOAT_OFFSET..].iter().all(|value| *value == 0.0),
+                row.uniform[MATERIAL_ADVANCED_BAND_FLOAT_OFFSET..60].iter().all(|value| *value == 0.0),
                 "material {} advanced band must stay zero without advancedParameters",
                 row.id
             );
@@ -624,6 +635,8 @@ mod tests {
             occlusion_texture: None,
             emissive_factor: None,
             emissive_texture: None,
+            specular_factor: None, specular_color_factor: None,
+            specular_texture: None, specular_color_texture: None,
             base_color_alpha: None,
             alpha_mode: None,
             alpha_cutoff: None,

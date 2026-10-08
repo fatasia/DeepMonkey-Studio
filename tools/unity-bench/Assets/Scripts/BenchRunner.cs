@@ -28,8 +28,15 @@ public class BenchRunner : MonoBehaviour
     int warmupLeft = 120;
     bool lastSet;
     float last;
+    int rebuildCycles = 20;
+    float firstFrameMs = -1f;
+    readonly System.Collections.Generic.List<float> gpuMs = new System.Collections.Generic.List<float>();
+    readonly System.Collections.Generic.List<float> rebuildMs = new System.Collections.Generic.List<float>();
+    float rebuildHeapWorstMiB = -1f;
+    bool finishing;
     Transform[] placed;
     float[] baseY;
+    Material[] fixtureMaterials;
 
     void Awake()
     {
@@ -37,6 +44,7 @@ public class BenchRunner : MonoBehaviour
         for (int i = 0; i < args.Length; i++)
         {
             if ((args[i] == "-frames" || args[i] == "--frames") && i + 1 < args.Length) frames = int.Parse(args[i + 1], CultureInfo.InvariantCulture);
+            else if ((args[i] == "-cycles" || args[i] == "--cycles") && i + 1 < args.Length) rebuildCycles = int.Parse(args[i + 1], CultureInfo.InvariantCulture);
             else if ((args[i] == "-workload" || args[i] == "--workload") && i + 1 < args.Length) workload = args[i + 1];
             else if ((args[i] == "-count" || args[i] == "--count") && i + 1 < args.Length) objectCount = int.Parse(args[i + 1], CultureInfo.InvariantCulture);
             else if ((args[i] == "-out" || args[i] == "--out") && i + 1 < args.Length) outPath = args[i + 1];
@@ -89,11 +97,15 @@ public class BenchRunner : MonoBehaviour
 
         placed = new Transform[objectCount];
         baseY = new float[objectCount];
+        fixtureMaterials = new Material[Colors.Length];
+        for (int c = 0; c < Colors.Length; c++) fixtureMaterials[c] = LoadOrBuildMaterial(c);
+        CreateFixtures(0);
+    }
+
+    void CreateFixtures(int cycle)
+    {
         int columns = Mathf.CeilToInt(Mathf.Sqrt(objectCount * 1.2f));
         int rows = Mathf.CeilToInt(objectCount / (float)columns);
-        var materials = new Material[Colors.Length];
-        for (int c = 0; c < Colors.Length; c++) materials[c] = LoadOrBuildMaterial(c);
-
         for (int index = 0; index < objectCount; index++)
         {
             string kind = Kinds[index % Kinds.Length];
@@ -103,14 +115,59 @@ public class BenchRunner : MonoBehaviour
             float z = (Mathf.FloorToInt(index / (float)columns) - (rows - 1) / 2f) * 1.8f;
             float y = GroundOffset(kind);
             go.transform.position = new Vector3(x, y, z);
-            go.transform.rotation = Quaternion.Euler(0f, index * 0.17f, 0f);
+            go.transform.rotation = Quaternion.Euler(0f, index * 0.17f + cycle * 0.03f, 0f);
             var fx = 0.55f; var fy = 0.55f + index % 4 * 0.08f; // fixture.ts 的逐轴缩放
             var b = BaseScale(kind);
             go.transform.localScale = new Vector3(b.x * fx, b.y * fy, b.z * fx);
-            go.GetComponent<Renderer>().material = materials[(index) % Colors.Length];
+            go.GetComponent<Renderer>().material = fixtureMaterials[(index + cycle) % Colors.Length];
             placed[index] = go.transform;
             baseY[index] = y;
         }
+    }
+
+    void CollectGpuTiming()
+    {
+        try
+        {
+            UnityEngine.FrameTimingManager.CaptureFrameTimings();
+            var timings = new UnityEngine.FrameTiming[1];
+            if (UnityEngine.FrameTimingManager.GetLatestTimings(1, timings) > 0)
+            {
+                float gpu = (float)timings[0].gpuFrameTime;
+                if (gpu > 0f && gpu < 1000f) gpuMs.Add(gpu);
+            }
+        }
+        catch { /* 平台不支持 GPU 帧计时时如实缺省 */ }
+    }
+
+    System.Collections.IEnumerator RunRebuildCycles()
+    {
+        var sw = new System.Diagnostics.Stopwatch();
+        long heapStart = UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong();
+        for (int cycle = 0; cycle < rebuildCycles; cycle++)
+        {
+            yield return null; // 与浏览器重建节奏一致:每轮之间隔帧
+            sw.Restart();
+            for (int i = 0; i < placed.Length; i++)
+            {
+                if (placed[i] != null) Destroy(placed[i].gameObject);
+            }
+            CreateFixtures(cycle + 1);
+            sw.Stop();
+            rebuildMs.Add((float)sw.Elapsed.TotalMilliseconds);
+            long growth = UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() - heapStart;
+            float growthMiB = growth / 1048576f;
+            if (growthMiB > rebuildHeapWorstMiB) rebuildHeapWorstMiB = growthMiB;
+        }
+        Finish();
+    }
+
+    static float PercentileOf(System.Collections.Generic.List<float> sortedSource, float ratio)
+    {
+        var sorted = new System.Collections.Generic.List<float>(sortedSource);
+        sorted.Sort();
+        if (sorted.Count == 0) return -1f;
+        return sorted[Mathf.Min(sorted.Count - 1, Mathf.FloorToInt(sorted.Count * ratio))];
     }
 
     Material MakeMaterial(Color color, float smoothness)
@@ -243,6 +300,8 @@ public class BenchRunner : MonoBehaviour
                 transform.position = new Vector3(transform.position.x, baseY[index] + Mathf.Sin(Time.realtimeSinceStartup * 1.5f + index) * 0.08f, transform.position.z);
             }
         }
+        if (firstFrameMs < 0f) firstFrameMs = Time.realtimeSinceStartup * 1000f;
+        CollectGpuTiming();
         float now = Time.realtimeSinceStartup;
         if (warmupLeft > 0) { warmupLeft--; last = now; return; }
         if (recorded >= frames) return;
@@ -250,14 +309,19 @@ public class BenchRunner : MonoBehaviour
         samples[recorded] = (now - last) * 1000f;
         last = now;
         recorded++;
-        if (recorded == frames) Finish();
+        if (recorded == frames && !finishing) { finishing = true; StartCoroutine(RunRebuildCycles()); }
     }
 
     void Finish()
     {
         var builder = new StringBuilder();
         builder.Append("{\"workload\":\"").Append(workload).Append("\",\"objectCount\":").Append(objectCount)
-            .Append(",\"frames\":").Append(frames).Append(",\"frameMs\":[");
+            .Append(",\"frames\":").Append(frames)
+            .Append(",\"firstFrameMs\":").Append(firstFrameMs.ToString("R", CultureInfo.InvariantCulture))
+            .Append(",\"gpuP50Ms\":").Append(PercentileOf(gpuMs, 0.5f).ToString("R", CultureInfo.InvariantCulture))
+            .Append(",\"rebuildP50Ms\":").Append(PercentileOf(rebuildMs, 0.5f).ToString("R", CultureInfo.InvariantCulture))
+            .Append(",\"rebuildHeapWorstMiB\":").Append(rebuildHeapWorstMiB.ToString("R", CultureInfo.InvariantCulture))
+            .Append(",\"frameMs\":[");
         for (int i = 0; i < samples.Length; i++)
         {
             if (i > 0) builder.Append(',');

@@ -23,6 +23,18 @@ describe("DeepWebGpuBackend creation", () => {
     await expect(backend.prepareView(view)).rejects.toThrow("GPU device changed");
     expect(target.validateFrame).not.toHaveBeenCalled(); backend.dispose();
   });
+  it("invalidates validated frame reuse when the probe GI intensity changes", async () => {
+    const target = runtime();
+    const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      view, renderPacket: { geometries: [], materials: [], instances: [] } }, { create: async () => target });
+    vi.mocked(target.validateFrame).mockClear();
+    await backend.prepareView({ ...view, globalIlluminationIntensity: 1 });
+    expect(target.validateFrame).not.toHaveBeenCalled();
+    await backend.prepareView({ ...view, globalIlluminationIntensity: 0 });
+    expect(target.validateFrame).toHaveBeenCalledOnce();
+    backend.dispose();
+  });
+
   it("reuses the cached first frame on its ready original device", async () => {
     const session = { state: "ready", device: { lost: new Promise<never>(() => {}) } };
     const target = Object.assign(runtime(), { session });
@@ -30,6 +42,14 @@ describe("DeepWebGpuBackend creation", () => {
       view, renderPacket: { geometries: [], materials: [], instances: [] } }, { create: vi.fn(async () => target) });
     vi.mocked(target.validateFrame).mockClear(); await expect(backend.prepareView(view)).resolves.toMatchObject({ frame: 1 });
     expect(target.validateFrame).not.toHaveBeenCalled(); backend.dispose();
+  });
+  it("forces a fresh GPU admission for an unchanged parked view", async () => {
+    const target = runtime();
+    const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      view, renderPacket: { geometries: [], materials: [], instances: [] } }, { create: vi.fn(async () => target) });
+    vi.mocked(target.validateFrame).mockClear();
+    await backend.prepareView(view, undefined, true);
+    expect(target.validateFrame).toHaveBeenCalledOnce(); backend.dispose();
   });
   it.each([true, false])("snapshots the meshlets runtime option %s", async meshlets => {
     const target = runtime(), createRuntime = vi.fn(async () => target);

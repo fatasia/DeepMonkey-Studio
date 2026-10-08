@@ -218,7 +218,9 @@ export function useAppLifecycleEffects({ state, playModeActive = false, saveActi
   useEffect(() => {
     if (!engine || route.view === "published"
       || !canAutomaticallyChangeRenderer(rendererSwitchPhase, rendererSwitching)) return;
-    // 只恢复用户显式保存过的偏好;无保存时缺省回退 WebGL 会把会话默认的 Deep WebGPU 拉回去。
+    // Explicit URL selection has precedence throughout initialization, including late engine readiness.
+    const explicit = new URLSearchParams(window.location?.search ?? "").get("renderer");
+    if (explicit && ["webgl", "webgpu", "wasm", "auto"].includes(explicit)) return;
     const storedValue = window.localStorage.getItem(RENDERER_BACKEND_STORAGE_KEY);
     if (storedValue !== "webgpu" && storedValue !== "wasm" && storedValue !== "webgl") return;
     if (storedValue !== rendererBackend) {

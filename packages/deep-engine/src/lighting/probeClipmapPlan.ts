@@ -1,3 +1,5 @@
+import { resumeProbePlan } from "./probeClipmapPlanYield.js";
+
 export type ProbeVector3 = readonly [number, number, number];
 export type ProbeGridSize = readonly [number, number, number];
 
@@ -13,18 +15,9 @@ export interface ProbeClipmapOptions {
   readonly spacingScale?: number;
   readonly updateBudget?: number;
   readonly memoryBudgetBytes?: number;
-  /**
-   * 捕获每探针方向数（G3-S1 配置门控）：缺省/16 = 默认档，32 = opt-in 高档。
-   * 本规划器不消费该字段（捕获侧 `ProbeSceneRadianceProducerOptions.directionCount`
-   * 的权威解析入口是 `resolveDeepGiProbeDirectionCount`，非法值在那里 fail-closed 回
-   * 16）；质量档位预设经 `probeRadianceDirectionCountForQuality` 产出本字段。
-   */
+  /** Capture-only option: resolveDeepGiProbeDirectionCount validates it; default 16, quality 32. */
   readonly directionCount?: import("./probeRadianceDirectionGate.js").DeepGiProbeDirectionCount;
-  /**
-   * 多散射一阶自反馈（G3 配置门控）：缺省/false = 关（默认不切），true = 开。
-   * 权威解析入口是 `resolveDeepGiBounceFeedback`（非法值 fail-closed 回关）；
-   * 质量档位预设经 `bounceFeedbackForQuality` 产出本字段（quality 档 opt-in）。
-   */
+  /** Capture-only option: resolveDeepGiBounceFeedback validates it; default off, quality opt-in. */
   readonly bounceFeedback?: boolean;
 }
 export interface ProbeAddress { readonly level: number; readonly cell: ProbeGridSize }
@@ -94,11 +87,7 @@ export const DEEP_GI_PROBE_CLIPMAP_DEFAULTS = Object.freeze({
 /** Production quality presets shared by Studio and native hosts. */
 export type DeepGiQuality = "performance" | "balanced" | "quality";
 export function probeClipmapOptionsForQuality(quality: DeepGiQuality = "balanced"): ProbeClipmapOptions {
-  // directionCount 档位与 probeRadianceDirectionCountForQuality 同映射（performance/
-  // balanced → 16 默认档，quality → 32 opt-in；测试钉死两处一致）。默认档保持 16：
-  // T02/G3-S1 真机 RMSE 序列 fib16 11.56% > 10%、fib32 7.95% ≤ 10%，默认切换留联测决策。
-  // bounceFeedback 与 bounceFeedbackForQuality 同映射（默认档关 = 多散射默认不切；
-  // quality 档 opt-in 开），迭代上限/哨兵语义见 probeBounceFeedback.ts。
+  // Capture presets mirror the validated direction/feedback gates; quality stays opt-in.
   const presets: Record<DeepGiQuality, ProbeClipmapOptions> = {
     performance: { levelCount: 2, gridSize: [12, 6, 12], baseSpacing: 3, spacingScale: 2, updateBudget: 32, memoryBudgetBytes: 4 * 1024 * 1024, directionCount: 16, bounceFeedback: false },
     balanced: { levelCount: 3, gridSize: [16, 8, 16], baseSpacing: 2, spacingScale: 2, updateBudget: 64, memoryBudgetBytes: 8 * 1024 * 1024, directionCount: 16, bounceFeedback: false },
@@ -206,6 +195,21 @@ function pointInside(point: ProbeVector3, box: ProbeAabb): boolean {
 
 /** Builds a bounded, deterministic CPU schedule. It allocates or renders no GI resources. */
 export function planIrradianceProbeClipmap(requestValue: ProbeClipmapRequest): ProbeClipmapPlan {
+  const work = probeClipmapPlanSteps(requestValue);
+  let step = work.next();
+  while (!step.done) step = work.next();
+  return step.value;
+}
+
+/** Same deterministic plan, yielding between bounded candidate batches in browser hosts. */
+export function planIrradianceProbeClipmapCooperative(requestValue: ProbeClipmapRequest,
+  signal?: AbortSignal): ProbeClipmapPlan | Promise<ProbeClipmapPlan> {
+  const work = probeClipmapPlanSteps(requestValue), first = work.next();
+  if (first.done) return first.value;
+  return resumeProbePlan(work, signal);
+}
+
+function* probeClipmapPlanSteps(requestValue: ProbeClipmapRequest): Generator<void, ProbeClipmapPlan> {
   const request = record(requestValue, "request"), camera = vector(request.cameraPosition, "cameraPosition");
   const profile = resolveProfile(request.options, request.capacity), levels = createLevels(profile, camera);
   const scene = request.sceneBounds === null ? null : bounds(request.sceneBounds, "sceneBounds");
@@ -226,8 +230,8 @@ export function planIrradianceProbeClipmap(requestValue: ProbeClipmapRequest): P
     const distanceSquared = position.reduce((sum, value, axis) => sum + (value - camera[axis]!) ** 2, 0);
     candidates.set(id, Object.freeze({ level: level.level, cell, localCell, linearIndex, position, reason, distanceSquared }));
   };
-  const addBox = (level: ProbeClipmapLevel, box: ProbeAabb, reason: ProbeUpdateReason,
-    predicate: (cell: ProbeGridSize) => boolean = () => true) => {
+  const addBox = function* (level: ProbeClipmapLevel, box: ProbeAabb, reason: ProbeUpdateReason,
+    predicate: (cell: ProbeGridSize) => boolean = () => true): Generator<void> {
     if (!scene) return;
     const low = box.min.map((value, axis) => Math.max(level.originCell[axis]!, Math.ceil(value / level.spacing),
       Math.ceil(scene.min[axis]! / level.spacing)));
@@ -238,6 +242,7 @@ export function planIrradianceProbeClipmap(requestValue: ProbeClipmapRequest): P
       for (let x = low[0]!; x <= high[0]!; x++) {
         if (++visits > MAX_VISITS) fail("dirtyBounds", `candidate visit limit ${MAX_VISITS} exceeded`);
         const cell = Object.freeze([x, y, z]) as ProbeGridSize; if (predicate(cell)) add(level, cell, reason);
+        if (visits % 256 === 0) yield;
       }
     }
   };
@@ -249,33 +254,43 @@ export function planIrradianceProbeClipmap(requestValue: ProbeClipmapRequest): P
     if (!Array.isArray(source.origins) || source.origins.length > 4) fail("previous.origins", "expected at most four origins");
     if (!Array.isArray(source.pending) || source.pending.length > MAX_TOTAL_PROBES) fail("previous.pending", "invalid pending list");
     const origins = source.origins.map((value, index) => vector(value, `previous.origins[${index}]`, true));
-    const pending = source.pending.map((value, index) => {
-      const item = record(value, `previous.pending[${index}]`);
-      return Object.freeze({ level: integer(item.level, `previous.pending[${index}].level`, 0, 3),
-        cell: vector(item.cell, `previous.pending[${index}].cell`, true) });
-    });
+    const pending: ProbeAddress[] = [];
+    for (let index = 0; index < source.pending.length; index++) {
+      const item = record(source.pending[index], `previous.pending[${index}]`);
+      pending.push(Object.freeze({ level: integer(item.level, `previous.pending[${index}].level`, 0, 3),
+        cell: vector(item.cell, `previous.pending[${index}].cell`, true) }));
+      if ((index + 1) % 256 === 0) yield;
+    }
     previous = { profileKey: source.profileKey, origins, pending };
   }
   const reusable = previous?.profileKey === profileKey;
-  if (scene && reusable) for (const item of previous!.pending) {
+  if (scene && reusable) for (let index = 0; index < previous!.pending.length; index++) {
+    const item = previous!.pending[index]!;
     const level = levels[item.level]; if (level) add(level, item.cell, "pending");
+    if ((index + 1) % 256 === 0) yield;
   }
-  if (scene) levels.forEach(level => {
+  if (scene) for (const level of levels) {
     const oldOrigin = reusable ? previous!.origins[level.level] : undefined;
-    if (!oldOrigin) addBox(level, scene, "initial");
+    if (!oldOrigin) yield* addBox(level, scene, "initial");
     else if (oldOrigin.some((value, axis) => value !== level.originCell[axis])) {
-      addBox(level, scene, "scroll", cell => !inside(cell, oldOrigin, level.gridSize));
+      yield* addBox(level, scene, "scroll", cell => !inside(cell, oldOrigin, level.gridSize));
     }
-    dirty.forEach(box => addBox(level, box, "dirty"));
-  });
+    for (const box of dirty) yield* addBox(level, box, "dirty");
+  }
   const ranked = [...candidates.values()].sort((left, right) => reasonRank[left.reason] - reasonRank[right.reason]
     || left.level - right.level || left.distanceSquared - right.distanceSquared
     || left.cell[0] - right.cell[0] || left.cell[1] - right.cell[1] || left.cell[2] - right.cell[2]);
   const clean = (value: Candidate): ProbeUpdate => Object.freeze({ level: value.level, cell: value.cell,
     localCell: value.localCell, linearIndex: value.linearIndex, position: value.position, reason: value.reason });
-  const updates = Object.freeze(ranked.slice(0, profile.updateBudget).map(clean));
-  const deferred = Object.freeze(ranked.slice(profile.updateBudget).map(clean));
+  const selected: ProbeUpdate[] = [], remaining: ProbeUpdate[] = [], pending: ProbeAddress[] = [];
+  for (let index = 0; index < ranked.length; index++) {
+    const update = clean(ranked[index]!);
+    if (index < profile.updateBudget) selected.push(update);
+    else { remaining.push(update); pending.push(Object.freeze({ level: update.level, cell: update.cell })); }
+    if ((index + 1) % 256 === 0) yield;
+  }
+  const updates = Object.freeze(selected), deferred = Object.freeze(remaining);
   const history = Object.freeze({ profileKey, origins: Object.freeze(levels.map(level => level.originCell)),
-    pending: Object.freeze(deferred.map(value => Object.freeze({ level: value.level, cell: value.cell }))) });
+    pending: Object.freeze(pending) });
   return Object.freeze({ profile, levels, updates, deferred, history, sceneEmpty: scene === null });
 }

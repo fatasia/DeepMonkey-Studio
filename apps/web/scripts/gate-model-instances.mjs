@@ -65,7 +65,7 @@ async function runCase(fixtures, theme, width) {
     assert.deepEqual(duplicated.camera, initial.camera, "Duplicate must not reframe camera");
     entry.instanceId = copy.modelId;
     const seeded = await seedReferences(gate, appPath, duplicated, copy.modelId);
-    await page.reload(); await page.locator(".viewport canvas").waitFor();
+    await page.reload(); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
     let copyRow = await ensureRows(page, copy.modelId); await copyRow.getByRole("button", { name: "隐藏", exact: true }).waitFor();
     originalRow = await ensureRows(page, source.id);
     await copyRow.locator(".asset-main").click();
@@ -128,7 +128,7 @@ async function runCase(fixtures, theme, width) {
     assert.deepEqual(restored.models, replaced.models); assert.deepEqual(referenceState(restored), referenceState(replaced));
     copyRow = await ensureRows(page, copy.modelId); await copyRow.getByRole("button", { name: "隐藏", exact: true }).waitFor();
     entry.removalReversibleWithoutDeletingAssets = true;
-    await page.reload(); await page.locator(".viewport canvas").waitFor();
+    await page.reload(); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
     copyRow = await ensureRows(page, copy.modelId); await copyRow.getByRole("button", { name: "隐藏", exact: true }).waitFor();
     const reloaded = await saveScene(page, appPath); assert.deepEqual(reloaded.models, replaced.models); assert.deepEqual(referenceState(reloaded), referenceState(replaced));
     assert.deepEqual(reloaded.camera, replaced.camera); await shot("saved-reloaded"); entry.reloadPreserved = true;

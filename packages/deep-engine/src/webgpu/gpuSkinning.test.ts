@@ -39,6 +39,13 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("GPU skinning", () => {
+  it("rejects unowned prepacked input and keeps the synchronous public source validator strict", () => {
+    const f = fixture(), skinner = new GpuSkinner(f.session), values = source(), joints = palette();
+    const packed = prepareSkinningInput(values, joints); values.positions[0] = NaN;
+    expect(() => skinner.setSource(values, joints, packed)).toThrow("not owned");
+    expect(() => skinner.setSource(values, joints)).toThrow(); expect(f.owned.size).toBe(0); skinner.dispose();
+  });
+
   it("preserves the 64-byte input prefix and appends optional tangents for 48-byte output", () => {
     const f = fixture(), skinner = new GpuSkinner(f.session);
     const tangentSource = { ...source(), tangents: new Float32Array([0, 1, 0, 1]) };

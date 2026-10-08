@@ -1,4 +1,4 @@
-import { prepareTextures, type DecodedTexture, type TextureLimits } from "../textures/decodedTexture.js";
+import { prepareTextures, TEXTURE_SEMANTICS, isSrgbTextureSemantic, type DecodedTexture, type TextureLimits } from "../textures/decodedTexture.js";
 import { transcodeKtx2Texture } from "../textures/ktx2Transcode.js";
 import type { GltfDecodedImage, GltfDecodedTextures, GltfEncodedImage, GltfImageDecoder, GltfTextureDecodeOptions, GltfTextureManifest } from "./textureTypes.js";
 import { GltfImportError, MAX_BYTES, budget, invalid, object } from "./validation.js";
@@ -103,7 +103,7 @@ export async function decodeGltfTextureManifest(manifest: GltfTextureManifest, d
     if (!resource || typeof resource.id !== "string" || !resource.id || resource.id.length > 256 || resourceIds.has(resource.id)) invalid(`textureManifest.resources[${index}].id`, "Invalid or duplicate texture resource id.");
     resourceIds.add(resource.id);
     if (!Number.isSafeInteger(resource.textureIndex) || resource.textureIndex < 0) invalid(`textureManifest.resources[${index}].textureIndex`, "Invalid source texture index.");
-    if (!["baseColor", "metallicRoughness", "normal", "occlusion", "emissive"].includes(resource.semantic)) invalid(`textureManifest.resources[${index}].semantic`, "Unknown texture semantic.");
+    if (!TEXTURE_SEMANTICS.includes(resource.semantic)) invalid(`textureManifest.resources[${index}].semantic`, "Unknown texture semantic.");
     const settings = resource.sampler;
     if (!settings || ![settings.addressModeU, settings.addressModeV].every(value => ["repeat", "mirror-repeat", "clamp-to-edge"].includes(value))
       || ![settings.magFilter, settings.minFilter, settings.mipmapFilter].every(value => ["nearest", "linear"].includes(value))
@@ -112,7 +112,7 @@ export async function decodeGltfTextureManifest(manifest: GltfTextureManifest, d
       invalid(`textureManifest.resources[${index}].sampler`, "Invalid texture sampler.");
     }
     const image = imageFor(resource, index);
-    const colorSpace = resource.semantic === "baseColor" || resource.semantic === "emissive" ? "srgb" : "linear";
+    const colorSpace = isSrgbTextureSemantic(resource.semantic) ? "srgb" : "linear";
     const decodedKey = image.mimeType === "image/ktx2" ? `${image.id}:${colorSpace}` : image.id;
     if (decoded.has(decodedKey)) continue;
     if (image.mimeType === "image/ktx2") {
@@ -159,7 +159,7 @@ export async function decodeGltfTextureManifest(manifest: GltfTextureManifest, d
   let expandedBytes = 0;
   for (let index = 0; index < manifest.resources.length; index++) {
     const resource = manifest.resources[index]!, image = imageFor(resource, index);
-    const colorSpace = resource.semantic === "baseColor" || resource.semantic === "emissive" ? "srgb" : "linear";
+    const colorSpace = isSrgbTextureSemantic(resource.semantic) ? "srgb" : "linear";
     const payload = decoded.get(image.mimeType === "image/ktx2" ? `${image.id}:${colorSpace}` : image.id);
     if (!payload) invalid(`textureManifest.resources[${index}].image`, "Texture resource has no decoded image.");
     const bytes = payload.kind === "rgba" ? payload.value.width * payload.value.height * 4
@@ -168,7 +168,7 @@ export async function decodeGltfTextureManifest(manifest: GltfTextureManifest, d
   }
   const sources: DecodedTexture[] = manifest.resources.map((resource, index) => {
     const image = imageFor(resource, index);
-    const colorSpace = resource.semantic === "baseColor" || resource.semantic === "emissive" ? "srgb" : "linear";
+    const colorSpace = isSrgbTextureSemantic(resource.semantic) ? "srgb" : "linear";
     const payload = decoded.get(image.mimeType === "image/ktx2" ? `${image.id}:${colorSpace}` : image.id);
     if (!payload) invalid(`textureManifest.resources[${index}].image`, "Texture resource has no decoded image.");
     if (payload.kind === "rgba") return { id: resource.id, revision: 0, semantic: resource.semantic,

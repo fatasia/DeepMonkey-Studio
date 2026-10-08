@@ -31,7 +31,7 @@ const setRange = async (label, value) => {
 };
 
 await page.goto(`${web}/studio/${sceneId}?project=${projectId}`, { waitUntil: "domcontentloaded" });
-await page.locator(".viewport canvas").first().waitFor({ state: "visible" });
+await page.locator('.viewport canvas:not([aria-hidden="true"])').first().waitFor({ state: "visible" });
 await page.waitForTimeout(3000);
 const auto = page.getByLabel("自动保存"); if (await auto.isChecked()) await auto.uncheck();
 await page.getByText("立方体 1", { exact: false }).first().click();

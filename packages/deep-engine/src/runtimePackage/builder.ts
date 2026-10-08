@@ -1,16 +1,26 @@
 import { STOCK_MATERIAL_INSTANCE_OPTIONS } from "../materialInstanceAbi.js";
 import { prepareRenderPacket } from "../renderPacket.js";
-import { runtimeContentSha256, runtimePackageSha256 } from "./hash.js";
+import { hashOwnedRuntimeJson, orderedRuntimeJson, runtimeContentSha256, runtimePackageSha256 } from "./hash.js";
 import { normalizeRuntimeMaterialBindings } from "./materialBindings.js";
 import { record, requireValue, snapshotJson } from "./primitives.js";
 import { assertNativePacketDeformationSupported, normalizeRuntimeRenderPacket, validateRuntimeRenderPacket } from "./renderPacket.js";
-import { BUILTIN_RUNTIME_IBL_ID, validateDeepRuntimePackage } from "./validation.js";
+import { compactRuntimePacketTextures } from "./renderPacketTextureBytes.js";
+import { BUILTIN_RUNTIME_IBL_ID, validateDeepRuntimePackage, validateOwnedBuiltRuntimePackage } from "./validation.js";
 import { validateRuntimeStaticLightmapBinding } from "./environment.js";
-import { DEEP_RUNTIME_PACKAGE_SCHEMA, DEEP_RUNTIME_PACKAGE_SCHEMA_VERSION, DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION, DEEP_RUNTIME_PACKAGE_CAMERA_VERSION, DEEP_RUNTIME_PACKAGE_CHART_VERSION, DEEP_RUNTIME_PACKAGE_DYNAMIC_VERSION,
+import { DEEP_RUNTIME_PACKAGE_BUDGETS, DEEP_RUNTIME_PACKAGE_SCHEMA, DEEP_RUNTIME_PACKAGE_SCHEMA_VERSION, DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION, DEEP_RUNTIME_PACKAGE_CAMERA_VERSION, DEEP_RUNTIME_PACKAGE_CHART_VERSION, DEEP_RUNTIME_PACKAGE_DYNAMIC_VERSION,
   type BuildDeepRuntimePackageInput, type DeepRuntimePackage, type RuntimeJson,
   type RuntimeResourceIndexEntry, type RuntimeResourceKind } from "./types.js";
 
 export function buildDeepRuntimePackage(input: BuildDeepRuntimePackageInput): DeepRuntimePackage {
+  const draft = createOwnedRuntimePackageCore(input);
+  const core = { ...draft, resources: draft.resources.map(resource => ({ ...resource,
+    contentHash: { algorithm: "sha256" as const, value: runtimeContentSha256(draft.payloads[resource.id]) } })) };
+  const result = validateDeepRuntimePackage({ ...core, packageHash: { algorithm: "sha256", value: runtimePackageSha256(core) } });
+  if (!result.valid) throw new Error(result.issues[0]?.message ?? "Invalid runtime package.");
+  return result.value;
+}
+
+function createOwnedRuntimePackageCore(input: BuildDeepRuntimePackageInput) {
   assertNativePacketDeformationSupported(input.renderPacket.value);
   // Three keeps world matrices in Float64 until packet validation. Runtime JSON has no typed-array
   // identity, so normalize only that authoring representation before taking the immutable snapshot.
@@ -20,18 +30,18 @@ export function buildDeepRuntimePackage(input: BuildDeepRuntimePackageInput): De
   const packetSource = { ...packetValue, instances: packetValue.instances.map(instance => ({
     ...instance, transform: instance.transform instanceof Float64Array ? Array.from(instance.transform) : instance.transform,
   })) };
-  const packet = record(snapshotJson(packetSource, true), "$.renderPacket");
+  const packet = record(snapshotJson(compactRuntimePacketTextures(packetSource), true), "$.renderPacket");
   validateRuntimeRenderPacket(packet, "$.renderPacket");
   prepareRenderPacket(input.renderPacket.value, STOCK_MATERIAL_INSTANCE_OPTIONS);
   normalizeRuntimeRenderPacket(packet);
   const payloads: Record<string, RuntimeJson> = Object.create(null), resources: RuntimeResourceIndexEntry[] = [];
-  const add = (id: string, revision: number, kind: RuntimeResourceKind, value: unknown): void => {
+  const add = (id: string, revision: number, kind: RuntimeResourceKind, value: unknown, owned = false): void => {
     requireValue(!Object.hasOwn(payloads, id), "$.resources", `Duplicate resource id: ${id}.`);
-    const payload = snapshotJson(value);
+    const payload = owned ? value as RuntimeJson : snapshotJson(value);
     payloads[id] = payload;
-    resources.push({ id, revision, kind, contentHash: { algorithm: "sha256", value: runtimeContentSha256(payload) } });
+    resources.push({ id, revision, kind, contentHash: { algorithm: "sha256", value: "" } });
   };
-  add(input.renderPacket.id, input.renderPacket.revision, "render-packet", packet);
+  add(input.renderPacket.id, input.renderPacket.revision, "render-packet", packet, true);
   const environment = input.environment ?? {
     schema: "deep-engine.ibl-reference", schemaVersion: 1, id: BUILTIN_RUNTIME_IBL_ID, revision: 1, kind: "builtin-default",
   };
@@ -78,10 +88,42 @@ export function buildDeepRuntimePackage(input: BuildDeepRuntimePackageInput): De
       ...(hasChart ? { chart: input.chart!.id, chartSim: input.chartSim?.id ?? null } : {}),
       ...(hasDynamicRuntime ? { dynamicRuntime: input.dynamicRuntime!.id } : {}) },
     resources, payloads,
-    ...(objectBindings?.length ? { objectBindings } : {}),
-    ...(hasBindings ? { materialBindings: bindings } : {}),
+    ...(objectBindings?.length ? { objectBindings: snapshotJson(objectBindings) } : {}),
+    ...(hasBindings ? { materialBindings: snapshotJson(bindings) } : {}),
   };
-  const result = validateDeepRuntimePackage({ ...core, packageHash: { algorithm: "sha256", value: runtimePackageSha256(core) } });
-  if (!result.valid) throw new Error(result.issues[0]?.message ?? "Invalid runtime package.");
-  return result.value;
+  return core;
+}
+
+/** Serializes the just-built, validated snapshot before it is exposed to callers. */
+export function buildDeepRuntimePackageArtifact(input: BuildDeepRuntimePackageInput): {
+  readonly runtimePackage: DeepRuntimePackage; readonly packageJson: string;
+} {
+  const runtimePackage = buildDeepRuntimePackage(input);
+  const packageJson = orderedRuntimeJson(runtimePackage as unknown as RuntimeJson);
+  requireValue(new TextEncoder().encode(packageJson).length <= DEEP_RUNTIME_PACKAGE_BUDGETS.inputBytes,
+    "$", "Serialized package exceeds 256 MiB.");
+  return { runtimePackage, packageJson };
+}
+
+/** Background compiler owns every input before yielding; public validation still rechecks external packages. */
+export async function buildDeepRuntimePackageArtifactAsync(input: BuildDeepRuntimePackageInput,
+  options: { readonly signal?: AbortSignal } = {}): Promise<{ readonly runtimePackage: DeepRuntimePackage; readonly packageJson: string }> {
+  options.signal?.throwIfAborted();
+  const draft = createOwnedRuntimePackageCore(input), resources: RuntimeResourceIndexEntry[] = [];
+  const hashes = new Map<string, string>();
+  for (const resource of draft.resources) {
+    const value = await hashOwnedRuntimeJson(draft.payloads[resource.id]!, options.signal);
+    hashes.set(resource.id, value);
+    resources.push({ ...resource, contentHash: { algorithm: "sha256", value } });
+  }
+  const core = { ...draft, resources };
+  const packageHash = await hashOwnedRuntimeJson(core as unknown as RuntimeJson, options.signal);
+  options.signal?.throwIfAborted();
+  const runtimePackage = validateOwnedBuiltRuntimePackage({ ...core,
+    packageHash: { algorithm: "sha256", value: packageHash } }, { packageHash, resources: hashes });
+  const packageJson = orderedRuntimeJson(runtimePackage as unknown as RuntimeJson);
+  requireValue(new TextEncoder().encode(packageJson).length <= DEEP_RUNTIME_PACKAGE_BUDGETS.inputBytes,
+    "$", "Serialized package exceeds 256 MiB.");
+  options.signal?.throwIfAborted();
+  return { runtimePackage, packageJson };
 }

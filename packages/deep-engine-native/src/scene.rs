@@ -113,7 +113,7 @@ pub fn prepare_scene(packet: &RenderPacket) -> Result<PreparedScene, String> {
         }
         let material = &packet.materials[material_index];
         let double_sided = material.double_sided.unwrap_or(false);
-        let alpha_mode = material.alpha_mode.unwrap_or(AlphaMode::Opaque);
+        let alpha_mode = material.draw_alpha_mode();
         let premultiplied =
             alpha_mode == AlphaMode::Blend && material.premultiplied_alpha.unwrap_or(false);
         let mirrored = determinant.is_sign_negative();
@@ -263,7 +263,7 @@ pub fn recompute_surface_flags(
     material: &crate::contract::PbrMaterial,
     receive_shadow: Option<bool>,
 ) -> f32 {
-    let alpha_mode = material.alpha_mode.unwrap_or(AlphaMode::Opaque);
+    let alpha_mode = material.draw_alpha_mode();
     let premultiplied =
         alpha_mode == AlphaMode::Blend && material.premultiplied_alpha.unwrap_or(false);
     let double_sided = material.double_sided.unwrap_or(false);
@@ -274,7 +274,8 @@ pub fn recompute_surface_flags(
         receive_shadow,
         material.shading_model,
         material.fog,
-    ) + if material.alpha_mode == Some(AlphaMode::Blend) && material.alpha_cutoff.is_some() {
+    ) + if material.draw_alpha_mode() == AlphaMode::Blend
+        && (material.alpha_cutoff.is_some() || material.alpha_mode == Some(AlphaMode::Mask)) {
         2.0
     } else {
         0.0
@@ -342,6 +343,8 @@ mod transform_update_tests {
             occlusion_texture: None,
             emissive_factor: None,
             emissive_texture: None,
+            specular_factor: None, specular_color_factor: None,
+            specular_texture: None, specular_color_texture: None,
             base_color_alpha: None,
             alpha_mode: None,
             alpha_cutoff: None,
@@ -378,6 +381,8 @@ mod transform_update_tests {
             occlusion_texture: None,
             emissive_factor: None,
             emissive_texture: None,
+            specular_factor: None, specular_color_factor: None,
+            specular_texture: None, specular_color_texture: None,
             base_color_alpha: None,
             alpha_mode: None,
             alpha_cutoff: None,

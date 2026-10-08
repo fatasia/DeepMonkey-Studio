@@ -7,6 +7,8 @@ import { assessCompiledScenePublication } from "./scenePublicationCompatibility"
 /** F3 探针网格烘焙透传选项；缺省不携带探针，包语义与历史一致。 */
 export interface NativeSceneClientPayloadOptions {
   readonly irradianceProbes?: SceneIrradianceProbeBake | null;
+  /** Only the validated resource capture supplies author images during delivery. */
+  readonly loadTexture?: (url: string, signal: AbortSignal) => Promise<Uint8Array<ArrayBuffer>>;
 }
 
 /** 构建产物与发布可用性分别记录；没有窗口验证证据的产物仍为blocked。 */
@@ -16,6 +18,8 @@ export async function prepareNativeSceneClientPayload(scene: SceneSnapshot,
   const compiled = await compileSceneRuntimePackage(scene, {
     packageId: `scene.${runtimeContentSha256(scene.id)}`, packageVersion: "1.0.0",
     loadModel, signal, imageDecoder: browserImageDecoder,
+    advancedMaterials: true, textureBudgetBytes: 112 * 1024 * 1024,
+    ...(options?.loadTexture ? { loadTexture: options.loadTexture } : {}),
     ...(options?.irradianceProbes ? { irradianceProbes: options.irradianceProbes } : {}),
   });
   signal.throwIfAborted();

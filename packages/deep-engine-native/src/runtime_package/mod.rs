@@ -1,4 +1,6 @@
 mod content_payloads;
+mod cooperative;
+mod cooperative_hash;
 mod dashboard;
 mod dashboard_table_types;
 mod dashboard_table_validation;
@@ -81,6 +83,8 @@ pub use types::{
     RuntimeResourceIndexEntry, RuntimeResourceKind,
 };
 pub use validate::{runtime_content_sha256, runtime_package_sha256};
+pub use cooperative::{parse_and_validate_runtime_package_cooperative,
+    parse_and_validate_runtime_package_owned_cooperative};
 
 pub const DEEP_RUNTIME_PACKAGE_SCHEMA: &str = "deep-engine.runtime-package";
 /// Shared duplicate-key/depth-bounded JSON reader for native content envelopes.

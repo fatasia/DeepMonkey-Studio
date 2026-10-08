@@ -5,13 +5,16 @@ export type FragmentObservable = "geometry" | "single" | "rough-single" | "view-
 export type FragmentDerivative = "fine" | "coarse";
 const marker = "// C8 isolated fragment observation";
 const identities = {
-  re: "f324431f2fd3be681d14462f021f9c1cf84b5c981c7ccd85896f5071476ab293",
+  // Installed Three r186: observe the original direct operands before MS
+  // compensation, including its Fresnel diffuse-layer energy partition.
+  re: "3ebb322a2828f548c1efed4aebaff6046dbada7f02128426e727be7edb6757c0",
   opaque: "4a436437d533d5ec900793dac710f8dad603067ebcb012fd9187441eb520284a",
   // Current production shade with normalized input; the full body
   // remains pinned so changes cannot silently bypass this observation seam.
   // F5 方案 A:L1 方向可见度门接入镜面项(用户批准),观察缝 pin 随生产源演进重锚。
-  shade: "598ba4e9cefd11404a99a54635c20c418bc6bbcdee128b98fbcd0bd05af8328b",
-  physical: "ff8ddc3b4509c5ea976a57b80a7c1c3397a42241b945e4caadca6c69f2bbce7d",
+  // SDK default gain is one; only the probe irradiance branch uses constant.w.
+  shade: "202af7f921182e6a096343e4697b78c0b6f0bd32fbc389f603debdb406815660",
+  physical: "e07d77d6c3e84538fe206c1cee3c4ce1dd62b9fe3f0355f9ec8511e103f99f37",
 } as const;
 const output = "return select(color, deepApplySceneFog(select(color, baseInput, flag(materialFlags, 64u)), world, materialFlags), applyFog);";
 const single = "  var color = brdfWithDielectricF0(n, view, l, base, metal, rough, dielectric) * frame.sunColor.rgb * frame.sunColor.w * visibility;";
@@ -53,7 +56,7 @@ export function observeThreeFragment(mode: FragmentObservable, source: { readonl
   modeGuard(mode);
   const original = source.lights_physical_pars_fragment, matches = [...original.matchAll(/^void RE_Direct_Physical\([^]*?^\}/gm)], re = matches[0]?.[0];
   if (original.includes(marker) || matches.length !== 1 || !re || sha256Utf8(re) !== identities.re || sha256Utf8(source.opaque_fragment) !== identities.opaque) throw Error("Actual Three observation seam drifted or was instrumented");
-  const singleExpression = "irradiance * ( BRDF_GGX( directLight.direction, geometryViewDir, geometryNormal, material ) + BRDF_Lambert( material.diffuseContribution ) )";
+  const singleExpression = "irradiance * ( specularBRDF + BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F ) )";
   const expression = mode === "geometry"
     ? "vec3( saturate( dot( geometryNormal, geometryViewDir ) ), saturate( dot( geometryNormal, directLight.direction ) ), material.roughness )"
     : mode === "rough-single" ? `vec3( material.roughness, ( ${singleExpression} ).rg )` : singleExpression;

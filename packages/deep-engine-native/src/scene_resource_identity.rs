@@ -67,6 +67,8 @@ pub fn scene_resource_manifest(
                 TextureSemantic::Normal => 2,
                 TextureSemantic::Occlusion => 3,
                 TextureSemantic::Emissive => 4,
+                TextureSemantic::Specular => 5,
+                TextureSemantic::SpecularColor => 6,
             });
             hash.u8(match texture.encoding {
                 TextureEncoding::Linear => 0,

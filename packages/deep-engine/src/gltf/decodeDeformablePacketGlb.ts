@@ -7,6 +7,7 @@ import { decodeTexturedGltf, decodeTexturedGltfDocument } from "./decodeTextured
 import { parseGlb } from "./parseGlb.js";
 import type { GltfImageDecoder } from "./textureTypes.js";
 import { GltfImportError } from "./validation.js";
+import { bakeInitialGltfPose } from "./bakeInitialGltfPose.js";
 
 /** 静态 RenderPacket 无法自行驱动的 glTF 变形特性。 */
 export type GltfDeformationFeature = "animations" | "skins" | "morphTargets";
@@ -14,7 +15,7 @@ export type GltfDeformationFeature = "animations" | "skins" | "morphTargets";
 /**
  * - `static`:资产不含任何变形特性,与 decodeTexturedGltf 完全等价(零额外开销)。
  * - `live`:几何带蒙皮/形变源与绑定姿态,instance.pose 指向各自姿态,由宿主逐帧提供姿态。
- * - `bind-pose`:变形特性被剥离,按绑定姿态/初始变换静态显示(宿主不提供逐帧姿态,或该资产超出可驱动子集)。
+ * - `bind-pose`:初始关节姿态与形变权重烘焙为静态几何(宿主不提供逐帧姿态)。
  */
 export type DeformablePacketMode = "static" | "live" | "bind-pose";
 
@@ -44,7 +45,7 @@ export function inspectGltfDeformationFeatures(json: unknown): readonly GltfDefo
 
 /**
  * 带纹理 GLB → RenderPacket,并对含骨骼/形变目标的资产提供可由宿主逐帧驱动的变形源。
- * 不含变形特性的资产走既有静态路径;不可驱动的子集只降级该资产,不会使整份导入失败。
+ * 不含变形特性的资产走既有静态路径;静态宿主烘焙初始姿态,不播放动画。
  */
 export async function decodeDeformablePacketGlb(bytes: Uint8Array, imageDecoder: GltfImageDecoder | undefined,
   options: DeformablePacketOptions = {}): Promise<DeformablePacketGlb> {
@@ -64,7 +65,9 @@ export async function decodeDeformablePacketGlb(bytes: Uint8Array, imageDecoder:
       fallbackReason = `${error.feature ?? error.path}: ${error.message}`;
     }
   }
-  const packet = await decodeTexturedGltfDocument(parsed.json, parsed.buffers, imageDecoder, options, true);
+  const packet = drivable
+    ? bakeInitialGltfPose(await decodeRuntimeGltf(parsed.json, parsed.buffers, imageDecoder, options), options)
+    : await decodeTexturedGltfDocument(parsed.json, parsed.buffers, imageDecoder, options, true);
   return { packet, mode: "bind-pose", features, ...(fallbackReason ? { fallbackReason } : {}) };
 }
 

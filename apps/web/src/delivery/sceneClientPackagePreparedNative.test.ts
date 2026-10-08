@@ -9,14 +9,20 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runtimeContentSha256 } from "@bim-studio/deep-engine/runtime-package";
 import JSZip from "jszip";
+import sharp from "sharp";
 import { exportSceneClientPackage, prepareSceneClientPackage, type SceneClientPackageOptions } from "./sceneClientPackage";
 // 真实编译器在收集阶段完成转换；下方只替换运行证据，不替换编译产物。
 import { prepareNativeSceneClientPayload } from "./nativeSceneClientPayload";
+import { authorTextureTestGlb } from "./sceneAuthorTextureTestFixture";
 
 const mocks = vi.hoisted(() => ({ project: vi.fn(), applications: vi.fn(), load: vi.fn(), download: vi.fn(), degraded: false }));
 vi.mock("../api", () => ({ api: { getProject: mocks.project, listApplications: mocks.applications } }));
 vi.mock("../browserDownload", () => ({ downloadBlob: mocks.download }));
 vi.mock("../viewer/viewerAssetTransport", () => ({ loadViewerAssetBuffer: mocks.load }));
+vi.mock("./browserImageDecoder", () => ({ browserImageDecoder: { async decode(image: { data: Uint8Array }) {
+  const decoded = await sharp(image.data).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  return { width: decoded.info.width, height: decoded.info.height, data: new Uint8Array(decoded.data) };
+} } }));
 vi.mock("./nativeSceneClientPayload", async () => {
   const actual = await vi.importActual<typeof import("./nativeSceneClientPayload")>("./nativeSceneClientPayload");
   const { summarizeScenePublicationCompatibility } = await vi.importActual<typeof import("@bim-studio/contracts")>("@bim-studio/contracts");
@@ -99,6 +105,34 @@ afterEach(async () => {
 });
 
 describe("prepared Native package with test-only window evidence", () => {
+  it("compiles captured texture bytes once and verifies the offline ZIP against its source image claims", async () => {
+    const input = options();
+    input.scene.models[0]!.material = { baseColorMapUrl: "/author.png", textureRepeat: 2 };
+    const glb = authorTextureTestGlb();
+    const image = await sharp({ create: { width: 8, height: 8, channels: 4,
+      background: { r: 40, g: 120, b: 200, alpha: 1 } } }).png().toBuffer();
+    mocks.project.mockResolvedValue({ id: "project", name: "Project", models: [{ id: "asset", projectId: "project",
+      status: "ready", name: "Box.glb", manifest: { geometryUrl: "/box.glb" } }], assets: [{ id: "author",
+      projectId: "project", kind: "texture", name: "author.png", url: "/author.png", size: image.length,
+      mimeType: "image/png", contentHash: createHash("sha256").update(image).digest("hex"), createdAt: "" }] });
+    mocks.load.mockImplementation(async (url: string) => Uint8Array.from(url === "/box.glb" ? glb : image).buffer);
+    const prepared = await track(prepareSceneClientPackage(input));
+    await track(exportSceneClientPackage({ ...input, prepared }));
+    expect(mocks.load).toHaveBeenCalledTimes(2);
+    const zip = await JSZip.loadAsync(await (mocks.download.mock.lastCall![0] as Blob).arrayBuffer());
+    const runtime = JSON.parse(await zip.file("native/runtime-package.json")!.async("string"));
+    const packet = runtime.payloads[runtime.entrypoints.renderPacket];
+    const color = packet.textures.find((texture: { id: string }) => texture.id === packet.materials[0].baseColorTexture.texture);
+    expect(color.data.slice(0, 4)).toEqual([40, 120, 200, 255]);
+    const stored = await zip.generateAsync({ type: "nodebuffer", compression: "STORE" });
+    expect((mocks.download.mock.lastCall![0] as Blob).size).toBeLessThan(stored.length);
+    expect(await verifyZip(zip)).toMatchObject({ status: "integrity-verified", target: "deep-native" });
+    const compilation = JSON.parse(await zip.file("native/compilation-evidence.json")!.async("string"));
+    compilation.sourceTextures = [];
+    zip.file("native/compilation-evidence.json", JSON.stringify(compilation));
+    await expect(verifyZip(zip)).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining("贴图源资源证据数量不匹配") });
+  });
+
   it("reuses one real compilation and resource read across publication timestamps and real ZIP delivery", async () => {
     const input = options();
     const prepared = await track(prepareSceneClientPackage(input));

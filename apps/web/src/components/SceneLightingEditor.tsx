@@ -1,4 +1,5 @@
 import { SceneLightEditor } from "./SceneLightEditor";
+import { DraftRange } from "./DraftRange";
 import { SceneProbeGridBakePanel, type ProbeGridBakeUiState } from "./SceneProbeGridBakePanel";
 import { Lightbulb } from "lucide-react";
 import type { ProbeGridBakeGrid } from "@bim-studio/deep-engine";
@@ -12,10 +13,10 @@ interface SceneLightingEditorProps {
   locale: AppLocale;
   lighting: GlobalLightingState;
   selectedLightId: string;
-  onLightingChange: (next: GlobalLightingState) => void;
+  onLightingChange: (next: GlobalLightingState, previewOnly?: boolean) => void;
   onSelectLight: (id: string) => void;
   onAddLight: (type: SceneLightState["type"]) => void;
-  onUpdateLight: (id: string, patch: Partial<SceneLightState>) => void;
+  onUpdateLight: (id: string, patch: Partial<SceneLightState>, previewOnly?: boolean) => void;
   onRemoveLight: (id: string) => void;
   /** F3 探针网格烘焙：可选；提供时在 GI 行下方显示烘焙区块。 */
   probeBakeState?: ProbeGridBakeUiState;
@@ -49,22 +50,10 @@ export function SceneLightingEditor(props: SceneLightingEditorProps) {
         >
           <Lightbulb size={15} />
         </button>
-        <input
-          type="range"
-          min="0"
-          max="2.5"
-          step="0.05"
-          value={lighting.intensity}
-          disabled={!lighting.enabled}
-          onChange={(event) =>
-            props.onLightingChange({
-              ...lighting,
-              intensity: Number(event.target.value),
-            })
-          }
-          aria-label={tr(locale, "全局灯光强度", "Global lighting intensity")}
-        />
-        <output>{Math.round(lighting.intensity * 100)}%</output>
+        <DraftRange label={tr(locale, "全局灯光强度", "Global lighting intensity")} min={0} max={2.5} step={0.05}
+          value={lighting.intensity} disabled={!lighting.enabled} format={next => `${Math.round(next * 100)}%`}
+          onChange={intensity => props.onLightingChange({ ...lighting, intensity })}
+          onPreview={intensity => props.onLightingChange({ ...lighting, intensity }, true)} />
       </div>
       <div className="environment-row environment-switches">
         <span>{tr(locale, "渲染", "Rendering")}</span>
@@ -107,23 +96,10 @@ export function SceneLightingEditor(props: SceneLightingEditorProps) {
             ? tr(locale, "已开启", "On")
             : tr(locale, "已关闭", "Off")}
         </button>
-        <input
-          type="range"
-          min="0"
-          max="2"
-          step="0.05"
-          value={lighting.globalIlluminationIntensity ?? 0.45}
-          disabled={!lighting.globalIlluminationEnabled}
-          onChange={(event) =>
-            props.onLightingChange({
-              ...lighting,
-              globalIlluminationIntensity: Number(event.target.value),
-            })
-          }
-        />
-        <output>
-          {(lighting.globalIlluminationIntensity ?? 0.45).toFixed(2)}
-        </output>
+        <DraftRange label={tr(locale, "全局光照强度", "Global illumination intensity")} min={0} max={2} step={0.05}
+          value={lighting.globalIlluminationIntensity ?? 0.45} disabled={!lighting.globalIlluminationEnabled}
+          onChange={globalIlluminationIntensity => props.onLightingChange({ ...lighting, globalIlluminationIntensity })}
+          onPreview={globalIlluminationIntensity => props.onLightingChange({ ...lighting, globalIlluminationIntensity }, true)} />
       </div>
       {props.probeBakeState && props.onBakeProbeGrid && (
         <SceneProbeGridBakePanel
@@ -172,11 +148,12 @@ export function SceneLightingEditor(props: SceneLightingEditorProps) {
         </div>
         {selectedLight && (
           <SceneLightEditor
+            key={selectedLight.id}
             locale={locale}
             lighting={lighting}
             light={selectedLight}
             onLightingChange={props.onLightingChange}
-            onUpdate={(patch) => props.onUpdateLight(selectedLight.id, patch)}
+            onUpdate={(patch, previewOnly) => props.onUpdateLight(selectedLight.id, patch, previewOnly)}
             onRemove={() => props.onRemoveLight(selectedLight.id)}
           />
         )}

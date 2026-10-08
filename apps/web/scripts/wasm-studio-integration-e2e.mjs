@@ -57,7 +57,7 @@ try {
   });
 
   await page.goto(`${webOrigin}${report.route}`, { waitUntil: "domcontentloaded" });
-  await page.locator(".viewport canvas").first().waitFor({ state: "visible" });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').first().waitFor({ state: "visible" });
   await page.waitForTimeout(2_000);
   const authorCanvas = page.locator(".viewport canvas:not([data-renderer-backend])").first();
   await authorCanvas.waitFor();

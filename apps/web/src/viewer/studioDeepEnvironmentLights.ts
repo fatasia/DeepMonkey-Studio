@@ -20,10 +20,21 @@ type Vec3 = readonly [number, number, number];
  * 站位光若同时进入 Deep 光照投影，会经 packDiffuseIrradiance → deepAuthoredDiffuse
  * 与探针 GI 双重计账——该站位填充无遮挡、门态无关，是封门哨兵 leakRatio 的载体
  * （F5-L5 实测：三区 gi-on−gi-off delta 全部蓝主异，量级与该灯合同值同阶）。
- * 因此 Deep 投影恒排除它：GI 关闭时该灯 visible=false 本就不进投影，此拦截只
- * 作用于 GI 开启态；作者自建的半球光（有独立 id）不受影响。
+ * 因此默认 Deep 投影排除它：GI 关闭时该灯 visible=false 本就不进投影，此拦截只
+ * 作用于 GI 开启态；作者自建的半球光（有独立 id）不受影响。明确无法捕获探针的
+ * 变形作者包可显式复用该灯，避免同时失去作者填充光与探针辐射。
  */
 export const GLOBAL_ILLUMINATION_STAND_IN_LIGHT_NAME = "scene-light:global-illumination";
+
+/** Read the author's resolved gain once; weather and total intensity are already applied. */
+export function readStudioDeepGlobalIlluminationIntensity(scene: THREE.Scene): number {
+  const light = scene.getObjectByName(GLOBAL_ILLUMINATION_STAND_IN_LIGHT_NAME);
+  if (!(light instanceof THREE.Light) || !light.visible) return 0;
+  if (!Number.isFinite(light.intensity) || light.intensity < 0 || light.intensity > 16) {
+    throw new RangeError("作者全局光照强度必须在 0 到 16 之间。");
+  }
+  return light.intensity;
+}
 
 /** E02：Three SpotLight 的 IES 载体（object.userData.ies）合同验证；非法即 issue。 */
 function readSpotIes(object: THREE.Object3D, path: string,
@@ -64,7 +75,8 @@ function readSceneLightProfiles(scene: THREE.Scene, report: (code: string, messa
 
 /** Reads resolved world matrices; the author frame must update matrices before calling. */
 export function projectStudioDeepLights(scene: THREE.Scene, cameraLayerMask = 0xffffffff, shadowsEnabled = true,
-  shadowType: THREE.ShadowMapType = DISPLAY_THREE_SHADOW_MAP_TYPE): {
+  shadowType: THREE.ShadowMapType = DISPLAY_THREE_SHADOW_MAP_TYPE,
+  includeGlobalIlluminationStandIn = false): {
   lights: Lights; issues: StudioDeepEnvironmentIssue[];
 } {
   const directional: NonNullable<Lights["directional"]>[number][] = [];
@@ -78,7 +90,7 @@ export function projectStudioDeepLights(scene: THREE.Scene, cameraLayerMask = 0x
   scene.traverseVisible(object => {
     if (!(object instanceof THREE.Light) || object.intensity === 0) return;
     // Deep GI 权威 = 探针体积;WebGL GI 站位光不进入 Deep 光照投影(防双重计账,见常量注释)。
-    if (object.name === GLOBAL_ILLUMINATION_STAND_IN_LIGHT_NAME) return;
+    if (!includeGlobalIlluminationStandIn && object.name === GLOBAL_ILLUMINATION_STAND_IN_LIGHT_NAME) return;
     if ((object.layers.mask & cameraLayerMask) === 0) return;
     const path = `lights.${object.uuid}`;
     const report = (code: string, message: string) => issues.push({ code, path, message });

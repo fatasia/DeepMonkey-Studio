@@ -102,6 +102,8 @@ function collectUsedTextures(batches: readonly PreparedBatch[]): ReadonlySet<str
     if (batch.textures?.normal) result.add(batch.textures.normal.texture);
     if (batch.textures?.occlusion) result.add(batch.textures.occlusion.texture);
     if (batch.textures?.emissive) result.add(batch.textures.emissive.texture);
+    if (batch.textures?.specular) result.add(batch.textures.specular.texture);
+    if (batch.textures?.specularColor) result.add(batch.textures.specularColor.texture);
     for (const layer of batch.textures?.layered?.textures ?? []) {
       if (layer.baseColor) result.add(layer.baseColor.texture);
       if (layer.metallicRoughness) result.add(layer.metallicRoughness.texture);

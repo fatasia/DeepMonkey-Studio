@@ -93,7 +93,9 @@ export interface ReflectionRecordParity {
 /** CPU 侧逐像素语义镜像(与内核逐分支同序;depth 为 GPU 读回的同一 f32 行主序数组)。 */
 export function referenceReflectionRecords(scene: ReflectionScene, depth: Float32Array, width: number,
   height: number, invViewProjection: readonly number[], eye: readonly [number, number, number],
-  tMax = REFLECTION_T_MAX, bias = REFLECTION_BIAS): ReflectionRecordParity {
+  tMax = REFLECTION_T_MAX, bias = REFLECTION_BIAS, bounceCount: 1 | 2 = 1,
+  onHit?: (pixel: number, hit: NonNullable<ReturnType<typeof traceTlasClosest>>, position: number[]) => void,
+  float32World = false): ReflectionRecordParity {
   const tlas = buildTlas(scene.instances);
   const records = new Float32Array(width * height * 4);
   let hits = 0, misses = 0;
@@ -102,9 +104,13 @@ export function referenceReflectionRecords(scene: ReflectionScene, depth: Float3
     const ndc = [uvX * 2 - 1, 1 - uvY * 2, d, 1];
     const w = [0, 0, 0, 0];
     for (let row = 0; row < 4; row++) {
-      for (let k = 0; k < 4; k++) w[row]! += invViewProjection[k * 4 + row]! * ndc[k]!;
+      for (let k = 0; k < 4; k++) {
+        const term = invViewProjection[k * 4 + row]! * ndc[k]!;
+        w[row] = float32World ? Math.fround(w[row]! + Math.fround(term)) : w[row]! + term;
+      }
     }
-    return [w[0]! / w[3]!, w[1]! / w[3]!, w[2]! / w[3]!];
+    const position = [w[0]! / w[3]!, w[1]! / w[3]!, w[2]! / w[3]!];
+    return position.map(axis => float32World ? Math.fround(axis) : axis) as [number, number, number];
   };
   const depthAt = (x: number, y: number): number => depth[y * width + x]!;
   const miss = (base: number): void => {
@@ -138,13 +144,26 @@ export function referenceReflectionRecords(scene: ReflectionScene, depth: Float3
       const dot2 = 2 * (incident[0]! * n[0]! + incident[1]! * n[1]! + incident[2]! * n[2]!);
       const r = [incident[0]! - dot2 * n[0]!, incident[1]! - dot2 * n[1]!, incident[2]! - dot2 * n[2]!];
       const origin = [world[0] + r[0]! * bias, world[1] + r[1]! * bias, world[2] + r[2]! * bias];
-      const hit = traceTlasClosest(tlas, { ox: origin[0]!, oy: origin[1]!, oz: origin[2]!,
+      let hit = traceTlasClosest(tlas, { ox: origin[0]!, oy: origin[1]!, oz: origin[2]!,
         dx: r[0]!, dy: r[1]!, dz: r[2]!, tMax }, 0xff);
       if (hit === undefined) { miss(base); continue; }
-      const worldNormal = hitNormalWorld(scene, hit.instanceId, hit.primitiveIndex, [r[0]!, r[1]!, r[2]!]);
+      let worldNormal = hitNormalWorld(scene, hit.instanceId, hit.primitiveIndex, [r[0]!, r[1]!, r[2]!]);
+      let hitPosition = origin.map((axis, i) => axis + r[i]! * hit!.t);
+      if (bounceCount === 2) {
+        const dot = 2 * r.reduce((sum, axis, i) => sum + axis * worldNormal[i]!, 0);
+        const direction2 = r.map((axis, i) => axis - dot * worldNormal[i]!);
+        const origin2 = origin.map((axis, i) => axis + r[i]! * hit!.t + direction2[i]! * bias);
+        hit = traceTlasClosest(tlas, { ox: origin2[0]!, oy: origin2[1]!, oz: origin2[2]!,
+          dx: direction2[0]!, dy: direction2[1]!, dz: direction2[2]!, tMax }, 0xff);
+        if (!hit) { miss(base); continue; }
+        worldNormal = hitNormalWorld(scene, hit.instanceId, hit.primitiveIndex,
+          [direction2[0]!, direction2[1]!, direction2[2]!]);
+        hitPosition = origin2.map((axis, i) => axis + direction2[i]! * hit!.t);
+      }
       records[base] = hit.t; records[base + 1] = worldNormal[0];
       records[base + 2] = worldNormal[1]; records[base + 3] = worldNormal[2];
       hits++;
+      onHit?.(y * width + x, hit, hitPosition);
     }
   }
   return { records, hits, misses };

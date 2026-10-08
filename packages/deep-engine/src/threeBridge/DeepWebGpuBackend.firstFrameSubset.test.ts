@@ -7,6 +7,18 @@ import { DeepWebGpuBackend } from "./DeepWebGpuBackend.js";
  * "发布前等待哪些 main 变体",不改变管线集合内容;时序语义见
  * pbrRendererTypes.PbrPipelineBootstrapOptions。 */
 describe("DeepWebGpuBackend first-frame pipeline subset", () => {
+  it("passes only pose material keys to eager deformation for an all-posed author packet", async () => {
+    const target = runtime(), createRuntime = vi.fn(async () => target);
+    const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      view, renderPacket: { geometries: [], materials: [
+        { id: "m", baseColor: [1, 1, 1], metallic: 0, roughness: 1, alphaMode: "BLEND", doubleSided: true },
+      ], instances: [{ id: "i", geometry: "g", material: "m", pose: "p",
+        transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }] },
+      renderer: { deformation: true, pipelines: { deferDeformation: true } } }, { create: createRuntime });
+    expect(createRuntime.mock.calls[0]![3]!.pipelines).toMatchObject({ firstFrameSubset: true,
+      firstFrameMainKeys: [], deformationFirstFrameMainKeys: ["plain/blend/double"], deferDeformation: false });
+    backend.dispose();
+  });
   it("derives first-frame main pipeline keys from an independent render packet", async () => {
     const target = runtime(), createRuntime = vi.fn(async () => target);
     const packet = {

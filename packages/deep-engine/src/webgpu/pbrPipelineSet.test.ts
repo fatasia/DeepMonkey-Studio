@@ -80,6 +80,25 @@ describe("production PBR deformation pipeline selection", () => {
     expect(createPipelinesBuild).toHaveBeenCalledTimes(2);
   });
 
+  it("admits only actual pose material keys without releasing background programs", async () => {
+    const releaseStatic = vi.fn(), releasePose = vi.fn();
+    const scopedSession = { device: { pushErrorScope: vi.fn(), popErrorScope: async () => null } } as unknown as DeviceSession;
+    vi.mocked(createPipelinesBuild).mockResolvedValueOnce({ pipelines: {}, criticalReady: Promise.resolve(),
+      ready: new Promise<void>(() => {}), releaseDeferredQueues: releaseStatic } as never);
+    vi.mocked(createPipelinesBuild).mockResolvedValueOnce({ pipelines: {}, criticalReady: Promise.resolve(),
+      ready: new Promise<void>(() => {}), releaseDeferredQueues: releasePose } as never);
+    const keys = ["material/depth/ccw"];
+    const set = await createPbrPipelineSet(scopedSession, lighting, { deformation: true,
+      pipelines: { deferDeformation: true, firstFrameMainKeys: keys } }, features);
+    const first = set.startDeformation!();
+    expect(set.startDeformation!()).toBe(first);
+    await first;
+    expect(vi.mocked(createPipelinesBuild).mock.calls[1]![6]).toMatchObject({ deformation: true, firstFrameMainKeys: keys });
+    expect(releaseStatic).not.toHaveBeenCalled(); expect(releasePose).not.toHaveBeenCalled();
+    set.release();
+    expect(releaseStatic).toHaveBeenCalledOnce(); expect(releasePose).toHaveBeenCalledOnce();
+  });
+
   it.each([1, 2] as const)("keeps static and pose attachment layouts aligned for %i shadow cascades", async cascadeCount => {
     await createPbrPipelineSet(session, lighting, { deformation: true,
       shadows: { exactProfile: { cascadeCount, shadowMapSize: 128 } } }, features);

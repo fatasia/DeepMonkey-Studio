@@ -1,10 +1,18 @@
 import type { DeviceSession } from "./deviceSession.js";
 import { PBR_DEPTH_FORMAT, PBR_HDR_FORMAT } from "./renderTargets.js";
-import { authorGridUniforms, prepareAuthorGridTexture, type AuthorGridView } from "./authorGridTypes.js";
+import { authorGridUniforms, prepareAuthorGridTexture, prepareAuthorGridTextureAsync, type AuthorGridView } from "./authorGridTypes.js";
+import type { PreparedTexture } from "../textures/decodedTexture.js";
 import type { DecodedTexture } from "../textures/decodedTexture.js";
 import { packPbrFog } from "./pbrFog.js";
+import { PBR_DISPLAY_COLOR_WGSL } from "./pbrDisplayColorWgsl.js";
 
-export const AUTHOR_GRID_WGSL = `struct Settings { matrix: mat4x4f, color: vec4f, modelView: mat4x4f, fogColor: vec4f, fogParameters: vec4f };
+/** Pixel coverage for the single-sample overlay; no extra color/depth attachment. */
+export const AUTHOR_GRID_COVERAGE_SAMPLES = [[-.25, -.25], [.25, -.25], [-.25, .25], [.25, .25]] as const;
+const gridCoverage = AUTHOR_GRID_COVERAGE_SAMPLES.map(([x, y]) =>
+  `gridContribution(textureSampleGrad(image, filtering, in.uv + ${x} * dx + ${y} * dy, dx, dy) * settings.color, fog)`
+).join(" +\n    ");
+
+export const AUTHOR_GRID_WGSL = PBR_DISPLAY_COLOR_WGSL + `struct Settings { matrix: mat4x4f, color: vec4f, modelView: mat4x4f, fogColor: vec4f, fogParameters: vec4f };
 @group(0) @binding(0) var<uniform> settings: Settings;
 @group(0) @binding(1) var image: texture_2d<f32>;
 @group(0) @binding(2) var filtering: sampler;
@@ -14,12 +22,20 @@ struct Vertex { @builtin(position) position: vec4f, @location(0) uv: vec2f, @loc
   var out: Vertex; out.position = settings.matrix * vec4f(uv - 0.5, 0, 1); out.uv = vec2f(uv.x, 1-uv.y);
   out.depth = -(settings.modelView * vec4f(uv - 0.5, 0, 1)).z; return out;
 }
+fn gridContribution(sampled: vec4f, fog: f32) -> vec4f {
+  if (settings.fogParameters.w > 0.5) {
+    return vec4f(mix(deepLinearToSrgb(sampled.rgb), deepLinearToSrgb(settings.fogColor.rgb), fog) * sampled.a, sampled.a);
+  }
+  return vec4f(mix(sampled.rgb, settings.fogColor.rgb, fog) * sampled.a, sampled.a);
+}
 @fragment fn fs(in: Vertex) -> @location(0) vec4f {
-  let sampled = textureSample(image, filtering, in.uv) * settings.color;
+  // Derivatives precede display/fog branches and retain perspective + anisotropic LOD.
+  let dx = dpdx(in.uv); let dy = dpdy(in.uv);
   var fog = 0.0;
   if (settings.fogColor.w == 1) { fog = smoothstep(settings.fogParameters.x, settings.fogParameters.y, in.depth); }
   if (settings.fogColor.w == 2) { let d = in.depth * settings.fogParameters.z; fog = 1-exp(-d*d); }
-  return vec4f(mix(sampled.rgb, settings.fogColor.rgb, fog) * sampled.a, sampled.a);
+  // Resolve each display/premult contribution, not RGB and alpha independently.
+  return (${gridCoverage}) * 0.25;
 }`;
 
 /** Grid contributes color before transparency/output; never writes or replaces scene depth. */
@@ -30,7 +46,22 @@ export class AuthorGridResources {
   private binding: GPUBindGroup | undefined;
   private sourceIdentity: Readonly<{ id: string; revision: number }> | undefined;
   private disposed = false;
+  private prepared = new WeakMap<DecodedTexture, PreparedTexture>();
+  private readonly preparing = new WeakMap<DecodedTexture, Promise<void>>();
   constructor(private readonly session: DeviceSession) {}
+  async prepare(view?: AuthorGridView): Promise<void> {
+    if (!view || this.prepared.has(view.texture)) return;
+    const source = view.texture;
+    let pending = this.preparing.get(source);
+    if (!pending) {
+      pending = prepareAuthorGridTextureAsync(source, () => !this.disposed && this.session.state === "ready").then(value => {
+        if (this.disposed || this.session.state !== "ready") throw new Error("Author grid device is unavailable.");
+        this.prepared.set(source, value);
+      }).finally(() => this.preparing.delete(source));
+      this.preparing.set(source, pending);
+    }
+    await pending;
+  }
   encode(encoder: GPUCommandEncoder, color: GPUTextureView, depth: GPUTextureView,
     viewProjection: ArrayLike<number>, worldToView: ArrayLike<number>, view?: AuthorGridView): number {
     if (this.disposed || this.session.state !== "ready") throw new Error("Author grid device is unavailable.");
@@ -38,7 +69,7 @@ export class AuthorGridResources {
     const uniforms = new Float32Array(44);
     uniforms.set(authorGridUniforms(view, viewProjection));
     uniforms.set(authorGridUniforms(view, worldToView).subarray(0, 16), 20);
-    uniforms.set(packPbrFog(view.fog ?? null), 36);
+    uniforms.set(packPbrFog(view.fog ?? null, view.authorDirectDisplay), 36);
     if (!this.pipeline) {
       const module = this.session.device.createShaderModule({ label: "Deep author grid", code: AUTHOR_GRID_WGSL });
       const pipeline = this.session.device.createRenderPipeline({ label: "Deep author grid", layout: "auto",
@@ -62,7 +93,7 @@ export class AuthorGridResources {
     return 2;
   }
   private upload(source: DecodedTexture): void {
-    const prepared = prepareAuthorGridTexture(source), device = this.session.device;
+    const prepared = this.prepared.get(source) ?? prepareAuthorGridTexture(source), device = this.session.device;
     const texture = this.session.own(device.createTexture({ label: "Deep author grid texture", format: prepared.format,
       size: [source.width, source.height], mipLevelCount: prepared.levels.length, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST }));
     try {
@@ -81,5 +112,6 @@ export class AuthorGridResources {
     if (this.texture) this.session.release(this.texture);
     if (this.uniform) this.session.release(this.uniform);
     this.sourceIdentity = undefined; this.binding = undefined;
+    this.prepared = new WeakMap();
   }
 }

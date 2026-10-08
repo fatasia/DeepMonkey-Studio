@@ -1,5 +1,6 @@
 import {
   prepareTextures,
+  TEXTURE_SEMANTICS, isSrgbTextureSemantic,
   type DecodedTexture,
   type PixelLevel,
   type TextureCompression,
@@ -180,7 +181,7 @@ export async function transcodeKtx2Texture(
   if (!source || typeof source !== "object") throw new Error("Invalid KTX2 texture source.");
   if (typeof source.id !== "string" || !source.id.trim() || source.id.length > 256) throw new Error("Invalid KTX2 texture id.");
   if (!Number.isSafeInteger(source.revision) || source.revision < 0) throw new Error("Invalid KTX2 texture revision.");
-  if (!["baseColor", "metallicRoughness", "normal", "occlusion", "emissive"].includes(source.semantic)) {
+  if (!TEXTURE_SEMANTICS.includes(source.semantic)) {
     throw new Error("Invalid KTX2 texture semantic.");
   }
   if (typeof source.hasAlpha !== "boolean") throw new Error("Invalid KTX2 alpha declaration.");
@@ -218,7 +219,7 @@ export async function transcodeKtx2Texture(
   if (target !== "rgba8" && (container.width % 4 !== 0 || container.height % 4 !== 0)) target = "rgba8";
   const request = Object.freeze<Ktx2TranscodeRequest>({
     target, sourceProfile, hasAlpha,
-    colorSpace: identity.semantic === "baseColor" || identity.semantic === "emissive" ? "srgb" : "linear",
+    colorSpace: isSrgbTextureSemantic(identity.semantic) ? "srgb" : "linear",
   });
   const result = await transcodeCancelable(transcoder, source.data.slice(), request, signal);
   signal?.throwIfAborted();

@@ -4,6 +4,7 @@
 use wasm_bindgen::prelude::*;
 
 mod physics_pose;
+mod scene_package_async;
 pub use physics_pose::viewer_physics_pose;
 
 thread_local! {
@@ -99,6 +100,15 @@ pub fn stop_scene_viewer(handle: u32) {
     }
 }
 
+/// Parked viewers retain GPU resources without rendering or advancing playback.
+#[wasm_bindgen]
+pub fn set_scene_viewer_paused(handle: u32, paused: bool) -> Result<(), JsValue> {
+    let proxy = VIEWER_SESSIONS.with(|sessions| sessions.borrow().get(&handle).cloned())
+        .ok_or_else(|| JsValue::from_str("scene viewer handle is not active"))?;
+    proxy.send_event(events::GpuEvent::WasmPresentationPaused(paused))
+        .map_err(|_| JsValue::from_str("scene viewer event loop is closed"))
+}
+
 #[wasm_bindgen]
 pub fn update_scene_viewer(handle: u32, bytes: &[u8]) -> Result<(), JsValue> {
     let proxy = VIEWER_SESSIONS
@@ -177,6 +187,11 @@ pub fn set_viewer_camera(
 #[wasm_bindgen]
 pub fn viewer_ready_generation() -> u32 {
     app_startup::wasm_renderer_ready_generation()
+}
+
+#[wasm_bindgen]
+pub fn scene_viewer_memory_bytes() -> usize {
+    core::arch::wasm32::memory_size(0) * 65_536
 }
 
 #[wasm_bindgen]

@@ -69,7 +69,7 @@ export async function createReflectionProbeSpecularEnvironment(session: DeviceSe
       format: "rgba16float", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
     device.queue.writeTexture({ texture: source }, upload.data, { bytesPerRow: upload.bytesPerRow, rowsPerImage: upload.height }, [upload.width, upload.height]);
     cube = createAdmittedTexture(session, { label: "Deep local reflection specular", size: [size, size, 6], mipLevelCount: levels,
-      format: "rgba16float", usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
+      format: "rgba16float", usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
     settings = createAdmittedBuffer(session, { label: "Deep reflection probe settings", size: settingsData.byteLength,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(settings, 0, settingsData);
@@ -92,7 +92,7 @@ export async function createReflectionProbeSpecularEnvironment(session: DeviceSe
     const error = await abortableGpu(errorPromise, signal, CANCELLED);
     if (error) throw new Error(`Reflection probe GPU validation failed: ${error.message}`);
     check(); const view = cube.createView({ dimension: "cube" }); releaseTemporary();
-    return Object.freeze({ specular: view, diffuse: base.diffuse, brdf: base.brdf, sampler: base.sampler,
+    return Object.freeze({ specular: view, specularTexture: cube, diffuse: base.diffuse, brdf: base.brdf, sampler: base.sampler,
       specularBytes: 6 * 8 * (4 * size * size - 1) / 3, uploadBytes: upload.data.byteLength, dispose: releaseCube });
   } catch (error) {
     if (scopeOpen) try { await device.popErrorScope(); } catch { /* Retain preparation failure. */ }

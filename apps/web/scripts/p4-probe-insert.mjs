@@ -34,7 +34,7 @@ try {
   const scene = application.scenes?.[0];
   const url = `${gate.origin}/studio/${encodeURIComponent(project.id)}/applications/${encodeURIComponent(application.metadata.id)}/scenes/${encodeURIComponent(scene.id)}`;
   await page.goto(url, { waitUntil: "networkidle", timeout: 90_000 });
-  await page.locator(".viewport canvas").waitFor();
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
 
   for (let index = 0; index < 2; index += 1) {
     console.log(`--- 上传 ${index + 1} ---`);

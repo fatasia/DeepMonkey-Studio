@@ -23,6 +23,6 @@ describe("Studio author fog", () => {
   });
   it("does not reinterpret direct display fog as linear HDR", () => {
     const scene = new THREE.Scene(); scene.fog = new THREE.FogExp2(0xffffff);
-    expect(() => readStudioDeepFog(scene, false)).toThrow("显示域");
+    expect(readStudioDeepFog(scene, false)).toEqual(readStudioDeepFog(scene, true));
   });
 });

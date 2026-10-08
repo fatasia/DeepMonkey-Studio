@@ -91,27 +91,34 @@ export function encodeRtReflectionsFrame(host: PbrRendererFrameHost, device: GPU
             { illumination: true, secondBounce: true });
         }
       }
+      if (!host.rtReflections.ready) {
+        return { hit: undefined, bounceShading: undefined, hit2: undefined, bounceShading2: undefined,
+          indirectionHandle: undefined, indirectionView: undefined,
+          metrics: { dispatched: false, reason: host.rtReflections.validationFailure?.message ?? "pipeline-validating" } };
+      }
       rtReflectionsHit = host.transientTextures.acquire({ resourceId: "rt-reflection-closest",
         format: "rgba32float", width: size.width, height: size.height, sampleCount: 1,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
+        usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC });
       rtBounceShading = host.transientTextures.acquire({ resourceId: "rt-reflection-bounce-shading",
         format: "rgba32float", width: size.width, height: size.height, sampleCount: 1,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
+        usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC });
       // 二反弹档:第二命中/遮蔽记录(与首跳记录同尺寸同生命周期)。
       rtReflectionsHit2 = host.transientTextures.acquire({ resourceId: "rt-reflection-closest-2",
         format: "rgba32float", width: size.width, height: size.height, sampleCount: 1,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
+        usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
+          | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC });
       rtBounceShading2 = host.transientTextures.acquire({ resourceId: "rt-reflection-bounce-shading-2",
         format: "rgba32float", width: size.width, height: size.height, sampleCount: 1,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
+        usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING
+          | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC });
       const invVp = invertColumnMajor4x4(frameState.depthViewProjection);
       const frameEye = view.cameraWorldPosition === undefined ? view.eye
         : [view.eye[0] - view.cameraWorldPosition[0], view.eye[1] - view.cameraWorldPosition[1],
           view.eye[2] - view.cameraWorldPosition[2]] as const;
-      // 帧时披露口径:encode 沿 shadow 家族合同异步(await validated),GPU 逐 pass
+      // 已验证管线同步编码，必须在主帧 encoder.finish() 前完成。GPU 逐 pass
       // 计时待本通道进入帧执行计划(F1 图节点)后接 passTiming;当前开关帧时差经
       // 既有帧级三段计时(T25)对比,FrameMetrics.rtReflections 披露 dispatch 形状。
-      void host.rtReflections.encode(encoder, {
+      host.rtReflections.encodeValidated(encoder, {
         depthView: rtReflectionsDepthViewFor(host.targets.depthTexture),
         hitView: rtReflectionsHit.view,
         bounceShadingView: rtBounceShading.view,

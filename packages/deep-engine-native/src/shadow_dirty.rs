@@ -134,6 +134,10 @@ impl ShadowCasterSet {
             .map(|texture| (texture.id.as_str(), texture))
             .collect::<HashMap<_, _>>();
         let mut casters = Vec::new();
+        // Resource contents are identical for every instance in this prepare.
+        // Keep these caches local: a later packet may change bytes without a revision bump.
+        let mut geometry_digests = HashMap::new();
+        let mut texture_digests = HashMap::new();
         for batch in &scene.batches {
             if !batch.cast_shadow || batch.alpha_mode == AlphaMode::Blend {
                 continue;
@@ -154,7 +158,7 @@ impl ShadowCasterSet {
                     .get(&source)
                     .copied()
                     .unwrap_or(culling.bounds[source]);
-                let mut hash = HashWriter::new(b"native-shadow-caster-v1");
+                let mut hash = HashWriter::new(b"native-shadow-caster-v2");
                 write!(
                     &mut hash,
                     "{}{:?}{}{:?}{:?}",
@@ -166,10 +170,20 @@ impl ShadowCasterSet {
                 )
                 .unwrap();
                 let masked = material.alpha_mode == Some(AlphaMode::Mask);
-                hash.geometry(authored.geometry.as_str(), &geometries, masked)?;
+                hash.geometry(
+                    authored.geometry.as_str(),
+                    &geometries,
+                    masked,
+                    &mut geometry_digests,
+                )?;
                 if let Some(profile) = &authored.lod {
                     for level in &profile.levels {
-                        hash.geometry(level.geometry.as_str(), &geometries, masked)?;
+                        hash.geometry(
+                            level.geometry.as_str(),
+                            &geometries,
+                            masked,
+                            &mut geometry_digests,
+                        )?;
                     }
                 }
                 if masked {
@@ -182,7 +196,7 @@ impl ShadowCasterSet {
                     )
                     .unwrap();
                     if let Some(slot) = &material.base_color_texture {
-                        hash.texture(slot.texture.as_str(), &textures)?;
+                        hash.texture(slot.texture.as_str(), &textures, &mut texture_digests)?;
                     }
                 }
                 casters.push(ShadowCaster {
@@ -199,71 +213,9 @@ impl ShadowCasterSet {
     }
 }
 
-struct HashWriter(std::collections::hash_map::DefaultHasher);
-
-impl HashWriter {
-    fn new(domain: &[u8]) -> Self {
-        let mut hash = std::collections::hash_map::DefaultHasher::new();
-        hash.write(domain);
-        Self(hash)
-    }
-
-    fn geometry(
-        &mut self,
-        id: &str,
-        resources: &HashMap<&str, &deep_engine_native::contract::GeometryResource>,
-        include_uv0: bool,
-    ) -> Result<(), String> {
-        let geometry = resources
-            .get(id)
-            .ok_or_else(|| format!("shadow caster geometry {id} is missing"))?;
-        write!(
-            self,
-            "{}{:?}{:?}",
-            geometry.id, geometry.vertices, geometry.indices
-        )
-        .unwrap();
-        if include_uv0 {
-            write!(self, "{:?}", geometry.uv0).unwrap();
-        }
-        Ok(())
-    }
-
-    fn texture(
-        &mut self,
-        id: &str,
-        resources: &HashMap<&str, &deep_engine_native::contract::TextureResource>,
-    ) -> Result<(), String> {
-        let texture = resources
-            .get(id)
-            .ok_or_else(|| format!("shadow caster texture {id} is missing"))?;
-        write!(
-            self,
-            "{}{:?}{:?}{:?}{:?}{:?}{:?}{:?}",
-            texture.id,
-            texture.semantic,
-            texture.width,
-            texture.height,
-            texture.data,
-            texture.bytes_per_row,
-            texture.mipmaps,
-            texture.sampler
-        )
-        .unwrap();
-        Ok(())
-    }
-
-    fn finish(self) -> u64 {
-        self.0.finish()
-    }
-}
-
-impl Write for HashWriter {
-    fn write_str(&mut self, text: &str) -> std::fmt::Result {
-        self.0.write(text.as_bytes());
-        Ok(())
-    }
-}
+#[path = "shadow_hash_writer.rs"]
+mod hash_writer;
+use hash_writer::HashWriter;
 
 #[cfg(test)]
 #[path = "shadow_dirty_tests.rs"]

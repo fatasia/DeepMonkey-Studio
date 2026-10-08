@@ -15,10 +15,12 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { runConsumerBrowser } from "../../../scripts/lib/sdkConsumerBrowser.mjs";
+import { packDeepEngineCompression } from "../../../scripts/lib/deepEngineConsumerPackages.mjs";
 import { isWithin, locatePnpm, runLogged } from "../../../scripts/lib/sdkConsumerPackages.mjs";
 
 const kitRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const root = resolve(kitRoot, "../..");
+const cpuOnly = process.argv.includes("--cpu-only");
 if (process.platform === "win32") {
   // 打包校验用 tar 需要解析 C:\ 盘符路径；Git Bash 的 GNU tar 会把 "C:" 当远程主机。
   // 与已通过的 deep-engine-consumer 门环境一致，优先使用 Windows 自带 bsdtar。
@@ -90,6 +92,9 @@ async function packTemplateDependencies({ workspace, pnpm }) {
       sha256: createHash("sha256").update(await readFile(archive)).digest("hex"),
       entries: entries.length });
   }
+  const compression = await packDeepEngineCompression({ root, archiveDir, reportDir });
+  packed.push({ name: compression.manifest.name, version: compression.manifest.version, archive: compression.archive,
+    sha256: compression.sha256, entries: compression.entries.length });
   return packed;
 }
 
@@ -109,7 +114,7 @@ async function installConsumerOffline({ workspace, packed, pnpm }) {
   await writeFile(join(consumer, "package.json"), JSON.stringify({ name: "deep-engine-3d-template-consumer",
     private: true, type: "module", dependencies }, null, 2) + "\n");
   await writeFile(join(consumer, "pnpm-workspace.yaml"), JSON.stringify({ packages: [],
-    overrides: { "@webgpu/types": dependencies["@webgpu/types"] },
+    overrides: { "@webgpu/types": dependencies["@webgpu/types"], fflate: dependencies.fflate },
     registry: "http://127.0.0.1:9/", cacheDir: join(workspace, "empty-cache") }, null, 2) + "\n");
   await runLogged(process.execPath, [pnpm, "install", "--offline", "--ignore-scripts",
     "--store-dir", join(workspace, "empty-store")],
@@ -222,6 +227,11 @@ try {
     assert.ok(node.instances > 0 && node.materials > 0 && node.geometries > 0);
     entry.node = node;
     entry.bundle = await bundleTemplate({ consumer, id, esbuild });
+    if (cpuOnly) {
+      entry.status = "cpu-passed";
+      console.log(`[hc7p2-templates] CPU passed ${id}; browser pending`);
+      continue;
+    }
     const browser = await browserGate({ consumer, id, bundle: entry.bundle });
     entry.browser = { chromiumVersion: browser.version,
       pixelEvidence: browser.observed.rendered.pixelEvidence, animated: browser.observed.rendered.animated,
@@ -230,7 +240,7 @@ try {
     console.log(`[hc7p2-templates] ${id}: passed (node=${node.frames}f, ` +
       `pixels=${entry.browser.pixelEvidence.distinctFromCorner}, bundle=${entry.bundle.bytes}B)`);
   }
-  report.status = "passed";
+  report.status = cpuOnly ? "cpu-passed" : "passed";
 } catch (error) {
   report.status = "failed"; report.error = error.stack ?? String(error);
   process.exitCode = 1; console.error(report.error);

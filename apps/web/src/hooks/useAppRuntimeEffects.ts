@@ -2,8 +2,10 @@ import { startTransition, useEffect, useRef } from "react";
 import { api } from "../api";
 import { writeLastWorkspace } from "../studio/lastWorkspacePreference";
 import { createCameraInfoPublisher } from "./cameraInfoPublisher";
-import { readRoute } from "../appRoute";
+import { readRoute, routePath } from "../appRoute";
+import { applicationLocationPath } from "../adapters/browserRuntimeConfig";
 import { commitRendererPreference } from "../viewer/rendererBackendPreference";
+import { studioAuthorRenderPacketKey } from "../viewer/studioAuthorRenderPacketKey";
 import { restoreRendererRecoveryState } from "../controllers/restoreRendererRecoveryState";
 import { rendererBackendLabel } from "../viewer/rendererBackendLabel";
 import { deepSupportsObjectOutline } from "../viewer/deepOutlineSupport";
@@ -95,7 +97,9 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
   const deepBridgeRef = useRef<StudioDeepWebGpuBridge | undefined>(undefined);
   const wasmBridgeRef = useRef<StudioDeepWasmBridge | undefined>(undefined);
   const wasmRefreshRevisionRef = useRef(-1);
+  const wasmCompiledAuthorKeyRef = useRef<string | undefined>(undefined);
   const rendererSwitchOwnerRef = useRef<symbol | undefined>(undefined);
+  const rendererSwitchContextRef = useRef(context); rendererSwitchContextRef.current = context;
   const deformationNoticeRef = useRef<string | undefined>(undefined);
   const rendererRecoveryContextRef = useRef({
     activeScene,
@@ -140,11 +144,12 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
       })
       .finally(() => setRendererSwitching(false));
   }, [engine]);
-  useDeepBridgesSetup(context, { deepBridgeRef, wasmBridgeRef, deformationNoticeRef, rendererRecoveryContextRef });
+  useDeepBridgesSetup(context, { deepBridgeRef, wasmBridgeRef, deformationNoticeRef, rendererRecoveryContextRef, rendererSwitchOwnerRef, wasmCompiledAuthorKeyRef });
   useEffect(() => {
     const bridge = deepBridgeRef.current;
     const wasmBridge = wasmBridgeRef.current;
     if (!engine || !bridge || !wasmBridge) return;
+    const showSwitchError = (reason: unknown) => rendererSwitchContextRef.current.showError(reason);
     // 对象级描边已由 Deep(WebGPU)实现(材质账本 bit 256 对账 + 掩码/边缘/合成 pass);只有引擎包缺失
     // 该能力声明时才保留 WebGL 并给出可操作原因(fail-closed),用户关闭描边后即可切换。
     if (rendererBackend === "webgpu" && rendererOutlineRequired && !deepSupportsObjectOutline()) {
@@ -174,63 +179,108 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     let cancelled = false;
     const owner = Symbol("renderer switch");
     rendererSwitchOwnerRef.current = owner;
+    const readAuthorKey = () => {
+      const latest = rendererRecoveryContextRef.current;
+      const scene = latest.captureSceneSnapshot?.() ?? latest.activeScene;
+      return scene && latest.project
+        ? `${latest.project.id}:${studioAuthorRenderPacketKey(scene, latest.project.models)}` : undefined;
+    };
+    const requestedAuthorKey = readAuthorKey();
+    const assertCurrentAuthorState = (signal: AbortSignal) => {
+      signal.throwIfAborted();
+      if (cancelled || rendererSwitchOwnerRef.current !== owner) throw new Error("渲染器切换已取消");
+      if (readAuthorKey() !== requestedAuthorKey) {
+        throw new Error("场景在准备期间已变化，已保留当前画布，请重新切换");
+      }
+    };
     const finishLoading = () => {
       if (rendererSwitchOwnerRef.current !== owner) return;
       rendererSwitchOwnerRef.current = undefined;
       setRendererSwitching(false);
+    };
+    const failSwitch = (error: unknown) => {
+      if (cancelled || rendererSwitchOwnerRef.current !== owner) return;
+      finishLoading();
+      const retainedBackend = bridge.activeBackend === "webgpu" ? "webgpu"
+        : wasmBridge.activeBackend === "wasm" ? "wasm" : "webgl";
+      const persistFallback = rendererPreferenceCommitRef.current === rendererBackend;
+      rendererPreferenceCommitRef.current = persistFallback ? retainedBackend : undefined;
+      if (persistFallback) {
+        try { commitRendererPreference(rendererPreferenceCommitRef, retainedBackend); }
+        catch (reason) { showSwitchError(reason); }
+      }
+      setRendererBackend(retainedBackend);
+      setRendererActiveBackend(retainedBackend);
+      setRendererSwitchPhase("failed");
+      const detail = error instanceof Error ? error.message : String(error ?? "未知错误");
+      setRendererSwitchMessage(`${rendererBackendLabel(rendererBackend)} 准备失败，已保留 ${rendererBackendLabel(retainedBackend)}：${detail}`);
+      setMessage(`${rendererBackendLabel(rendererBackend)} 准备失败，已保留 ${rendererBackendLabel(retainedBackend)} 画布`);
     };
     setRendererSwitching(true);
     setRendererSwitchPhase("preparing");
     setRendererSwitchMessage(`正在准备 ${rendererBackendLabel(rendererBackend)}；当前画布仍可用`);
     const switchRenderer = async () => {
       if (rendererBackend === "wasm") {
-        const retired = await bridge.switchTo("webgl");
-        if (retired.status === "failed") return retired;
-        return wasmBridge.switchTo("wasm");
+        return wasmBridge.switchTo("wasm", async (signal) => {
+          assertCurrentAuthorState(signal);
+          if (bridge.activeBackend === "webgpu") {
+            const retired = await bridge.switchTo("webgl");
+            if (retired.status === "failed") throw new Error(retired.error);
+            assertCurrentAuthorState(signal);
+          }
+        });
+      }
+      if (rendererBackend === "webgpu") {
+        return bridge.switchTo("webgpu", async (signal) => {
+          assertCurrentAuthorState(signal);
+          if (wasmBridge.activeBackend === "wasm") {
+            const retired = await wasmBridge.switchTo("webgl");
+            if (retired.status === "failed") throw new Error(retired.error);
+            assertCurrentAuthorState(signal);
+          }
+        });
       }
       const retired = await wasmBridge.switchTo("webgl");
       if (retired.status === "failed") return retired;
       return bridge.switchTo(rendererBackend);
     };
     void switchRenderer().then((result) => {
-      if (cancelled) return;
+      if (cancelled || rendererSwitchOwnerRef.current !== owner) return;
       if (result.status === "switched" || result.status === "unchanged") {
         // Settling the active backend can run this effect's cleanup before finally.
         finishLoading();
-        if (result.activeBackend === "wasm") wasmRefreshRevisionRef.current = revision;
+        if (result.activeBackend === "wasm") wasmRefreshRevisionRef.current = rendererSwitchContextRef.current.revision;
         setRendererActiveBackend(result.activeBackend);
         try { commitRendererPreference(rendererPreferenceCommitRef, result.activeBackend); }
-        catch (reason) { showError(reason); }
+        catch (reason) { showSwitchError(reason); }
         setRendererSwitchPhase("idle");
         setRendererSwitchMessage(undefined);
         setMessage(result.activeBackend === "webgpu" && deformationNoticeRef.current
           ? `${rendererBackendLabel(result.activeBackend)} 已启用 · ${deformationNoticeRef.current}`
           : `${rendererBackendLabel(result.activeBackend)} 已启用`);
       } else if (result.status === "failed") {
-        finishLoading();
-        const persistFallback = rendererPreferenceCommitRef.current === rendererBackend;
-        rendererPreferenceCommitRef.current = persistFallback ? "webgl" : undefined;
-        if (persistFallback) {
-          try { commitRendererPreference(rendererPreferenceCommitRef, "webgl"); }
-          catch (reason) { showError(reason); }
-        }
-        setRendererBackend("webgl");
-        setRendererActiveBackend("webgl");
-        setRendererSwitchPhase("failed");
-        setRendererSwitchMessage(`${rendererBackendLabel(rendererBackend)} 准备失败，WebGL 2 未中断：${result.error ?? "未知错误"}`);
-        setMessage(`${rendererBackendLabel(rendererBackend)} 准备失败，已保留 WebGL 画布`);
+        failSwitch(result.error);
       }
     }).catch((reason) => {
-      if (!cancelled) showError(reason);
+      if (!cancelled && rendererSwitchOwnerRef.current === owner) { failSwitch(reason); showSwitchError(reason); }
     }).finally(() => {
       if (!cancelled) finishLoading();
     });
     return () => { cancelled = true; bridge.cancelPendingSwitch(); wasmBridge.cancelPendingSwitch(); };
-  }, [engine, rendererBackend, rendererActiveBackend, rendererOutlineRequired, revision, showError]);
+  // A scene save or progress notification is not a new backend request.
+  }, [engine, rendererBackend, rendererActiveBackend,
+    rendererBackend === "webgpu" && rendererOutlineRequired && !deepSupportsObjectOutline()]);
 
   useEffect(() => {
     const bridge = wasmBridgeRef.current;
     if (!bridge || rendererActiveBackend !== "wasm" || wasmRefreshRevisionRef.current === revision) return;
+    const latest = rendererRecoveryContextRef.current;
+    const scene = latest.captureSceneSnapshot?.() ?? latest.activeScene;
+    const key = scene && latest.project ? `${latest.project.id}:${studioAuthorRenderPacketKey(scene, latest.project.models)}` : undefined;
+    if (key !== undefined && key === wasmCompiledAuthorKeyRef.current) {
+      wasmRefreshRevisionRef.current = revision;
+      return;
+    }
     const timer = window.setTimeout(() => {
       void bridge.refresh().then((result) => {
         if (result.status === "switched" || result.status === "unchanged") {
@@ -241,10 +291,10 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
           setRendererBackend("webgl");
           setRendererActiveBackend("webgl");
         }
-      }).catch(showError);
+      }).catch(reason => rendererSwitchContextRef.current.showError(reason));
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [rendererActiveBackend, revision, showError]);
+  }, [engine, rendererActiveBackend, revision]);
   useEffect(() => {
     if (!engine) return;
     // Camera input and viewport chrome subscribe directly to the engine. Only
@@ -352,14 +402,14 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     const handlePopState = () => {
       const next = readRoute();
       if (next.fallback === "not-found") {
-        window.history.replaceState({}, "", "/manager");
-      } else if (next.view === "manager" && window.location.pathname === "/") {
-        window.history.replaceState({}, "", "/manager");
+        window.history.replaceState({}, "", routePath({ view: "manager" }));
+      } else if (next.view === "manager" && applicationLocationPath(window.location.pathname) === "/") {
+        window.history.replaceState({}, "", routePath({ view: "manager" }));
       }
       setRoute(next);
     };
     const initial = readRoute();
-    if (initial.fallback || (initial.view === "manager" && window.location.pathname === "/")) handlePopState();
+    if (initial.fallback || (initial.view === "manager" && applicationLocationPath(window.location.pathname) === "/")) handlePopState();
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);

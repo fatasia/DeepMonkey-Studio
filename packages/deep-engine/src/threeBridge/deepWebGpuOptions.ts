@@ -89,6 +89,7 @@ function snapshotPipelineBootstrap(options: NonNullable<PbrRendererOptions["pipe
   return Object.freeze({
     ...(options.firstFrameSubset === undefined ? {} : { firstFrameSubset: options.firstFrameSubset }),
     ...(options.firstFrameMainKeys === undefined ? {} : { firstFrameMainKeys: Object.freeze([...options.firstFrameMainKeys]) }),
+    ...(options.deformationFirstFrameMainKeys === undefined ? {} : { deformationFirstFrameMainKeys: Object.freeze([...options.deformationFirstFrameMainKeys]) }),
     ...(options.deferDeformation === undefined ? {} : { deferDeformation: options.deferDeformation }),
   });
 }

@@ -11,7 +11,8 @@ export function adaptPathTraceRenderPacketMaterial(material: PbrMaterial): PathT
   if (material.alphaMode !== undefined && material.alphaMode !== "OPAQUE") unsupported("alphaMode");
   if (material.doubleSided !== true) unsupported("single-sided surface");
   if (material.extendedParameters !== undefined || material.layered !== undefined) unsupported("extended/layered BSDF");
-  for (const key of ["baseColorTexture", "metallicRoughnessTexture", "normalTexture", "occlusionTexture", "emissiveTexture"] as const) {
+  if ((material.specularFactor ?? 1) !== 1 || material.specularColorFactor?.some(value => value !== 1)) unsupported("specular reflectance");
+  for (const key of ["baseColorTexture", "metallicRoughnessTexture", "normalTexture", "occlusionTexture", "emissiveTexture", "specularTexture", "specularColorTexture"] as const) {
     if (material[key] !== undefined) unsupported(key);
   }
   validatePathTraceRgb(material.baseColor, "baseColor", 1);

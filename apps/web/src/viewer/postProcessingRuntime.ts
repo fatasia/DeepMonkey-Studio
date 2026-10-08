@@ -19,6 +19,7 @@ import type { ScenePostProcessingState } from "@bim-studio/contracts";
 import { threeDisplayOutputShader } from "@bim-studio/deep-engine/three-bridge";
 import type { ViewerPostProcessingRuntime } from "./viewerPostProcessingRuntime";
 import { configurePostProcessingAntialias } from "./postProcessingAntialias";
+import { collectPostPassMaterials, warmThreeShaderPrograms } from "./threeShaderWarmup";
 
 /**
  * 高成本渲染效果按需加载：普通浏览不创建 Composer，也不为禁用的 pass 分配帧缓冲。
@@ -40,6 +41,7 @@ export class PostProcessingRuntime implements ViewerPostProcessingRuntime {
   readonly #smaaPass: SMAAPass;
   readonly #fxaaPass: FXAAPass;
   #gtaoCapability: boolean | undefined;
+  #disposed = false;
 
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
     this.#renderer = renderer;
@@ -124,7 +126,34 @@ export class PostProcessingRuntime implements ViewerPostProcessingRuntime {
     this.#composer.render(delta);
   }
 
+  async prepare(authorScene?: THREE.Scene, authorCamera?: THREE.Camera): Promise<void> {
+    if (this.#disposed) return;
+    if (authorScene && authorCamera) await warmThreeShaderPrograms(this.#renderer, authorScene, authorCamera,
+      () => !this.#disposed, this.#composer.renderTarget1);
+    // Let OutputPass configure its actual defines without submitting a GPU draw.
+    for (const pass of this.#composer.passes) if (pass.enabled && pass instanceof OutputPass) {
+      const recorder = Object.create(this.#renderer) as THREE.WebGLRenderer;
+      recorder.setRenderTarget = () => {};
+      recorder.render = () => {};
+      recorder.clear = () => {};
+      pass.render(recorder, this.#composer.writeBuffer, this.#composer.readBuffer, 0, false);
+    }
+    const materials = collectPostPassMaterials(this.#composer.passes);
+    if (!materials.length) return;
+    const scene = new THREE.Scene(), geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute([-1,3,0, -1,-1,0, 3,-1,0], 3));
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute([0,2, 0,0, 2,0], 2));
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    scene.add(new THREE.Mesh(geometry, materials));
+    try {
+      await warmThreeShaderPrograms(this.#renderer, scene, camera, () => !this.#disposed, this.#composer.renderTarget1);
+      await warmThreeShaderPrograms(this.#renderer, scene, camera, () => !this.#disposed, null);
+    }
+    finally { geometry.dispose(); }
+  }
+
   dispose(): void {
+    this.#disposed = true;
     this.#composer.dispose();
   }
 
@@ -187,7 +216,9 @@ const BRIGHTNESS_CONTRAST_SHADER = {
   vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
   fragmentShader: `uniform sampler2D tDiffuse; uniform float brightness; uniform float contrast; uniform float temperature; uniform float tint; varying vec2 vUv;
     void main(){ vec4 color=texture2D(tDiffuse,vUv); color.rgb+=brightness; color.rgb=(color.rgb-0.5)*(contrast+1.0)+0.5;
+      if(temperature!=0.0||tint!=0.0){
       float luma=dot(color.rgb,vec3(0.2126,0.7152,0.0722));
       vec3 gains=vec3(1.0+temperature*0.14+tint*0.07,1.0-tint*0.12,1.0-temperature*0.14+tint*0.07);
-      color.rgb*=gains; color.rgb*=luma/max(dot(color.rgb,vec3(0.2126,0.7152,0.0722)),0.000001); gl_FragColor=color; }`,
+      color.rgb*=gains; color.rgb*=luma/max(abs(dot(color.rgb,vec3(0.2126,0.7152,0.0722))),0.000001);
+      } gl_FragColor=color; }`,
 };

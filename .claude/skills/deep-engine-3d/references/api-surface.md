@@ -1,4 +1,4 @@
-# Deep Engine Web SDK 模板可用 API 面（@bim-studio/deep-engine 0.1.0）
+# Deep Engine Web SDK 模板可用 API 面（@bim-studio/deep-engine 0.2.0）
 
 来源:packages/deep-engine dist `.d.ts` 与已验消费门(scripts/fixtures/deep-engine-consumer、test-output/deep-engine-consumer-20260922)。**只使用此处列出的名称。**
 

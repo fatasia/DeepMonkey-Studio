@@ -18,6 +18,9 @@ export default defineConfig(({ mode }) => {
   const sceneViewerOutDir = process.env.VITE_SCENE_VIEWER_BUILD === "true"
     ? process.env.VITE_SCENE_VIEWER_OUT_DIR?.trim()
     : undefined;
+  const editorOutDir = process.env.VITE_STUDIO_EDITOR_OUT_DIR?.trim();
+  if (sceneViewerOutDir && editorOutDir) throw new Error('静态查看器与完整编辑器须使用不同构建');
+  const isolatedOutDir = sceneViewerOutDir ?? editorOutDir;
   const keyPath = resolve(projectRoot, value("BIM_STUDIO_HTTPS_KEY", "https/private.key"));
   const certificatePath = resolve(projectRoot, value("BIM_STUDIO_HTTPS_CERT", "https/self-sign.cert"));
   if (httpsEnabled && (!existsSync(keyPath) || !existsSync(certificatePath))) {
@@ -41,10 +44,10 @@ export default defineConfig(({ mode }) => {
       }
     },
     build: {
-      ...(sceneViewerOutDir
+      ...(isolatedOutDir
         ? {
             // 发布器会先清理自己的包级目录；Vite 不得清理普通 Web 产物或其它工作区文件。
-            outDir: resolve(sceneViewerOutDir),
+            outDir: resolve(isolatedOutDir),
             emptyOutDir: false,
           }
         : {}),

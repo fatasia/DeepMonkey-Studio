@@ -7,6 +7,12 @@ export interface PbrDisplayColorOptions {
   readonly colorGrading?: PbrColorGradingOptions;
 }
 
+/** Converts a pure-color background without tone mapping or exposure. */
+export function encodePbrSrgbColor(source: readonly [number, number, number]): readonly [number, number, number] {
+  if (!source.every(value => Number.isFinite(value) && value >= 0)) throw new RangeError("Display color must be finite and nonnegative.");
+  return Object.freeze(source.map(linearToSrgb)) as readonly [number, number, number];
+}
+
 /** CPU mirror used to encode render-pass clears when HDR output is fused into the scene pass. */
 export function encodePbrDisplayColor(source: readonly [number, number, number],
   options: PbrDisplayColorOptions): readonly [number, number, number] {

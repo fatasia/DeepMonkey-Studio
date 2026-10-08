@@ -21,16 +21,62 @@ export function applyTransform(object: THREE.Object3D, transform: ModelTransform
   object.updateMatrixWorld(true);
 }
 
-export function visibleObjectBox(root: THREE.Object3D): THREE.Box3 {
+export function visibleObjectBox(root: THREE.Object3D, poseAware = false): THREE.Box3 {
   const box = new THREE.Box3();
   root.updateWorldMatrix(true, true);
   root.traverse((child) => {
     const renderable = child as THREE.Object3D & { geometry?: THREE.BufferGeometry };
     if (!renderable.geometry || !isEffectivelyVisible(child, root)) return;
     if (!renderable.geometry.boundingBox) renderable.geometry.computeBoundingBox();
-    const childBox = renderable.geometry.boundingBox?.clone();
+    const childBox = (poseAware ? currentPoseBox(renderable) : renderable.geometry.boundingBox)?.clone();
     if (childBox) box.union(childBox.applyMatrix4(child.matrixWorld));
   });
+  return box;
+}
+
+const posedBounds = new WeakMap<THREE.Object3D, { state: unknown[]; geometryState: unknown[]; box: THREE.Box3 }>();
+
+/** Command-only bounds: the normal per-frame visible box keeps its cached geometry path. */
+function currentPoseBox(object: THREE.Object3D & { geometry?: THREE.BufferGeometry }): THREE.Box3 | null | undefined {
+  const mesh = object as THREE.Mesh, skin = object as THREE.SkinnedMesh, instances = object as THREE.InstancedMesh;
+  const geometry = mesh.geometry;
+  if (!skin.isSkinnedMesh && !instances.isInstancedMesh && !geometry.morphAttributes.position?.length) return geometry.boundingBox;
+  const geometryState: unknown[] = [geometry, geometry.morphTargetsRelative];
+  const attribute = (value: THREE.BufferAttribute | THREE.InterleavedBufferAttribute | undefined) => {
+    const interleaved = value as THREE.InterleavedBufferAttribute | undefined;
+    geometryState.push(value, interleaved?.isInterleavedBufferAttribute ? interleaved.data.version : (value as THREE.BufferAttribute | undefined)?.version);
+  };
+  attribute(geometry.getAttribute("position")); attribute(geometry.getAttribute("skinIndex")); attribute(geometry.getAttribute("skinWeight"));
+  for (const target of geometry.morphAttributes.position ?? []) attribute(target);
+  const state = [...geometryState, ...(mesh.morphTargetInfluences ?? [])];
+  if (skin.isSkinnedMesh) {
+    skin.updateMatrixWorld(true);
+    state.push(skin.skeleton, skin.bindMode, ...skin.bindMatrix.elements, ...skin.bindMatrixInverse.elements);
+    for (let joint = 0; joint < skin.skeleton.bones.length; joint++) {
+      const bone = skin.skeleton.bones[joint]!;
+      bone.updateWorldMatrix(true, false);
+      state.push(bone, ...bone.matrixWorld.elements, ...skin.skeleton.boneInverses[joint]!.elements);
+    }
+  }
+  if (instances.isInstancedMesh) state.push(instances.count, instances.instanceMatrix, instances.instanceMatrix.version,
+    instances.morphTexture, instances.morphTexture?.version);
+  const cached = posedBounds.get(object);
+  const same = (left: readonly unknown[], right: readonly unknown[]) => left.length === right.length && left.every((value, index) => Object.is(value, right[index]));
+  if (cached && same(cached.state, state)) return cached.box;
+  let box: THREE.Box3;
+  if (skin.isSkinnedMesh) {
+    skin.computeBoundingBox(); box = skin.boundingBox!.clone();
+    // The renderer's object sphere may still describe an earlier animation pose.
+    skin.boundingSphere = box.getBoundingSphere(skin.boundingSphere ?? new THREE.Sphere());
+  } else if (instances.isInstancedMesh) {
+    if (!cached || !same(cached.geometryState, geometryState)) geometry.computeBoundingBox();
+    instances.computeBoundingBox(); box = instances.boundingBox!.clone();
+    instances.boundingSphere = box.getBoundingSphere(instances.boundingSphere ?? new THREE.Sphere());
+  } else {
+    box = new THREE.Box3(); const point = new THREE.Vector3(), positions = geometry.getAttribute("position");
+    for (let index = 0; index < positions.count; index++) box.expandByPoint(mesh.getVertexPosition(index, point));
+  }
+  posedBounds.set(object, { state, geometryState, box });
   return box;
 }
 

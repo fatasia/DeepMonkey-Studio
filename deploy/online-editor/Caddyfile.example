@@ -1,0 +1,5 @@
+# Future demo API host. Activate after Deep and full-editor acceptance.
+# Configure STUDIO_ONLINE_WEB_ORIGIN=https://fatasia.github.io in the separate API environment.
+api.studio.example.org {
+    reverse_proxy 127.0.0.1:44100
+}

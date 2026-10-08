@@ -58,7 +58,7 @@ export function FrameCaptureSourceMapPanel({ locale, available, records, readbac
       </header>
       {!available ? (
         <p className="renderer-source-map-empty">
-          {tr(locale, "仅在本面板打开时启用 Deep 才开始捕获；普通编辑不采集。", "Capture starts only when Deep is enabled while this panel is open; normal editing is not recorded.")}
+          {tr(locale, "在此启用 Deep 后记录两帧；重新打开面板可再次采集。", "Enable Deep here to capture two frames; reopen this panel to capture again.")}
         </p>
       ) : rows.length === 0 ? (
         <p className="renderer-source-map-empty">{tr(locale, "等待 Deep 渲染帧中的作者映射…", "Waiting for author mappings from a Deep render frame…")}</p>
@@ -86,7 +86,7 @@ export function FrameCaptureSourceMapPanel({ locale, available, records, readbac
       <section className="renderer-readback-snapshots" aria-label={tr(locale, "资源快照", "Resource snapshots")}>
         <header>
           <span><Camera size={13} /><strong>{tr(locale, "资源快照", "Resource snapshots")}</strong></span>
-          <small>{tr(locale, "每帧有界读回，仅诊断用途", "Bounded per-frame readback, diagnostics only")}</small>
+          <small>{tr(locale, "每次采集两帧", "Two frames per capture")}</small>
         </header>
         {readbackRows.length === 0 ? (
           <p className="renderer-source-map-empty">

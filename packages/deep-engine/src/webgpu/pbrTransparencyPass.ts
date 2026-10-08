@@ -88,9 +88,11 @@ export class PbrTransparencyPass {
     return [
       {
         passId: "transparent-oit", executor: "PbrTransparencyPass.encode → WeightedOitPass accumulation", kind: "render",
-        reads: [], writes: ["oit-accumulation", "oit-revealage"],
+        reads: [opaqueColorResource], writes: ["oit-accumulation", "oit-revealage"],
         claims: [oitTargets("oit-accumulation", WEIGHTED_OIT_ACCUMULATION_FORMAT),
-          oitTargets("oit-revealage", WEIGHTED_OIT_REVEALAGE_FORMAT)],
+          oitTargets("oit-revealage", WEIGHTED_OIT_REVEALAGE_FORMAT),
+          { id: opaqueColorResource, access: "read", format: PBR_HDR_FORMAT, sampleCount: 1,
+            usages: ["render-attachment", "texture-binding", "storage-binding", "copy-src"], sizeRole: "surface" }],
         unplannedAttachments: [{ id: "hardware-depth", reason: "透明绘制复用主 pass 硬件深度(load/discard),第一切片未入图" }],
         gpuPassCount: 1,
       }, {

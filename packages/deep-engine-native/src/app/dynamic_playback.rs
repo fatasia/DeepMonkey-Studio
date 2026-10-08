@@ -149,6 +149,11 @@ pub(super) struct ProductPhysicsPlayback {
 }
 
 impl ProductPhysicsPlayback {
+    #[cfg(target_arch = "wasm32")]
+    pub(super) fn resume_after_pause(&mut self, duration: std::time::Duration) {
+        self.last_frame += duration;
+        self.next_frame = Instant::now();
+    }
     pub(super) fn for_content(content: &PlayerContent) -> Option<Self> {
         if !content.physics_playing() {
             return None;
@@ -202,6 +207,11 @@ impl ProductPhysicsPlayback {
 }
 
 impl ProductDynamicPlayback {
+    #[cfg(target_arch = "wasm32")]
+    pub(super) fn resume_after_pause(&mut self, duration: std::time::Duration) {
+        self.started += duration;
+        self.next_frame = Instant::now();
+    }
     pub(super) fn for_content(content: &PlayerContent) -> Option<Self> {
         let (duration_ms, autoplay, looping) = content.dynamic_runtime_playback()?;
         if !autoplay || duration_ms == 0 {

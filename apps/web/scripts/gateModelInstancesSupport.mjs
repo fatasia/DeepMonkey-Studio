@@ -45,7 +45,7 @@ export async function createScene(gate, page, projectId) {
   const application = await response.json();
   const appPath = `/api/projects/${projectId}/applications/${application.metadata.id}`;
   const scenePath = `${gate.origin}/studio/${projectId}/applications/${application.metadata.id}/scenes/${application.scenes[0].id}`;
-  await page.goto(scenePath); await page.locator(".viewport canvas").waitFor();
+  await page.goto(scenePath); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
   const autoSave = page.getByLabel("自动保存"); if (await autoSave.isChecked()) await autoSave.uncheck();
   return { application, appPath, scenePath };
 }

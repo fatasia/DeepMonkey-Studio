@@ -33,6 +33,30 @@ export async function prepareNativeSceneCandidate(options: {
     if (totalBytes > 256 * 1024 ** 2) throw new Error("候选模型总字节超过 256MiB");
     models.set(assetId, await readFrozenResource(options.objects, resource, signal));
   }
+  const textures = new Map<string, Uint8Array>();
+  for (const model of scene.models.filter(item => item.visible)) {
+    for (const material of [model.material, ...Object.values(model.material?.slotOverrides ?? {})]) {
+      if (!material) continue;
+      for (const field of AUTHOR_TEXTURE_FIELDS) {
+        const url = material[field];
+        if (!url?.trim() || textures.has(url)) continue;
+        let bytes: Uint8Array;
+        if (url.startsWith("data:")) {
+          const match = /^data:image\/(?:png|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/.exec(url);
+          if (!match) throw new Error("内嵌作者贴图必须为 PNG/JPEG base64 图像");
+          bytes = Buffer.from(match[1]!, "base64");
+        } else {
+          const resource = capture.resources.find(item => item.sourceUrl === url);
+          if (!resource) throw new Error("作者贴图缺少冻结来源资源");
+          if (totalBytes + resource.bytes > 256 * 1024 ** 2) throw new Error("候选资源总字节超过 256MiB");
+          bytes = await readFrozenResource(options.objects, resource, signal);
+        }
+        totalBytes += bytes.byteLength;
+        if (totalBytes > 256 * 1024 ** 2) throw new Error("候选资源总字节超过 256MiB");
+        textures.set(url, bytes);
+      }
+    }
+  }
   signal?.throwIfAborted();
   const hdrResource=scene.environment?.environmentMapUrl ? capture.resources.find(resource=>resource.sourceUrl===scene.environment!.environmentMapUrl) : undefined;
   if (scene.environment?.environmentMapUrl && !hdrResource) throw new Error("HDR 环境缺少冻结来源资源");
@@ -43,7 +67,7 @@ export async function prepareNativeSceneCandidate(options: {
   // 的"查不到就不带"同一语义；命中判定由编译线程按当前场景语义哈希精确执行。
   const probeBakeCandidates = await listProbeGridBakeCandidates({ dataDir: options.dataDir, sceneId: scene.id })
     .catch(() => [] as Awaited<ReturnType<typeof listProbeGridBakeCandidates>>);
-  const compiled = await compile({ scene, models, ...(hdrSource ? {hdrSource} : {}),
+  const compiled = await compile({ scene, models, ...(textures.size ? { textures } : {}), ...(hdrSource ? {hdrSource} : {}),
     ...(probeBakeCandidates.length ? { probeBakeCandidates } : {}),
     ...(options.nativeExecutable ? {nativeExecutable:options.nativeExecutable} : {}), ...(signal ? { signal } : {}) });
   signal?.throwIfAborted();
@@ -57,6 +81,8 @@ export async function prepareNativeSceneCandidate(options: {
   }
   return { scene, capture, compiled };
 }
+
+const AUTHOR_TEXTURE_FIELDS = ["baseColorMapUrl", "normalMapUrl", "ambientOcclusionMapUrl", "roughnessMapUrl", "metalnessMapUrl"] as const;
 
 async function readFrozenResource(objects: ObjectStore,
   resource: { key: string; bytes: number; sha256: string }, signal?: AbortSignal): Promise<Uint8Array> {

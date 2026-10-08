@@ -9,10 +9,11 @@ import { createPlaySessionRestore } from "./playSessionRestore";
 import { createScenePersistenceController } from "./scenePersistenceController";
 import type { ScenePersistenceControllerContext } from "./scenePersistenceControllerContext";
 
-const mocks = vi.hoisted(() => ({ snapshot: vi.fn(), saveWorkspace: vi.fn(), saveScene: vi.fn(), writeRecovery: vi.fn(), deleteRecovery: vi.fn() }));
+const mocks = vi.hoisted(() => ({ snapshot: vi.fn(), saveWorkspace: vi.fn(), saveScene: vi.fn(), writeRecovery: vi.fn(), deleteRecovery: vi.fn(), thumbnail: vi.fn() }));
 vi.mock("../api", () => ({ api: { saveApplicationWorkspace: mocks.saveWorkspace, saveScene: mocks.saveScene } }));
 vi.mock("./sceneSnapshotFactory", () => ({ makeSceneSnapshot: mocks.snapshot }));
-vi.mock("../studio/sceneThumbnailCapture", () => ({ captureSceneThumbnail: () => "data:image/jpeg;base64,fixture" }));
+vi.mock("../studio/sceneThumbnailCapture", () => ({ captureSceneThumbnail: () => "data:image/jpeg;base64,fixture",
+  captureSceneThumbnailAsync: mocks.thumbnail }));
 vi.mock("../studio/workspaceRecoveryStore", async original => ({ ...await original<object>(), writeWorkspaceRecoveryDraft: mocks.writeRecovery, deleteWorkspaceRecoveryDraft: mocks.deleteRecovery }));
 
 function fixture() {
@@ -36,7 +37,7 @@ function fixture() {
   return { session, application, snapshot, context, controller: createScenePersistenceController(context) };
 }
 
-beforeEach(() => { vi.clearAllMocks(); mocks.writeRecovery.mockResolvedValue(true); mocks.deleteRecovery.mockResolvedValue(undefined); });
+beforeEach(() => { vi.clearAllMocks(); mocks.thumbnail.mockResolvedValue("data:image/jpeg;base64,fixture"); mocks.writeRecovery.mockResolvedValue(true); mocks.deleteRecovery.mockResolvedValue(undefined); });
 
 function newSceneFixture() {
   const f = fixture();
@@ -53,6 +54,40 @@ function newSceneFixture() {
 }
 
 describe("Play exits through the production scene persistence path", () => {
+  it("carries author data and the existing thumbnail across navigation without capturing the GPU", async () => {
+    const f = fixture();
+    f.snapshot.thumbnail = "data:image/jpeg;base64,previous";
+    const carry = f.controller.captureSceneSaveCarry();
+    expect(carry).toEqual({ scene: f.snapshot, thumbnail: f.snapshot.thumbnail });
+    vi.mocked(f.context.engine!.isSceneSnapshotReady).mockReturnValue(false);
+    await f.controller.saveScene(false, carry);
+    expect(mocks.thumbnail).not.toHaveBeenCalled();
+    expect(mocks.saveWorkspace).toHaveBeenCalledOnce();
+  });
+  it("cancels A→B→A while recovery storage is pending before any network write", async () => {
+    const f = fixture(); let finish!: (value: boolean) => void;
+    mocks.writeRecovery.mockImplementationOnce(() => new Promise<boolean>(resolve => { finish = resolve; }));
+    const pending = f.controller.saveScene(true);
+    f.context.sceneApplyVersionRef.current += 2;
+    finish(true); await pending;
+    expect(mocks.writeRecovery).toHaveBeenCalledOnce(); expect(mocks.saveWorkspace).not.toHaveBeenCalled();
+    expect(f.context.setActiveScene).not.toHaveBeenCalled();
+  });
+  it.each([true, false])("saves without requesting a GPU thumbnail (automatic=%s)", async automatic => {
+    const f = fixture();
+    delete f.snapshot.thumbnail;
+    await f.controller.saveScene(automatic);
+    expect(mocks.thumbnail).not.toHaveBeenCalled();
+    expect(mocks.saveWorkspace).toHaveBeenCalledOnce();
+    expect(f.session.getDocument()?.scenes[0]?.thumbnail).toBeUndefined();
+  });
+  it("does not send an older save if a newer save finishes while recovery storage is pending", async () => {
+    const f = fixture(); let finish!: (value: boolean) => void;
+    mocks.writeRecovery.mockImplementationOnce(() => new Promise<boolean>(resolve => { finish = resolve; }));
+    const older = f.controller.saveScene(true); await Promise.resolve();
+    await f.controller.saveScene(true); finish(true); await older;
+    expect(mocks.saveWorkspace).toHaveBeenCalledTimes(1);
+  });
   function playFixture() {
     const f = fixture();
     const readiness = new ViewerSnapshotReadiness();
@@ -308,14 +343,16 @@ describe("canonical scene workspace save", () => {
     expect(f.context.navigate).not.toHaveBeenCalled();
     expect(f.context.setSceneName).not.toHaveBeenCalled();
   });
-  it("sends the latest store document and merges the captured model and thumbnail into the same frozen session", async () => {
+  it("sends the latest store document and preserves the existing thumbnail in the same frozen session", async () => {
     const f = fixture();
+    f.snapshot.thumbnail = "data:image/jpeg;base64,previous";
     f.session.store.dispatch(createRenameApplicationCommand("闭包之后的应用名"));
     const baseline = f.session.getDocument()!;
     await f.controller.saveScene();
     expect(mocks.saveWorkspace).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ name: "闭包之后的应用名" }) }), f.snapshot);
     expect(f.session.getDocument()?.scenes[0]?.models).toEqual(f.snapshot.models);
-    expect(f.session.getDocument()?.scenes[0]?.thumbnail).toBe("data:image/jpeg;base64,fixture");
+    expect(f.session.getDocument()?.scenes[0]?.thumbnail).toBe("data:image/jpeg;base64,previous");
+    expect(mocks.thumbnail).not.toHaveBeenCalled();
     expect(baseline.scenes[0]?.models).toEqual([]);
     expect(f.session.store.getState().dirty).toBe(false);
     expect(mocks.saveScene).not.toHaveBeenCalled(); expect(f.context.showError).not.toHaveBeenCalled();

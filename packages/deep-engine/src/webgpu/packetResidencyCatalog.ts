@@ -203,7 +203,7 @@ function validateDependencies(packet: PreparedPacket, geometries: ReadonlyMap<st
     const geometryIds = batch.lod?.levels.map(level => level.geometry) ?? [batch.geometry];
     for (const id of geometryIds) if (!geometries.has(id)) throw new Error(`Missing prepared geometry dependency: ${id}.`);
     const slots = batch.textures && [batch.textures.baseColor, batch.textures.metallicRoughness,
-      batch.textures.normal, batch.textures.occlusion, batch.textures.emissive];
+      batch.textures.normal, batch.textures.occlusion, batch.textures.emissive, batch.textures.specular, batch.textures.specularColor];
     for (const slot of slots || []) if (slot && !textures.has(slot.texture)) {
       throw new Error(`Missing prepared texture dependency: ${slot.texture}.`);
     }

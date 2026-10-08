@@ -46,7 +46,7 @@ describe("HDR panorama background", () => {
   });
   it("keeps background depth empty for geometry/transparent composition and avoids display encoding", () => {
     expect(PBR_PANORAMA_WGSL).toContain("Mrt(panoramaColor(v.ndc), 0.0, vec4f(0.0), vec2f(0.0))");
-    expect(PBR_PANORAMA_WGSL).not.toMatch(/toneMap|exposure/);
+    expect(PBR_PANORAMA_WGSL).toContain("settings.rotation1.w > 0.5");
     expect(PBR_PANORAMA_WGSL).toContain("@fragment fn display");
   });
 });

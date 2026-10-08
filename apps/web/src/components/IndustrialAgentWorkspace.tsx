@@ -77,6 +77,7 @@ export function IndustrialAgentWorkspace(props: {
   const [objective, setObjective] = useState("");
   const [planMode, setPlanMode] = useState(false);
   const [modelOptions, setModelOptions] = useState<AssistantSessionOptions>({});
+  const [maxDurationMs, setMaxDurationMs] = useState(DEFAULT_BUDGET.maxDurationMs);
   const [tools, setTools] = useState<AgentToolDefinition[]>([]);
   const [selectedToolIds, setSelectedToolIds] = useState<Set<string>>(new Set());
   const [checkpoint, setCheckpoint] = useState<AgentCheckpoint>();
@@ -115,6 +116,7 @@ export function IndustrialAgentWorkspace(props: {
   useEffect(() => {
     setCheckpoint(undefined);
     setObjective("");
+    setMaxDurationMs(DEFAULT_BUDGET.maxDurationMs);
     setBusy(false);
     setTools([]);
     setSelectedToolIds(new Set());
@@ -267,7 +269,7 @@ export function IndustrialAgentWorkspace(props: {
         // H-autonomy：执行模式逐次覆盖（confirm 不带字段=历史请求形状不变）；general 面显式声明。
         ...(executionMode === "autonomous" ? { executionMode } : {}),
         ...(discovery === "general" ? { discovery } : {}),
-        budget: DEFAULT_BUDGET,
+        budget: { ...DEFAULT_BUDGET, maxDurationMs },
       });
       // 后台任务不因切页重放；只在所属项目记住 ID，界面更新仍要求当前请求所有权。
       if (next.projectId === projectId) rememberCheckpoint(projectId, next);
@@ -418,6 +420,15 @@ export function IndustrialAgentWorkspace(props: {
                     </select>
                   </label>
                 )}
+                {!sceneMode && <label className="ai-mode-select" title={t("本次任务的最长运行时间；达到后停止，仍可随时取消。", "Maximum time for this task; it stops at the limit and remains cancellable.")}>
+                  <CircleGauge size={12} aria-hidden="true" />
+                  <select aria-label={t("运行预算", "Run time limit")} disabled={busy} value={maxDurationMs}
+                    onChange={(event) => { const value = Number(event.target.value); if ([90_000, 180_000, 300_000].includes(value)) setMaxDurationMs(value); }}>
+                    <option value={90_000}>{t("90秒", "90 seconds")}</option>
+                    <option value={180_000}>{t("3分钟", "3 minutes")}</option>
+                    <option value={300_000}>{t("5分钟", "5 minutes")}</option>
+                  </select>
+                </label>}
                 <AssistantModelControls compact locale={locale} mode="platform" value={modelOptions} onChange={setModelOptions} disabled={busy} />
               </div>
               <button className="ai-composer-send is-labeled" type="button" aria-label={sceneMode ? t("生成改动方案", "Draft scene plan") : t("预览并运行", "Review and run")}

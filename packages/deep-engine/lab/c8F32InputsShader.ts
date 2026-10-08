@@ -12,7 +12,12 @@ export type F32InputMode = typeof F32_INPUT_MODES[number];
 // 旧基线 14eebbd0...;stock WGSL diff 见 docs/specs/ue-class-b1-vsm-implementation-20261003.md。
 // AA-M2 a2c(2026-10-04):coverage() 增 512 位 alpha-to-coverage 分支(MASK 的
 // alphaTest discard 保留、alpha 直通供硬件 sample mask),源整体重钉。旧基线 2b437bd2...。
-const knownProductionHash = "136c29dc552fdd03bfe6e2746ecf99a6616b8cb8a7856c1f5c26df464bb249ae";
+// 08cb9bd8 removed unreachable virtual-shadow helpers from the cascaded
+// production variant; the actual F32 observation seams remain unchanged.
+// 2026-10-07: authorDirectDisplay adds display-domain fog after Three ACES/sRGB;
+// shade/derivative/BRDF observation seams below remain exact and guarded.
+// Probe-only GI gain uses the existing constant.w ABI lane; observation operands are unchanged.
+const knownProductionHash = "83a4fdc0f6aa6d4657af7be1a0d7528fa4ecfe5bb495ea0a9a924e462f102f9a";
 const derivative = "  let derivative = max(abs(dpdx(normal)), abs(dpdy(normal)));";
 const dots = "  let nh = clamp(dot(n, h), 0.0, 1.0); let vh = clamp(dot(v, h), 0.0, 1.0);";
 const fullCapture = "  deepC8F32Witness = deepC8Full;";

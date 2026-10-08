@@ -24,8 +24,7 @@ describe("FrameCaptureSourceMapPanel", () => {
     expect(html).toContain("frame-12 · opaque");
 
     const unavailable = renderToStaticMarkup(<FrameCaptureSourceMapPanel locale="en-US" available={false} records={[]} />);
-    expect(unavailable).toContain("normal editing is not recorded");
+    expect(unavailable).toContain("capture two frames");
     expect(unavailable).not.toMatch(/[\u4e00-\u9fff]/);
   });
 });
-

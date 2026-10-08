@@ -1,8 +1,8 @@
 //! The exact source used by production mesh modules and evidence identities.
 
 pub fn native_mesh_shader_source() -> String {
-    let mut source = concat!(
-        include_str!("../assets/shaders/native_mesh_v1.wgsl"),
+    let mut source = crate::native_material_source::compose(include_str!("../assets/shaders/native_mesh_v1.wgsl"));
+    source.push_str(concat!(
         "\n",
         include_str!("../assets/shaders/native_cascaded_shadow_v1.wgsl"),
         "\n",
@@ -27,8 +27,9 @@ pub fn native_mesh_shader_source() -> String {
             include_str!("../../deep-engine/wgsl/directDfgLut185.wgsl"), "\n"),
         include_str!("../../deep-engine/wgsl/iesSampling.wgsl"),
         "\n",
-    )
-    .to_owned();
+        include_str!("../assets/shaders/native_material_specular_v1.wgsl"),
+        include_str!("../assets/shaders/native_material_transmission_v1.wgsl"),
+    ));
     source.push_str(&crate::probe_gi_wgsl::native_probe_sampling_wgsl());
     source
 }

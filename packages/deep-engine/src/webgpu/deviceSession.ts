@@ -89,6 +89,7 @@ export class DeviceSession {
 
   static async open(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal, memoryBudgetBytes?: number,
     recovery?: DeviceRecoveryOptions, capabilities?: { readonly layeredMaterials?: boolean;
+      readonly advancedMaterials?: boolean; readonly rayTracedShadows?: boolean; readonly virtualShadowPages?: boolean;
       readonly hdrDisplay?: HdrDisplayRequest; readonly extendedShadowBindings?: boolean }): Promise<DeviceSession> {
     validateDeviceMemoryBudget(memoryBudgetBytes);
     if (signal.aborted) throw aborted();
@@ -112,6 +113,15 @@ export class DeviceSession {
     if (capabilities?.layeredMaterials === true) {
       desiredLimits.maxSampledTexturesPerShaderStage
         = Math.max(desiredLimits.maxSampledTexturesPerShaderStage ?? 0, 19);
+    }
+    if (capabilities?.advancedMaterials === true) {
+      const sampled = 16 + Number(capabilities.rayTracedShadows === true) + Number(capabilities.virtualShadowPages === true);
+      if (adapter.limits.maxSampledTexturesPerShaderStage < sampled) {
+        throw new Error(`PBR capability advanced-materials/texture-limit: selected profile requires ${sampled} sampled textures.`);
+      }
+      // The compact advanced frame layout supersedes the legacy shadow texture union.
+      // Retain storage/group limits; request only the selected advanced texture profile.
+      desiredLimits.maxSampledTexturesPerShaderStage = Math.max(capabilities.layeredMaterials === true ? 19 : 0, sampled);
     }
     const requiredLimits = Object.keys(desiredLimits).length === 0 ? undefined
       : Object.fromEntries(Object.entries(desiredLimits).map(([key, value]) => [key,

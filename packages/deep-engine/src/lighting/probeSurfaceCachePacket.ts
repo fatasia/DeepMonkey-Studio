@@ -1,5 +1,5 @@
 import { STOCK_MATERIAL_INSTANCE_OPTIONS } from "../materialInstanceAbi.js";
-import { prepareRenderPacket, type GeometryResource, type RenderPacket } from "../renderPacket.js";
+import { prepareRenderPacket, type GeometryResource, type PreparedPacket, type RenderPacket } from "../renderPacket.js";
 import type { ProbeAabb, ProbeVector3 } from "./probeClipmapPlan.js";
 import { ProbeSurfaceCache, type ProbeSurfaceCacheEntry } from "./probeSurfaceCache.js";
 
@@ -25,7 +25,7 @@ export class ProbeSurfaceCachePacketConsumer {
 
   get sceneBounds(): ProbeAabb | null { return this.boundsValue; }
 
-  sync(input: ProbeSurfaceCachePacketInput): boolean {
+  sync(input: ProbeSurfaceCachePacketInput, prepared?: PreparedPacket): boolean {
     if (!Number.isSafeInteger(input.revision) || input.revision < 1) {
       throw new RangeError("Surface-cache packet revision must be a positive integer.");
     }
@@ -35,7 +35,7 @@ export class ProbeSurfaceCachePacketConsumer {
       if (input.packet === this.packetIdentity && dynamicSignature === this.dynamicSignature) return false;
       throw new Error("Surface-cache packet identity changed without advancing revision.");
     }
-    const entries = compilePacketEntries(input);
+    const entries = compilePacketEntries(input, prepared);
     const nextIds = new Set(entries.map(entry => entry.id));
     for (const entry of entries) this.cache.upsert(entry);
     for (const id of this.activeIds) if (!nextIds.has(id)) this.cache.remove(id);
@@ -56,10 +56,11 @@ export function compilePacketSurfaceCacheEntries(input: ProbeSurfaceCachePacketI
   return compilePacketEntries(input);
 }
 
-function compilePacketEntries(input: ProbeSurfaceCachePacketInput): readonly ProbeSurfaceCacheEntry[] {
-  // Reuse the renderer's authoritative resource/reference/finite-value validation before deriving coverage.
-  prepareRenderPacket(input.packet, STOCK_MATERIAL_INSTANCE_OPTIONS);
-  const geometries = new Map(input.packet.geometries.map(geometry => [geometry.id, geometry]));
+function compilePacketEntries(input: ProbeSurfaceCachePacketInput, prepared?: PreparedPacket): readonly ProbeSurfaceCacheEntry[] {
+  // Renderer-owned preparation comes from a successful GPU publication of this exact packet.
+  // Standalone SDK inputs still use the complete authoritative validation.
+  if (!prepared) prepareRenderPacket(input.packet, STOCK_MATERIAL_INSTANCE_OPTIONS);
+  const geometries = prepared?.geometries ?? new Map(input.packet.geometries.map(geometry => [geometry.id, geometry]));
   const localBounds = new Map<string, ProbeAabb>();
   const dynamicIds = input.dynamicInstanceIds ?? new Set<string>();
   const instanceIds = new Set(input.packet.instances.map(instance => instance.id));

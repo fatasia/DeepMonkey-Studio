@@ -1,6 +1,6 @@
 # 容器部署评估
 
-当前官方运行入口仍是 `pnpm studio` 的原生部署；Docker 镜像和 Compose 只在全部核心能力、全量测试与发布验证完成后按单独指令制作。容器化可以作为开源用户的一键启动方式，但必须先固定镜像、数据卷、健康检查、迁移和备份合同。
+0.2.0 应用镜像在一个 Node.js 24 进程中运行 API 和正式 Web，配套 PostgreSQL、MinIO 三服务 Compose。应用以普通用户、只读根文件系统运行，配置由 `.env` 注入，数据保存在三个持久卷。构建与离线镜像导入见代码包 `docs/docker-application.md`。
 
 ## 推荐的镜像边界
 
@@ -9,19 +9,19 @@
 - MinIO：使用上游固定版本镜像，数据与管理凭据独立保存。
 - 反向代理：部署者可选择 Caddy、Nginx 或平台网关；TLS 不写进应用镜像。
 
-首个 Docker Compose 交付建议保持三项服务（应用、PostgreSQL、MinIO），本地零基础设施模式仍由 `pnpm studio start web` 提供。云渲染、实时视频，以及部署方自备的外部转换器是可选的外部 Worker，不放进基础镜像。
+启动时叠加 `docker-compose.yml`、`docker-compose.app.yml`，用 `docker compose -f docker-compose.yml -f docker-compose.app.yml up -d`；三个服务 healthy 后访问 `http://localhost:4100`。自定义端口同时设置 `STUDIO_PORT` 与 `STUDIO_PUBLIC_ORIGIN`。API 首次启动自动初始化数据库表和 MinIO Bucket。
 
-## 一键部署需要补齐的工作
+## 发行合同
 
 1. 在干净 Linux runner 固定 Node、pnpm、依赖锁文件和构建产物，生成可追溯 tag 与 SBOM。
 2. 提供 `.env.example`、随机 Secret 初始化、首次数据库迁移和 MinIO Bucket 初始化；启动命令不能使用默认管理员密码。
-3. 为 `/health`、数据库、对象存储和迁移失败分别提供健康检查与可读日志；应用未准备好时 Compose 不应报告成功。
+3. 应用 `/api/meta`、PostgreSQL 与 MinIO 使用各自健康检查；应用依赖两个存储服务健康，初始化失败保留可读日志。
 4. 定义 PostgreSQL 与 MinIO 的一致性备份、恢复演练、升级和回滚顺序；镜像升级不能删除卷。
 5. 在 Linux clean clone 上验证登录、项目、素材、保存、发布和重启恢复，并将结果写入发布证据。
 
-## 目前的工作量判断
+## 更新与边界
 
-单机 Compose 入口预计属于中等工作量：镜像构建、PostgreSQL、MinIO、健康检查、持久化卷、备份恢复和 clean Linux 验证。把它提升为多节点、TLS、备份编排、监控和升级服务仍是独立交付项目；生产部署的原生步骤和边界见[部署与系统运维](/docs/deployment-operations)。
+更新前备份三个数据卷，导入新镜像并更新 `STUDIO_VERSION`。回滚恢复旧 tag，保留卷；`down -v` 会删除数据。GPU Native 窗口、Windows 桌面与平台 Worker 使用各自交付物，能力检查报告当前平台可用项。HTTPS、域名、网关、监控与多节点编排由部署环境配置；备份与恢复见[部署与系统运维](/docs/deployment-operations)。
 
 ## 用户选择
 

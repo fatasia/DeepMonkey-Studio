@@ -20,7 +20,7 @@ import { publicResidentPacketBatches, publicResidentPacketGeometrySource,
   publicResidentPacketTextureSource, registerResidentPacketProjectionSources } from "./residentPacketProjectionView.js";
 
 export type ResidentPacketTextureRole =
-  "baseColor" | "metallicRoughness" | "normal" | "occlusion" | "emissive";
+  "baseColor" | "metallicRoughness" | "normal" | "occlusion" | "emissive" | "specular" | "specularColor";
 
 export type ResidentPacketTextureBinding = {
   readonly [Role in ResidentPacketTextureRole]: Readonly<{
@@ -60,7 +60,7 @@ export interface ResidentPacketProjection {
 }
 
 const TEXTURE_ROLES = Object.freeze([
-  "baseColor", "metallicRoughness", "normal", "occlusion", "emissive",
+  "baseColor", "metallicRoughness", "normal", "occlusion", "emissive", "specular", "specularColor",
 ] as const);
 
 const ROLE_SEMANTICS = Object.freeze({
@@ -69,6 +69,8 @@ const ROLE_SEMANTICS = Object.freeze({
   normal: "normal",
   occlusion: "occlusion",
   emissive: "emissive",
+  specular: "specular",
+  specularColor: "specularColor",
 } as const satisfies Record<ResidentPacketTextureRole, TextureSemantic>);
 
 /**

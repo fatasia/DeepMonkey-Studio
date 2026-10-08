@@ -55,6 +55,7 @@ function chainViewOf(texture: GPUTexture): GPUTextureView {
 }
 
 export interface PbrPostProcessInput {
+  readonly authorDirectDisplay?: boolean;
   readonly postProcess?: PbrPostProcessOverrides;
   readonly encoder: GPUCommandEncoder;
   readonly targets: RenderTargets;
@@ -249,6 +250,11 @@ export class PbrPostProcessChain {
   /** Resolves temporal history after transparency, then applies real HDR bloom. */
   encodeFinal(input: PbrPostProcessInput, color: GPUTexture): PbrFinalEffectsResult {
     if (this.disposed) throw new Error("Post-process chain is disposed.");
+    if (input.authorDirectDisplay) {
+      this.temporalAa?.reset(); this.temporalUpscale?.reset(); this.temporalValidity.reset();
+      this.pendingTemporalRevision = undefined; this.lastTemporalPlan = undefined;
+      return Object.freeze({ color, passCount: 0 });
+    }
     const active = resolvePbrPostProcessOverrides(input.postProcess, this.features);
     const { encoder, targets, revision, extent, verticalFovRadians, cameraCut, currentJitter, previousJitter } = input;
     if (this.pendingTemporalRevision !== undefined) this.temporalValidity.cancelFrame(this.pendingTemporalRevision);

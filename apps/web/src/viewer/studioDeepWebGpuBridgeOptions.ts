@@ -16,6 +16,8 @@ export interface StudioDeepWebGpuBridgeOptions {
   /** Optional packet compiled from SceneSnapshot; when provided Deep skips
    * Three scene projection for candidate publication. */
   readonly authorRenderPacket?: (signal: AbortSignal) => Promise<RenderPacket | undefined>;
+  /** Synchronous semantic author key; render requests alone do not invalidate parked GPU resources. */
+  readonly authorPacketKey?: () => string | undefined;
   /**
    * B4 簇级 HLOD(opt-in,`b4-hlod-cluster=1`):逐放置簇绑定提供方;仅在独立
    * 作者包路径下被消费,与 authorRenderPacket 共享同一编译缓存由宿主保证。

@@ -61,13 +61,24 @@ fn reference_reduce_matches_dcir_windows() {
     let source: Vec<f32> = (0..15).map(|i| i as f32 * 0.1).collect();
     let reduced = reference_reduce(&source, 3, 5);
     assert_eq!(reduced.len(), 2);
-    // 目标 (0,0):x ∈ [0, 2),y ∈ [0, 3) → min(0.0,0.1,0.3,0.4,0.6,0.7)。
-    assert_eq!(reduced[0].to_bits(), 0.0f32.to_bits());
-    // 目标 (0,1):y ∈ [2, 5) → min(0.6,0.7,0.9,1.0,1.2,1.3) = 0.6。
-    assert_eq!(reduced[1].to_bits(), 0.6f32.to_bits());
+    // Each 3x3 variable window retains its farthest standard-Z sample.
+    assert_eq!(reduced[0].to_bits(), 0.8f32.to_bits());
+    assert_eq!(reduced[1].to_bits(), 1.4f32.to_bits());
     // ±0 规范化:含 -0 输入的块产出 +0。
-    let zeros = reference_reduce(&[-0.0, 0.5], 2, 1);
+    let zeros = reference_reduce(&[-0.0, 0.0], 2, 1);
     assert_eq!(zeros[0].to_bits(), 0.0f32.to_bits());
+}
+
+#[test]
+fn partial_coverage_keeps_visible_depth_at_every_level() {
+    let near = 0.2;
+    let mixed = reference_reduce(&[near, near, near, 1.0], 2, 2);
+    assert_eq!(mixed, [1.0]);
+    let fully_covered = reference_reduce(&[near; 4], 2, 2);
+    assert_eq!(fully_covered, [near]);
+    let object_nearest = 0.7;
+    assert!(fully_covered[0] + crate::gpu_occlusion::OCCLUSION_MARGIN < object_nearest);
+    assert!(mixed[0] + crate::gpu_occlusion::OCCLUSION_MARGIN >= object_nearest);
 }
 
 /// 测试辅助:向 MSAA Depth24Plus 写常量深度(深度-only pass,无颜色)。

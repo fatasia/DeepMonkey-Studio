@@ -130,6 +130,16 @@ export class GpuTimer {
     return this.values.filter((value) => value.frame >= first && value.frame <= last);
   }
 
+  /** Stop sampling and drain readbacks before parking a renderer; slots recreate on later sampling. */
+  async releaseIdleResources(): Promise<void> {
+    this.enabled = false;
+    await Promise.all(this.pending);
+    for (const slot of [...this.slots.splice(0), ...this.passSlots.splice(0)]) {
+      for (const resource of [slot.queries, slot.resolve, slot.readback]) this.session.release(resource);
+    }
+    this.values.length = 0;
+  }
+
   private createSlot(): Slot {
     const device = this.session.device;
     return {

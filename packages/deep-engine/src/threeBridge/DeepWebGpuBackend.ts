@@ -16,7 +16,7 @@ import { ProbeClipmapPbrController, type ProbeClipmapPbrTarget } from "../webgpu
 import { DeepWebGpuProbeClipmapSession, type DeepWebGpuProbeClipmapDiagnostics } from "./DeepWebGpuProbeClipmapSession.js";
 import { CameraRelativeCoordinates, type CameraRelativeCoordinateSnapshot } from "./cameraRelativeCoordinates.js";
 import { indexObjectBindings } from "./objectBindingIndex.js";
-import { firstFramePipelineMainKeys, projectionFirstFrameMainKeys } from "./firstFramePipelineKeys.js";
+import { packetFirstFrameRendererOptions, projectionFirstFrameMainKeys } from "./firstFramePipelineKeys.js";
 import type { DeviceEvent } from "../webgpu/deviceSession.js";
 import { RendererDeviceEpoch } from "../webgpu/rendererDeviceEpoch.js";
 export type { DeepWebGpuShadowSelection } from "./deepWebGpuShadowPolicy.js";
@@ -59,6 +59,7 @@ export class DeepWebGpuBackend {
   private readonly expectedShadows: PbrRendererOptions["shadows"];
   private chunks: AuthorChunkStream | undefined;
   private packetViewInFlight = false;
+  private packetPreparing = false;
   private packetViewRequested: RenderView | undefined;
   private packetViewStaged: RenderView | undefined;
   private packetViewFailure: unknown;
@@ -140,12 +141,11 @@ export class DeepWebGpuBackend {
     // main/页/mask 阴影变体由既有分级门(首帧验证后 release)背景补齐 —— 与包路径
     // 生产语义同源。`pipelines.firstFrameSubset === false` 显式退出回全量等待。
     const firstFrameMainKeys = rendererSettings.pipelines?.firstFrameSubset === false ? undefined
-      : validated.renderPacket ? firstFramePipelineMainKeys(validated.renderPacket)
-      : validated.projection && validated.root
+      : !validated.renderPacket && validated.projection && validated.root
         ? projectionFirstFrameMainKeys(validated.projection, validated.root,
-          validated.cameraLayerMask, validated.view)
+          validated.cameraLayerMask, validated.view, rendererSettings.advancedMaterials === true)
         : undefined;
-    const renderer = firstFrameMainKeys
+    const renderer = validated.renderPacket ? packetFirstFrameRendererOptions(rendererSettings, validated.renderPacket) : firstFrameMainKeys
       ? Object.freeze({ ...rendererSettings, pipelines: Object.freeze({
           ...rendererSettings.pipelines,
           firstFrameSubset: true,
@@ -235,6 +235,11 @@ export class DeepWebGpuBackend {
    * hierarchy. This is the independent author path; the legacy scene path
    * remains available through prepareScene/sync. */
   async prepareRenderPacket(packet: RenderPacket, view: RenderView, signal?: AbortSignal): Promise<FrameMetrics> {
+    this.packetPreparing = true;
+    try { return await this.prepareRenderPacketTransaction(packet, view, signal); }
+    finally { this.packetPreparing = false; }
+  }
+  private async prepareRenderPacketTransaction(packet: RenderPacket, view: RenderView, signal?: AbortSignal): Promise<FrameMetrics> {
     this.assertOpen();
     signal?.throwIfAborted();
     markBackendPhase("packet-localize-start");
@@ -313,7 +318,7 @@ export class DeepWebGpuBackend {
   /** Validate the already-published packet against the latest author camera.
    * Studio uses this after candidate creation so a slow full scene projection
    * is not repeated merely because the author viewport advanced one frame. */
-  async prepareView(view: RenderView, signal?: AbortSignal): Promise<FrameMetrics> {
+  async prepareView(view: RenderView, signal?: AbortSignal, forceValidation = false): Promise<FrameMetrics> {
     this.assertOpen();
     signal?.throwIfAborted();
     const session = this.runtime.session;
@@ -322,7 +327,7 @@ export class DeepWebGpuBackend {
     const localView = this.coordinates.localizeView(view, this.coordinates.current);
     // 候选创建期间视口未变化时，创建路径已验证过完全相同的视图；
     // 重复整帧验证只会重复同一份 GPU 工作，直接复用其结果。
-    if (this.validatedView && sameRenderView(localView, this.validatedView.view) && this.validatedFrame) {
+    if (!forceValidation && this.validatedView && sameRenderView(localView, this.validatedView.view) && this.validatedFrame) {
       // 刀 C 首帧:复用生效标记(与 validate-start 互斥出现,供探针断言)。
       if (typeof performance !== "undefined" && typeof performance.mark === "function") {
         performance.mark("deep-webgpu:prepare-view-reused");
@@ -341,7 +346,7 @@ export class DeepWebGpuBackend {
         this.appliedClusterSignature = signature;
       }
     }
-    if (this.independentPacket && this.chunks?.hasCatalog) {
+    if (this.independentPacket && this.chunks?.hasCatalog && (!this.packetViewStaged || !sameRenderView(view, this.packetViewStaged))) {
       await this.chunks.syncView(localView, signal, clusterPlan);
       if (signal?.aborted) throw abortError("Deep backend camera preparation cancelled.");
     }
@@ -361,7 +366,9 @@ export class DeepWebGpuBackend {
   get chunkStreaming() { return this.chunks?.diagnostics; }
   get packetViewStreamFailure(): unknown { return this.packetViewFailure; }
   private schedulePacketView(view: RenderView): void {
-    if (!this.independentPacket || !this.chunks?.hasCatalog || !this.committedPacket
+    // Camera closure updates share the residency owner with author replacements.
+    // Drawing the retained frame is safe; enqueueing a camera update would abort the replacement.
+    if (this.packetPreparing || !this.independentPacket || !this.chunks?.hasCatalog || !this.committedPacket
       || this.packetViewStaged && sameRenderView(view, this.packetViewStaged) && !this.packetViewFailure) return;
     this.packetViewRequested = view;
     if (this.packetViewInFlight) return;
@@ -385,7 +392,7 @@ export class DeepWebGpuBackend {
           }
         } catch (error) {
           // A replaced packet owns another stream generation; its stale failure cannot poison it.
-          if (!this.disposed && this.chunks === chunks && this.committedPacket === packet) {
+          if (!this.packetPreparing && !this.disposed && this.chunks === chunks && this.committedPacket === packet) {
             // Keep the last published GPU frame; an invalid candidate never replaces it.
             this.packetViewFailure = error;
             this.packetViewRetryAt = performance.now() + 1000;
@@ -708,6 +715,7 @@ function sameRenderView(a: RenderView, b: RenderView): boolean {
     && sameTuple(a.eye, b.eye) && sameTuple(a.target, b.target) && sameTuple(a.up, b.up)
     && a.extent === b.extent && sameTuple(a.background, b.background) && sameTuple(a.floor, b.floor)
     && a.exposure === b.exposure && a.roughness === b.roughness
+    && (a.globalIlluminationIntensity ?? 1) === (b.globalIlluminationIntensity ?? 1)
     && a.verticalFovRadians === b.verticalFovRadians && a.near === b.near && a.far === b.far
     && sameJson(a.lights, b.lights) && sameJson(a.fog, b.fog) && sameJson(a.postProcess, b.postProcess)
     // 刀 C 首帧:panoramaBackground 是 renderViewSource 每次新建的对象(环境会话

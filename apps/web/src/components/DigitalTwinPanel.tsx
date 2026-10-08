@@ -2,6 +2,7 @@ import { Database, ExternalLink, Gauge, Radio, X } from "lucide-react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import type { SceneDataBridgeStatus } from "../sceneDataBridge";
+import { routePath } from '../appRoute';
 
 export function DigitalTwinPanel({ locale, onClose, status, received }: { locale: AppLocale; onClose: () => void; status: SceneDataBridgeStatus; received: number }) {
   return (
@@ -56,12 +57,12 @@ export function DigitalTwinPanel({ locale, onClose, status, received }: { locale
         </div>
       </div>
       <div className="twin-links">
-        <a className="primary" href="/data">
+        <a className="primary" href={routePath({ view: 'data' })}>
           <Database size={15} />
           {tr(locale, "打开数据中心", "Open data center")}
           <ExternalLink size={12} />
         </a>
-        <a href="/manager">
+        <a href={routePath({ view: 'manager' })}>
           <Gauge size={15} />
           {tr(locale, "进入场景后打开看板", "Open dashboard in Studio")}
         </a>

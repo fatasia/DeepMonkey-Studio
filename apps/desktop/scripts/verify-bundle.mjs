@@ -64,8 +64,6 @@ if (!existsSync(desktopExecutable) || statSync(desktopExecutable).size < 1024 * 
 
 for (const resource of ["package.json", "dist/index.js", "publication-runtime.json",
   "publication/native/deep-engine-native.exe", "publication/native/runtime-package-probe.json",
-  "publication/android/deep-scene-viewer-template.apk", "publication/android/build-tools/zipalign.exe",
-  "publication/android/build-tools/lib/apksigner.jar", "publication/android/jre/bin/java.exe",
   process.platform === "win32" ? "node.exe" : "node"]) {
   const pathToResource = path.join(localApiBundle, resource);
   if (!existsSync(pathToResource) || statSync(pathToResource).size === 0) {

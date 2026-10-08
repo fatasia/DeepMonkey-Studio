@@ -45,6 +45,17 @@ pub(super) fn tree_budget(value: &Value) -> Result<(), RuntimePackageError> {
 pub(super) fn envelope(
     package: &RuntimePackageEnvelope,
     value: &Value,
+    expected_hash: &str,
+) -> Result<(), RuntimePackageError> {
+    envelope_shape(package, value, expected_hash)?;
+    let by_id = resource_index(package)?;
+    validate_payloads(package, &by_id)
+}
+
+pub(super) fn envelope_shape(
+    package: &RuntimePackageEnvelope,
+    value: &Value,
+    expected_hash: &str,
 ) -> Result<(), RuntimePackageError> {
     if package.schema != DEEP_RUNTIME_PACKAGE_SCHEMA
         || ![
@@ -71,16 +82,11 @@ pub(super) fn envelope(
     if !valid_hash(&package.package_hash) {
         return fail("runtime package hash must be lowercase SHA-256");
     }
-    let root = value
-        .as_object()
-        .ok_or_else(|| RuntimePackageError("runtime package root must be an object".into()))?;
-    let mut core = root.clone();
-    core.remove("packageHash");
-    if package.package_hash.value != hash_canonical(&Value::Object(core)) {
+    if package.package_hash.value != expected_hash {
         return fail("runtime package hash mismatch");
     }
     let by_id = resource_index(package)?;
-    validate_payloads(package, &by_id)?;
+    payload_keys(package, &by_id)?;
     super::entrypoints::validate_entrypoints(package, &by_id)
 }
 
@@ -115,6 +121,19 @@ fn validate_payloads(
     package: &RuntimePackageEnvelope,
     index: &HashMap<&str, &RuntimeResourceIndexEntry>,
 ) -> Result<(), RuntimePackageError> {
+    payload_keys(package, index)?;
+    for (id, payload) in &package.payloads {
+        if index[id.as_str()].content_hash.value != hash_canonical(payload) {
+            return fail(format!("runtime resource {id} content hash mismatch"));
+        }
+    }
+    Ok(())
+}
+
+fn payload_keys(
+    package: &RuntimePackageEnvelope,
+    index: &HashMap<&str, &RuntimeResourceIndexEntry>,
+) -> Result<(), RuntimePackageError> {
     if package.payloads.len() != index.len()
         || package
             .payloads
@@ -122,11 +141,6 @@ fn validate_payloads(
             .any(|id| !index.contains_key(id.as_str()))
     {
         return fail("runtime payload keys must exactly match the resource index");
-    }
-    for (id, payload) in &package.payloads {
-        if index[id.as_str()].content_hash.value != hash_canonical(payload) {
-            return fail(format!("runtime resource {id} content hash mismatch"));
-        }
     }
     Ok(())
 }

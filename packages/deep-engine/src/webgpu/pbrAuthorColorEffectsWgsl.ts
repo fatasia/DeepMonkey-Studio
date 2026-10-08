@@ -19,9 +19,11 @@ fn deepAuthorColor(source: vec3f, uv: vec2f) -> vec3f {
     else { color += (average - color) * (-g.y); }
     if (g.z != 0.0 || g.w != 0.0) { color += g.z; color = (color - 0.5) * (g.w + 1.0) + 0.5; }
     let wb = authorEffects.whiteBalance;
-    let gains = vec3f(1.0 + wb.x * 0.14 + wb.y * 0.07, 1.0 - wb.y * 0.12, 1.0 - wb.x * 0.14 + wb.y * 0.07);
-    let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722)); color *= gains;
-    color *= luma / max(dot(color, vec3f(0.2126, 0.7152, 0.0722)), 0.000001);
+    if (wb.x != 0.0 || wb.y != 0.0) {
+      let gains = vec3f(1.0 + wb.x * 0.14 + wb.y * 0.07, 1.0 - wb.y * 0.12, 1.0 - wb.x * 0.14 + wb.y * 0.07);
+      let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722)); color *= gains;
+      color *= luma / max(abs(dot(color, vec3f(0.2126, 0.7152, 0.0722))), 0.000001);
+    }
   }
   return color;
 }

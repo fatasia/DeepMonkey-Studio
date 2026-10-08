@@ -131,7 +131,8 @@ pub(super) fn handle(app: &mut NativeApp, event_loop: &ActiveEventLoop, event: &
         | GpuEvent::WasmPhysicsPoseQuery { .. }
         | GpuEvent::WasmPhysicsFrameReady { .. }
         | GpuEvent::WasmEditorOverlay { .. }
-        | GpuEvent::WasmStop => false,
+        | GpuEvent::WasmStop
+        | GpuEvent::WasmPresentationPaused(_) => false,
     }
 }
 

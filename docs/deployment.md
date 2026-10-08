@@ -1,19 +1,19 @@
 # Docker Compose 部署
 
-本文档描述仓库根 `docker-compose.yml` 的一键交付:PostgreSQL + MinIO 存储基础设施(持久卷、健康检查、固定镜像)。裸机生产部署、systemd 托管、HTTPS 与回滚见[从零开发与原生部署](native-deployment.md);镜像边界评估见[容器部署评估](../apps/web/src/docs/container-deployment.md)。
+本文档描述 `docker-compose.yml` 的 PostgreSQL、MinIO 存储与备份。0.2.0 起叠加 `docker-compose.app.yml` 可同时启动 API/Web，应用镜像与离线导入见[Docker 应用部署](docker-application.md)。裸机生产部署、systemd、HTTPS 与回滚见[原生部署](native-deployment.md)。
 
 ## 覆盖范围(先读)
 
-- **只交付基础设施**:Compose 内只有 PostgreSQL 与 MinIO 两个服务。应用本体(Web/API/桌面客户端)当前没有官方镜像,仍然按原生方式运行:`pnpm studio start`(开发)或 `pnpm studio deploy`(Linux 生产)。不要把未验证的临时应用镜像用于生产。
+- **存储与应用两种入口**：单独执行本 Compose 启动两个存储服务；叠加应用 Compose 启动三个服务，使用同一持久卷。裸机应用可用 `pnpm studio start` 或 `pnpm studio deploy`。
 - **不包含反向代理(nginx/caddy)**:HTTPS 终结、域名与统一入口属于部署环境职责,由宿主网关或云负载均衡承担;Compose 只暴露 PostgreSQL 与 MinIO 端口。未来做 SaaS 多实例统一入口时另行立项(倾向 caddy 自动 HTTPS)。
 - **MinIO 镜像来源(2025-10-23 起)**:MinIO 官方已停止发布社区版 Docker 镜像,`minio/minio` 的全部 tag(含历史 tag)已从 Docker Hub 与 quay.io 移除,不可再拉取。本仓库改用 Bitnami legacy 快照并以 **digest 固定**(`APP_VERSION=2025.5.24`,即 MinIO RELEASE.2025-05-24),保证可复现拉取;该快照不再获得更新,升级需评估自行构建或商业支持,见下方"升级注意"。注意 Bitnami 镜像数据目录为 `/bitnami/minio`(非官方 `/data`),Compose 已适配。
 - **存储拓扑固定**:生产为 PostgreSQL + MinIO;单机开发仍推荐 SQLite + 本地对象目录,不要求 Docker。多实例生产必须使用 PostgreSQL + MinIO。
-- **凭据只经 `.env` 注入**:Compose 从仓库根 `.env` 读取全部密码与密钥;真实 `.env` 已被 `.gitignore` 忽略,严禁把真实凭据写入任何仓库文件。后台管理账号约定保持 `BIM_STUDIO_ADMIN_PASSWORD=admin` 默认值,生产环境应在 `.env` 中改为强密码。
+- **凭据经 `.env` 注入**：配置 PostgreSQL、MinIO 凭据、至少 12 字符的 `BIM_STUDIO_ADMIN_PASSWORD` 和至少 32 字符的 `BIM_STUDIO_SESSION_SECRET`。管理员用户名为 `admin`；生产应用检查会拒绝默认弱密码。私有 `.env` 已被 Git 忽略。
 
 ## 1. 环境要求
 
 - Docker Engine 与 Compose v2+ 插件(`docker compose version`)。
-- Node.js 24、Corepack、pnpm 11.18(用于运行应用与初始化系统元数据)。
+- 裸机运行应用与初始化系统元数据需要 Node.js 24、Corepack、pnpm 11.18；完整应用容器已经携带这些运行依赖。
 - PostgreSQL 模式初始化需要 `psql` 可执行文件:Linux 安装 `postgresql-client`(或使用容器内 `docker compose exec postgres psql` 手工操作);Windows 按 `.env` 的 `POSTGRES_PSQL_PATH` 指向本机安装。
 
 ## 2. 一键启动
@@ -89,4 +89,4 @@ docker run --rm -v bim_studio_minio_data:/data -v "$PWD:/backup" alpine \
 
 ## 7. 未覆盖的能力
 
-Revit/RVT 转换 Worker、DWG 转换、云渲染 GPU Worker、实时视频与 Oracle/TDengine 连接器不在本 Compose 交付内,按需参照对应文档另行部署。应用镜像、SBOM 与 clean Linux 全链路验收按 `container-deployment.md` 的工作量判断单独立项。
+GPU Native 窗口、Windows 桌面与云渲染、实时视频 Worker 使用各自交付物。应用镜像包含 API、正式 Web 和依赖清单；按平台缺失的转换或隔离能力由现有能力检查明确报告，部署边界见[容器部署](../apps/web/src/docs/container-deployment.md)。

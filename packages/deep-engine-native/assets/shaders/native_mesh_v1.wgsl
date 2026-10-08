@@ -411,6 +411,8 @@ fn native_direct_multiscattering(normal: vec3f, light: vec3f, base: vec3f,
 }
 
 fn local_direct_lighting(world: vec3f, normal: vec3f, view: vec3f, base: vec3f, metal: f32, rough: f32, receiveShadow: bool, ao: f32, dielectric: f32, screen: vec4f, dfg_view_input: vec2f, dfg_ready_input: bool) -> vec3f {
+  // RIS replaces opaque point/spot lighting only after the complete GPU chain is ready.
+  if (frame.lightingOptions.z < 0.0) { return vec3f(0.0); }
   var color = vec3f(0.0);
   var dfg_view = dfg_view_input;
   var dfg_ready = dfg_ready_input;

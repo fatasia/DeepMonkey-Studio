@@ -45,20 +45,43 @@ export function prepareSkinningInput(source: SkinningSource, palette: SkinningPa
 }
 
 export function packJointPalette(palette: SkinningPalette): Float32Array<ArrayBuffer> {
+  const count = jointPaletteCount(palette);
+  const packed = new Float32Array(count * 28);
+  visitJointPalette(palette, count, packed);
+  return packed;
+}
+
+/** Dynamic validators check the same values without constructing discarded GPU upload data. */
+export function validateJointPalette(palette: SkinningPalette): number {
+  const count = jointPaletteCount(palette);
+  visitJointPalette(palette, count);
+  return count;
+}
+
+function jointPaletteCount(palette: SkinningPalette): number {
   validateRevision(palette?.revision, "Skinning palette revision"); paletteArrays(palette);
   if (palette.matrices.length % 16 !== 0 || palette.matrices.length === 0) throw new Error("Skinning palette matrices are invalid.");
   const count = palette.matrices.length / 16;
   if (count > MAX_JOINTS || palette.normalMatrices && palette.normalMatrices.length !== count * 12) throw new Error("Skinning normal palette size is invalid.");
-  const packed = new Float32Array(count * 28);
+  return count;
+}
+
+function visitJointPalette(palette: SkinningPalette, count: number, packed?: Float32Array): void {
   for (let joint = 0; joint < count; joint += 1) {
-    const matrix = palette.matrices.subarray(joint * 16, joint * 16 + 16);
-    if (![...matrix].every(Number.isFinite)) throw new Error(`Skinning joint matrix ${joint} contains a non-finite value.`);
-    packed.set(matrix, joint * 28);
-    const normal = palette.normalMatrices?.subarray(joint * 12, joint * 12 + 12) ?? inverseTransposeRows(matrix, joint);
-    if (![...normal].every(Number.isFinite)) throw new Error(`Skinning normal matrix ${joint} contains a non-finite value.`);
-    packed.set(normal, joint * 28 + 16);
+    const matrixStart = joint * 16, normalStart = joint * 12, outputStart = joint * 28;
+    for (let component = 0; component < 16; component++) {
+      const value = palette.matrices[matrixStart + component]!;
+      if (!Number.isFinite(value)) throw new Error(`Skinning joint matrix ${joint} contains a non-finite value.`);
+      if (packed) packed[outputStart + component] = value;
+    }
+    const normal = palette.normalMatrices ?? inverseTransposeRows(palette.matrices.subarray(matrixStart, matrixStart + 16), joint);
+    const offset = palette.normalMatrices ? normalStart : 0;
+    for (let component = 0; component < 12; component++) {
+      const value = normal[offset + component]!;
+      if (!Number.isFinite(value)) throw new Error(`Skinning normal matrix ${joint} contains a non-finite value.`);
+      if (packed) packed[outputStart + 16 + component] = value;
+    }
   }
-  return packed;
 }
 
 export function cpuSkinVertices(input: PreparedSkinningInput): Float32Array<ArrayBuffer> {

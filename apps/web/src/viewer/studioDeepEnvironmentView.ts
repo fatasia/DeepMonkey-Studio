@@ -15,7 +15,6 @@ export function readStudioDeepEnvironmentView(scene: THREE.Scene, composerActive
     throw new Error("环境反射强度必须在 0 到 64 之间。");
   }
   if (scene.background instanceof THREE.Color) {
-    if (!composerActive) throw new Error("Deep 尚未接入无后处理路径的纯色背景显示域合成。");
     const background = scene.background.toArray() as [number, number, number];
     if (!background.every(value => Number.isFinite(value) && value >= 0)) throw new Error("背景颜色必须为有限非负数。");
     return { background, floor: [0, 0, 0], environmentIntensity };

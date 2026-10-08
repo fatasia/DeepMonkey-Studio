@@ -30,8 +30,8 @@ describe("Studio author environment render view", () => {
     expect(author.environmentIntensity).toBe(intensity);
   });
 
-  it("rejects pure-color display-domain composition without a composer", () => {
-    expect(() => readStudioDeepEnvironmentView(scene(), false)).toThrow("纯色背景显示域合成");
+  it("preserves pure-color values for the explicit display-domain route without a composer", () => {
+    expect(readStudioDeepEnvironmentView(scene(), false).background).toEqual([0.25, 0.5, 2]);
   });
 
   it("routes sRGB sky to display-space composition without a composer and tone maps it with a composer", () => {

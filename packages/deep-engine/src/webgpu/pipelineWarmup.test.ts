@@ -11,6 +11,30 @@ function deferred<T>(): Deferred<T> {
 function tick(): Promise<void> { return new Promise(resolve => setTimeout(resolve, 0)); }
 
 describe("C26 pipeline warmup queue", () => {
+  it("drains actual asynchronous completions without starving the task that finishes compilation", async () => {
+    const queue = new PipelineWarmupQueue();
+    const job = queue.enqueue({ fingerprint: "task-completion", label: "async compile", create: async () => {
+      await tick(); return 1;
+    } });
+    queue.resume(); queue.pause();
+    const drains = [queue.drainInFlight(), queue.drainInFlight()];
+    await Promise.all(drains);
+    expect(await job).toBe(1); expect(queue.stats.inFlight).toBe(0);
+  });
+
+  it("drains rejected tasks without launching paused work or rejecting the drain", async () => {
+    const queue = new PipelineWarmupQueue({ concurrency: 1 }), gate = deferred<void>();
+    const bad = queue.enqueue({ fingerprint: "rejected", label: "rejected", create: () => gate.promise });
+    const handled = bad.catch(() => undefined);
+    const next = vi.fn(async () => 2);
+    const held = queue.enqueue({ fingerprint: "held", label: "held", create: next });
+    queue.resume(); queue.pause();
+    const drain = queue.drainInFlight(); gate.reject(new Error("compile failure"));
+    await drain; await handled;
+    expect(next).not.toHaveBeenCalled(); expect(queue.stats).toMatchObject({ inFlight: 0, pending: 1 });
+    queue.resume(); expect(await held).toBe(2);
+    await queue.drainInFlight();
+  });
   it("starts nothing while paused and drains everything after resume", async () => {
     const queue = new PipelineWarmupQueue({ concurrency: 4 });
     const created: string[] = [];

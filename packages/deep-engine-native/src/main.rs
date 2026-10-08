@@ -1,6 +1,10 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 mod app;
+#[cfg(all(feature = "native-bench", not(test)))]
+#[global_allocator]
+static BENCH_HEAP: deep_engine_native::benchmark_observer::CountingSystem =
+    deep_engine_native::benchmark_observer::CountingSystem;
 mod app_startup;
 mod asset_package_cli;
 mod bloom_pass;

@@ -73,6 +73,23 @@ function depthView(): GPUTextureView {
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("reflection closest-hit frame pass", () => {
+  it("encodes synchronously before finish once validation completes, and never dispatches while pending", async () => {
+    const { device } = deviceStub();
+    const pass = new RayTraceClosestFramePass(device, packedScene());
+    const input = { depthView: depthView(), hitView: hitView(), width: 8, height: 8,
+      invViewProjection: INV, eye: [0, 0, 5] as const, tMax: 80, bias: 0.01, rayMask: 0xff };
+    const { encoder, passes } = encoderStub();
+    expect(pass.ready).toBe(false);
+    expect(() => pass.encodeValidated(encoder, input)).toThrow("pending");
+    expect(passes).toHaveLength(0);
+    await Promise.resolve();
+    expect(pass.ready).toBe(true);
+    const result = pass.encodeValidated(encoder, input);
+    // A synchronous frame now has an encoded command before it finishes its encoder.
+    expect(result).toEqual({ dispatchX: 1, dispatchY: 1 });
+    expect(passes[0]!.dispatches).toEqual([[1, 1, 1]]);
+    pass.destroy();
+  });
   it("stages five persistent scene buffers + sentinel + uniform; sentinel keeps COPY_SRC", () => {
     const { device, buffers } = deviceStub();
     const packed = packedScene(6, 4);

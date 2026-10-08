@@ -11,6 +11,7 @@ import { markStartup } from "./startupTimeline";
 import { exposeStartupEvidenceCollector } from "./startupEvidence";
 import { DesktopWindowFrame } from "./components/DesktopWindowFrame";
 import { isPublishedApplicationRoute } from "./bootstrapRoute";
+import { applicationLocationPath } from './adapters/browserRuntimeConfig';
 
 // The installed desktop launcher injects the same immutable delivery marker at
 // runtime, so it can reuse this build without compiling one Tauri binary per scene.
@@ -113,7 +114,7 @@ async function renderStudioApplication(): Promise<void> {
     import("./App"),
     import("./components/DesktopConnectionGate"),
   ]);
-  const standaloneDocsMode = /^\/docs(?:\/|$)/.test(window.location.pathname);
+  const standaloneDocsMode = /^\/docs(?:\/|$)/.test(applicationLocationPath(window.location.pathname));
   markStartup("studio-render-start");
   renderRoot(standaloneDocsMode ? <App /> : <DesktopConnectionGate><App /></DesktopConnectionGate>);
 }

@@ -11,6 +11,7 @@ import {
 import { sceneViewerDeliveryRoute } from "./delivery/sceneViewerDelivery";
 import { appendSceneAssetQuery, readModelAssetQuery, writeModelAssetQuery, type ModelAssetReturn } from "./optimizer/modelAssetNavigation";
 import { carriesProjectContext } from "./projectNavigationContext";
+import { applicationLocationPath, applicationPath } from './adapters/browserRuntimeConfig';
 
 export type ManagerWorkspaceTab = "scenes" | "assets" | "topology" | "examples";
 
@@ -52,7 +53,8 @@ export function readRoute(): AppRoute {
 function readLocationRoute(): AppRoute {
   const deliveryRoute = sceneViewerDeliveryRoute();
   if (deliveryRoute) return deliveryRoute;
-  const workspace = parseStudioWorkspacePath(window.location.pathname);
+  const pathname = applicationLocationPath(window.location.pathname);
+  const workspace = parseStudioWorkspacePath(pathname);
   const historyState = readWorkspaceHistoryState(window.history.state);
   if (workspace?.kind === "dashboard") return {
     view: "dashboard",
@@ -65,10 +67,10 @@ function readLocationRoute(): AppRoute {
     ...readModelAssetQuery(new URLSearchParams(window.location.search), true),
     ...(historyState.dashboardReturn ? { dashboardReturn: historyState.dashboardReturn } : {})
   };
-  const docsLocation = parseDocsPath(window.location.pathname);
+  const docsLocation = parseDocsPath(pathname);
   if (docsLocation) return { view: "docs", ...docsLocation };
-  if (["optimizer", "parametric", "data", "vision", "operations", "system", "branding"].includes(window.location.pathname.slice(1))) {
-    const view = window.location.pathname.slice(1) as AppRoute["view"];
+  if (["optimizer", "parametric", "data", "vision", "operations", "system", "branding"].includes(pathname.slice(1))) {
+    const view = pathname.slice(1) as AppRoute["view"];
     const requestedTask = new URLSearchParams(window.location.search).get("task");
     const requestedSystemTab = new URLSearchParams(window.location.search).get("tab");
     const projectId = new URLSearchParams(window.location.search).get("project");
@@ -84,7 +86,7 @@ function readLocationRoute(): AppRoute {
         : {}),
     };
   }
-  const topologyMatch = window.location.pathname.match(/^\/projects\/([^/]+)\/applications\/([^/]+)\/topologies\/([^/]+)$/);
+  const topologyMatch = pathname.match(/^\/projects\/([^/]+)\/applications\/([^/]+)\/topologies\/([^/]+)$/);
   if (topologyMatch?.[1] && topologyMatch[2] && topologyMatch[3]) return {
     view: "topology",
     projectId: decodeURIComponent(topologyMatch[1]),
@@ -92,12 +94,12 @@ function readLocationRoute(): AppRoute {
     topologyId: decodeURIComponent(topologyMatch[3]),
     ...(historyState.topologyReturn ? { topologyReturn: historyState.topologyReturn } : {})
   };
-  const match = window.location.pathname.match(/^\/(studio|view|published)\/([^/]+)$/);
+  const match = pathname.match(/^\/(studio|view|published)\/([^/]+)$/);
   if (match?.[1] && match[2]) {
     const query = new URLSearchParams(window.location.search);
     return { view: match[1] as "studio" | "view" | "published", sceneId: decodeURIComponent(match[2]), ...(match[1] === "studio" ? { ...(query.get("project") ? { projectId: query.get("project")! } : {}), ...readModelAssetQuery(query, true) } : {}) };
   }
-  if (window.location.pathname === "/" || window.location.pathname === "/manager") {
+  if (pathname === "/" || pathname === "/manager") {
     const query = new URLSearchParams(window.location.search);
     const projectId = query.get("project");
     const tab = query.get("tab");
@@ -110,6 +112,10 @@ function readLocationRoute(): AppRoute {
 export function routePath(route: AppRoute): string {
   const deliveryRoute = sceneViewerDeliveryRoute();
   if (deliveryRoute) return `/published/${encodeURIComponent(deliveryRoute.sceneId)}`;
+  return applicationPath(logicalRoutePath(route));
+}
+
+function logicalRoutePath(route: AppRoute): string {
   if (route.view === "docs") return docsPath(route.documentId);
   if (carriesProjectContext(route.view)) {
     const query = new URLSearchParams();

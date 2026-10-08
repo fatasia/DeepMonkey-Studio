@@ -3,8 +3,9 @@
   "generatedFrom": "packages/deep-engine/package.json",
   "pinPolicy": "exact — 模板与消费者清单只允许此处登记的精确版本；升级必须先更新本文件并通过 scripts/version-pin.test.mjs",
   "engines": {
-    "@bim-studio/deep-engine": "0.1.0",
-    "@webgpu/types": "0.1.72"
+    "@bim-studio/deep-engine": "0.2.0",
+    "@webgpu/types": "0.1.72",
+    "fflate": "0.8.3"
   },
   "provenance": {
     "deepEngineManifest": "packages/deep-engine/package.json#version",

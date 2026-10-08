@@ -80,6 +80,31 @@ function frameEncoder() {
 
 
 describe("cluster LOD render slot (G1-S1)", () => {
+  it("replaces PBR geometry while retaining the caller pipeline and original instance/motion streams", async () => {
+    const f = fixture(); f.slot.updateCamera(camera); f.slot.encodeFrame(frameEncoder());
+    queueGpuWords(f, staging().dag, camera); await f.slot.ingest();
+    const pass = { setPipeline: vi.fn(), setBindGroup: vi.fn(), setVertexBuffer: vi.fn(),
+      setIndexBuffer: vi.fn(), drawIndexedIndirect: vi.fn(), executeBundles: vi.fn() };
+    const vertices = {} as GPUBuffer, indices = {} as GPUBuffer;
+    const instances = {} as GPUBuffer, previous = {} as GPUBuffer;
+    const stats = f.slot.drawWithGeometry(pass as unknown as GPURenderPassEncoder, vertices, indices, instances, previous, 2)!;
+    expect(pass.setPipeline).not.toHaveBeenCalled(); expect(pass.setBindGroup).not.toHaveBeenCalled();
+    expect(pass.executeBundles).not.toHaveBeenCalled();
+    expect(pass.setVertexBuffer.mock.calls).toEqual([[0, vertices], [1, instances, 288, 144], [2, previous, 96, 48]]);
+    expect(pass.drawIndexedIndirect).toHaveBeenCalledTimes(stats.draws);
+    f.slot.dispose(); expect(f.owned.size).toBe(0);
+  });
+
+  it("releases every allocation when a later slot factory fails", () => {
+    const f = fixture(); f.slot.dispose();
+    vi.mocked(f.device.createBindGroup).mockImplementationOnce(() => { throw new Error("bind failed"); });
+    expect(() => ClusterLodRenderSlot.create(f.session as unknown as DeviceSession, staging())).toThrow("bind failed");
+    expect(f.owned.size).toBe(0);
+    vi.mocked(f.device.createBindGroup).mockReturnValueOnce({} as GPUBindGroup)
+      .mockImplementationOnce(() => { throw new Error("render bind failed"); });
+    expect(() => ClusterLodRenderSlot.create(f.session as unknown as DeviceSession, staging())).toThrow("render bind failed");
+    expect(f.owned.size).toBe(0);
+  });
   it("gate defaults to closed and rejects non-boolean capability", () => {
     expect(resolveClusterLodSlotOption(undefined)).toBe(false);
     expect(resolveClusterLodSlotOption(false)).toBe(false);

@@ -3,6 +3,7 @@ import { materialIor, prepareMaterialIor } from "./materialIor";
 import { applyPhysicalLobes, preparePhysicalLobes, readPhysicalLobes, validatePhysicalLobePatch } from "./materialPhysicalLobes";
 import { prepareDeclarativeMaterial, validateDeclarativeMaterialPatch } from "./declarativeMaterial";
 import * as THREE from "three";
+import { visibleObjectBox } from "./sceneObjectUtils";
 import type { SceneLayerState, SceneMaterialScreenState, SceneMaterialShaderEffect, SceneMaterialState } from "@bim-studio/contracts";
 import { buildComponentRecords, type ComponentRecord } from "./analysis";
 import { fragmentPropertyValue } from "./fragmentTree";
@@ -73,7 +74,7 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
   }
 
   protected focusObject(object: THREE.Object3D): void {
-    this.focusBox(new THREE.Box3().setFromObject(object));
+    this.focusBox(visibleObjectBox(object, true));
   }
 
   protected updateLayerState(modelId: string, nodeId: string, patch: Omit<SceneLayerState, "nodeId">): void {

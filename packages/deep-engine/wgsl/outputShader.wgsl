@@ -10,6 +10,7 @@ struct Vertex { @builtin(position) position: vec4f, @location(0) uv: vec2f };
 }
 @fragment fn fragmentMain(v: Vertex) -> @location(0) vec4f {
   var color = textureSample(source, sourceSampler, v.uv).rgb;
+  if (settings.toneMapping < -0.5) { return vec4f(color, 1.0); }
   if (authorEffects.switches.x > 0.5) {
     let authorSettings = DeepOutputSettings(settings.exposure, 0.0, 0.0, settings.toneMapping, 0.0, 0.0, 1.0, 1.0);
     return vec4f(deepDisplayColor(deepAuthorColor(color, v.uv), authorSettings), 1.0);

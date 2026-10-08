@@ -2,6 +2,7 @@ import { MaterialScopeEditor } from "./MaterialScopeEditor";
 import { MaterialPresetLibrary } from "./MaterialPresetLibrary";
 import type { SelectionMaterialSlot } from "../viewer/materialSlots";
 import { DeferredNumberInput } from "./AppFormControls";
+import { DraftRange } from "./DraftRange";
 import type {
   SceneMaterialState,
   SceneModelEffectsState,
@@ -41,9 +42,9 @@ interface ObjectAppearanceEditorProps {
   particleEmitterId?: string | undefined;
   /** 场景 VFX 图层独立粒子预算报告；缺省时 VFX 区不显示预算读数。 */
   vfxBudget?: VfxBudgetReport | undefined;
-  onMaterialChange: (patch: SceneMaterialState) => void;
+  onMaterialChange: (patch: SceneMaterialState, previewOnly?: boolean) => void;
   /** 接受 fire/vfx 嵌套 patch;显式 vfx:undefined 卸载 VFX 图层。 */
-  onEffectsChange: (patch: ModelEffectsPatch) => void;
+  onEffectsChange: (patch: ModelEffectsPatch, previewOnly?: boolean) => void;
   onChooseTexture: (kind: MaterialTextureKind, slotId?: string) => void;
   projectAssets?: ProjectAssetRecord[];
   materialSlots?: readonly SelectionMaterialSlot[];
@@ -75,7 +76,7 @@ const TEXTURE_CONTROLS: ReadonlyArray<{
 export function ObjectAppearanceEditor(props: ObjectAppearanceEditorProps) {
   return <MaterialScopeEditor locale={props.locale} disabled={props.disabled} material={props.material}
     slots={props.materialSlots ?? []} onChange={props.onMaterialChange}>
-    {(material, onMaterialChange, slotId) => <ObjectAppearanceFields {...props}
+    {(material, onMaterialChange, slotId) => <ObjectAppearanceFields key={slotId ?? "all"} {...props}
       material={material} onMaterialChange={onMaterialChange}
       shaderGraphSlot={slotId}
       onChooseTexture={kind => props.onChooseTexture(kind, slotId)} />}
@@ -132,10 +133,10 @@ function ObjectAppearanceFields({
             <span>{tr(locale, "颜色调整", "Color adjustment")}</span>
             <small>{tr(locale, "实例级 · 不修改原资源", "Per instance · source preserved")}</small>
           </summary>
-          <MaterialAdjustmentRange locale={locale} label={["色相", "Hue"]} value={material.hue ?? 0} min={-180} max={180} step={1} unit="°" disabled={disabled} onChange={(value) => onMaterialChange({ hue: value })} />
-          <MaterialAdjustmentRange locale={locale} label={["饱和度", "Saturation"]} value={material.saturation ?? 0} min={-1} max={1} step={0.01} disabled={disabled} onChange={(value) => onMaterialChange({ saturation: value })} />
-          <MaterialAdjustmentRange locale={locale} label={["亮度", "Brightness"]} value={material.brightness ?? 0} min={-1} max={1} step={0.01} disabled={disabled} onChange={(value) => onMaterialChange({ brightness: value })} />
-          <MaterialAdjustmentRange locale={locale} label={["对比度", "Contrast"]} value={material.contrast ?? 0} min={-1} max={1} step={0.01} disabled={disabled} onChange={(value) => onMaterialChange({ contrast: value })} />
+          <MaterialAdjustmentRange locale={locale} label={["色相", "Hue"]} value={material.hue ?? 0} min={-180} max={180} step={1} unit="°" disabled={disabled} onChange={(value, previewOnly) => onMaterialChange({ hue: value }, previewOnly)} />
+          <MaterialAdjustmentRange locale={locale} label={["饱和度", "Saturation"]} value={material.saturation ?? 0} min={-1} max={1} step={0.01} disabled={disabled} onChange={(value, previewOnly) => onMaterialChange({ saturation: value }, previewOnly)} />
+          <MaterialAdjustmentRange locale={locale} label={["亮度", "Brightness"]} value={material.brightness ?? 0} min={-1} max={1} step={0.01} disabled={disabled} onChange={(value, previewOnly) => onMaterialChange({ brightness: value }, previewOnly)} />
+          <MaterialAdjustmentRange locale={locale} label={["对比度", "Contrast"]} value={material.contrast ?? 0} min={-1} max={1} step={0.01} disabled={disabled} onChange={(value, previewOnly) => onMaterialChange({ contrast: value }, previewOnly)} />
           <button
             type="button"
             disabled={disabled || !materialColorAdjustmentActive(material)}
@@ -150,14 +151,14 @@ function ObjectAppearanceFields({
           label={["粗糙度", "Roughness"]}
           value={material.roughness}
           disabled={disabled}
-          onChange={(value) => onMaterialChange({ roughness: value })}
+          onChange={(value, previewOnly) => onMaterialChange({ roughness: value }, previewOnly)}
         />
         <MaterialRange
           locale={locale}
           label={["金属度", "Metalness"]}
           value={material.metalness}
           disabled={disabled}
-          onChange={(value) => onMaterialChange({ metalness: value })}
+          onChange={(value, previewOnly) => onMaterialChange({ metalness: value }, previewOnly)}
         />
 
         <label className="material-range" title={tr(locale, "控制非金属表面的反射强度；默认 1.5", "Controls dielectric surface reflectance; default 1.5")}>
@@ -177,14 +178,13 @@ function ObjectAppearanceFields({
             value={material.emissive ?? "#000000"}
             onChange={(event) => onMaterialChange({ emissive: event.target.value })}
           />
-          <input
+          <DraftRange
             disabled={disabled || material.emissiveIntensity === undefined}
-            type="range"
-            min="0"
-            max="5"
-            step="0.05"
+            label={tr(locale, "自发光强度", "Emissive intensity")} readout={false}
+            min={0} max={5} step={0.05}
             value={material.emissiveIntensity ?? 0}
-            onChange={(event) => onMaterialChange({ emissiveIntensity: Number(event.target.value) })}
+            onPreview={next => onMaterialChange({ emissiveIntensity: next }, true)}
+            onChange={next => onMaterialChange({ emissiveIntensity: next })}
           />
         </label>
 
@@ -278,16 +278,13 @@ function ObjectAppearanceFields({
               </label>
               <label>
                 <span>{tr(locale, "效果强度", "Effect intensity")}</span>
-                <input
+                <DraftRange
                   disabled={disabled}
-                  type="range"
-                  min="0"
-                  max="4"
-                  step="0.05"
+                  label={tr(locale, "效果强度", "Effect intensity")} min={0} max={4} step={0.05}
                   value={material.shaderEffect.intensity}
-                  onChange={(event) => material.shaderEffect && onMaterialChange({ shaderEffect: { ...material.shaderEffect, intensity: Number(event.target.value) } })}
+                  onPreview={next => material.shaderEffect && onMaterialChange({ shaderEffect: { ...material.shaderEffect, intensity: next } }, true)}
+                  onChange={next => material.shaderEffect && onMaterialChange({ shaderEffect: { ...material.shaderEffect, intensity: next } })}
                 />
-                <output>{material.shaderEffect.intensity.toFixed(2)}</output>
               </label>
             </>
           )}
@@ -298,7 +295,7 @@ function ObjectAppearanceFields({
 
       <ModelScreenEditor locale={locale} disabled={disabled} screen={material.screen} onChange={onMaterialChange} />
 
-      {effects && <ModelEffectsEditor locale={locale} rendererBackend={rendererBackend} disabled={disabled} effects={effects} onChange={onEffectsChange} particleBudget={particleBudget} particleEmitterId={particleEmitterId} vfxBudget={vfxBudget} />}
+      {effects && <ModelEffectsEditor key={particleEmitterId} locale={locale} rendererBackend={rendererBackend} disabled={disabled} effects={effects} onChange={onEffectsChange} particleBudget={particleBudget} particleEmitterId={particleEmitterId} vfxBudget={vfxBudget} />}
     </>
   );
 }
@@ -314,28 +311,15 @@ function MaterialRange({
   label: [string, string];
   value: number | undefined;
   disabled: boolean;
-  onChange: (value: number) => void;
+  onChange: (value: number, previewOnly?: boolean) => void;
 }) {
   return (
     <label className="material-scalar-control">
       <span>{tr(locale, ...label)}</span>
-      <input
-        disabled={disabled || value === undefined}
-        type="range"
-        min="0"
-        max="1"
-        step="0.01"
-        value={value ?? 0}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
-      <DeferredNumberInput
-        className="material-scalar-value"
-        ariaLabel={`${tr(locale, ...label)} ${tr(locale, "数值", "value")}`}
-        min={0} max={1} step={0.01}
-        disabled={disabled || value === undefined}
-        value={value ?? 0}
-        onCommit={onChange}
-      />
+      <DraftRange numeric label={tr(locale, ...label)} min={0} max={1} step={0.01}
+        numericLabel={`${tr(locale, ...label)} ${tr(locale, "数值", "value")}`}
+        disabled={disabled || value === undefined} value={value ?? 0}
+        onChange={next => onChange(next)} onPreview={next => onChange(next, true)} />
     </label>
   );
 }
@@ -359,13 +343,14 @@ function MaterialAdjustmentRange({
   step: number;
   unit?: string;
   disabled: boolean;
-  onChange: (value: number) => void;
+  onChange: (value: number, previewOnly?: boolean) => void;
 }) {
   return (
     <label>
       <span>{tr(locale, ...label)}</span>
-      <input disabled={disabled} type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
-      <output>{step >= 1 ? value.toFixed(0) : value.toFixed(2)}{unit}</output>
+      <DraftRange label={tr(locale, ...label)} disabled={disabled} min={min} max={max} step={step} value={value}
+        format={next => `${next.toFixed(step >= 1 ? 0 : 2)}${unit}`} onChange={next => onChange(next)}
+        onPreview={next => onChange(next, true)} />
     </label>
   );
 }

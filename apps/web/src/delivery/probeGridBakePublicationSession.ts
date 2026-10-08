@@ -64,6 +64,7 @@ export function storeProbeGridBake(scene: SceneSnapshot, entry: ProbeGridBakeSes
 
 /** 读取当前场景的烘焙结果；场景语义已变化（哈希失配）时自然返回 undefined。 */
 export function lookupProbeGridBake(scene: SceneSnapshot): ProbeGridBakeSessionEntry | undefined {
+  if (entries.size === 0) return undefined;
   return entries.get(probeGridBakeSourceHash(scene));
 }
 

@@ -159,7 +159,7 @@ pub fn write_dgc(dag: &MeshletDag, options: &DgcWriteOptions) -> DagResult<Vec<u
     }
     let total_size = offset;
     // 边界锁定护栏:单文件 64 GiB 上限(防错位字段导致的荒谬分配)。
-    if total_size > 64 * 1024 * 1024 * 1024 {
+    if total_size as u64 > 64_u64 * 1024 * 1024 * 1024 {
         return Err(DagError::overflow("serialized DAG exceeds 64 GiB sanity bound"));
     }
 

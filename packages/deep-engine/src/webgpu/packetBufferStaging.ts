@@ -25,9 +25,12 @@ import type { DeformationSnapshot } from "../deformation/types.js";
 import { assertSnapshotRevisions } from "./packetDeformationRevision.js";
 import { prepareDeformationBounds, type DeformationBoundsProfile } from "./deformationBounds.js";
 import { authorLodMetadataChanged } from "./authorLodMetadata.js";
+import type { PacketPreparationWork } from "../packetPreparationWork.js";
+import type { PacketGeometryBounds } from "./packetGeometryBounds.js";
 import { PACKET_MESHLET_STAGE_BYTES } from "./packetMeshletSource.js";
 
 export interface StagedPacketBuffers {
+  readonly geometryBounds?: ReadonlyMap<string, PacketGeometryBounds>;
   readonly vertexUpdates: MeshVertexUpdate[];
   readonly deformation?: PacketDeformationResources;
   readonly deformationSnapshot?: DeformationSnapshot;
@@ -65,6 +68,17 @@ export function stagePacketBuffers(
   stagedBinding?: (textures: StagedTextureSet, id: string) => TextureBinding,
   omitTextureStorage?: ReadonlySet<string>,
 ): StagedPacketBuffers {
+  const work = stagePacketBufferSteps(context, prepared, decorateBatches, stagedBinding, omitTextureStorage);
+  for (;;) { const step = work.next(); if (step.done) return step.value; }
+}
+
+/** Only privately owned worker validator output may supply prepacked inputs. */
+export function* stagePacketBufferSteps(
+  context: PacketBufferStagingContext, prepared: PreparedPacket,
+  decorateBatches?: (textures: StagedTextureSet, batches: readonly PreparedBatch[]) => readonly PreparedBatch[],
+  stagedBinding?: (textures: StagedTextureSet, id: string) => TextureBinding,
+  omitTextureStorage?: ReadonlySet<string>, work?: PacketPreparationWork,
+): Generator<void, StagedPacketBuffers> {
   assertPacketDeformationSupported(prepared, context?.deformationEnabled === true);
   admitPacketVertexStreaming(context, prepared);
   if (prepared.deformation) assertSnapshotRevisions(prepared.deformation, context.deformationSnapshot);
@@ -74,27 +88,29 @@ export function stagePacketBuffers(
   const vertexUpdates: MeshVertexUpdate[] = [];
   const createdBuffers: GPUBuffer[] = [];
   const acquiredMaterials: MaterialBinding[] = [];
+  yield;
   const textures = context.textures.stagePrepared(prepared.textures, omitTextureStorage);
   let deformation: PacketDeformationResources | undefined;
   const deformationBoundsProfiles = new Map<string, DeformationBoundsProfile>();
+  let completed = false, failure: unknown;
   try {
+    yield;
     const preparedBatches = decorateBatches?.(textures, prepared.batches) ?? prepared.batches;
     if (prepared.deformation) {
-      for (const source of prepared.deformation.sources) deformationBoundsProfiles.set(source.id, prepareDeformationBounds(source));
+      for (const source of prepared.deformation.sources) deformationBoundsProfiles.set(source.id, work?.deformationBounds?.get(source.id) ?? prepareDeformationBounds(source));
       deformation = new PacketDeformationResources(context.session, context.deformationStaticSources);
-      deformation.prepare(prepared.deformation, new Map([...prepared.geometries].map(([id, geometry]) => [id, geometry.revision])));
+      yield* deformation.prepareSteps(prepared.deformation, new Map([...prepared.geometries].map(([id, geometry]) => [id, geometry.revision])), work?.skinInputs);
     }
-    stageGeometries(context, prepared, geometries, createdMeshes, vertexUpdates);
-    stageBatches(context, { ...prepared, batches: preparedBatches }, textures, batches, createdBuffers, acquiredMaterials,
+    yield* stageGeometries(context, prepared, geometries, createdMeshes, vertexUpdates, work);
+    yield* stageBatches(context, { ...prepared, batches: preparedBatches }, textures, batches, createdBuffers, acquiredMaterials,
       stagedBinding);
-  } catch (error) {
-    try { releaseStage(context, createdMeshes, createdBuffers, acquiredMaterials, textures, deformation, vertexUpdates); }
-    catch (cleanupError) {
-      throw new AggregateError([error, cleanupError], "Packet buffer staging failed.");
-    }
-    throw error;
+    completed = true;
+  } catch (error) { failure = error; throw error; } finally {
+    if (!completed) try { releaseStage(context, createdMeshes, createdBuffers, acquiredMaterials, textures, deformation, vertexUpdates); }
+    catch (cleanupError) { throw new AggregateError([failure, cleanupError], "Packet buffer staging failed."); }
   }
   return {
+    ...(work?.geometryBounds ? { geometryBounds: work.geometryBounds } : {}),
     ...(deformation ? { deformation, deformationSnapshot: prepared.deformation!, deformationBoundsProfiles } : {}),
     vertexUpdates,
     geometries,
@@ -120,13 +136,13 @@ export function discardPacketBufferStage(
     staged.acquiredMaterials, staged.textures, staged.deformation, staged.vertexUpdates);
 }
 
-function stageGeometries(
+function* stageGeometries(
   context: PacketBufferStagingContext,
   prepared: PreparedPacket,
   target: Map<string, CachedPacketGeometry>,
   created: MeshBuffers[],
-  updates: MeshVertexUpdate[],
-): void {
+  updates: MeshVertexUpdate[], work?: PacketPreparationWork,
+): Generator<void, void> {
   const meshletBudget: { remainingBytes: number; visibility?: boolean } = { remainingBytes: PACKET_MESHLET_STAGE_BYTES };
   if (context.meshletVisibility) meshletBudget.visibility = true;
   for (const [id, source] of prepared.geometries) {
@@ -135,6 +151,7 @@ function stageGeometries(
   }
   const authorGeometries = new Set(prepared.batches.flatMap(batch => batch.lod?.strategy === "author-selected" ? batch.lod.levels.map(level => level.geometry) : []));
   for (const [id, source] of prepared.geometries) {
+    yield;
     const previous = context.geometries.get(id);
     if (previous && id === context.vertexStreamingGeometry) {
       const lease = previous.mesh.stageVertexUpdate(source);
@@ -157,13 +174,14 @@ function stageGeometries(
     validateGeometrySize(context.session, source);
     const owned = id===context.vertexStreamingGeometry ? captureVertexStreamBaseline(source) : source;
     const mesh = new MeshBuffers(context.session, owned, context.meshletsEnabled && authorGeometries.has(id) ? meshletBudget : undefined,
-      id===context.vertexStreamingGeometry ? {vertexStreaming:true} : undefined);
+      { ...(id===context.vertexStreamingGeometry ? { vertexStreaming:true } : {}),
+        ...(work?.geometryInputs.get(id) ? { preparedVertices: work.geometryInputs.get(id)! } : {}) });
     created.push(mesh);
-    target.set(id, { source:owned, mesh, ...geometryBounds(owned) });
+    target.set(id, { source:owned, mesh, ...(work?.geometryBounds?.get(id) ?? geometryBounds(owned)) });
   }
 }
 
-function stageBatches(
+function* stageBatches(
   context: PacketBufferStagingContext,
   prepared: PreparedPacket,
   textures: StagedTextureSet,
@@ -171,8 +189,9 @@ function stageBatches(
   createdBuffers: GPUBuffer[],
   acquiredMaterials: MaterialBinding[],
   stagedBinding?: (textures: StagedTextureSet, id: string) => TextureBinding,
-): void {
+): Generator<void, void> {
   for (const source of prepared.batches) {
+    yield;
     const previous = context.batches.get(source.key);
     const metadataChanged = authorLodMetadataChanged(previous?.source, source);
     const lookup = (id: string) => stagedBinding?.(textures, id) ?? context.textures.stagedBinding(textures, id);
@@ -276,7 +295,6 @@ function equalOptional(
 ): boolean {
   return a === undefined ? b === undefined : b !== undefined && equal(a, b);
 }
-
 function equalOptionalCenter(a: readonly number[]|undefined,b: readonly number[]|undefined):boolean {
   return a===undefined ? b===undefined : b!==undefined && a.length===b.length && a.every((x,i)=>Object.is(x,b[i]));
 }

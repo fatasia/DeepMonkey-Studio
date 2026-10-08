@@ -7,7 +7,7 @@ import type { PacketLodDraw } from "./packetLodTypes.js";
 import { failWithResourceCleanup } from "./resourceCleanup.js";
 import { MeshVertexStream, captureVertexStreamBaseline, type MeshVertexUpdate } from "./meshVertexStream.js";
 
-export interface MeshBufferOptions { readonly vertexStreaming?: boolean }
+export interface MeshBufferOptions { readonly vertexStreaming?: boolean; readonly preparedVertices?: Float32Array<ArrayBuffer> }
 
 export function uploadBuffer(session: DeviceSession, label: string, data: Float32Array<ArrayBuffer> | Uint32Array<ArrayBuffer>, usage: GPUBufferUsageFlags): GPUBuffer {
   const buffer = createAdmittedBuffer(session, { label, size: Math.max(4, data.byteLength), usage: usage | GPUBufferUsage.COPY_DST });
@@ -35,7 +35,7 @@ export class MeshBuffers {
       throw Error("Mesh vertex streaming requires a constructor-admitted non-meshlet GeometryResource.");
     }
     const baseline=options?.vertexStreaming ? captureVertexStreamBaseline(mesh as GeometryResource) : undefined;
-    this.originalVertices = uploadBuffer(session, "Deep vertices", interleaveUvSets(baseline ?? mesh), GPUBufferUsage.VERTEX);
+    this.originalVertices = uploadBuffer(session, "Deep vertices", options?.preparedVertices ?? interleaveUvSets(baseline ?? mesh), GPUBufferUsage.VERTEX);
     let tangents: GPUBuffer | undefined, colors: GPUBuffer | undefined;
     try {
       if ("tangents" in mesh && mesh.tangents) tangents = uploadBuffer(session, "Deep tangents", mesh.tangents, GPUBufferUsage.VERTEX);
@@ -134,7 +134,7 @@ export class MeshBuffers {
 }
 
 /** GPU 顶点布局固定为 position/normal/uv0/uv1；旧 packet 缺失的坐标集补零。 */
-function interleaveUvSets(mesh: MeshData | GeometryResource): Float32Array<ArrayBuffer> {
+export function interleaveUvSets(mesh: MeshData | GeometryResource): Float32Array<ArrayBuffer> {
   const source = mesh.vertices, uv0 = "uv0" in mesh ? mesh.uv0 : undefined, uv1 = "uv1" in mesh ? mesh.uv1 : undefined;
   const vertices = source.length / 6, packed = new Float32Array(vertices * 10);
   for (let vertex = 0; vertex < vertices; vertex++) {

@@ -91,6 +91,14 @@ describe("author metallicRoughness packing", () => {
 });
 
 describe("author texture resolver", () => {
+  it("matches TextureLoader flipY for asymmetric images without mutating decoder bytes", async () => {
+    const pixels = new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]);
+    const instance = new AuthorTextureResolver({ loadTexture: async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]),
+      imageDecoder: { decode: async () => ({ width: 1, height: 2, data: pixels }) } }, undefined, new AbortController().signal);
+    await instance.resolve("/asymmetric.png", "baseColor");
+    expect(Array.from(instance.registered()[0]!.data)).toEqual([0, 0, 255, 255, 255, 0, 0, 255]);
+    expect(Array.from(pixels)).toEqual([255, 0, 0, 255, 0, 0, 255, 255]);
+  });
   const resolver = (loadTexture: (url: string) => Promise<Uint8Array<ArrayBuffer>>, budgetBytes?: number) =>
     new AuthorTextureResolver({ loadTexture: async (url, signal) => {
       signal.throwIfAborted();

@@ -5,12 +5,14 @@ import { assertNativePacketDeformationSupported, deformationForBrowserJson, mate
 import { browserMaterialExtensions, layeredMaterialExtension, parseExtendedMaterialParametersJson, parseAdvancedMaterialParametersJson } from "./renderPacketBrowserMaterial.js";
 import { assertNativeLayeredMaterialSupported, assertNativeStockMaterialExtensionsSupported } from "./renderPacketNativeMaterial.js";
 import { normalizeAdvancedMaterialParameters } from "../shader/materialAdvancedParameters.js";
+import { decodeRuntimeTextureBytes, RUNTIME_TEXTURE_BYTE_LIMIT, validateRuntimeTexturePlaneBytes } from "./renderPacketTextureBytes.js";
 export { assertNativePacketDeformationSupported } from "./renderPacketDeformation.js";
 
 const GEOMETRY_OPTIONAL = ["uv0", "uv1", "tangents", "colors"];
 const MATERIAL_OPTIONAL = ["baseColorTexture", "metallicRoughnessTexture", "normalTexture", "occlusionTexture",
   "emissiveFactor", "emissiveStrength", "emissiveTexture", "baseColorAlpha", "alphaMode", "alphaCutoff", "doubleSided",
   "premultipliedAlpha", "fog", "shadingModel", "ior"];
+const SPECULAR_FIELDS = ["specularFactor", "specularColorFactor", "specularTexture", "specularColorTexture"];
 const SLOT_FIELDS = ["texCoord", "offset", "scale", "rotation"];
 const SAMPLER_FIELDS = ["addressModeU", "addressModeV", "magFilter", "minFilter", "mipmapFilter", "maxAnisotropy"];
 function id(value: unknown, path: string): void {
@@ -40,9 +42,8 @@ function material(input: unknown, path: string, browserProfile: boolean): PbrMat
   // 走同一 fail-closed 校验。C9/native:stock extendedParameters 与 advanced
   // (保守子集 sheen)接通 native 求值,两个 profile 走同一闭合域 JSON 解析;
   // 子集差异由 assertNativeStockMaterialExtensionsSupported 承担(未消费的
-  // anisotropy/transmission/iridescence/volume 非零值 fail-closed,不静默忽略)。
-  const optional = browserProfile ? [...MATERIAL_OPTIONAL, "extendedParameters", "layered", "advancedParameters"]
-    : [...MATERIAL_OPTIONAL, "extendedParameters", "layered", "advancedParameters"];
+  // anisotropy/iridescence/volume 非零值 fail-closed;stock transmission is consumed).
+  const optional = [...MATERIAL_OPTIONAL, ...SPECULAR_FIELDS, "extendedParameters", "layered", "advancedParameters"];
   fields(value, ["id", "baseColor", "metallic", "roughness"], optional, path);
   const extensions = browserProfile ? browserMaterialExtensions(value, path)
     : (() => {
@@ -58,8 +59,8 @@ function material(input: unknown, path: string, browserProfile: boolean): PbrMat
       };
     })();
   if (!browserProfile) assertNativeLayeredMaterialSupported(extensions.layered, `${path}.layered`);
-  id(value.id, `${path}.id`); nonnullOptions(value, MATERIAL_OPTIONAL, path);
-  for (const name of ["baseColorTexture", "metallicRoughnessTexture", "normalTexture", "occlusionTexture", "emissiveTexture"]) {
+  id(value.id, `${path}.id`); nonnullOptions(value, optional, path);
+  for (const name of ["baseColorTexture", "metallicRoughnessTexture", "normalTexture", "occlusionTexture", "emissiveTexture", "specularTexture", "specularColorTexture"]) {
     if (!Object.hasOwn(value, name)) continue;
     const slot = record(value[name], `${path}.${name}`);
     fields(slot, ["texture"], [...SLOT_FIELDS, ...(name === "normalTexture" ? ["normalScale"] : name === "occlusionTexture" ? ["strength"] : [])], `${path}.${name}`);
@@ -76,13 +77,17 @@ function material(input: unknown, path: string, browserProfile: boolean): PbrMat
   // for the author RenderPacket ABI without changing the final linear emission.
   const runtimeStrength = Math.max(1, ...emission);
   const { emissiveFactor: _factor, emissiveStrength: _strength, ...rest } = value;
-  return { ...rest, ...extensions, emissiveFactor: emission.map(number => number / runtimeStrength) as [number, number, number],
+  return { ...rest, ...extensions,
+    ...(value.specularColorFactor === undefined ? {} : { specularColorFactor: [...numericArray(value.specularColorFactor, `${path}.specularColorFactor`)] }),
+    emissiveFactor: emission.map(number => number / runtimeStrength) as [number, number, number],
     ...(runtimeStrength === 1 ? {} : { emissiveStrength: runtimeStrength }) } as unknown as PbrMaterial;
 }
-function texture(input: unknown, path: string): Record<string, unknown> {
+function texture(input: unknown, path: string, browserProfile: boolean): Record<string, unknown> {
   const value = record(input, path);
   fields(value, ["id", "revision", "semantic", "width", "height", "data"], ["bytesPerRow", "mipmaps", "sampler"], path);
   id(value.id, `${path}.id`); nonnullOptions(value, ["bytesPerRow", "mipmaps", "sampler"], path);
+  if (!browserProfile) requireValue(["baseColor", "metallicRoughness", "normal", "occlusion", "emissive", "specular", "specularColor"].includes(value.semantic as string),
+    `${path}.semantic`, "Native RenderPacket texture semantic is unsupported.");
   if (value.sampler !== undefined) {
     const sampler = record(value.sampler, `${path}.sampler`);
     fields(sampler, [], SAMPLER_FIELDS, `${path}.sampler`);
@@ -92,9 +97,11 @@ function texture(input: unknown, path: string): Record<string, unknown> {
     const levelPath = `${path}.mipmaps[${index}]`, candidate = record(level, levelPath);
     fields(candidate, ["width", "height", "data"], ["bytesPerRow"], levelPath);
     nonnullOptions(candidate, ["bytesPerRow"], levelPath);
-    return { ...candidate, data: new Uint8Array(numericArray(candidate.data, `${path}.mipmaps[${index}].data`, 255)) };
+    return { ...candidate, data: typeof candidate.data === "string" ? decodeRuntimeTextureBytes(candidate.data)
+      : new Uint8Array(numericArray(candidate.data, `${path}.mipmaps[${index}].data`, 255)) };
   });
-  return { ...value, data: new Uint8Array(numericArray(value.data, `${path}.data`, 255)), ...(levels ? { mipmaps: levels } : {}) };
+  return { ...value, data: typeof value.data === "string" ? decodeRuntimeTextureBytes(value.data)
+    : new Uint8Array(numericArray(value.data, `${path}.data`, 255)), ...(levels ? { mipmaps: levels } : {}) };
 }
 function lod(input: unknown, path: string): void {
   const profile = record(input, path);
@@ -147,7 +154,16 @@ function parseRuntimeRenderPacket(input: unknown, path: string, browserProfile =
     requireValue(transform.length === 16, p, "Expected a 16-value transform.");
     return { ...instance, transform: new Float32Array(transform) };
   });
-  const textures = value.textures === undefined ? [] : array(value.textures, `${path}.textures`, 4096).map((item, index) => texture(item, `${path}.textures[${index}]`));
+  const textureValues = value.textures === undefined ? [] : array(value.textures, `${path}.textures`, 4096);
+  let textureBytes = 0;
+  for (const [index, item] of textureValues.entries()) {
+    const p = `${path}.textures[${index}]`, candidate = record(item, p);
+    textureBytes += validateRuntimeTexturePlaneBytes(candidate, p);
+    for (const [level, data] of (candidate.mipmaps === undefined ? [] : array(candidate.mipmaps, `${p}.mipmaps`, 15)).entries())
+      textureBytes += validateRuntimeTexturePlaneBytes(record(data, `${p}.mipmaps[${level}]`), `${p}.mipmaps[${level}]`);
+    requireValue(textureBytes <= RUNTIME_TEXTURE_BYTE_LIMIT, p, "Texture data exceeds the 128 MiB packet budget.");
+  }
+  const textures = textureValues.map((item, index) => texture(item, `${path}.textures[${index}]`, browserProfile));
   const deformation = Object.hasOwn(value, "deformation") ? materializePacketDeformation(value.deformation, `${path}.deformation`, numericArray) : undefined;
   const packet = { geometries, materials, instances, textures, ...(deformation ? { deformation } : {}) } as unknown as RenderPacket;
   prepareRenderPacket(packet, STOCK_MATERIAL_INSTANCE_OPTIONS);

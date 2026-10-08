@@ -2,6 +2,7 @@ mod author_lod;
 mod lod;
 mod lod_json;
 mod types;
+mod texture_bytes;
 mod uv_sets;
 mod validate;
 mod validate_geometry;

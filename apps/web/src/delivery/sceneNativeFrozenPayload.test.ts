@@ -9,6 +9,8 @@ import { assessCompiledScenePublication } from "./scenePublicationCompatibility"
 import { scenePublicationDependencyIdentity } from "./sceneClientFrozenDependencies";
 import { prepareFrozenNativeScenePayload } from "./sceneNativeFrozenPayload";
 import { exportSceneClientPackage } from "./sceneClientPackage";
+import sharp from "sharp";
+import { authorTextureTestGlb } from "./sceneAuthorTextureTestFixture";
 
 const mocks = vi.hoisted(() => ({ bytes: vi.fn(), record: vi.fn(), project: vi.fn(), applications: vi.fn(), compile: vi.fn(), download: vi.fn() }));
 vi.mock("../api", () => ({ api: { loadScenePublicationResource: mocks.bytes, getScenePublicationDependencies: mocks.record,
@@ -51,6 +53,37 @@ it("exports the exact server runtime bytes through a real ZIP without browser co
   const zip = await JSZip.loadAsync(await (mocks.download.mock.calls[0]![0] as Blob).arrayBuffer());
   expect(await zip.file("native/runtime-package.json")!.async("string")).toBe(compiled.packageJson);
   expect(JSON.parse(await zip.file("native/compatibility-report.json")!.async("string")).status).toBe("ready");
+});
+it("restores a frozen texture package with its source hashes and rejects a rebound graph missing texture sources", async () => {
+  const { scene, record } = await fixture();
+  scene.models = [{ modelId: "author", assetModelId: "uv-box", name: "UV box", visible: true, opacity: 1,
+    transform: { position: { x: 1e9, y: 1e9, z: 1e9 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } },
+    material: { baseColorMapUrl: "/author.png" } }];
+  const image = await sharp({ create: { width: 4, height: 4, channels: 4,
+    background: { r: 80, g: 160, b: 200, alpha: 1 } } }).png().toBuffer();
+  const compiled = await compileSceneRuntimePackage(scene, { packageId: "frozen.texture", packageVersion: "1.0.0",
+    loadModel: async () => authorTextureTestGlb(), loadTexture: async () => Uint8Array.from(image),
+    imageDecoder: { async decode(source) {
+      const decoded = await sharp(source.data).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      return { width: decoded.info.width, height: decoded.info.height, data: new Uint8Array(decoded.data) };
+    } } });
+  const native = record.nativeCompiled!, evidence = compiled.evidence, fixtureId = `scene-${evidence.sourceSemanticHash}`;
+  native.compilationEvidence = { ...evidence };
+  const content = new TextEncoder().encode(compiled.packageJson).buffer;
+  native.runtimePackage = { key: `projects/p/publication-resources/sha256/${evidence.targetArtifactHash}`,
+    bytes: content.byteLength, sha256: evidence.targetArtifactHash };
+  const proofs = ["deep.scene.runtime.v1", "deep.scene.camera.v1", "deep.scene.static-glb.v1"].map(capability => ({
+    id: capability, capability, target: "deep-native" as const, scope: "native-window" as const,
+    platform: "windows-x64", fixtureId, sourceSemanticHash: evidence.sourceSemanticHash,
+    compileGraphHash: evidence.compileGraphHash, targetArtifactHash: evidence.targetArtifactHash }));
+  native.compatibilityReport = assessCompiledScenePublication(scene, { compilation: evidence, fixtureId,
+    platform: "windows-x64", runtimeEvidence: proofs });
+  mocks.bytes.mockResolvedValue(content);
+  const result = await prepareFrozenNativeScenePayload(scene, record, new AbortController().signal);
+  expect(result.files[0]!.content).toBe(compiled.packageJson);
+  expect(mocks.compile).not.toHaveBeenCalled();
+  delete native.compilationEvidence.sourceTextures;
+  await expect(prepareFrozenNativeScenePayload(scene, record, new AbortController().signal)).rejects.toThrow("编译图身份不一致");
 });
 
 it.each(["bytes", "inner-package", "graph-binding", "source", "graph", "proof", "foreign-key", "missing"])("rejects corrupted frozen Native %s", async kind => {

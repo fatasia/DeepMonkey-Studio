@@ -33,7 +33,8 @@ pub(super) fn pack_instance(
             }),
         determinant_sign,
         flags
-            + if material.alpha_mode == Some(AlphaMode::Blend) && material.alpha_cutoff.is_some() {
+            + if material.draw_alpha_mode() == AlphaMode::Blend
+                && (material.alpha_cutoff.is_some() || material.alpha_mode == Some(AlphaMode::Mask)) {
                 2.0
             } else {
                 0.0

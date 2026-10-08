@@ -19,6 +19,24 @@ function fixture() {
     encode: (value = snapshot()) => owner.encode(encoder as unknown as GPUCommandEncoder, {} as GPUTextureView, value) };
 }
 describe("editor overlay ownership and rendering", () => {
+  it("retains one owned static copy across revisions while detecting mutations and invalid values", () => {
+    const f = fixture(), input = snapshot();
+    const copy = vi.spyOn(Float32Array.prototype, "slice");
+    try {
+      f.encode(input);
+      for (let revision = 2; revision < 202; revision++) f.encode({ revision, vertices: input.vertices });
+      expect(copy).toHaveBeenCalledTimes(1);
+      expect(f.writeBuffer).toHaveBeenCalledTimes(1);
+      input.vertices[0] = -0.25;
+      expect(() => f.encode({ revision: 201, vertices: input.vertices })).toThrow("revision");
+      f.encode({ revision: 202, vertices: input.vertices });
+      expect(f.writeBuffer).toHaveBeenCalledTimes(2);
+      input.vertices[7] = NaN;
+      expect(() => f.encode({ revision: 203, vertices: input.vertices })).toThrow("finite");
+      input.vertices[7] = 2;
+      expect(() => f.encode({ revision: 203, vertices: input.vertices })).toThrow("unit colors");
+    } finally { copy.mockRestore(); f.owner.dispose(); }
+  });
   it("grows only for larger geometry and writes the final GPU timestamp on its own pass", () => {
     const f = fixture(); f.encode();
     const big = { revision: 2, vertices: new Float32Array([...snapshot().vertices, ...snapshot().vertices]) };

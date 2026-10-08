@@ -52,6 +52,7 @@ import { FramePerformanceMonitor } from "./framePerformanceMonitor";
 import { AdaptiveRenderScaleController } from "./adaptiveRenderScale";
 import { observeViewerPixelRatio } from "./viewerPixelRatioObserver";
 import { createBrowserPipelineWarmupScheduler } from "./rendererPipelineWarmup";
+import { warmThreeSceneResources, warmThreeShaderPrograms } from "./threeShaderWarmup";
 import { rendererPipelineSignature } from "./rendererPipelineSignature";
 import type { SpaceVisualRuntime } from "./spaceVisualSync";
 import { PrimitiveGeometryCache } from "./primitiveGeometry";
@@ -284,6 +285,7 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   protected readonly adaptiveRenderScaleController = new AdaptiveRenderScaleController(Math.min(devicePixelRatio, 2));
   protected readonly pipelineWarmupScheduler = createBrowserPipelineWarmupScheduler();
   protected readonly warmedPipelineSignatures = new Set<string>();
+  private readonly warmedPostPipelines = new WeakMap<object, Set<string>>();
   protected readonly primitiveGeometryCache = new PrimitiveGeometryCache();
   protected readonly primitiveMaterialCache = new PrimitiveMaterialCache();
   protected readonly gpuResourceRetirementQueue = new GpuResourceRetirementQueue(() => runtimeGpuDevice(this.renderer)?.queue);
@@ -519,22 +521,38 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
     this.materialActivityDirty = true;
     this.requestRender();
     this.pipelineWarmupScheduler.request(async () => {
+      try {
       const signature = rendererPipelineSignature(this.scene, this.rendererBackend, this.postProcessingState);
-      if (this.warmedPipelineSignatures.has(signature)) return false;
+      const post = this.postProcessing;
+      const mainReady = this.warmedPipelineSignatures.has(signature);
+      if (this.rendererBackend === "webgl") await warmThreeSceneResources(this.renderer as THREE.WebGLRenderer,
+        this.scene, () => !this.rendererDisposalStarted);
+      if (this.rendererDisposalStarted) return false;
+      if (mainReady && (!post || this.warmedPostPipelines.get(post)?.has(signature))) return false;
       const renderer = this.renderer as RendererInstance & {
         compile?: (scene: THREE.Scene, camera: THREE.Camera) => unknown;
         compileAsync?: (scene: THREE.Scene, camera: THREE.Camera) => Promise<unknown>;
       };
-      if (this.rendererBackend === "webgl" && typeof renderer.compile === "function") {
-        // Three.js WebGL compileAsync 会持续轮询材质程序；切换工作区释放材质时存在竞态。
-        // 同步提交仍可提前触发驱动编译，并且不会留下跨 Viewer 生命周期的定时任务。
-        renderer.compile(this.scene, this.camera);
+      if (typeof renderer.compileAsync === "function") {
+        // Three r186 guards disposed materials while polling parallel compilation.
+        if (!mainReady && this.rendererBackend === "webgl") await warmThreeShaderPrograms(renderer as THREE.WebGLRenderer,
+          this.scene, this.camera, () => !this.rendererDisposalStarted);
+        else if (!mainReady) await renderer.compileAsync(this.scene, this.camera);
+        if (this.rendererDisposalStarted) return false;
+        await post?.prepare?.(this.scene, this.camera);
+        if (post && !this.rendererDisposalStarted) {
+          const signatures = this.warmedPostPipelines.get(post) ?? new Set<string>();
+          signatures.add(signature); this.warmedPostPipelines.set(post, signatures);
+        }
         this.warmedPipelineSignatures.add(signature);
-      } else if (typeof renderer.compileAsync === "function") {
-        await renderer.compileAsync(this.scene, this.camera);
+      } else if (typeof renderer.compile === "function") {
+        renderer.compile(this.scene, this.camera);
         this.warmedPipelineSignatures.add(signature);
       }
       return true;
+      } finally {
+        if (!this.rendererDisposalStarted) this.requestRender();
+      }
     });
   }
 
@@ -609,7 +627,10 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
     this.resizeObserver.observe(this.container);
     this.disposePixelRatioObserver = observeViewerPixelRatio(() => this.scheduleResize());
     this.resize();
-    this.animate();
+    // Shader admission starts in a microtask before the first author frame.
+    // The constructor must not upload textures or wait for program linking.
+    this.scheduleRendererPipelineWarmup();
+    this.animationFrame = requestAnimationFrame(this.animate);
   }
 
   /**

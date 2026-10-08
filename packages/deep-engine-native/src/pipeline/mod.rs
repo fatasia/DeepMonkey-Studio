@@ -31,7 +31,7 @@ struct ActiveMeshPipelines {
     solid: MaterialPipelines,
     blend: MaterialPipelines,
     blend_premultiplied: MaterialPipelines,
-    shadow: ShadowPipelines,
+    shadow: Option<ShadowPipelines>,
 }
 
 struct LayeredColorPipelines {
@@ -40,11 +40,13 @@ struct LayeredColorPipelines {
     blend_premultiplied: MaterialPipelines,
 }
 
+#[derive(Clone)]
 struct MaterialPipelines {
     standard: RasterPipelines,
     normal_mapped: RasterPipelines,
 }
 
+#[derive(Clone)]
 struct RasterPipelines {
     regular: wgpu::RenderPipeline,
     mirrored: wgpu::RenderPipeline,
@@ -79,7 +81,9 @@ impl MeshPipelines {
 
     pub fn counts(&self) -> (usize, usize) {
         if self.active.is_some() {
-            (MESH_PIPELINE_VARIANTS, SHADOW_PIPELINE_VARIANTS)
+            if self.active.as_ref().is_some_and(|p| p.shadow.is_some()) {
+                (MESH_PIPELINE_VARIANTS, SHADOW_PIPELINE_VARIANTS)
+            } else { (6, 0) }
         } else {
             (0, 0)
         }
@@ -154,7 +158,7 @@ impl MeshPipelines {
             .active
             .as_ref()
             .expect("shadow draws require material pipelines")
-            .shadow;
+            .shadow.as_ref().expect("GBuffer pipelines do not draw shadow passes");
         match mode {
             ShadowCasterMode::Solid => (shadow.solid.select(mirrored, double_sided), false),
             ShadowCasterMode::MaskPlain => {
@@ -219,15 +223,26 @@ pub fn create_mesh_pipelines_with_normal_capture(
                 BlendSemantic::Premultiplied,
                 false,
             ),
-            shadow: shadow::create_shadow_pipelines(
+            shadow: Some(shadow::create_shadow_pipelines(
                 device,
                 shadow_frame_layout,
                 material_layout,
                 shader,
-            ),
+            )),
         }),
         layered: None,
     }
+}
+
+/// Six opaque/MASK raster variants; shares the normal material/instance ABI.
+pub(crate) fn create_megalights_gbuffer_pipelines(
+    device: &wgpu::Device, frame_layout: &wgpu::BindGroupLayout,
+    material_layout: &wgpu::BindGroupLayout, shader: &wgpu::ShaderModule,
+) -> MeshPipelines {
+    let solid = mesh::create_megalights_material_pipelines(device, frame_layout, material_layout, shader);
+    MeshPipelines { active: Some(ActiveMeshPipelines {
+        blend: solid.clone(), blend_premultiplied: solid.clone(), solid, shadow: None,
+    }), layered: None }
 }
 
 /// I-C23:在普通管线族之上追加分层颜色管线族(fragment_*_layered 入口 +

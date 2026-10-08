@@ -60,23 +60,24 @@ describe("J2-B2 shared output math and remaining policy differences", () => {
     for (const shader of rustOutputs) expect(shader).not.toContain("fn linear_to_srgb");
   });
 
-  it("DRIFT-3 作者分级:TS WGSL 无 abs/无白平衡门控/含 vignette 段,Rust author_grading_apply 有 abs/有门控/无 vignette(TS CPU 权威 applyPbrAuthorColorEffects 与 Rust 同侧)", () => {
-    // TS WGSL(GPU 生产串)三缺:
-    expect(PBR_AUTHOR_COLOR_EFFECTS_WGSL).not.toContain("abs(");
-    expect(PBR_AUTHOR_COLOR_EFFECTS_WGSL).not.toContain("wb.x != 0.0");
+  it("shares the white-balance guard and absolute denominator; both hosts apply author vignette", () => {
+    expect(PBR_AUTHOR_COLOR_EFFECTS_WGSL).toContain("max(abs(dot(color, vec3f(0.2126, 0.7152, 0.0722)))");
+    expect(PBR_AUTHOR_COLOR_EFFECTS_WGSL).toContain("wb.x != 0.0 || wb.y != 0.0");
     expect(PBR_AUTHOR_COLOR_EFFECTS_WGSL).toContain("1.0 - authorEffects.switches.w"); // vignette 段在 TS WGSL
     // TS CPU(白炉仲裁基准)与 Rust WGSL 同侧:abs + 门控。
     const seg = segment(rustColor, "fn author_grading_apply", "\n}\n");
     expect(seg).toContain("abs(dot(color, vec3f(0.2126, 0.7152, 0.0722)))");
     expect(seg).toContain("wb.x != 0.0 || wb.y != 0.0");
-    expect(seg).not.toContain("vignette");
+    expect(seg).toContain("if (author_grading.switches.y > 0.5)");
+    expect(seg).toContain("1.0 - author_grading.switches.w");
     for (const shader of rustOutputs) expect(shader).toContain("author_grading_apply(");
   });
 
-  it("DRIFT-4 vignette:TS outputShader 有径向 vignette smoothstep,Rust 输出链无 vignette(author_grading.rs 注释:槽位保留,vignette 属后续切片)", () => {
+  it("feeds actual normalized viewport UV to native author vignette; TS legacy output vignette retains its own policy", () => {
     expect(outputShader).toContain("settings.vignette * smoothstep(0.05, 0.5, radial)");
     for (const shader of rustOutputs) {
-      expect(shader).not.toContain("vignette");
+      expect(shader).toContain("input.position.xy / vec2f(textureDimensions(hdr_color))");
+      expect(shader).toContain("author_grading_apply(hdr.rgb, vignette_uv)");
     }
   });
 

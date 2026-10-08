@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { SystemUserRecord } from "@bim-studio/contracts";
+import type { OntologyPackage, SystemUserRecord } from "@bim-studio/contracts";
 import { createApiServer } from "../serverOptions.js";
 import type { MetadataStore } from "../store.js";
 import { datasetSchemaFingerprint } from "./ontologyContext.js";
@@ -59,7 +59,7 @@ describe("ontology routes", () => {
     expect(validation.json().gate.gates).toHaveLength(9);
 
     // 保存草稿 → 提交评审 → 发布（保存 payload 保持与服务端一致的数据源指纹）
-    const draftPayload = buildPublishablePackage(packageId);
+    const draftPayload = (await app.inject({ method: "GET", url: `/api/projects/project-1/ontology-packages/${packageId}` })).json<OntologyPackage>();
     draftPayload.objects[0]!.sourceBindings[0]!.schemaFingerprint = datasetSchemaFingerprint({ fields: [{ key: "device_id", label: "设备编号", type: "string" }], computedFields: [] });
     const saved = await app.inject({ method: "PUT", url: `/api/projects/project-1/ontology-packages/${packageId}`, payload: { ...draftPayload, name: "产线设备本体 v2" } });
     expect(saved.statusCode).toBe(200);

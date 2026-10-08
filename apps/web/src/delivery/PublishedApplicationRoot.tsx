@@ -9,6 +9,7 @@ import { getSceneModelAssetId, type SystemBrandingSettings } from "@bim-studio/c
 import { publicApplicationAction, publishedApplicationId, publishedEntryPage, publishedInitialDashboardFilters } from "./publishedApplicationModel";
 import "./published-application.css";
 import { PublishedModelCredits } from "./PublishedModelCredits";
+import { applicationLocationPath } from '../adapters/browserRuntimeConfig';
 
 /** No author store, workspace hydration, login gate or write callbacks are mounted. */
 export function PublishedApplicationRoot() {
@@ -22,7 +23,7 @@ export function PublishedApplicationRoot() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    const applicationId = publishedApplicationId(window.location.pathname);
+    const applicationId = publishedApplicationId(applicationLocationPath(window.location.pathname));
     setBundle(undefined); setError(""); setNotice("");
     if (!applicationId) { setError("发布链接无效，请检查应用地址。"); return; }
     void publishedApplicationApi.branding(controller.signal).then(branding => {

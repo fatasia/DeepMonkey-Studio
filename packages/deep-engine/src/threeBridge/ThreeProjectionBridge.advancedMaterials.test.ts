@@ -17,7 +17,8 @@ const rejected = (target: ReturnType<typeof bridge>, mesh: THREE.Mesh) => {
 
 describe("Three MeshPhysicalMaterial lobes with the advancedMaterials capability", () => {
   it("keeps the fail-closed contract when the renderer capability is absent", () => {
-    for (const parameters of [{ clearcoat: 0.5 }, { sheen: 1, sheenColor: new THREE.Color(1, 1, 1) }, { iridescence: 1 }, { transmission: 1 }]) {
+    for (const parameters of [{ clearcoat: 0.5 }, { sheen: 1, sheenColor: new THREE.Color(1, 1, 1) }, { iridescence: 1 }, { transmission: 1 },
+      { specularIntensity: .5 }, { specularColor: new THREE.Color(.2, .4, 1) }]) {
       expect(rejected(bridge(), physical(parameters))).toMatchObject({ code: "unsupported", feature: "MeshPhysicalMaterial non-neutral extensions" });
     }
   });
@@ -64,11 +65,25 @@ describe("Three MeshPhysicalMaterial lobes with the advancedMaterials capability
     expect(material.advancedParameters).toBeUndefined();
   });
 
-  it("still fails closed on maps, anisotropy, dispersion and specular extensions", () => {
+  it("projects independent specular factors and maps in the advanced profile", () => {
+    const mesh = physical({ specularIntensity: .5, specularColor: new THREE.Color(2, .5, .25) });
+    mesh.material.specularIntensityMap = new THREE.DataTexture(Uint8Array.from([255, 255, 255, 64]), 1, 1);
+    mesh.material.specularColorMap = new THREE.DataTexture(Uint8Array.from([64, 128, 255, 255]), 1, 1);
+    mesh.material.specularColorMap.colorSpace = THREE.SRGBColorSpace;
+    mesh.material.specularIntensityMap.needsUpdate = true;
+    mesh.material.specularColorMap.needsUpdate = true;
+    const packet = project(bridge(undefined, { advancedMaterials: true }), mesh).packet;
+    expect(packet.materials[0]).toMatchObject({ specularFactor: .5, specularColorFactor: [2, .5, .25] });
+    expect(packet.textures!.map(texture => texture.semantic)).toEqual(["specular", "specularColor"]);
+    expect(packet.textures![0]!.data[3]).toBe(64);
+    expect(packet.textures![1]!.data).toEqual(new Uint8Array([64, 128, 255, 255]));
+    expect(prepareRenderPacket(packet).batches[0]!.textures).toMatchObject({ specularFactor: .5 });
+  });
+
+  it("still fails closed on other maps, anisotropy and dispersion", () => {
     const target = bridge(undefined, { advancedMaterials: true });
     expect(rejected(target, physical({ anisotropy: 0.5 }))).toMatchObject({ code: "unsupported" });
     expect(rejected(target, physical({ dispersion: 0.2 }))).toMatchObject({ code: "unsupported" });
-    expect(rejected(target, physical({ specularIntensity: 0.5 }))).toMatchObject({ code: "unsupported" });
     const withMap = physical({ clearcoat: 1 });
     withMap.material.clearcoatMap = new THREE.DataTexture(Uint8Array.from([255, 255, 255, 255]), 1, 1);
     expect(rejected(target, withMap)).toMatchObject({ code: "unsupported", feature: "material.clearcoatMap" });

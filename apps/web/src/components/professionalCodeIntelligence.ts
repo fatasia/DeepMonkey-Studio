@@ -1,4 +1,5 @@
 import type * as monaco from "monaco-editor";
+import { applicationPath } from "../adapters/browserRuntimeConfig";
 import type { SceneScriptIntelligenceContext, SceneScriptReference, SceneScriptTarget } from "../studio/sceneScriptContext";
 
 export function snippet(
@@ -74,7 +75,7 @@ export function apiDocumentationAt(
         range: { startLineNumber: position.lineNumber, startColumn: start, endLineNumber: position.lineNumber, endColumn: end },
         title: item.title,
         description: item.description,
-        href: item.href,
+        href: applicationPath(item.href),
       };
     }
   }
@@ -82,7 +83,7 @@ export function apiDocumentationAt(
 }
 
 export function docsMarkdown(zh: string, en: string, href: string): monaco.IMarkdownString {
-  return { value: `${zh} · ${en}\n\n[打开关联文档](${href})`, isTrusted: true };
+  return { value: `${zh} · ${en}\n\n[打开关联文档](${applicationPath(href)})`, isTrusted: true };
 }
 
 export function stringLiteralAt(model: monaco.editor.ITextModel, position: monaco.Position): { value: string; range: monaco.IRange } | undefined {

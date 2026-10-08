@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { DeepCameraController } from "./deepCameraController";
 import { DeepCameraInputSession } from "./deepCameraInputSession";
+import { PerspectiveCamera, Vector3 } from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 // 输入会话合同:手势→控制器调用的映射、双指捏合、detach 后完全解绑、
 // 手势进行中不向作者画布转发 move(转发链实测产生拖拽期 React 长任务)。
@@ -39,9 +41,27 @@ describe("DeepCameraInputSession", () => {
     expect(harness0.pan).toHaveBeenCalledWith(-10, -20, 800);
     const wheel = { deltaY: 250, preventDefault: vi.fn() } as unknown as WheelEvent;
     harness0.canvasEvents.get("wheel")!(wheel);
-    expect(harness0.zoom).toHaveBeenCalledWith(-2.5);
+    expect(harness0.zoom).toHaveBeenCalledWith(2.5);
     expect(wheel.preventDefault).toHaveBeenCalled();
     expect(harness0.onFrame).toHaveBeenCalled();
+  });
+
+  it.each([-100, 100])("matches actual Three OrbitControls radius direction for deltaY=%s", deltaY => {
+    const root = new EventTarget();
+    const element = Object.assign(new EventTarget(), { style: {}, ownerDocument: root, getRootNode: () => root,
+      clientWidth: 800, clientHeight: 800 }) as unknown as HTMLCanvasElement;
+    const camera = new PerspectiveCamera(); camera.position.set(0, 0, 10);
+    const orbit = new OrbitControls(camera, element);
+    const event = new Event("wheel", { cancelable: true });
+    Object.defineProperties(event, { deltaY: { value: deltaY }, deltaMode: { value: 0 }, ctrlKey: { value: false } });
+    element.dispatchEvent(event);
+    const h = harness(); h.controller.setPose([0, 0, 10], [0, 0, 0]); h.session.attach();
+    h.canvasEvents.get("wheel")!({ deltaY, preventDefault: vi.fn() } as unknown as WheelEvent);
+    for (let step = 0; step < 120; step++) h.controller.tick(16);
+    const pose = h.controller.getPose(), radius = new Vector3(...pose.eye).distanceTo(new Vector3(...pose.target));
+    expect(Math.sign(radius - 10)).toBe(Math.sign(camera.position.length() - 10));
+    expect(radius).toBeCloseTo(camera.position.length(), 3);
+    orbit.dispose(); h.session.detach();
   });
 
   it("shift-drag pans and two-pointer pinch zooms by distance delta", () => {
@@ -58,7 +78,7 @@ describe("DeepCameraInputSession", () => {
     expect(harness0.zoom).not.toHaveBeenCalled();
     pointerEvent(harness0.canvasEvents, "pointermove", { pointerId: 11, clientX: 400, clientY: 100 });
     expect(harness0.zoom).toHaveBeenCalledTimes(1);
-    expect(harness0.zoom).toHaveBeenCalledWith(100 / 8);
+    expect(harness0.zoom).toHaveBeenCalledWith(-100 / 8);
   });
 
   it("detaches every listener and ignores late events", () => {

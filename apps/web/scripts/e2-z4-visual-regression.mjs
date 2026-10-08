@@ -226,9 +226,9 @@ async function runRound(gate) {
 
   // 08 studio 三维编辑器(深链路由,渲染稳定后再截)
   await page.goto(studioUrl, { waitUntil: "domcontentloaded", timeout: 90_000 });
-  await page.locator(".viewport canvas").waitFor({ timeout: 60_000 });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ timeout: 60_000 });
   await page.waitForTimeout(2500);
-  await audit("08-studio", { shell: ".app-shell", expect: [["viewport", page.locator(".viewport canvas")], ["leftPanel", page.locator(".left-panel")], ["rightPanel", page.locator(".right-panel")]] });
+  await audit("08-studio", { shell: ".app-shell", expect: [["viewport", page.locator('.viewport canvas:not([aria-hidden="true"])')], ["leftPanel", page.locator(".left-panel")], ["rightPanel", page.locator(".right-panel")]] });
 
   // 09 AI 助手面板(manager 上层浮层)
   await page.goto(`${gate.origin}/manager?project=${encodeURIComponent(project.id)}`, { waitUntil: "domcontentloaded" });

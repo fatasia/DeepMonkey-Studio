@@ -77,7 +77,7 @@ try {
   await assertDark();
   const sceneEditorUrl = `${gate.origin}/studio/${encodeURIComponent(project.id)}/applications/${encodeURIComponent(application.metadata.id)}/scenes/${encodeURIComponent(scene.id)}`;
   await page.goto(sceneEditorUrl, { waitUntil: "networkidle", timeout: 90_000 });
-  await page.locator(".viewport canvas").waitFor();
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
   const uploadResponse = page.waitForResponse((candidate) => candidate.url().includes(`/api/projects/${project.id}/models?`) && candidate.request().method() === "POST");
   await page.locator('input[type="file"][accept*=".glb"]').setInputFiles(modelFixturePath);
   const uploadedModel = await uploadResponse.then((entry) => entry.json());
@@ -304,7 +304,7 @@ try {
   await page.locator(".scene-tool-dock").getByText("创建", { exact: true }).first().click();
   await page.getByRole("menuitem", { name: "立方体" }).click();
   await page.waitForFunction(() => document.querySelector(".viewport-status")?.textContent?.includes("放置"), undefined, { timeout: 8_000 }).catch(() => {});
-  const canvasBox = await page.locator(".viewport canvas").first().boundingBox();
+  const canvasBox = await page.locator('.viewport canvas:not([aria-hidden="true"])').first().boundingBox();
   assert.ok(canvasBox, "视口画布不可见");
   await page.mouse.click(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height * 0.5);
   await page.waitForFunction(() => document.querySelector(".viewport-status")?.textContent?.includes("已放置"), undefined, { timeout: 12_000 });

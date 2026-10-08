@@ -1,23 +1,5 @@
 /// <reference types="@webgpu/types" />
-/**
- * G1-S1 簇级微多边形绘制槽位（opt-in，PbrRendererOptions.clusterLod）。
- * 把既有合同链接进默认帧：bake DAG（clusterLodBake 产物，由宿主 stage）→
- * GPU select_cluster_lod（clusterLodSelectionKernel，逐节点独立判定）→ 读回槽位 →
- * planClusterLodIndirect（前沿闭合 + fail-closed 校验）→ ClusterLodIndirectExecutor
- * 命令上传/RenderBundle → 主 opaque pass executeBundles(drawIndexedIndirect)。
- *
- * == 帧内时序（一帧选层延迟，与粒子运行时同款异步纪律） ==
- * 帧 N：updateCamera（写 48B 相机 uniform）→ encodeFrame 在主 encoder 追加 compute pass +
- * selection/faults 读回拷贝 → 主 pass 用帧 N−1 的 bundle 绘制 → submit 后 ingest() 异步
- * mapAsync 读回 → 派生 plan/命令。相机静止时签名相等，encode 跳过、命令与 bundle 全复用。
- *
- * == fail-closed（绝不静默降级） ==
- * 选层 faults 哨兵非零、读回槽位违反选层合同（planClusterLodIndirect 抛错）、命令超预算
- * （executor.encode 抛错）、帧签名不支持（MRT/directDisplay）——一律清空执行、sticky
- * fallbackReason 上浮到 FrameMetrics.clusterLod.fallbackReason，后续帧不再绘制；
- * 恢复唯一途径是重新 stageClusterLodScene。staging 校验（DAG 合同/层数/像素阈值）在
- * create 处直接抛错。
- */
+/** GPU cluster selection and indirect drawing; production retains caller PBR bindings. */
 
 import { DeviceSession } from "./deviceSession.js";
 import { ClusterLodIndirectExecutor, type ClusterLodExecutionPlan, type ClusterLodGeometryBuffers,
@@ -31,6 +13,7 @@ import { validateClusterLodDag, type ClusterLodDagDescriptor } from "../rayTraci
 import { concatenateLevelGeometry, createClusterLodSlotRenderResources, deriveClusterLodCamera,
   packClusterLodViewProjection, readBackWords, type RenderViewCamera } from "./clusterLodSlotSupport.js";
 import { PBR_DEPTH_FORMAT, PBR_HDR_FORMAT } from "./renderTargets.js";
+import { failWithResourceCleanup } from "./resourceCleanup.js";
 
 /** 宿主 stage 输入：bake 产物（clusterLodBake）+ 可选像素阈值（默认 1px，Nanite 式感知阈值）。 */
 export interface ClusterLodSceneStaging {
@@ -84,10 +67,12 @@ export class ClusterLodRenderSlot {
   private evidenceSelection: Uint32Array | undefined;
   private evidenceFrontier: readonly string[] | undefined;
   private disposed = false;
+  private readonly allocated: GPUBuffer[] = [];
 
   private constructor(private readonly session: DeviceSession, staging: ClusterLodSceneStaging,
     /** AA-M1:主 pass 生效采样数(槽位 bundle 在主 pass 内执行,必须与附件一致)。 */
     mainSampleCount: 1 | 4 = 1) {
+    try {
     const validation = validateClusterLodDag(staging.dag);
     if (!validation.valid) throw new Error(`Cluster LOD slot staging rejected: ${validation.reason}`);
     this.pixelThreshold = staging.pixelThreshold ?? CLUSTER_LOD_DEFAULT_PIXEL_THRESHOLD;
@@ -144,11 +129,16 @@ export class ClusterLodRenderSlot {
     const resources = createClusterLodSlotRenderResources(session,
       packClusterLodViewProjection([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]), mainSampleCount);
     this.viewProjectionBuffer = resources.viewProjectionBuffer;
+    this.allocated.push(this.viewProjectionBuffer);
     this.owned.push(this.viewProjectionBuffer);
     this.request = { pipeline: resources.pipeline, colorFormats: [PBR_HDR_FORMAT],
       depthStencilFormat: PBR_DEPTH_FORMAT, sampleCount: mainSampleCount,
       bindGroups: [{ index: 0, bindGroup: resources.bindGroup }] };
     this.executor = new ClusterLodIndirectExecutor(session);
+    } catch (error) {
+      failWithResourceCleanup(error, "Cluster slot allocation failed.",
+        this.allocated.map(buffer => () => session.release(buffer)));
+    }
   }
 
   static create(session: DeviceSession, staging: ClusterLodSceneStaging, mainSampleCount: 1 | 4 = 1): ClusterLodRenderSlot {
@@ -225,6 +215,25 @@ export class ClusterLodRenderSlot {
     return { draws: execution.drawCount, triangles: this.drawnTriangles };
   }
 
+  /** Production PBR keeps the caller's pipeline/material/frame bindings. */
+  drawWithGeometry(pass: GPURenderPassEncoder, vertices: GPUBuffer, indices: GPUBuffer,
+    instances: GPUBuffer, previous: GPUBuffer | undefined, instanceOffset: number,
+    tangents?: GPUBuffer, colors?: GPUBuffer): ClusterLodDrawStats | undefined {
+    this.assertReady();
+    const execution = this.execution;
+    if (!execution) return undefined;
+    pass.setVertexBuffer(0, vertices);
+    pass.setVertexBuffer(1, instances, instanceOffset * 144, 144);
+    if (previous) pass.setVertexBuffer(2, previous, instanceOffset * 48, 48);
+    if (tangents) pass.setVertexBuffer(previous ? 3 : 2, tangents);
+    if (colors) pass.setVertexBuffer(4, colors);
+    pass.setIndexBuffer(indices, "uint32");
+    for (let index = 0; index < execution.drawCount; index++) {
+      pass.drawIndexedIndirect(execution.commands, index * execution.commandStride);
+    }
+    return { draws: execution.drawCount, triangles: this.drawnTriangles };
+  }
+
   setViewProjection(viewProjection: ArrayLike<number>): void {
     this.assertReady();
     this.session.device.queue.writeBuffer(this.viewProjectionBuffer, 0, packClusterLodViewProjection(viewProjection));
@@ -274,7 +283,10 @@ export class ClusterLodRenderSlot {
     if (this.disposed) throw new Error("Cluster LOD render slot is disposed.");
   }
 
-  private own<T extends GPUBuffer>(buffer: T): T { return this.session.own(buffer); }
+  private own<T extends GPUBuffer>(buffer: T): T {
+    this.allocated.push(buffer);
+    return this.session.own(buffer);
+  }
 
   private sameCamera(camera: ClusterLodCamera): boolean {
     const last = this.lastCamera;

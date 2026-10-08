@@ -2,7 +2,7 @@
 import type { DeviceSession } from "./deviceSession.js";
 import type { RenderResourceLifetime } from "../renderGraph.js";
 import { createAdmittedTexture } from "./resourceAdmission.js";
-import { pbrFrameResourceContract, type FramePlanUsage } from "./pbrFramePlanResources.js";
+import { PBR_FRAME_RESOURCE_CONTRACTS, type FramePlanUsage } from "./pbrFramePlanResources.js";
 import { failWithResourceCleanup } from "./resourceCleanup.js";
 import type { PbrTransientTextureKey, PbrTransientRequest, PbrTransientTextureHandle, PbrTransientPoolInvalidationReason, PbrTransientTexturePoolStats } from "./pbrTransientTextureTypes.js";
 export type { PbrTransientTextureKey, PbrTransientRequest, PbrTransientTextureHandle, PbrTransientPoolInvalidationReason, PbrTransientTexturePoolStats } from "./pbrTransientTextureTypes.js";
@@ -78,10 +78,7 @@ interface AliasSlot {
 /** history 合同条目拒绝入池;非合同资源(合同外私有 transient)允许,由调用方声明用途。 */
 export function isPbrTransientPoolEligible(resourceId: string): boolean {
   if ((PBR_HISTORY_TRANSIENT_EXCLUDED as readonly string[]).includes(resourceId)) return false;
-  try {
-    if (pbrFrameResourceContract(resourceId).historyRole !== undefined) return false;
-  } catch { /* 合同外资源:不在跨帧 history 目录,池准入放行。 */ }
-  return true;
+  return PBR_FRAME_RESOURCE_CONTRACTS.find(contract => contract.id === resourceId)?.historyRole === undefined;
 }
 
 export class PbrTransientTexturePool {
@@ -232,6 +229,16 @@ export class PbrTransientTexturePool {
     this.currentEpoch += 1;
     this.counters.evictedCount += evicted;
     this.lastInvalidation = Object.freeze([reason, this.currentEpoch] as const);
+  }
+
+  /** 停放 renderer 时释放已提交的空闲目标；在途帧与租约不受影响。 */
+  releaseIdleResources(): number {
+    let bytes = 0, count = 0;
+    for (const entries of this.free.values()) for (const entry of entries) {
+      bytes += entry.bytes; count += 1; this.destroy(entry);
+    }
+    this.free.clear(); this.counters.evictedCount += count;
+    return bytes;
   }
 
   dispose(): void {

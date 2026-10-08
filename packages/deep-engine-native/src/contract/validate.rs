@@ -81,6 +81,10 @@ pub fn validate_packet(packet: &RenderPacket) -> Result<ContractSummary, String>
             validate_layered_params(material.id.as_str(), material.ior, layered)?;
         }
         validate_stock_extensions(material)?;
+        if material.specular_factor.is_some_and(|value| !unit(value))
+            || material.specular_color_factor.is_some_and(|color| color.iter().any(|value| !value.is_finite() || *value < 0.0)) {
+            return Err(format!("material {} has invalid specular factors",material.id));
+        }
         material_features.insert(
             material.id.as_str(),
             MaterialFeatures::from_material(material),
@@ -183,8 +187,7 @@ fn unit(value: f32) -> bool {
 /// C9/native:stock 扩展与 advanced 参数的 fail-closed 校验(数值域 + native
 /// 求值子集守卫)。语义逐词对齐 TS:
 /// - 扩展域与层 params 同校验(validate_layered_params::validate_parameters 同表);
-/// - native 子集只消费 ior+clearcoat:anisotropy.strength/transmission.factor
-///   非零拒绝(native 光照核无该两 lobe,不得静默忽略);
+/// - native consumes IOR/clearcoat and screen transmission; nonzero anisotropy rejects;
 /// - extended IOR 必须与实例 IOR 字段一致(TS renderPacketMaterials 同文);
 /// - advanced 只放行 sheen:iridescence.factor/volume.thickness 非零拒绝;
 /// - unlit 材质拒绝任何扩展 lobe(TS 同文)。
@@ -212,12 +215,6 @@ fn validate_stock_extensions(
         if aniso_strength.is_some_and(|value| value != 0.0) {
             return Err(format!(
                 "material {id}: Native materials do not support nonzero anisotropy.strength."
-            ));
-        }
-        let transmission = extended.transmission.as_ref().and_then(|value| value.factor);
-        if transmission.is_some_and(|value| value != 0.0) {
-            return Err(format!(
-                "material {id}: Native materials do not support nonzero transmission.factor."
             ));
         }
     }

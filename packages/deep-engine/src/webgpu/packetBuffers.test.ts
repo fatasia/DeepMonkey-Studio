@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RenderPacket } from "../renderPacket.js";
 import type { DeviceSession } from "./deviceSession.js"; import { PacketBuffers } from "./packetBuffers.js"; import { mainPipelineKey, shadowPipelineKey, type Pipelines } from "./pipelines.js";
-function fixture() {
+function fixture(deformation?: () => Promise<Pipelines>) {
   const owned = new Set<GPUBuffer>(), allocated: GPUBuffer[] = [];
   const contents = new Map<GPUBuffer, number[]>();
   const device = { limits: { maxBufferSize: 256 * 1024 * 1024 },
@@ -12,7 +12,7 @@ function fixture() {
     queue: { writeBuffer: vi.fn((buffer: GPUBuffer, _offset: number, data: Float32Array | Uint32Array) => { contents.set(buffer, Array.from(data)); }) } };
   const session = { state: "ready", device, own(buffer: GPUBuffer) { owned.add(buffer); return buffer; },
     release(buffer: GPUBuffer) { if (owned.delete(buffer)) buffer.destroy(); } };
-  const cache = new PacketBuffers(session as unknown as DeviceSession);
+  const cache = new PacketBuffers(session as unknown as DeviceSession, undefined, deformation);
   const pass = { setPipeline: vi.fn(), setVertexBuffer: vi.fn(), setIndexBuffer: vi.fn(), drawIndexed: vi.fn(), drawIndexedIndirect: vi.fn() };
   const mainPipelines = new Map<string, GPURenderPipeline>([
     [mainPipelineKey("plain", false, "ccw"), "main" as unknown as GPURenderPipeline],
@@ -35,6 +35,40 @@ function fixture() {
     (buffer as GPUBuffer & { label?: string }).label === label);
   return { cache, device, session, owned, allocated, contents, pass, draw, byLabel };
 }
+
+it("rolls back a yielded geometry candidate on cancellation while the old scene remains drawable", async () => {
+  const f = fixture(), raw = packet(); f.cache.set(raw);
+  const controller = new AbortController(); let resume: (() => void) | undefined;
+  const yielding = vi.fn(() => f.allocated.length > 4 ? new Promise<void>(resolve => { resume = resolve; }) : Promise.resolve());
+  vi.stubGlobal("scheduler", { yield: yielding });
+  const vertices = new Float32Array(54_000); for (let i = 5; i < vertices.length; i += 6) vertices[i] = 1;
+  const update = f.cache.setValidated({ ...raw, geometries: [{ ...raw.geometries[0]!, revision: 1, vertices }] }, controller.signal);
+  const failure = expect(update).rejects.toThrow();
+  await vi.waitFor(() => expect(resume).toBeTypeOf("function"));
+  expect(f.draw()).toEqual({ drawCalls: 1, triangles: 1 });
+  controller.abort(); resume!(); await failure;
+  expect(f.owned.size).toBe(4); expect(f.draw()).toEqual({ drawCalls: 1, triangles: 1 });
+  expect(f.allocated.slice(4).every(buffer => vi.mocked(buffer.destroy).mock.calls.length === 1)).toBe(true);
+  f.cache.dispose(); vi.unstubAllGlobals();
+});
+
+describe("lazy deformation pipeline demand", () => {
+  it("does not compile deformation for static packets and single-flights real demand", async () => {
+    const failure = new Error("deformation compile failed");
+    const create = vi.fn(async () => { throw failure; }), f = fixture(create);
+    await f.cache.setValidated(packet()); expect(create).not.toHaveBeenCalled();
+    const deformed = { ...packet(), deformation: { sources: [], poses: [] } };
+    const results = await Promise.allSettled([f.cache.setValidated(deformed), f.cache.setValidated(deformed)]);
+    expect(create).toHaveBeenCalledOnce();
+    expect(results).toEqual([{ status: "rejected", reason: failure }, { status: "rejected", reason: failure }]);
+    expect(f.draw()).toEqual({ drawCalls: 1, triangles: 1 }); f.cache.dispose();
+  });
+  it("never starts a deferred compiler after packet ownership is disposed", async () => {
+    const create = vi.fn(async () => ({} as Pipelines)), f = fixture(create); f.cache.dispose();
+    await expect(f.cache.setValidated({ ...packet(), deformation: { sources: [], poses: [] } })).rejects.toThrow();
+    expect(create).not.toHaveBeenCalled();
+  });
+});
 function deferred<T>() {
   let resolve!: (value: T) => void;
   return { promise: new Promise<T>(done => { resolve = done; }), resolve: (value: T) => resolve(value) };
@@ -49,6 +83,26 @@ beforeEach(() => { vi.stubGlobal("GPUBufferUsage", { VERTEX: 32, INDEX: 16, COPY
   vi.stubGlobal("GPUShaderStage", { COMPUTE: 4 }); });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe("packet GPU resource ownership", () => {
+  it("hands off only committed owned preparation and invalidates updates/disposal", async () => {
+    const f = fixture(), raw = packet();
+    expect(f.cache.preparedPacketFor(raw)).toBeUndefined();
+    await f.cache.setValidated(raw);
+    const prepared = f.cache.preparedPacketFor(raw)!;
+    expect(prepared).toBeDefined(); expect(f.cache.preparedPacketFor({ ...raw })).toBeUndefined();
+    const vertices = prepared.geometries.get("g")!.vertices;
+    expect(vertices).not.toBe(raw.geometries[0]!.vertices);
+    raw.geometries[0]!.vertices[0] = 99; expect(vertices[0]).toBe(0);
+    f.cache.updateInstances({ materials: raw.materials, instances: raw.instances });
+    expect(f.cache.preparedPacketFor(raw)).toBeUndefined();
+    const next = packet(1); await f.cache.setValidated(next);
+    f.cache.dispose(); expect(f.cache.preparedPacketFor(next)).toBeUndefined();
+  });
+  it("does not expose a failed or superseded GPU preparation", async () => {
+    const f = fixture(), raw = packet();
+    f.device.popErrorScope.mockResolvedValueOnce({ message: "invalid GPU candidate" } as GPUError);
+    await expect(f.cache.setValidated(raw)).rejects.toThrow("invalid GPU candidate");
+    expect(f.cache.preparedPacketFor(raw)).toBeUndefined(); f.cache.dispose();
+  });
   it("publishes a traceable material ledger only with the uploaded packet", () => {
     const f = fixture(), initial = packet();
     expect(f.cache.set(initial)).toBe(true);

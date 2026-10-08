@@ -233,7 +233,7 @@ ${secondBounce ? `// Second-bounce variant (conservative single extra hop, no fu
     }
     var visibility2 = 1.0;
     if (dot(lightDir, lightDir) > 0.5) {
-      let hitPosition2 = hitPosition1 + reflectDir2 * hit2.t;
+      let hitPosition2 = origin2 + reflectDir2 * hit2.t;
       let shadowOrigin2 = hitPosition2 + lightDir * params.biasAndPad.x;
       let shadowInv2 = vec3f(1.0 / lightDir.x, 1.0 / lightDir.y, 1.0 / lightDir.z);
       var shadowOverflow2: u32 = 0u;

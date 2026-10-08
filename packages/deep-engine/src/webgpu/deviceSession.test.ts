@@ -25,6 +25,29 @@ function fixture() {
 }
 
 describe("DeviceSession ownership and initialization failures", () => {
+  it("requests 16 advanced texture slots alongside extended shadow storage and group limits", async () => {
+    const f = fixture(); Object.assign(f.adapter, { limits: { maxSampledTexturesPerShaderStage:32,
+      maxStorageBuffersPerShaderStage:12,maxBindGroups:8 } });
+    const session=await DeviceSession.open(f.canvas as unknown as HTMLCanvasElement,f.gpu as unknown as GPU,
+      f.controller.signal,undefined,undefined,{ advancedMaterials:true,extendedShadowBindings:true });
+    expect(f.adapter.requestDevice).toHaveBeenCalledWith({ label:"Deep Engine isolated device",requiredLimits:{
+      maxSampledTexturesPerShaderStage:16,maxStorageBuffersPerShaderStage:10,maxBindGroups:5 } });
+    session.dispose();
+  });
+  it.each([14, 15])("rejects an insufficient advanced texture limit %s before device allocation", async limit => {
+    const f = fixture(); Object.assign(f.adapter, { limits: { maxSampledTexturesPerShaderStage: limit } });
+    await expect(DeviceSession.open(f.canvas as unknown as HTMLCanvasElement, f.gpu as unknown as GPU,
+      f.controller.signal, undefined, undefined, { advancedMaterials: true })).rejects.toThrow("advanced-materials/texture-limit");
+    expect(f.adapter.requestDevice).not.toHaveBeenCalled();
+  });
+  it.each([[false, false, 16], [true, false, 17], [true, true, 18]] as const)(
+    "requests exact advanced texture limits for RT=%s virtual=%s", async (rayTracedShadows, virtualShadowPages, required) => {
+      const f = fixture(); Object.assign(f.adapter, { limits: { maxSampledTexturesPerShaderStage: 32 } });
+      const session = await DeviceSession.open(f.canvas as unknown as HTMLCanvasElement, f.gpu as unknown as GPU,
+        f.controller.signal, undefined, undefined, { advancedMaterials: true, rayTracedShadows, virtualShadowPages });
+      expect(f.adapter.requestDevice).toHaveBeenCalledWith({ label: "Deep Engine isolated device", requiredLimits: { maxSampledTexturesPerShaderStage: required } });
+      session.dispose();
+    });
   function hdrFixture() {
     const f = fixture(), configured = { format: "rgba16float", toneMapping: { mode: "extended" } };
     const temporary = { configure: vi.fn(), getConfiguration: () => configured, unconfigure: vi.fn() };

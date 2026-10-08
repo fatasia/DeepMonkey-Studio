@@ -26,6 +26,7 @@ import { appendInteractionLayerOptions } from "../appPresentation";
 import { ApplicationSession } from "../studio/applicationSession";
 import { readLocale, type AppLocale } from "../i18n";
 import { readRoute, type AppRoute } from "../appRoute";
+import { applicationLocationPath } from "../adapters/browserRuntimeConfig";
 import { DEFAULT_NAVIGATION_SETTINGS } from "../navigationSettings";
 import { DEFAULT_SCENE_COORDINATES } from "../viewer/sceneCoordinates";
 import { useRendererDiagnostics } from "../viewer/useRendererDiagnostics";
@@ -40,7 +41,7 @@ import type { RendererRecoveryState } from "../viewer/rendererRecoveryState";
 
 /** 汇集应用级 React 状态；控制器和视图通过同一强类型状态对象协作。 */
 export function useAppState() {
-  const initialPathRef = useRef(window.location.pathname);
+  const initialPathRef = useRef(applicationLocationPath(window.location.pathname));
   const defaultEntryAppliedRef = useRef(false);
   const viewportRef = useRef<HTMLDivElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);

@@ -224,14 +224,16 @@ export class WebGpuPostProcessingRuntime implements ViewerPostProcessingRuntime 
         .add(brightnessValue)
         .sub(0.5)
         .mul(contrastValue)
-        .add(0.5)
-        .mul(vec3(
+        .add(0.5);
+      const balanced = adjusted.mul(vec3(
           temperatureValue.mul(0.14).add(tintValue.mul(0.07)).add(1),
           tintValue.mul(-0.12).add(1),
           temperatureValue.mul(-0.14).add(tintValue.mul(0.07)).add(1),
-        ))
-        .max(0);
-      result = vec4(adjusted, result.a);
+        ));
+      const luminance = vec3(0.2126, 0.7152, 0.0722);
+      const normalized = balanced.mul(adjusted.dot(luminance).div(balanced.dot(luminance).abs().max(0.000001)));
+      const whiteBalanceEnabled = temperatureValue.notEqual(0).or(tintValue.notEqual(0));
+      result = vec4(whiteBalanceEnabled.select(normalized, adjusted), result.a);
     }
 
     if (plan.antialias !== "none") {

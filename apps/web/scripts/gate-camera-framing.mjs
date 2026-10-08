@@ -35,7 +35,7 @@ async function createScene(page, projectId) {
   const application = await response.json();
   const appPath = `/api/projects/${projectId}/applications/${application.metadata.id}`;
   const scenePath = `${gate.origin}/studio/${projectId}/applications/${application.metadata.id}/scenes/${application.scenes[0].id}`;
-  await page.goto(scenePath); await page.locator(".viewport canvas").waitFor();
+  await page.goto(scenePath); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
   const autoSave = page.getByLabel("自动保存"); if (await autoSave.isChecked()) await autoSave.uncheck();
   return { application, appPath, scenePath };
 }
@@ -98,10 +98,10 @@ async function runCase(theme, width) {
       await page.getByRole("button", { name: "场景图层与编组", exact: true }).click();
       await page.waitForTimeout(1500);
       const scene = await saveScene(page, appPath);
-      const viewport = await page.locator(".viewport canvas").boundingBox(); assert.ok(viewport);
+      const viewport = await page.locator('.viewport canvas:not([aria-hidden="true"])').boundingBox(); assert.ok(viewport);
       const framing = { step, ...projectionOccupancy(report.source.bounds, scene, source.id, viewport, view) }; entry.framing.push(framing);
       await shot(step);
-      const canvas = page.locator(".viewport canvas"); const visible = await canvas.screenshot();
+      const canvas = page.locator('.viewport canvas:not([aria-hidden="true"])'); const visible = await canvas.screenshot();
       await tree.getByRole("button", { name: "隐藏", exact: true }).click(); await page.waitForTimeout(400);
       framing.actualPixels = await changedModelPixels(visible, await canvas.screenshot());
       await tree.getByRole("button", { name: "显示", exact: true }).click(); await page.waitForTimeout(400);
@@ -123,7 +123,7 @@ async function runCase(theme, width) {
       await page.locator(".view-control").getByRole("button", { name: label, exact: true }).click(); await measure(`standard-${view}`, view);
     }
     await tree.locator(".asset-main").dblclick(); const saved = await measure("saved-focus");
-    await page.reload(); await page.locator(".viewport canvas").waitFor();
+    await page.reload(); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
     // This tab is intentionally local UI state: refresh restores the default object hierarchy.
     if (!await tree.isVisible()) await page.getByRole("button", { name: "场景图层与编组", exact: true }).click();
     await tree.getByRole("button", { name: "隐藏", exact: true }).waitFor();
@@ -131,7 +131,7 @@ async function runCase(theme, width) {
     const reloaded = await measure("reload-camera");
     const drift = Math.hypot(...["x", "y", "z"].map(axis => reloaded.camera.position[axis] - saved.camera.position[axis]));
     assert.ok(drift < 0.00001, `Silent model restore changed camera by ${drift}m`); entry.reloadDrift = drift;
-    const canvas = page.locator(".viewport canvas"); const visible = await canvas.screenshot();
+    const canvas = page.locator('.viewport canvas:not([aria-hidden="true"])'); const visible = await canvas.screenshot();
     await tree.getByRole("button", { name: "隐藏", exact: true }).click(); await page.waitForTimeout(500);
     const hidden = await canvas.screenshot(); entry.modelPixels = await changedModelPixels(visible, hidden);
     if (!baseline) assert.ok(entry.modelPixels.ratio > 0.005, "Actual model pixels must visibly contribute, not only a canvas or grid");

@@ -44,6 +44,14 @@ export interface PbrMaterial {
   readonly roughness: number;
   /** Dielectric IOR, finite float32 >= 1; omitted = 1.5. Requires material instance ABI v5 when non-default. */
   readonly ior?: number;
+  /** KHR_materials_specular dielectric strength, 0..1; omitted = 1. Browser advanced profile. */
+  readonly specularFactor?: number;
+  /** Linear dielectric reflectance tint, nonnegative finite RGB; omitted = [1,1,1]. */
+  readonly specularColorFactor?: readonly [number, number, number];
+  /** Linear alpha channel multiplies specularFactor. */
+  readonly specularTexture?: TextureSlot;
+  /** sRGB RGB channels multiply specularColorFactor. */
+  readonly specularColorTexture?: TextureSlot;
   /** Browser WebGPU extended lobes; absent preserves the stock PBR path byte-for-byte. */
   readonly extendedParameters?: ExtendedMaterialParameters;
   /** sheen / iridescence / volume(three r185 语义);要求 advancedMaterials 渲染器能力,缺省保持原路径逐字节不变。 */
@@ -166,6 +174,10 @@ export interface PreparedTextureSlot {
 }
 
 export interface PreparedMaterialTextures {
+  readonly specularFactor?: number;
+  readonly specularColorFactor?: readonly [number, number, number];
+  readonly specular?: PreparedTextureSlot;
+  readonly specularColor?: PreparedTextureSlot;
   readonly layered?: {
     readonly parameters: LayeredSurfaceParameters;
     readonly textures: readonly { readonly baseColor?: PreparedTextureSlot; readonly metallicRoughness?: PreparedTextureSlot }[];

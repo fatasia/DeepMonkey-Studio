@@ -76,7 +76,7 @@ export function renderViewFingerprint(view: DeepRenderView): string {
     lightsKey = digest.join(";");
   }
   return `${view.eye[0]},${view.eye[1]},${view.eye[2]},${view.target[0]},${view.target[1]},${view.target[2]},`
-    + `${view.width}x${view.height}@${view.pixelRatio}|ov:${overlay ? overlay.revision : -1}:${overlaySum.toFixed(2)}|li:${lightsKey}`;
+    + `${view.width}x${view.height}@${view.pixelRatio}|display:${view.authorDirectDisplay ? 1 : 0}|ov:${overlay ? overlay.revision : -1}:${overlaySum.toFixed(2)}|li:${lightsKey}`;
 }
 
 export function threePrototypeHooks() {

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import playwright from "../../cloud-render-worker/node_modules/playwright-core/index.js";
 import { createStaticServer } from "./productBrowserSupport.mjs";
 import { compareBackendImages } from "./renderImageSimilarity.mjs";
+import { createHash } from "node:crypto";
 import { assessFirstClassWebGpuEvidence } from "./renderEngineBenchmarkEvidence.mjs";
 
 const { chromium } = playwright;
@@ -28,6 +29,84 @@ const objectCounts = [120, 1000];
 const geometryParityTolerance = 0.01;
 const hostCpus = cpus();
 const webManifest = JSON.parse(readFileSync(resolve(webRoot, "package.json"), "utf8"));
+
+// ── 参照列缓存(基准程序 20261007 §3):引擎按单元缓存(three 双档为一个视觉对单元)。
+// 指纹 = 引擎版本 + 主机 + 协议参数 + 相关源码哈希;一致时复用上轮该单元全部证据,只重测变更单元。
+// BIM_STUDIO_RENDER_BENCHMARK_NO_CACHE=1 强制全重测;复用单元在报告与 markdown 首部如实披露,
+// 混合轮次的表头不得声称"同轮"。
+const ENGINE_UNITS = [
+  { key: "three", engines: ["three-webgl", "three-webgpu"] },
+  { key: "babylon", engines: ["babylon-webgpu"] },
+  { key: "deep", engines: ["deep-webgpu"] },
+];
+const CACHE_DISABLED = process.env.BIM_STUDIO_RENDER_BENCHMARK_NO_CACHE === "1";
+const cacheRoot = resolve(outputRoot, "cache");
+const sha256File = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
+
+function unitEngineVersion(engine) {
+  if (engine.startsWith("three")) return webManifest.dependencies?.three ?? "unpinned";
+  if (engine.startsWith("babylon")) return webManifest.dependencies?.["@babylonjs/core"] ?? "unpinned";
+  try {
+    return JSON.parse(readFileSync(resolve(webRoot, "../../packages/deep-engine/package.json"), "utf8")).version;
+  } catch {
+    return "unpinned";
+  }
+}
+
+function hashSourceTree(root, relative) {
+  const directory = resolve(root, relative);
+  if (!existsSync(directory)) return [];
+  const entries = [];
+  for (const entry of readdirSync(directory, { recursive: true })) {
+    const key = String(entry).replaceAll("\\", "/");
+    const absolute = resolve(directory, entry);
+    if (!statSync(absolute).isFile()) continue;
+    if (key.includes("node_modules") || /\.(png|jpg|jpeg|webp)$/i.test(key) || /\.test\./.test(key)) continue;
+    entries.push(`${key}:${sha256File(absolute)}`);
+  }
+  return entries.sort();
+}
+
+function fingerprintHash(fingerprint) {
+  return createHash("sha256").update(JSON.stringify(fingerprint)).digest("hex").slice(0, 16);
+}
+
+function unitFingerprint(unit) {
+  return {
+    key: unit.key,
+    engines: [...unit.engines],
+    versions: Object.fromEntries(unit.engines.map((engine) => [engine, unitEngineVersion(engine)])),
+    protocol: { runs, rebuildCycles, workloads, objectCounts, chromePath, viewport: "1440x900@1" },
+    host: {
+      platform: platform(), release: release(), cpu: hostCpus[0]?.model ?? "unknown",
+      logicalCpuCount: hostCpus.length, totalMemoryBytes: totalmem(), graphics: graphicsDeviceEvidence(),
+    },
+    files: [
+      ...hashSourceTree(webRoot, "benchmarks/render-engine/src"),
+      `gate:${sha256File(resolve(webRoot, "scripts/gate-render-engine-comparison.mjs"))}`,
+      `evidence:${sha256File(resolve(webRoot, "scripts/renderEngineBenchmarkEvidence.mjs"))}`,
+      ...(unit.key === "deep" ? hashSourceTree(repositoryRoot, "packages/deep-engine/src/threeBridge") : []),
+    ],
+  };
+}
+
+function loadUnitCache(unit) {
+  if (CACHE_DISABLED) return undefined;
+  const fingerprint = unitFingerprint(unit);
+  const path = resolve(cacheRoot, unit.key, `${fingerprintHash(fingerprint)}.json`);
+  if (!existsSync(path)) return undefined;
+  try {
+    return { ...JSON.parse(readFileSync(path, "utf8")), fingerprint };
+  } catch {
+    return undefined;
+  }
+}
+
+function restoreUnitArtifacts(payload) {
+  for (const [name, base64] of Object.entries(payload.artifacts ?? {})) {
+    writeFileSync(resolve(outputRoot, name), Buffer.from(base64, "base64"));
+  }
+}
 
 if (!existsSync(chromePath)) throw new Error(`Chrome 不存在：${chromePath}`);
 mkdirSync(outputRoot, { recursive: true });
@@ -95,12 +174,37 @@ const report = {
   },
 };
 
+const measuredUnits = new Map();
+const reusedUnits = [];
+for (const unit of ENGINE_UNITS.filter((candidate) => candidate.engines.some((engine) => engines.includes(engine)))) {
+  const payload = loadUnitCache(unit);
+  const expectedCases = unit.engines.length * workloads.length * objectCounts.length * runs;
+  const complete = Boolean(payload) && unit.engines.every((engine) => payload.engines.includes(engine))
+    && Array.isArray(payload.cases) && payload.cases.length === expectedCases;
+  if (complete) {
+    reusedUnits.push({ key: unit.key, engines: [...unit.engines], createdAt: payload.createdAt, fingerprintHash: payload.fingerprintHash });
+    restoreUnitArtifacts(payload);
+    console.log(`[render-engine] ${unit.key} 单元命中参照缓存(${payload.createdAt},指纹 ${payload.fingerprintHash}),跳过重测`);
+  }
+  measuredUnits.set(unit.key, { unit, cached: complete ? payload : undefined, cases: [] });
+}
+report.cache = { disabled: CACHE_DISABLED, reused: reusedUnits };
+
 try {
   for (const objectCount of objectCounts) {
     for (const workload of workloads) {
       for (const engine of engines) {
+        const unitEntry = [...measuredUnits.values()].find((entry) => entry.unit.engines.includes(engine));
         for (let run = 1; run <= runs; run += 1) {
+          const cachedCase = unitEntry?.cached?.cases.find((item) => item.engine === engine && item.workload === workload
+            && item.objectCount === objectCount && item.run === run);
+          if (cachedCase) {
+            report.cases.push(cachedCase);
+            console.log(`[render-engine] ${engine} · ${workload} · ${objectCount} objects · ${run}/${runs} · [cached ${unitEntry.cached.createdAt}]`);
+            continue;
+          }
           const result = await inspectCase(browser, origin, { engine, workload, objectCount, run });
+          unitEntry?.cases.push(result);
           report.cases.push(result);
           console.log(`[render-engine] ${engine} · ${workload} · ${objectCount} objects · ${run}/${runs} · ${summary(result)}`);
         }
@@ -120,6 +224,29 @@ try {
 }
 
 if (report.failures.length > 0) throw new Error(`渲染引擎对比基准无效：\n- ${report.failures.join("\n- ")}`);
+for (const entry of measuredUnits.values()) {
+  if (entry.cached || entry.cases.length === 0) continue;
+  const expectedCases = entry.unit.engines.length * workloads.length * objectCounts.length * runs;
+  if (entry.cases.length !== expectedCases) continue;
+  try {
+    const fingerprint = unitFingerprint(entry.unit);
+    const directory = resolve(cacheRoot, entry.unit.key);
+    mkdirSync(directory, { recursive: true });
+    const artifacts = {};
+    for (const engine of entry.unit.engines) {
+      const path = resolve(outputRoot, `${engine}-canvas.png`);
+      if (existsSync(path)) artifacts[`${engine}-canvas.png`] = readFileSync(path).toString("base64");
+    }
+    const payload = {
+      createdAt: new Date().toISOString(), unit: entry.unit.key, engines: [...entry.unit.engines],
+      fingerprintHash: fingerprintHash(fingerprint), fingerprint, cases: entry.cases, artifacts,
+    };
+    writeFileSync(resolve(directory, `${payload.fingerprintHash}.json`), `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+    console.log(`[render-engine] ${entry.unit.key} 单元证据已入参照缓存(${payload.fingerprintHash})`);
+  } catch (error) {
+    report.warnings.push(`参照缓存写入失败(${entry.unit.key}):${error.message};证据仍完整,仅失去复用`);
+  }
+}
 console.log(`[render-engine] 对比完成：${resolve(outputRoot, "report.md")}`);
 
 async function inspectCase(browserInstance, baseUrl, testCase) {
@@ -355,6 +482,9 @@ function renderMarkdown(current) {
     `运行主机：${hostDescription}；GPU：${gpuDescription}。`,
     "",
     `源码：${current.source.revision}${current.source.workingTreeDirty ? "（工作区有未提交变更）" : ""}；Three ${current.dependencies.three}。`,
+    ...(current.cache?.reused?.length
+      ? [`证据复用(参照列缓存,指纹一致):${current.cache.reused.map((unit) => `${unit.key} ← ${unit.createdAt} · ${unit.fingerprintHash}`).join("; ")};BIM_STUDIO_RENDER_BENCHMARK_NO_CACHE=1 强制全重测;混合轮次下表头不得声称"同轮"。`]
+      : []),
     "",
     "> 帧时间来自浏览器 RAF 节拍，包含主线程与提交抖动，并非 GPU timestamp；夹具比较裸引擎行为，不注入产品私有补丁；Draw Call 为各引擎原生计数，统计口径不完全相同。",
     "",

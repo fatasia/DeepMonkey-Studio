@@ -12,11 +12,12 @@ use crate::gpu_texture_upload::{GpuTexture, create_fallbacks, upload_texture};
 
 pub struct GpuMaterial {
     _uniform: wgpu::Buffer,
-    texture_slots: [Option<Arc<GpuTexture>>; 5],
+    texture_slots: [Option<Arc<GpuTexture>>; 7],
     pub bind_group: wgpu::BindGroup,
     pub normal_mapped: bool,
     pub base_color_mapped: bool,
     pub textured: bool,
+    pub transmission: bool,
     /// I-C23 分层绑定:304B uniform + 4 个借用纹理槽([base0, mr0, base1, mr1])。
     /// 只有调用方提供分层 layout 且材质声明层行时才驻留。
     pub layered: Option<LayeredGpuMaterial>,
@@ -89,6 +90,7 @@ pub fn create_layered_material_layout(device: &wgpu::Device) -> wgpu::BindGroupL
             sampler(17),
             texture(18),
             sampler(19),
+            texture(20),sampler(21),texture(22),sampler(23),
         ],
     })
 }
@@ -140,6 +142,7 @@ pub fn create_material_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
             sampler(8),
             texture(9),
             sampler(10),
+            texture(20),sampler(21),texture(22),sampler(23),
         ],
     })
 }
@@ -283,7 +286,7 @@ impl GpuMaterial {
         textures: &[Arc<GpuTexture>],
         fallbacks: &[GpuTexture],
     ) -> Result<Self, String> {
-        let texture_slots: [Option<Arc<GpuTexture>>; 5] = std::array::from_fn(|slot| {
+        let texture_slots: [Option<Arc<GpuTexture>>; 7] = std::array::from_fn(|slot| {
             material.texture_indices[slot].map(|index| Arc::clone(&textures[index]))
         });
         let slots: Vec<&GpuTexture> = texture_slots
@@ -317,6 +320,8 @@ impl GpuMaterial {
             sampler_entry(8, slots[2]),
             view_entry(9, slots[4]),
             sampler_entry(10, slots[4]),
+            view_entry(20,slots[5]),sampler_entry(21,slots[5]),
+            view_entry(22,slots[6]),sampler_entry(23,slots[6]),
         ];
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Deep Engine native PBR material bindings v1"),
@@ -345,6 +350,7 @@ impl GpuMaterial {
             normal_mapped: material.normal_mapped,
             base_color_mapped: material.texture_indices[0].is_some(),
             textured: material.texture_indices.iter().any(Option::is_some),
+            transmission: material.uniform[45] > 0.0,
             layered,
         })
     }
@@ -358,7 +364,7 @@ impl LayeredGpuMaterial {
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
         base_uniform: &wgpu::Buffer,
-        base_slots: &[Option<Arc<GpuTexture>>; 5],
+        base_slots: &[Option<Arc<GpuTexture>>; 7],
         prepared: &PreparedLayeredMaterial,
         textures: &[Arc<GpuTexture>],
         fallbacks: &[GpuTexture],
@@ -401,6 +407,8 @@ impl LayeredGpuMaterial {
             entries.push(view_entry(12 + slot as u32 * 2, backing));
             entries.push(sampler_entry(13 + slot as u32 * 2, backing));
         }
+        entries.extend([view_entry(20,base_backing(5)),sampler_entry(21,base_backing(5)),
+            view_entry(22,base_backing(6)),sampler_entry(23,base_backing(6))]);
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Deep Engine native layered PBR material bindings v1"),
             layout,
@@ -438,7 +446,7 @@ mod tests {
         PreparedMaterial {
             id: id.into(),
             normal_mapped: false,
-            texture_indices: [None; 5],
+            texture_indices: [None; 7],
             uniform: [value; deep_engine_native::mesh_abi::MATERIAL_UNIFORM_ROW_FLOATS],
             layered: None,
         }

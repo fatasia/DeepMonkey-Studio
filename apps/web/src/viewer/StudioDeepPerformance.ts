@@ -30,6 +30,8 @@ export class StudioDeepPerformance implements PresentationPerformanceSource {
   private timingEnabled = false;
   private pendingFrame: number | undefined;
   private pendingTicket: object | undefined;
+  private submissions = 0;
+  private reportedSubmission = 0;
   private closed = false;
   private diagnosticsSource: (() => StudioDeepRuntimeDiagnostics | undefined) | undefined;
   private readonly samples = new StudioDeepSampleWindow();
@@ -47,6 +49,10 @@ export class StudioDeepPerformance implements PresentationPerformanceSource {
     this.pixelRatio = cssWidth > 0 ? frame.width / cssWidth : 1;
     if (!visible) { this.pause(); return; }
     this.samples.recordSubmission(frame.cpuSubmitMs);
+    this.submissions++;
+    this.scheduleFeedback();
+  }
+  private scheduleFeedback(): void {
     if (this.pendingFrame !== undefined) return;
     const ticket = {}; this.pendingTicket = ticket;
     // Multiple queue submissions in one display interval are not multiple presented frames.
@@ -54,8 +60,12 @@ export class StudioDeepPerformance implements PresentationPerformanceSource {
       if (this.closed || this.pendingTicket !== ticket) return;
       this.pendingFrame = undefined; this.pendingTicket = undefined;
       if (typeof document !== "undefined" && document.visibilityState === "hidden") { this.pause(); return; }
+      if (this.reportedSubmission === this.submissions) { this.pause(); return; }
+      this.reportedSubmission = this.submissions;
       this.samples.recordPresentationFeedback();
       this.monitor.recordFrame(timestamp);
+      // Keep one feedback slot across RAF ordering; stop on the first interval with no real submission.
+      this.scheduleFeedback();
     });
   }
   dispose(): void {
@@ -71,6 +81,7 @@ export class StudioDeepPerformance implements PresentationPerformanceSource {
   pause(): void {
     if (this.pendingFrame !== undefined) cancelAnimationFrame(this.pendingFrame);
     this.pendingFrame = undefined; this.pendingTicket = undefined;
+    this.reportedSubmission = this.submissions;
     this.samples.pause();
     this.monitor.pauseSampling();
   }

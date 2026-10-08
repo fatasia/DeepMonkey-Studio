@@ -94,9 +94,12 @@ export class PbrRenderer {
   readonly id = "deep-webgpu";
   private readonly diagnostics: PbrRendererDiagnostics; get gpuTimer() { return this.diagnostics.gpuTimer; }
   get performanceTelemetry() { return this.diagnostics.performance; } get transientTextureStats() { return this.targets.transientStats; }
+  /** 宿主停止提交并等待 queue 完成后，可回收 free 目标再判断停放预算。 */
+  releaseIdleResources(): number { return this.transientTextures.releaseIdleResources(); }
   /** 设备侧未捕获错误镜像(session.events 的只读视图;探针/面板诊断用)。 */
   get deviceDiagnostics() { return this.session.diagnostics; }
   get materialBindingStats() { return this.packets.materialBindingStats; }
+  preparedPacketFor(packet: RenderPacket) { return this.packets.preparedPacketFor(packet); }
   /** C26: immutable device compile ledger, copied only when requested. */
   getPipelineCompileRecords() { return snapshotPipelineCompileRecords(this.session.device); }
   private readonly packets: PacketBuffers; private readonly ground: PbrGroundResources;
@@ -193,6 +196,7 @@ export class PbrRenderer {
   /** A2-刀1:dispose 时显式断开的编译管线图与 release 门引用(证据链见构造器首注)。 */
   private pipelines: Pipelines | undefined;
   private releasePipelines: (() => void) | undefined;
+  private readonly deformationNeedsEarlyRelease: boolean;
   /** A2-刀2:重建周期账目 —— 本实例序号(构造期领取)与已披露的台账总数。 */
   private readonly rebuildOrdinal = currentRendererRebuildOrdinal();
   private publishedRebuildTotal = -1;
@@ -200,7 +204,7 @@ export class PbrRenderer {
   private previousFrameCameraCut = false;
   private constructor(readonly session: DeviceSession, pipelines: Pipelines, environment: StudioEnvironment,
     lighting: ForwardPlusPbrRuntime, localShadows: LocalSpotShadowRuntime, options: PbrRendererOptions, features: PbrRendererFeatures,
-    deformationPipelines?: Pipelines | Promise<Pipelines>, releasePipelines?: () => void,
+    deformationPipelines?: Pipelines | Promise<Pipelines> | (() => Promise<Pipelines>), releasePipelines?: () => void,
     msaa: import("./pbrMsaaCapability.js").PbrMsaaCapability = { sampleCount: 1 }) {
     // A2-刀1:两字段声明为可空并在 dispose 显式断开 —— 它们是整张编译管线图
     // (WGSL 源+管线对象+bind group 布局,soak 语境 3104 管线事件)仅有的实例级强引用;
@@ -208,6 +212,10 @@ export class PbrRenderer {
     // 不释放图本身。帧宿主经 `as unknown as` 转型,dispose 后帧路径本就非法,提前在此失败。
     this.pipelines = pipelines;
     this.releasePipelines = releasePipelines;
+    this.deformationNeedsEarlyRelease = options.pipelines?.firstFrameMainKeys === undefined;
+    // Initial TLAS staging uses the same public path as later updates.
+    // Publish the feature snapshot before that path reads its RT flag.
+    this.features = features;
     this.deviceEpoch = new RendererDeviceEpoch(session.device);
     this.diagnostics = new PbrRendererDiagnostics(session);
     this.clusterLodEnabled = resolveClusterLodSlotOption(options.clusterLod);
@@ -244,7 +252,8 @@ export class PbrRenderer {
     // packet 边界等待并附着。
     this.packets = new PacketBuffers(session, (fallback ?? pipelines).materialLayout,
       deformationPipelines, options.meshlets === true, features.visibilityBuffer,
-      fallback ? pipelines.materialLayout.material : undefined, options.vertexStreamingGeometry);
+      fallback ? pipelines.materialLayout.material : undefined, options.vertexStreamingGeometry, pipelines);
+    if (this.clusterLodEnabled) this.packets.stageClusterLodProduction();
     this.writeGeometryBuffers = features.ambientOcclusion || features.screenSpaceReflection || features.volumetricFog || features.temporalAa || features.contactShadows
       || deformationPipelines !== undefined;
     this.ground = createPbrGround(session);
@@ -400,7 +409,9 @@ export class PbrRenderer {
   static async create(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal, options: PbrRendererOptions = {}): Promise<PbrRenderer> {
     if (typeof performance !== "undefined") performance.mark("deep-webgpu:device-open-start");
     const session = await DeviceSession.open(canvas, gpu, signal, options.deviceMemoryBudgetBytes, options.recovery,
-      options.features?.layeredMaterials === true || options.hdrDisplay !== undefined ? {
+      options.features?.layeredMaterials === true || options.hdrDisplay !== undefined || options.advancedMaterials === true ? {
+        ...(options.advancedMaterials === true ? { advancedMaterials: true,
+          rayTracedShadows: options.features?.rayTracedShadows === true, virtualShadowPages: options.shadowMode === "virtual" } : {}),
         ...(options.features?.layeredMaterials === true ? { layeredMaterials: true } : {}),
         ...(options.hdrDisplay === undefined ? {} : { hdrDisplay: options.hdrDisplay }),
         // B1 Brief-VSM:group 2 布局对全部档位统一增补页表/页 atlas 绑定(级联档占位),
@@ -425,17 +436,19 @@ export class PbrRenderer {
   setInstances(data: Float32Array<ArrayBuffer>): void { this.setPacket(spherePacket(data)); }
   setPacket(packet: RenderPacket): void {
     this.deviceEpoch?.assertCurrent(this.session.device);
-    if (this.packets.set(packet)) { this.sceneChanged(); this.syncProbeClipmapSurfaces(packet); }
+    if (this.packets.set(packet)) { this.sceneChanged(); this.syncProbeClipmapSurfaces(packet);
+      if (this.clusterLodEnabled) this.packets.stageClusterLodProduction(); }
     // F4 虚拟纹理目录全量同步:opt-in 才有 bridge;包内 RGBA8 纹理按需分页,压缩纹理
     // 显式不入目录(反馈侧 droppedUnknownTexture 计数,采样方整纹理路径不受影响)。
     this.virtualTextures?.syncTextures(packet.textures ?? []);
   }
   async setPacketValidated(packet: RenderPacket, signal?: AbortSignal): Promise<void> {
     this.deviceEpoch?.assertCurrent(this.session.device);
-    // 含变形的候选必须等待延迟创建的变形变体,而这些变体只在首帧验证后的 release 才开始创建:
-    // 首次发布即带变形(独立包路径的蒙皮/形变资产)会自锁,因此此处提前放行(幂等)。
-    if (packet.deformation !== undefined || packet.instances.some(instance => instance.pose !== undefined)) this.releasePipelines?.();
-    if (await this.packets.setValidated(packet, signal)) { this.sceneChanged(); this.syncProbeClipmapSurfaces(packet); }
+    // 旧 SDK 全量变形集合仍需提前放行；子集模式按实际 packet 启动关键变体，
+    // 保留背景管线门直到真实首帧验证完成，避免无用编译抢占初始化。
+    if (this.deformationNeedsEarlyRelease && (packet.deformation !== undefined || packet.instances.some(instance => instance.pose !== undefined))) this.releasePipelines?.();
+    if (await this.packets.setValidated(packet, signal)) { this.sceneChanged(); this.syncProbeClipmapSurfaces(packet);
+      if (this.clusterLodEnabled) this.packets.stageClusterLodProduction(); }
     this.virtualTextures?.syncTextures(packet.textures ?? []);
   }
   stageResidentPacket(projection: ResidentPacketProjection): void {
@@ -445,6 +458,7 @@ export class PbrRenderer {
   async stageResidentPacketValidated(projection: ResidentPacketProjection,
     signal?: AbortSignal): Promise<void> {
     this.deviceEpoch?.assertCurrent(this.session.device);
+    if (this.deformationNeedsEarlyRelease && projection.batches.some(batch => batch.source.pose !== undefined)) this.releasePipelines?.();
     await this.packets.stageResidentProjectionValidated(projection, signal);
   }
   cancelResidentPacketStage(): void { this.packets.cancelPendingPacketStage(); }
@@ -498,6 +512,7 @@ export class PbrRenderer {
     return new ProbeClipmapPbrController(target, deviceEpoch, {
       frameBudget, cameraCutBudget: frameBudget,
       encodeSourceRadiance: context => producer.encodeSourceRadiance(context),
+      captureUnavailableReason: () => producer.captureUnavailableReason,
       captureVisibilityMoments: true,
       // Soft scene sync: an invalid packet (e.g. a deformation snapshot the ray scene
       // rejects) records a capture-blocked reason and later captures refuse, instead of
@@ -572,6 +587,8 @@ export class PbrRenderer {
     return renderPreparedFrame(this as unknown as PbrRendererFrameHost, view);
   }
   async validateFrame(view: RenderView): Promise<FrameMetrics> {
+    this.deviceEpoch?.assertCurrent(this.session.device);
+    await this.ground.author.prepare(view.authorGrid);
     return this.decorateRebuildAccounting(await validateFrame(this as unknown as PbrRendererFrameHost, view));
   }
   /**
@@ -658,4 +675,3 @@ function probeClipmapDeviceEpoch(device: GPUDevice): string {
   probeClipmapDeviceEpochs.set(device, created);
   return created;
 }
-

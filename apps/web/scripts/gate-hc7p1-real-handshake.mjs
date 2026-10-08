@@ -170,7 +170,7 @@ try {
   await page.goto(`${origin}/studio/${project.id}/applications/${application.metadata.id}/scenes/${sceneId}?renderer=webgl`);
   // 先以 WebGL 打开：诊断 readback 只在 deep backend 创建时挂载（frameCaptureSession 随 backend 生成），
   // 必须先开诊断面板（requested=true）再切 Deep WebGPU，readback 才随 backend 重建生效。
-  await page.locator(".viewport canvas").first().waitFor();
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').first().waitFor();
   await page.waitForTimeout(3_000);
   const workspaceAfterPut = await json("GET", `/api/projects/${project.id}/applications/${application.metadata.id}`);
   check("模板 4 实例以 primitives 入库", () => {

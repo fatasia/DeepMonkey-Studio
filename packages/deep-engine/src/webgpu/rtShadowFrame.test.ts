@@ -82,6 +82,22 @@ describe("invertColumnMajor4x4", () => {
 });
 
 describe("RtShadowFrameController resource contract", () => {
+  it("encodes validated GPU work before the frame encoder finishes", async () => {
+    const stub = deviceStub();
+    const subject = new RtShadowFrameController(sessionStub(stub.device));
+    subject.stageScene(packedScene()); subject.ensureSurface(320, 240);
+    const context = encodeContext();
+    expect(subject.encodeFrameValidated(context)).toBeUndefined();
+    expect(context.encoder.beginComputePass).not.toHaveBeenCalled();
+    await Promise.resolve();
+    const order: string[] = [];
+    const begin = context.encoder.beginComputePass;
+    context.encoder.beginComputePass = vi.fn((descriptor) => { order.push("dispatch"); return begin(descriptor); });
+    expect(subject.encodeFrameValidated(context)).toEqual({ dispatchX: 40, dispatchY: 30 });
+    context.encoder.finish = vi.fn(() => { order.push("finish"); return {} as GPUCommandBuffer; });
+    context.encoder.finish(); expect(order).toEqual(["dispatch", "finish"]);
+    subject.dispose();
+  });
   it("allocates a 1×1 visible placeholder mask with storage+texture+copy-src+copy-dst usage", () => {
     const stub = deviceStub();
     const controller = new RtShadowFrameController(sessionStub(stub.device));

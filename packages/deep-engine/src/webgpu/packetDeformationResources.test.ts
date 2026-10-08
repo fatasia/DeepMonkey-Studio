@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceSession } from "./deviceSession.js";
 import type { DeformationSnapshot, DeformationPose } from "../deformation/types.js";
+import { retainPacketSkinningInputs } from "../packetPreparationOwnership.js";
+import { snapshotDeformationPoseUpdate } from "../renderPacketPoseUpdate.js";
+import { prepareSkinningInput } from "./gpuSkinningPacking.js";
 import { PacketDeformationResources } from "./packetDeformationResources.js";
 
 beforeEach(() => {
@@ -43,6 +46,30 @@ function fixture() {
   const owner = new PacketDeformationResources(raw as unknown as DeviceSession);
   return { owner, device, raw, buffers, owned, pass, encoder, events };
 }
+
+it("releases all partially allocated deformation candidates when cooperative work is cancelled", () => {
+  const f = fixture(), work = f.owner.prepareSteps(snapshot("skin"));
+  work.next(); work.next(); expect(f.owned.size).toBeGreaterThan(0);
+  work.return(undefined); expect(f.owned.size).toBe(0);
+  f.owner.prepare(snapshot("skin")); f.owner.dispose(); expect(f.owned.size).toBe(0);
+});
+
+it("reuses the privately owned worker validator on the first pose update without reading static weights", () => {
+  const f = fixture(), input = snapshot("skin");
+  const packed = new Map(input.poses.map(pose => [pose.id, prepareSkinningInput(input.sources[0]!.skinning!, pose.palette!)]));
+  retainPacketSkinningInputs({ prepared: { deformation: input, geometries: new Map(), batches: [], textures: [] }, skinInputs: packed, geometryInputs: new Map() });
+  const work = f.owner.prepareSteps(input, new Map(), packed);
+  while (!work.next().done) {}
+  const weights = input.sources[0]!.skinning!.weights, read = vi.fn(() => weights);
+  Object.defineProperty(input.sources[0]!.skinning!, "weights", { enumerable: true, get: read });
+  expect(snapshotDeformationPoseUpdate(input, snapshot("skin", 1).poses).poses[0]!.revision).toBe(1);
+  expect(read).not.toHaveBeenCalled(); f.owner.dispose();
+});
+it("keeps external synchronous snapshots outside the internal validator handoff", () => {
+  const f = fixture(), input = snapshot("skin"); f.owner.prepare(input);
+  input.sources[0]!.skinning!.weights[0] = NaN;
+  expect(() => snapshotDeformationPoseUpdate(input, input.poses)).toThrow(); f.owner.dispose();
+});
 
 describe.each(["skin", "morph", "morph-skin"] as const)("packet %s resources", kind => {
   const producerCount = (events: readonly string[]) => events.filter(event => event !== "copy"

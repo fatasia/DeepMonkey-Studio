@@ -115,9 +115,9 @@ describe("RendererDiagnosticsPanel", () => {
           shadowDepthBytes: 1024, deviceResourceMemory: { bufferBytes: 40 * 1024, textureBytes: 40 * 1024, estimatedBytes: 80 * 1024,
             peakEstimatedBytes: 80 * 1024, unknownResources: 0, resourceCount: 5, admission: { budgetBytes: 100 * 1024, rejectedCount: 0 } },
           transientTextures: { budgetBytes: 40 * 1024, residentBytes: 20 * 1024, budgetRejectedCount: 0, budgetEvictedBytes: 0,
-            epoch: 1, frameOpen: false, lastInvalidation: undefined, acquireCount: 4, hits: 2, frameAliasHits: 0,
-            misses: 2, allocatedBytes: 20 * 1024, reusedBytes: 0, freeCount: 0, freeBytes: 0, inFlightCount: 0,
-            inFlightBytes: 0, pendingReturnCount: 0, pendingReturnBytes: 0, peakResidentBytes: 20 * 1024,
+            epoch: 1, frameOpen: false, lastInvalidation: undefined, acquireCount: 252080, hits: 2, frameAliasHits: 0,
+            misses: 2, allocatedBytes: 20 * 1024, reusedBytes: 0, freeCount: 2, freeBytes: 0, inFlightCount: 1,
+            inFlightBytes: 0, pendingReturnCount: 1, pendingReturnBytes: 0, peakResidentBytes: 20 * 1024,
             discardedCount: 0, evictedCount: 0 },
           adaptiveQuality: { enabled: true, level: 1, reason: "gpu-pressure", changedAtFrame: 9,
             explanation: "GPU pressure", knobs: { ssrConeLevels: 4, ddgiUpdateBudget: 32, fogSteps: 40,
@@ -128,6 +128,8 @@ describe("RendererDiagnosticsPanel", () => {
     expect(html).toContain("Temporal history");
     expect(html).toContain("Reset");
     expect(html).toContain("80 KB / 100 KB");
+    expect(html).toContain("4 · 20 KB");
+    expect(html).not.toContain("252080");
   });
   it("surfaces the live Frame Graph receipt and keeps unqueried pass timings explicit", () => {
     const plan = buildPbrFrameExecutionPlan({ width: 640, height: 360 }, { transparency: false });

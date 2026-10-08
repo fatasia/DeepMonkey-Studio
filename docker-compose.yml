@@ -1,8 +1,8 @@
-# Deep Monkey Studio —— 一键基础设施交付(仅 PostgreSQL + MinIO)。
+# Deep Monkey Studio 存储服务（PostgreSQL + MinIO）。
 #
 # 覆盖范围:本文件只提供存储基础设施(持久卷 + 健康检查)。应用本体(Web/API/桌面)
-# 没有官方镜像,仍按 docs/native-deployment.md 的裸机方式运行(`pnpm studio start`)。
-# 镜像边界评估见 apps/web/src/docs/container-deployment.md,操作步骤见 docs/deployment.md。
+# 叠加 docker-compose.app.yml 启动同源 API/Web；完整步骤见 docs/docker-application.md。
+# 裸机运行与存储备份见 docs/native-deployment.md、docs/deployment.md。
 #
 # 凭据纪律:所有密码/密钥只从仓库根 `.env` 注入(compose 自动读取),
 # 真实 `.env` 已被 .gitignore 忽略,严禁把真实凭据写入任何仓库文件。
@@ -29,7 +29,7 @@ services:
       # 官方推荐把整个 /var/lib/postgresql 挂到命名卷,升级小版本不丢数据。
       - postgres-data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DATABASE}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -40,7 +40,7 @@ services:
     # 的全部 tag 已从 registry 移除,历史 tag 亦不可再拉取)。改用 Bitnami legacy
     # 快照并以 digest 固定(APP_VERSION=2025.5.24,即 MinIO RELEASE.2025-05-24):
     # digest 不可变,保证可复现拉取;该快照不再更新,升级策略见 docs/deployment.md。
-    image: bitnamilegacy/minio@sha256:451fe6858cb770cc9d0e77ba811ce287420f781c7c1b806a386f6896471a349c
+    image: ${BIM_STUDIO_MINIO_IMAGE:-bitnamilegacy/minio@sha256:451fe6858cb770cc9d0e77ba811ce287420f781c7c1b806a386f6896471a349c}
     container_name: bim-studio-minio
     restart: unless-stopped
     environment:

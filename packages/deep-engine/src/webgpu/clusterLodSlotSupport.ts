@@ -119,7 +119,12 @@ struct VertexOutput { @builtin(position) position: vec4f };
   const viewProjectionBuffer = session.own(device.createBuffer({
     label: "Deep cluster LOD slot view projection", size: 64,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }));
-  const bindGroup = device.createBindGroup({ label: "Deep cluster LOD slot bindings",
-    layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: viewProjectionBuffer } }] });
-  return { pipeline, bindGroup, viewProjectionBuffer };
+  try {
+    const bindGroup = device.createBindGroup({ label: "Deep cluster LOD slot bindings",
+      layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: viewProjectionBuffer } }] });
+    return { pipeline, bindGroup, viewProjectionBuffer };
+  } catch (error) {
+    session.release(viewProjectionBuffer);
+    throw error;
+  }
 }

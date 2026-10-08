@@ -1,11 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_EXTENDED_MATERIAL_PARAMETERS,
   type ExtendedMaterialParameters } from "../shader/materialParameters.js";
 import { packExtendedParameterBlock } from "../shader/materialParameterAbi.js";
 import { DEEP_PBR_MESH_V1_BYTE_SIZES,
   DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS } from "../shaderAbi/contract.js";
 import { MATERIAL_PARAMETER_CORE_FLOATS, MATERIAL_PARAMETER_EXTENDED_BAND_FLOAT_OFFSET,
-  MATERIAL_PARAMETER_FLOATS, packMaterialParameters } from "./materialBindings.js";
+  MATERIAL_PARAMETER_FLOATS, packMaterialParameters, createMaterialBinding, materialBindingMatches } from "./materialBindings.js";
+import type { DeviceSession } from "./deviceSession.js";
+import type { TextureBinding } from "./textureResources.js";
 import { MATERIAL_ARRAY_TABLE_ROW_BYTES, MATERIAL_ARRAY_INDICES_BYTES } from "./textureArrayMaterialTable.js";
 
 function textures(overrides: Partial<Parameters<typeof packMaterialParameters>[0]> = {}):
@@ -17,6 +19,35 @@ function textures(overrides: Partial<Parameters<typeof packMaterialParameters>[0
  * 的跨引擎对齐合同。崩溃史:1e07cdaf 给 WGSL 结构体加 extended0/extended1(160→192B)后,
  * 无扩展参数材质仍按 40 float 上传,DrawIndexed 校验以 `160<192` 失败。 */
 describe("material parameter block ABI (G-1, 192B constant layout)", () => {
+  it("binds both real specular resources and invalidates a changed texture view", () => {
+    const group = vi.fn((descriptor: GPUBindGroupDescriptor) => descriptor as unknown as GPUBindGroup);
+    const session = { device: { createBindGroup: group } } as unknown as DeviceSession;
+    const slot = { texture: "specular", texCoord: 0 as const, uvTransform: [1, 0, 0, 0, 1, 0] as const };
+    const factor = { ...slot, texture: "intensity" };
+    const material = textures({ specularFactor: .5, specular: factor, specularColor: slot });
+    const color = { view: { id: "color" }, sampler: { id: "sampler" } } as unknown as TextureBinding;
+    const intensity = { view: { id: "intensity" }, sampler: { id: "sampler" } } as unknown as TextureBinding;
+    const lookup = (id: string) => id === "specular" ? color : intensity;
+    const binding = createMaterialBinding(session, { material: {} as GPUBindGroupLayout, advancedMaterials: true },
+      material, lookup, {} as GPUBuffer)!;
+    expect(group.mock.calls[0]![0].entries).toContainEqual({ binding: 16, resource: intensity.view });
+    expect(group.mock.calls[0]![0].entries).toContainEqual({ binding: 18, resource: color.view });
+    expect(materialBindingMatches(binding, material, lookup)).toBe(true);
+    expect(materialBindingMatches(binding, material, id => id === "specular" ? { ...color } : intensity)).toBe(false);
+    expect(() => createMaterialBinding(session, { material: {} as GPUBindGroupLayout }, material, lookup))
+      .toThrow("advanced-materials/not-enabled");
+  });
+  it("packs independent specular factors and UV transforms only in the advanced variant", () => {
+    const material = textures({ specularFactor: .25, specularColorFactor: [2, .5, .75],
+      specular: { texture: "intensity", texCoord: 1, uvTransform: [2, 0, .1, 0, 3, .2] },
+      specularColor: { texture: "color", texCoord: 0, uvTransform: [1, 0, 0, 0, 1, 0] } });
+    const packed = packMaterialParameters(material, true);
+    expect(packed.byteLength).toBe(320);
+    expect([...packed.slice(60, 64)]).toEqual([2, .5, .75, .25]);
+    expect([...packed.slice(64, 68)]).toEqual([2, 0, Math.fround(.1), 2]);
+    expect([...packed.slice(72, 76)]).toEqual([1, 0, 0, 1]);
+    expect(packMaterialParameters(material)).toEqual(packMaterialParameters(textures()));
+  });
   it("always emits the full 48-float block the WGSL MaterialTextures struct requires", () => {
     const packed = packMaterialParameters(textures());
     expect(MATERIAL_PARAMETER_FLOATS).toBe(48);

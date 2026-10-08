@@ -3,6 +3,7 @@ import type { DeviceSession } from "./deviceSession.js";
 import { PBR_MAIN_SAMPLE_COUNT, PBR_HDR_FORMAT, PBR_VIEW_NORMAL_FORMAT } from "./renderTargets.js";
 import { WEIGHTED_OIT_ACCUMULATION_FORMAT, WEIGHTED_OIT_REVEALAGE_FORMAT } from "./weightedOitTypes.js";
 import { AMBIENT_OCCLUSION_OUTPUT_FORMAT } from "../postprocess/ambientOcclusionTypes.js";
+import { PBR_FRAME_RESOURCE_CONTRACTS, pbrFrameResourceContract } from "./pbrFramePlanResources.js";
 import { framePlanUsageFlags, isPbrTransientPoolEligible, PbrTransientTexturePool, transientTextureBytes,
   type PbrTransientRequest } from "./pbrTransientTexturePool.js";
 
@@ -54,6 +55,24 @@ beforeEach(() => vi.stubGlobal("GPUTextureUsage", { RENDER_ATTACHMENT: 1, TEXTUR
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("PBR transient texture pool", () => {
+  it("trims free targets without destroying active leases or advancing the device epoch", () => {
+    const f = fixture(), pool = new PbrTransientTexturePool(f.session), key = keys();
+    runFrame(pool, [{ resourceId: "ao-half", key: key.aoHalf }, { resourceId: "oit-accumulation", key: key.oit }]);
+    pool.beginFrame();
+    const live = pool.acquire(request("ao-half", key.aoHalf));
+    const bytes = pool.stats.freeBytes;
+    expect(pool.releaseIdleResources()).toBe(bytes);
+    expect(pool.stats).toMatchObject({ freeCount: 0, inFlightCount: 1, epoch: 0 });
+    expect(f.textures[0]!.destroy).not.toHaveBeenCalled();
+    expect(f.textures[1]!.destroy).toHaveBeenCalledOnce();
+    pool.release(live); pool.endFrame(true);
+    expect(pool.releaseIdleResources()).toBe(transientTextureBytes(key.aoHalf.format, 640, 360, 1));
+    expect(pool.releaseIdleResources()).toBe(0);
+    expect(f.owned.size).toBe(0);
+    runFrame(pool, [{ resourceId: "ao-half", key: key.aoHalf }]);
+    expect(f.textures).toHaveLength(3);
+    pool.dispose();
+  });
   it("reuses an identical compatibility key across frames and keeps distinct keys apart", () => {
     const f = fixture(), pool = new PbrTransientTexturePool(f.session), key = keys();
     pool.beginFrame();
@@ -114,6 +133,11 @@ describe("PBR transient texture pool", () => {
     expect(isPbrTransientPoolEligible("oit-accumulation")).toBe(true);
     expect(isPbrTransientPoolEligible("author-private-scratch")).toBe(true);
     expect(isPbrTransientPoolEligible("previous-hiz")).toBe(false);
+    for (const contract of PBR_FRAME_RESOURCE_CONTRACTS) if (contract.historyRole !== undefined)
+      expect(isPbrTransientPoolEligible(contract.id)).toBe(false);
+    expect(isPbrTransientPoolEligible("opaque-hdr-msaa-private")).toBe(true);
+    // The public plan contract still rejects missing resources; private pool admission is a separate boundary.
+    expect(() => pbrFrameResourceContract("opaque-hdr-msaa-private")).toThrow("missing");
   });
 
   it("invalidates the whole pool on surface resize and rebuilds from scratch", () => {

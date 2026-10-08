@@ -183,9 +183,9 @@ describe("initial renderer selection", () => {
     expect(initialRendererBackend(null, "wasm")).toBe("wasm");
   });
 
-  it("defaults a zero-config start to Deep WebGPU when the API is present (Z1 P0)", () => {
+  it("defaults zero-config editing to Three/WebGL even when WebGPU is available", () => {
     vi.stubGlobal("navigator", { gpu: {} });
-    expect(initialRendererBackend(null, null)).toBe("webgpu");
+    expect(initialRendererBackend(null, null)).toBe("webgl");
   });
 
   it("falls back to WebGL when the WebGPU API is absent or navigator is unavailable", () => {

@@ -197,16 +197,16 @@ export async function reservePort() {
 
 
 /** 两类恢复对话框会在草稿存在且页面状态刷新时随时弹出;交互前统一处置(门禁各段共用)。 */
-export async function dismissRecoveryDialogs(page) {
+export async function dismissRecoveryDialogs(page, { maxRounds = 24, applicationAction = "丢弃副本" } = {}) {
   const sceneDialog = page.locator('section[aria-label="恢复未保存工作"]');
   const appDialog = page.locator('section[aria-label="恢复应用修改"]');
-  for (let round = 0; round < 24; round++) {
+  for (let round = 0; round < maxRounds; round++) {
     if (await sceneDialog.isVisible().catch(() => false)) {
       await sceneDialog.getByRole("button", { name: "丢弃副本" }).click();
       await sceneDialog.waitFor({ state: "hidden", timeout: 15_000 }).catch(() => {});
     } else if (await appDialog.isVisible().catch(() => false)) {
-      // 必须丢弃而非"稍后处理":defer 只清 state 不删盘上草稿,application identity 一变即重新提供。
-      await appDialog.getByRole("button", { name: "丢弃副本" }).click();
+      // 默认丢弃磁盘草稿；需要保留草稿的门禁可指定“稍后处理”。
+      await appDialog.getByRole("button", { name: applicationAction }).click();
       await appDialog.waitFor({ state: "hidden", timeout: 15_000 }).catch(() => {});
     } else break;
     await page.waitForTimeout(300);

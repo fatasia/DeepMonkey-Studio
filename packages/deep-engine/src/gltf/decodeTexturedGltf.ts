@@ -10,6 +10,7 @@ import { projectOptionalMaterialFallbacks, projectThirdPartyMaterialProfile, typ
 import type { GltfImageDecoder, GltfTextureDecodeOptions, GltfTextureManifest, GltfTextureSlot } from "./textureTypes.js";
 import { generateTangents, validateTangentBasis } from "./tangentSpace.js";
 import { GltfImportError, list, object, unsupported, type JsonObject } from "./validation.js";
+import { KHR_MATERIALS_SPECULAR, withoutSpecular } from "./materialSpecular.js";
 
 export interface TexturedGltfImportOptions extends GltfImportOptions, GltfTextureDecodeOptions {
   /** Optional material extensions to render through their authored core glTF fallback. */
@@ -52,7 +53,7 @@ function geometryDocument(json: unknown, manifest: GltfTextureManifest, handledD
   const texturedMaterials = new Map(manifest.materials.map(material => [material.materialIndex, material]));
   if (document.materials !== undefined) {
     result.materials = list(document.materials, "materials", 16_383).map((value, index) => {
-      const source = object(value, `materials[${index}]`), material: JsonObject = { ...source };
+      const source = withoutSpecular(object(value, `materials[${index}]`), `materials[${index}]`), material: JsonObject = { ...source };
       const validated = texturedMaterials.get(index);
       if (validated?.emissiveStrength !== undefined && source.extensions !== undefined) {
         const extensions = { ...object(source.extensions, `materials[${index}].extensions`) };
@@ -168,18 +169,24 @@ function attachManifest(packet: RenderPacket, manifest: GltfTextureManifest, sou
   const materials: PbrMaterial[] = packet.materials.map(material => {
     const textured = textureByMaterial.get(material.id);
     if (!textured) return material;
+    const specularFields = {
+      ...(textured.specularFactor !== undefined ? { specularFactor: textured.specularFactor } : {}),
+      ...(textured.specularColorFactor ? { specularColorFactor: textured.specularColorFactor } : {}),
+      ...(textured.specularTexture ? { specularTexture: textureSlot(textured.specularTexture) } : {}),
+      ...(textured.specularColorTexture ? { specularColorTexture: textureSlot(textured.specularColorTexture) } : {}),
+    };
     if (undeliverableNormalMaterials.has(material.id) && textured.normalTexture !== undefined) {
       losses.push({ code: "material-normal-tangents-undeliverable", stage: "material",
         assetPath: `materials[${textured.materialIndex}].normalTexture`, count: 1,
         detail: `法线贴图的切线基不可交付（${undeliverableNormalMaterials.get(material.id)}）；已降级为无该法线贴图渲染并如实登记，资产保持可渲染。` });
-      return { ...material,
+      return { ...material, ...specularFields,
         ...(textured.baseColorTexture ? { baseColorTexture: textureSlot(textured.baseColorTexture) } : {}),
         ...(textured.metallicRoughnessTexture ? { metallicRoughnessTexture: textureSlot(textured.metallicRoughnessTexture) } : {}),
         ...(textured.occlusionTexture ? { occlusionTexture: { ...textureSlot(textured.occlusionTexture), strength: textured.occlusionTexture.strength } } : {}),
         ...(textured.emissiveTexture ? { emissiveTexture: textureSlot(textured.emissiveTexture) } : {}),
         ...(textured.emissiveStrength !== undefined ? { emissiveStrength: textured.emissiveStrength } : {}) };
     }
-    return { ...material,
+    return { ...material, ...specularFields,
       ...(textured.baseColorTexture ? { baseColorTexture: textureSlot(textured.baseColorTexture) } : {}),
       ...(textured.metallicRoughnessTexture ? { metallicRoughnessTexture: textureSlot(textured.metallicRoughnessTexture) } : {}),
       ...(textured.normalTexture ? { normalTexture: { ...textureSlot(textured.normalTexture), normalScale: textured.normalTexture.normalScale } } : {}),
@@ -205,9 +212,10 @@ export async function decodeTexturedGltfDocument(json: unknown, buffers: readonl
   // per-material losses instead of rejecting the asset.
   const projected = options.optionalMaterialFallbacks !== undefined
     ? { document: projectOptionalMaterialFallbacks(json, options.optionalMaterialFallbacks), losses: [] as CapabilityFailure[] }
-    : projectThirdPartyMaterialProfile(json);
+    : projectThirdPartyMaterialProfile(json, options.advancedMaterials === true ? new Set([KHR_MATERIALS_SPECULAR]) : undefined);
   const fallbackDocument = projected.document;
   const manifest = extractGltfTextureManifest(fallbackDocument, buffers, {
+    specularMaterials: options.advancedMaterials === true,
     ...(options.resourcePrefix === undefined ? {} : { resourcePrefix: options.resourcePrefix }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     ...(options.maxBytes === undefined ? {} : { maxImageBytes: options.maxBytes }),
@@ -225,7 +233,8 @@ export async function decodeTexturedGltfDocument(json: unknown, buffers: readonl
   const materials = attached.materials.map((material) => {
     const index = material.id.startsWith(materialPrefix) ? Number(material.id.slice(materialPrefix.length)) : -1;
     if (!Number.isSafeInteger(index) || index < 0 || index >= sourceMaterials.length) return material;
-    const mapped = mapGltfMaterialExtensions(sourceMaterials[index], `materials[${index}]`, { failClosed: true });
+    const mapped = mapGltfMaterialExtensions(withoutSpecular(object(sourceMaterials[index], `materials[${index}]`), `materials[${index}]`),
+      `materials[${index}]`, { failClosed: true });
     losses.push(...mapped.losses);
     const advancedMapped = advancedOn ? mapGltfAdvancedMaterialExtensions(originalMaterials[index], `materials[${index}]`, { failClosed: true }) : undefined;
     if (advancedMapped) {

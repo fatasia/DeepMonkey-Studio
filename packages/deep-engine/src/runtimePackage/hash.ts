@@ -14,16 +14,15 @@ export function compareRuntimeStrings(left: string, right: string): number {
   }
   return a.length - b.length;
 }
-function canonical(value: RuntimeJson, binaryNumbers = true): string {
+function canonical(value: RuntimeJson, binaryNumbers = true, numberBytes = new DataView(new ArrayBuffer(8))): string {
   if (typeof value === "number" && binaryNumbers) {
-    const bytes = new DataView(new ArrayBuffer(8));
-    bytes.setFloat64(0, value === 0 ? 0 : value, false);
-    return `n${bytes.getUint32(0).toString(16).padStart(8, "0")}${bytes.getUint32(4).toString(16).padStart(8, "0")}`;
+    numberBytes.setFloat64(0, value === 0 ? 0 : value, false);
+    return `n${numberBytes.getUint32(0).toString(16).padStart(8, "0")}${numberBytes.getUint32(4).toString(16).padStart(8, "0")}`;
   }
   if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(item => canonical(item, binaryNumbers)).join(",")}]`;
+  if (Array.isArray(value)) return `[${value.map(item => canonical(item, binaryNumbers, numberBytes)).join(",")}]`;
   const object = value as Readonly<Record<string, RuntimeJson>>;
-  return `{${Object.keys(object).sort(compareRuntimeStrings).map(key => `${JSON.stringify(key)}:${canonical(object[key]!, binaryNumbers)}`).join(",")}}`;
+  return `{${Object.keys(object).sort(compareRuntimeStrings).map(key => `${JSON.stringify(key)}:${canonical(object[key]!, binaryNumbers, numberBytes)}`).join(",")}}`;
 }
 export const orderedRuntimeJson = (value: RuntimeJson): string => canonical(value, false);
 export function runtimeContentSha256(value: unknown): string {
@@ -32,4 +31,15 @@ export function runtimeContentSha256(value: unknown): string {
 export function runtimePackageSha256(value: { readonly [key: string]: unknown }): string {
   const { packageHash: _ignored, ...core } = value;
   return runtimeContentSha256(core);
+}
+
+/** Internal: caller has already captured a bounded, unexposed JSON snapshot. */
+export async function hashOwnedRuntimeJson(value: RuntimeJson, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
+  const text = RUNTIME_CANONICAL_DOMAIN + canonical(value);
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) return sha256Utf8(text);
+  const digest = await subtle.digest("SHA-256", new TextEncoder().encode(text));
+  signal?.throwIfAborted();
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
 }

@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { prepareLocalPublicationRuntime } from "../../api/scripts/prepare-local-publication-runtime.mjs";
+import { pruneRuntimePlatforms } from "../../../scripts/prune-runtime-platforms.mjs";
 
 const desktopRoot = fileURLToPath(new URL("../", import.meta.url));
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
@@ -28,6 +29,8 @@ runPnpm([
   "--filter", "@bim-studio/api",
   "deploy", "--prod", output,
 ]);
+const platformPruning = await pruneRuntimePlatforms(output, process.platform, process.arch);
+console.log(`Tauri local API: pruned ${platformPruning.removedBytes} bytes of unused ONNX platforms`);
 
 // The deployed graph includes package source maps and TypeScript sources even
 // though the sidecar executes only built JavaScript. Some OPC UA filenames put
@@ -40,11 +43,14 @@ for (const relativePath of ["src", "test-output", "tsconfig.json", "vitest.confi
 }
 console.log(`Tauri local API: pruned ${prunedDevelopmentArtifacts} non-runtime source artifacts`);
 
-await prepareLocalPublicationRuntime({ outputRoot: output });
+await prepareLocalPublicationRuntime({
+  outputRoot: output,
+  includeAndroid: false,
+  nativeExecutable: path.join(repositoryRoot, "packages/deep-engine-native/target/x86_64-pc-windows-msvc/release/deep-engine-native.exe"),
+});
 
 copyFileSync(process.execPath, path.join(output, process.platform === "win32" ? "node.exe" : "node"));
 for (const required of ["dist/index.js", "publication-runtime.json", "publication/native/deep-engine-native.exe",
-  "publication/android/deep-scene-viewer-template.apk", "publication/android/jre/bin/java.exe",
   process.platform === "win32" ? "node.exe" : "node"]) {
   if (!existsSync(path.join(output, required))) throw new Error(`本地 API 运行包缺少 ${required}`);
 }

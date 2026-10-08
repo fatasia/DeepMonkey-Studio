@@ -21,7 +21,7 @@ export async function openPbrRenderer<T>(session: DeviceSession,
   signal: AbortSignal, options: PbrRendererOptions, abortError: () => Error,
   create: (session: DeviceSession, pipelines: Pipelines, environment: StudioEnvironment,
     lighting: ForwardPlusPbrRuntime, shadows: LocalSpotShadowRuntime, options: PbrRendererOptions,
-    features: PbrRendererFeatures, deformation?: Pipelines | Promise<Pipelines>,
+    features: PbrRendererFeatures, deformation?: Pipelines | Promise<Pipelines> | (() => Promise<Pipelines>),
     releasePipelines?: () => void, msaa?: PbrMsaaCapability) => T): Promise<T> {
   const cancel = (): void => session.dispose();
   let scopeOpen = false;
@@ -78,13 +78,12 @@ export async function openPbrRenderer<T>(session: DeviceSession,
     ]);
     if (signal.aborted || session.state !== "ready") throw new Error("GPU preparation interrupted.");
     // 校验作用域在此关闭：其内的阴影/关键管线错误照旧拦截首帧。剩余 main 变体与
-    // 延迟 deformation 变体保持待命，宿主在首帧验证通过后调用 release 才开始排队，
-    // 背景编译不再与上传/首帧验证争抢设备。startDeformation 立即返回就绪 promise
-    //（门禁可在发布后等待），其内部创建被同一 release 门挡住。
+    // 延迟 deformation 变体保持待命；静态场景不调用 startDeformation。
+    // 实际变形 packet 只启动关键子集，背景变体由真实首帧验证后的 release 放行。
     const pendingError = session.device.popErrorScope(); scopeOpen = false;
     const error = await pendingError;
     if (error) throw new Error(error.message);
-    const deferredDeformation = deferDeformation ? set.startDeformation?.() : undefined;
+    const deferredDeformation = deferDeformation ? set.startDeformation : undefined;
     const renderer = create(session, set.pipelines, environment, lighting, localShadows, options, features,
       deferDeformation ? deferredDeformation : set.deformation, set.release, msaa);
     markBootstrap("bootstrap-created");

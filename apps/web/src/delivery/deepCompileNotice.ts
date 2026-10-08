@@ -7,7 +7,7 @@ const FEATURE_LABEL = { animations: "动画", skins: "骨骼蒙皮", morphTarget
  * 按槽丢弃的作者法线贴图(切线基不可交付)。全部活体且无隐藏/损失时无提示。
  */
 export function describeDeepCompileNotice(compiled: Pick<SceneRenderCompilation,
-  "deformedModels" | "skippedModels" | "textureLosses">): string | undefined {
+  "deformedModels" | "skippedModels" | "textureLosses" | "materialLosses">): string | undefined {
   const notices: string[] = [];
   const degraded = compiled.deformedModels?.filter(model => model.mode === "bind-pose");
   if (degraded?.length) {
@@ -20,6 +20,10 @@ export function describeDeepCompileNotice(compiled: Pick<SceneRenderCompilation,
   }
   if (compiled.textureLosses?.length) {
     notices.push(`${new Set(compiled.textureLosses.map(loss => loss.modelId)).size} 个对象的法线贴图因切线基不可交付，以无凹凸显示（${compiled.textureLosses[0]!.reason}）`);
+  }
+  if (compiled.materialLosses?.length) {
+    const first = compiled.materialLosses[0]!.loss;
+    notices.push(`${new Set(compiled.materialLosses.map(loss => loss.modelId)).size} 个对象存在材质降级（${first.assetPath}）`);
   }
   return notices.length ? notices.join("；") : undefined;
 }

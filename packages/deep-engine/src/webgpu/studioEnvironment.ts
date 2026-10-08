@@ -6,6 +6,8 @@ import { environmentMipSelection, type EnvironmentMipSelection } from "./environ
 
 export interface StudioEnvironment {
   readonly specular: GPUTextureView;
+  /** Borrowed storage for exact cube-array packing; owned by this environment. */
+  readonly specularTexture?: GPUTexture;
   readonly diffuse: GPUTextureView;
   readonly brdf: GPUTextureView;
   readonly sampler: GPUSampler;
@@ -25,7 +27,7 @@ export async function createStudioEnvironment(session: DeviceSession,
   const device = session.device, owned: GPUTexture[] = [];
   const create = (label: string, size: GPUExtent3D, mipLevelCount = 1): GPUTexture => {
     const texture = createAdmittedTexture(session, { label, size, mipLevelCount, format: "rgba16float",
-      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
+      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
     owned.push(texture); return texture;
   };
   let settings: GPUBuffer | undefined;
@@ -88,7 +90,7 @@ export async function createStudioEnvironment(session: DeviceSession,
     if (gpuError) throw new Error(`Studio environment GPU validation failed: ${gpuError.message}`);
     session.release(settings); settings = undefined;
     let disposed = false;
-    return Object.freeze({ specular: specular.createView({ dimension: "cube" }),
+    return Object.freeze({ specular: specular.createView({ dimension: "cube" }), specularTexture: specular,
       specularMipSelection: selection,
       diffuse: diffuse.createView({ dimension: "cube" }), brdf: brdf.createView(),
       sampler: device.createSampler({ minFilter: "linear", magFilter: "linear", mipmapFilter: "linear" }),

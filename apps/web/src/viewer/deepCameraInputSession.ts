@@ -146,7 +146,8 @@ export class DeepCameraInputSession {
     event.preventDefault();
     this.forward(event);
     // 每 100 像素滚距折一格,与 OrbitControls 的 dolly 步进量级一致。
-    this.controller.zoom(-(event.deltaY / 100));
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1;
+    this.controller.zoom(event.deltaY * unit * (event.ctrlKey ? 10 : 1) / 100);
     this.onFrame();
   }
 
@@ -209,7 +210,7 @@ export class DeepCameraInputSession {
     const distance = Math.hypot(first.x - second.x, first.y - second.y);
     if (this.pinchDistance !== undefined && distance > 0) {
       // 捏合距离每变化 8 像素折一格推拉。
-      this.controller.zoom((distance - this.pinchDistance) / 8);
+      this.controller.zoom((this.pinchDistance - distance) / 8);
       this.onFrame();
     }
     this.pinchDistance = distance;

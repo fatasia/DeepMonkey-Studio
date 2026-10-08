@@ -142,7 +142,7 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
       runtime.setPixelRatio(this.renderer.getPixelRatio());
       runtime.setSize(Math.max(this.container.clientWidth, 1), Math.max(this.container.clientHeight, 1));
       runtime.apply(this.postProcessingState, this.outlinedObjects());
-      this.requestRender();
+      this.scheduleRendererPipelineWarmup();
     }
   protected needsPostProcessing(): boolean {
       return this.postProcessingState.enabled || [...this.modelEffects.values()].some((effects) => effects.outline);

@@ -1,6 +1,6 @@
 import type { ProbeClipmapResourceUpdate } from "./probeClipmapResources.js";
 import {
-  planIrradianceProbeClipmap,
+  planIrradianceProbeClipmapCooperative,
   type ProbeAabb, type ProbeClipmapCapacity, type ProbeClipmapHistory,
   type ProbeClipmapOptions, type ProbeClipmapPlan, type ProbeUpdate,
   type ProbeVector3,
@@ -69,11 +69,13 @@ interface CommittedState {
   readonly deviceEpoch: string;
   readonly viewportKey: string;
   readonly history: ProbeClipmapHistory;
+  readonly plan: ProbeClipmapPlan;
+  readonly shapeKey: string;
   readonly stats: ProbeClipmapFrameStats;
   readonly fairCursor: number;
   readonly fairCycle: number;
 }
-interface Classified { readonly update: ProbeUpdate; readonly group: number }
+interface Classified { readonly update: ProbeUpdate; readonly group: number; readonly distance: number }
 
 const CLASS_NAMES: readonly ProbeScheduleClass[] = ["dynamic", "dirty", "scroll", "pending", "initial"];
 const LEVEL_WHEEL = Object.freeze([0, 0, 0, 0, 1, 1, 2, 3]);
@@ -110,17 +112,22 @@ export class ProbeClipmapUpdateScheduler {
     const invalidation = this.invalidation(request.deviceEpoch, viewportKey);
     const previous = invalidation === "none" ? this.committed : undefined;
     const fairCursor = previous?.fairCursor ?? 0, fairCycle = previous?.fairCycle ?? 0;
-    const plan = this.plan(request, previous?.history, fairCursor, fairCycle);
+    const controller = new AbortController(), unlink = signal ? relayAbort(signal, controller) : () => {};
+    let planning: ProbeClipmapPlan | Promise<ProbeClipmapPlan>;
+    try { planning = this.plan(request, previous, fairCursor, fairCycle, controller.signal); }
+    catch (error) { unlink(); throw error; }
     const generation = ++this.generation;
-    const nextCursor = (fairCursor + plan.updates.length) % LEVEL_WHEEL.length;
     const budget = this.budget(request);
-    const stats = createStats(plan, request, generation, invalidation, budget,
-      (previous?.stats.committedUpdateCount ?? 0) + plan.updates.length);
+    let plan: ProbeClipmapPlan | undefined, stats: ProbeClipmapFrameStats | undefined;
     this.latestFrame = request.frame;
     this.active?.abort(abortError("Probe clipmap frame was superseded."));
-    const controller = new AbortController(), unlink = signal ? relayAbort(signal, controller) : () => {};
     this.active = controller;
     try {
+      plan = planning instanceof Promise ? await planning : planning;
+      if (controller.signal.aborted) throw controller.signal.reason;
+      const nextCursor = (fairCursor + plan.updates.length) % LEVEL_WHEEL.length;
+      stats = createStats(plan, request, generation, invalidation, budget,
+        (previous?.stats.committedUpdateCount ?? 0) + plan.updates.length);
       const dynamic = request.dynamicBounds ?? [];
       const dynamicUpdateIndices = Object.freeze(plan.updates.flatMap((update, index) =>
         classify(update, dynamic, []) === 0 ? [index] : []));
@@ -135,7 +142,7 @@ export class ProbeClipmapUpdateScheduler {
       if (controller.signal.aborted) return result(generation, request.frame, "cancelled",
         plan, undefined, stats, controller.signal.reason);
       this.committed = Object.freeze({ deviceEpoch: request.deviceEpoch, viewportKey,
-        history: plan.history, stats, fairCursor: nextCursor, fairCycle: fairCycle + 1 });
+        history: plan.history, plan, shapeKey: planShapeKey(request), stats, fairCursor: nextCursor, fairCycle: fairCycle + 1 });
       return result(generation, request.frame, "committed", plan, publication, stats);
     } catch (error) {
       if (generation !== this.generation) return result(generation, request.frame, "superseded",
@@ -155,23 +162,30 @@ export class ProbeClipmapUpdateScheduler {
     this.committed = undefined;
   }
 
-  private plan(request: ProbeClipmapFrameRequest, previous: ProbeClipmapHistory | undefined,
-    fairCursor: number, fairCycle: number): ProbeClipmapPlan {
+  private plan(request: ProbeClipmapFrameRequest, previous: CommittedState | undefined,
+    fairCursor: number, fairCycle: number, signal: AbortSignal): ProbeClipmapPlan | Promise<ProbeClipmapPlan> {
     const dynamic = request.dynamicBounds ?? [], dirty = request.dirtyBounds ?? [];
-    const raw = planIrradianceProbeClipmap({ cameraPosition: request.cameraPosition,
+    // A serialized capture heartbeat drains the same validated cells; no need to rebuild geometry.
+    const steady = previous && !dynamic.length && !dirty.length && previous.shapeKey === planShapeKey(request);
+    const raw = steady ? Object.freeze({ ...previous.plan, updates: Object.freeze([]),
+      deferred: Object.freeze(previous.plan.deferred.map(update => update.reason === "pending" ? update
+        : Object.freeze({ ...update, reason: "pending" as const }))) }) : planIrradianceProbeClipmapCooperative({ cameraPosition: request.cameraPosition,
       sceneBounds: request.sceneBounds, dirtyBounds: [...dynamic, ...dirty],
-      ...(previous ? { previous } : {}), ...(request.capacity ? { capacity: request.capacity } : {}),
-      options: { ...request.options, updateBudget: this.cameraCutBudget } });
-    const candidates = [...raw.updates, ...raw.deferred].map(update => ({ update,
-      group: classify(update, dynamic, dirty) }));
-    const budget = this.budget(request);
-    const updates = selectUpdates(candidates, budget, fairCursor, fairCycle, request.cameraPosition);
-    const selected = new Set(updates.map(updateKey));
-    const deferred = Object.freeze(candidates.filter(item => !selected.has(updateKey(item.update)))
-      .sort(compareClassified(request.cameraPosition)).map(item => item.update));
-    const history = Object.freeze({ profileKey: raw.history.profileKey, origins: raw.history.origins,
-      pending: Object.freeze(deferred.map(update => Object.freeze({ level: update.level, cell: update.cell }))) });
-    return Object.freeze({ ...raw, updates: Object.freeze(updates), deferred, history });
+      ...(previous ? { previous: previous.history } : {}), ...(request.capacity ? { capacity: request.capacity } : {}),
+      options: { ...request.options, updateBudget: this.cameraCutBudget } }, signal);
+    const finish = (raw: ProbeClipmapPlan): ProbeClipmapPlan => {
+      const candidates = [...raw.updates, ...raw.deferred].map(update => ({ update,
+        group: classify(update, dynamic, dirty), distance: distance(update, request.cameraPosition) }));
+      const budget = this.budget(request);
+      const updates = selectUpdates(candidates, budget, fairCursor, fairCycle);
+      const selected = new Set(updates.map(updateKey));
+      const deferred = Object.freeze(candidates.filter(item => !selected.has(updateKey(item.update)))
+        .sort(compareClassified()).map(item => item.update));
+      const history = Object.freeze({ profileKey: raw.history.profileKey, origins: raw.history.origins,
+        pending: Object.freeze(deferred.map(update => Object.freeze({ level: update.level, cell: update.cell }))) });
+      return Object.freeze({ ...raw, updates: Object.freeze(updates), deferred, history });
+    };
+    return raw instanceof Promise ? raw.then(finish) : finish(raw);
   }
 
   private invalidation(epoch: string, viewportKey: string): ProbeClipmapInvalidation {
@@ -203,10 +217,16 @@ export class ProbeClipmapUpdateScheduler {
   }
 }
 
-function selectUpdates(items: readonly Classified[], limit: number, cursor: number, cycle: number,
-  camera: ProbeVector3): ProbeUpdate[] {
+function planShapeKey(request: ProbeClipmapFrameRequest): string {
+  const options = request.options, capacity = request.capacity;
+  return JSON.stringify([request.cameraPosition, request.sceneBounds, capacity
+    ? [capacity.maxBufferSize, capacity.maxStorageBufferBindingSize] : null,
+    options ? [options.levelCount, options.gridSize, options.baseSpacing, options.spacingScale, options.memoryBudgetBytes] : null]);
+}
+
+function selectUpdates(items: readonly Classified[], limit: number, cursor: number, cycle: number): ProbeUpdate[] {
   const groups = CLASS_NAMES.map((_, group) => items.filter(item => item.group === group)
-    .sort(compareClassified(camera)).map(item => item.update));
+    .sort(compareClassified()).map(item => item.update));
   const urgent = groups.slice(0, 3).flat(), background = groups.slice(3).flat();
   let reserve = Math.floor(limit / 4);
   if (reserve === 0 && urgent.length && background.length && cycle % 4 === 3) reserve = 1;
@@ -244,9 +264,9 @@ function classify(update: ProbeUpdate, dynamic: readonly ProbeAabb[], dirty: rea
 function pointInside(point: ProbeVector3, box: ProbeAabb): boolean {
   return point.every((value, axis) => value >= box.min[axis]! && value <= box.max[axis]!);
 }
-function compareClassified(camera: ProbeVector3): (left: Classified, right: Classified) => number {
+function compareClassified(): (left: Classified, right: Classified) => number {
   return (left, right) => left.group - right.group || left.update.level - right.update.level
-    || distance(left.update, camera) - distance(right.update, camera)
+    || left.distance - right.distance
     || left.update.cell[0] - right.update.cell[0] || left.update.cell[1] - right.update.cell[1]
     || left.update.cell[2] - right.update.cell[2];
 }

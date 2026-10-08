@@ -40,7 +40,7 @@ try {
     try {
       await gate.loginPage(page);
       await page.goto(`${gate.origin}/studio/${project.id}/applications/${application.metadata.id}/scenes/${scene.id}`);
-      await page.locator(".viewport canvas").waitFor();
+      await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
       await inspector.locator(".empty-inspector").waitFor();
       await shot("empty");
       entry.emptyContrast = await inspector.evaluate(collectTextContrast, ".empty-inspector strong, .empty-inspector span");
@@ -87,7 +87,7 @@ try {
         await page.getByRole("button", { name: "保存项目", exact: true }).click(); await save;
         const saved = await gate.json("GET", appPath);
         assert.equal(saved.scenes[0].primitives[0].transform.position.x, 1.125);
-        await page.reload(); await page.locator(".viewport canvas").waitFor();
+        await page.reload(); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
         await page.locator(".scene-tree-row.object").filter({ hasText: scene.primitives[0].name }).click();
         assert.equal(await x.inputValue(), "1.125"); await shot("saved-reloaded");
         entry.steps.push("escape-cancels-draft", "invalid-value-restored", "enter-commits", "save-reload-position");

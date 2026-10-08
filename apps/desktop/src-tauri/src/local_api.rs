@@ -225,6 +225,13 @@ fn prepare_publication_environment(
     ];
     let mut environment = Vec::new();
     for name in allowed {
+        // Android is optional in Windows-only deliveries; all declared resources remain required.
+        if name == "JAVA_HOME"
+            && !resource_paths.contains_key("androidTemplate")
+            && !manifest.environment.contains_key(name)
+        {
+            continue;
+        }
         let value = manifest
             .environment
             .get(name)
@@ -489,6 +496,43 @@ mod publication_tests {
                 .to_string_lossy()
                 .as_ref()
         );
+        // The Windows-only release keeps Native paths and omits Android/JRE entirely.
+        let mut windows = manifest.clone();
+        windows["resources"]
+            .as_object_mut()
+            .unwrap()
+            .remove("androidTemplate");
+        windows["resources"]
+            .as_object_mut()
+            .unwrap()
+            .remove("javaExecutable");
+        windows["environment"]
+            .as_object_mut()
+            .unwrap()
+            .remove("JAVA_HOME");
+        windows["dashboardDeploymentTemplate"]
+            .as_object_mut()
+            .unwrap()
+            .remove("androidApk");
+        fs::write(
+            runtime.join("publication-runtime.json"),
+            serde_json::to_vec(&windows).unwrap(),
+        )
+        .unwrap();
+        let environment = prepare_publication_environment(&runtime, &workspace).unwrap();
+        assert_eq!(environment.len(), 3);
+        assert!(environment.iter().all(|(name, _)| name != "JAVA_HOME"));
+        // Required Native mappings must still fail closed.
+        windows["environment"]
+            .as_object_mut()
+            .unwrap()
+            .remove("NATIVE_SCENE_VERIFIER_EXECUTABLE");
+        fs::write(
+            runtime.join("publication-runtime.json"),
+            serde_json::to_vec(&windows).unwrap(),
+        )
+        .unwrap();
+        assert!(prepare_publication_environment(&runtime, &workspace).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 }

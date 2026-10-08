@@ -33,14 +33,14 @@ import type {
   UnityResourceRecord,
 } from "@bim-studio/contracts";
 import {
-  ServerClient,
   type CloudRenderCapability,
   type CloudRenderControlOverview,
   type CloudRenderScenePolicy,
   type CloudRenderWorkerHealth,
   type RemoteRenderSessionSnapshot,
 } from "@bim-studio/server-sdk";
-import { runtimeHost } from "./adapters/runtimeHost.js";
+import { runtimeHost, isDesktopRuntime } from "./adapters/runtimeHost.js";
+import { RuntimeServerClient } from './adapters/runtimeServerClient';
 import { networkStatusMonitor } from "./appStatus/networkStatusMonitor";
 import { createScenePublicationDependencyApi } from "./apiClients/scenePublicationDependencyApi.js";
 import { createDashboardPublicationApi } from "./apiClients/dashboardPublicationApi.js";
@@ -126,13 +126,15 @@ export type {
 } from "./apiClients/scriptGitTypes.js";
 
 const scheduleAuthenticationRecheck = createAuthenticationRecheck(runtimeHost, desktopAwareFetch);
-const serverClient = new ServerClient({
+const serverClient = new RuntimeServerClient({
   profile: () => sceneViewerDeliveryServerProfile() ?? runtimeHost.getServerProfile(),
   authStore: runtimeHost,
   onUnauthorized: () => scheduleAuthenticationRecheck(),
   fetch: desktopAwareFetch,
   retryRead: path => !isLocalDesktopMode() && !isSceneViewerDeliveryRuntime() && isRecoverableStudioRead(path),
-});
+}, () => typeof window !== 'undefined' && !isDesktopRuntime() && !isSceneViewerDeliveryRuntime()
+  && runtimeHost.getServerProfile().baseUrl !== window.location.origin
+  ? runtimeHost.getServerProfile().baseUrl : undefined);
 
 export function getAuthToken() {
   return runtimeHost.getAccessToken();

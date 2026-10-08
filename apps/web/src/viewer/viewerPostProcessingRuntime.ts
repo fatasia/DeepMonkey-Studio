@@ -9,5 +9,6 @@ export interface ViewerPostProcessingRuntime {
   setPixelRatio(value: number): void;
   setSize(width: number, height: number): void;
   render(delta: number): void;
+  prepare?(scene?: THREE.Scene, camera?: THREE.Camera): Promise<void>;
   dispose(): void;
 }

@@ -103,6 +103,22 @@ describe("Deep presentation performance", () => {
     expect(source.snapshot()).toMatchObject({ sampleCount: 2, fps: 62.5, deep: { frame: { frame: 6 } } });
     source.dispose();
   });
+  it("does not halve feedback when the author loop schedules its next frame before submission", () => {
+    const source = new StudioDeepPerformance({}); let submitted = 0;
+    const authorFrame = () => {
+      if (submitted === 144) return;
+      requestAnimationFrame(authorFrame);
+      source.record(frame(++submitted), 800, true);
+    };
+    requestAnimationFrame(authorFrame);
+    for (let index = 0; index < 146; index++) tick(index * 1000 / 144);
+    expect(submitted).toBe(144);
+    expect(source.snapshot().fps).toBeCloseTo(144, 5);
+    const count = source.snapshot().sampleCount;
+    tick(10_000); tick(20_000);
+    expect(source.snapshot().sampleCount).toBe(count);
+    expect(callbacks.size).toBe(0); source.dispose();
+  });
   it("cancels pending display samples on idle and ignores late callbacks after disposal", () => {
     const source = new StudioDeepPerformance({}); submit(source, 1, 0);
     source.record(frame(2), 800, true); const late = [...callbacks.values()][0]!;

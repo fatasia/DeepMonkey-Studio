@@ -141,7 +141,7 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     webFeatureKeys: ["rayTracedReflections"],
     web: {
       support: "supported", reason: "opt-in-default-off",
-      evidence: "packages/deep-engine/src/rayTracing/rayTraceClosestFrameKernel.ts(两级 TLAS→BLAS closest-hit,rgba32float [t,normal.xyz],miss=[-1,0,0,0];illumination 遮蔽档 + secondBounce 二反弹档=第一命中点镜面方向单跳第二 closest-hit,第二命中/遮蔽记录 binding 11/12;执行器同目录 rayTraceClosestFramePass.ts)+ rtSpecularIndirectionKernel.ts/rtSpecularFillKernel.ts(一次反弹 indirection 与 SSR 合成后屏外填充,WGSL sha256 钉死;secondBounce 档 binding 8/9 消费第二记录按首命中反照率 Lambert 中继累加,CPU 镜像 rtSpecularIndirectionCpu.ts 单源含二跳累加式)+ rtSpecularFramePasses.ts(自有 96B/16B uniform,帧 uniform 满载不借位)+ pbrRendererFrames 帧内懒构造(瞬态纹理释放统一走 pbrRtReflectionsFrame.releaseRtReflectionFrameContribution)+ pbrPostProcessChain encodeFinal 消费(缺省输入 = 链路逐位零变化;真机门 scripts/rtSpecularGiGpuTest.mjs,真机二跳 GPU 腿待下一轮串行)",
+      evidence: "packages/deep-engine/src/rayTracing/rayTraceClosestFrameKernel.ts(两级 TLAS→BLAS closest-hit,rgba32float [t,normal.xyz],miss=[-1,0,0,0];illumination 遮蔽档 + secondBounce 二反弹档=第一命中点镜面方向单跳第二 closest-hit,第二命中/遮蔽记录 binding 11/12;执行器同目录 rayTraceClosestFramePass.ts)+ rtSpecularIndirectionKernel.ts/rtSpecularFillKernel.ts(一次反弹 indirection 与 SSR 合成后屏外填充,WGSL sha256 钉死;secondBounce 档 binding 8/9 消费第二记录按首命中反照率 Lambert 中继累加,CPU 镜像 rtSpecularIndirectionCpu.ts 单源含二跳累加式)+ rtSpecularFramePasses.ts(自有 96B/16B uniform,帧 uniform 满载不借位)+ pbrRendererFrames 帧内懒构造(瞬态纹理释放统一走 pbrRtReflectionsFrame.releaseRtReflectionFrameContribution)+ pbrPostProcessChain encodeFinal 消费(缺省输入 = 链路逐位零变化;真机门 scripts/rtSpecularGiGpuTest.mjs,scripts/rtSpecularSecondBounceGpuTest.mjs 二跳 GPU 命中/材质/遮蔽/SSR 仲裁通过（128² 探针；生产同步 dispatch/合法纹理 flags 由 pbrRtReflectionsFrame.test.ts 与 rayTraceClosestFramePass.test.ts 验证；完整编辑器预算仍需场景定标）)",
     },
     native: { support: "unavailable", reason: "absent", evidence: "packages/deep-engine-native/src/lib.rs(native 无 compute BVH 反射通道;与 ray-traced-shadows 同口径)" },
   },
@@ -161,7 +161,7 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     webFeatureKeys: ["softRasterizeFallback"],
     web: {
       support: "supported", reason: "opt-in-default-off",
-      evidence: "packages/deep-engine/src/webgpu/clusterLodIndirectExecutor.ts:ClusterLodIndirectPlan(indirect 簇绘制;softRasterizeFallback 超误差微三角软光栅,均 opt-in;G1 Studio 桥接线:buildClusterLodAuthorStaging author staging+bake 随包下发,g1ClusterLodEnabled URL 开关传递 clusterLodStaging)",
+      evidence: "packages/deep-engine/src/webgpu/packetClusterLodResources.ts:PacketClusterLodResources(g1ClusterLodEnabled opt-in;逐 packet/resident section 在原 PBR 管线替换 indirect 绘制,原实例/材质/UV/法线/切线/顶点色/运动流保留;常法线无贴图面按1px误差简化,丰富属性保留精确拓扑;MASK/BLEND/变形/非均匀缩放/预算超限保持普通 draw 并披露;阴影保留原几何);clusterLodIndirectExecutor.ts:ClusterLodIndirectPlan;旧 stageClusterLodScene 为 position-only diagnostic;softRasterizeFallback 超误差微三角软光栅 opt-in",
     },
     native: {
       support: "unavailable", reason: "absent",
@@ -479,11 +479,11 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine/src/shader/materialParameters.ts:MATERIAL_PARAMETER_KEYS(扩展带 ior/clearcoat/各向异性/透射 6 参数;factor=0 即 KHR_materials_clearcoat 默认无层,缺省零行为=stock PBR;materialBindings.ts MATERIAL_PARAMETER_EXTENDED_BAND_FLOAT_OFFSET=40 六 float 槽 40..46,materialEvaluateWgsl.ts 清漆层叠着色路径+白炉真机守恒 gate)",
     },
     // C9/native 接通(2026-10-06):清漆层叠单源求值 + 扩展带消费,factor=0/字段
-    // 缺席默认关(零带回退 stock 逐位不变);anisotropy/transmission 槽位
+    // 缺席默认关(零带回退 stock 逐位不变);anisotropy/active-layer transmission 槽位
     // fail-closed 拒绝非零,如实随证据声明。
     native: {
       support: "supported", reason: "opt-in-default-off",
-      evidence: "packages/deep-engine-native/src/mesh_abi.rs:MATERIAL_UNIFORM_FLOATS(=46:核心块 40 逐字节不变+消费 Web 扩展带 40..46;行型 MATERIAL_UNIFORM_ROW_FLOATS=60/240B,advanced 带 48..60)+packages/deep-engine-native/src/pbr_texture.rs prepare_material_uniform(扩展带 6 词=TS packExtendedParameterBlock 同序)+packages/deep-engine-native/assets/shaders/native_mesh_v1.wgsl native_extended_shade(单源 wgsl/materialEvaluateCore.wgsl deepEvaluateExtendedMaterial 清漆层叠替换主方向光直射,与 I-C23 层路径共用;全零带回退 native_lit_response 旧包逐位不变,RT 入口 native_mesh_rt_fragment_v1.wgsl 同换)+packages/deep-engine-native/src/material_extended_cpu.rs(TS materialEvaluate/packageClearcoat f64 镜像)+material_parity_tests(fixture material-native-parity-v1.json:f64 相对 ≤1e-9、求值词 ≤2ulp、打包词位级)+renderer/material_extended_gpu_tests 真机腿(clearcoat/sheen/组合/零带位级控制);native 子集:anisotropy.strength/transmission.factor 非零由 contract::validate 拒绝(TS renderPacketNativeMaterial.assertNativeStockMaterialExtensionsSupported 同构)",
+      evidence: "packages/deep-engine-native/src/mesh_abi.rs:320B row keeps the 240B prefix; pbr_texture seven slots and extended band 40..46; native_extended_shade shares clearcoat direct kernels. native_material_specular_v1.wgsl consumes F0/F90 plus linear strength alpha and sRGB color with independent UV0/UV1. native_material_transmission_v1.wgsl samples the current opaque HDR copy with source alpha retained. physical_material_gpu_tests actual DX12 device requested at sampled16 verifies stock/factor/color/alpha/UV1 and alpha1 red/blue interiors; anisotropy and active layered transmission remain rejected.",
     },
   },
   {
@@ -499,7 +499,7 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     // iridescence/volume/clearcoat-IBL 未接,如实降档 reduced-tier。
     native: {
       support: "degraded", reason: "reduced-tier",
-      evidence: "packages/deep-engine-native/src/contract/types.rs StockAdvancedParameters(闭合域与 TS AdvancedMaterialParameters 同构)+contract/validate.rs validate_stock_extensions(native 子集:sheen 放行,iridescence.factor/volume.thickness 非零 fail-closed 拒绝;unlit 拒绝)+pbr_texture.rs prepare_material_uniform(advanced 带 48..52=sheen.rgb+roughness,TS packAdvancedParameterBlock 前 4 词同序位级)+native_mesh_v1.wgsl(deepAdvDCharlie/deepAdvVNeubelt/deepAdvIblSheen 与 Web shader/materialAdvancedWgsl.ts ADVANCED_MATERIAL_MATH 同名同式;native_extended_shade 直射 Charlie lobe+能量补偿)+material_extended_cpu.rs(TS materialAdvancedReference f64 镜像)+material_parity_tests(原语/能量对拍 fixture material-native-parity-v1.json f64 ≤1e-9)+renderer/material_extended_gpu_tests 真机 sheen/组合/零带腿;TS native profile 放行=renderPacket.ts assertNativeStockMaterialExtensionsSupported;如实降档:iridescence(薄膜干涉)与 volume(厚度/衰减/透射)未接——contract 非零拒绝,clearcoat IBL 分量未接(native 直射替换为 T08 单源式,非 Web advanced 变体 coat-IBL 合成)",
+      evidence: "packages/deep-engine-native/src/contract/types.rs:StockAdvancedParameters and specular tuple; 320B row preserves sheen band 48..52 and appends specular UV/factors 60..80. Existing sheen GPU evidence remains; physical_material_gpu_tests adds actual specular and stock screen transmission. Shared Rust renderer/frame and transmission lifecycle feed Native/WASM. Nonzero iridescence/volume thickness and clearcoat indirect lobe remain unsupported; reduced-tier is retained.",
     },
   },
   {

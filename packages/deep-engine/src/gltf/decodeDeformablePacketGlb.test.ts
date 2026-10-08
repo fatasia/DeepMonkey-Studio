@@ -39,12 +39,10 @@ describe("decodeDeformablePacketGlb", () => {
     expect(() => prepareRenderPacket(decoded.packet)).not.toThrow();
   });
 
-  it("degrades only the unsupported asset when a deformation subset cannot be decoded", async () => {
-    const decoded = await decodeDeformablePacketGlb(deformedFixture(el => { el.skins = [{ joints: [1, 2], skeleton: 1, inverseBindMatrices: 3,
-      extensions: { VENDOR_unknown: {} } }]; }), undefined, { resourcePrefix: "character", liveDeformation: true });
-    expect(decoded.mode).toBe("bind-pose");
-    expect(decoded.fallbackReason).toBeTruthy();
-    expect(() => prepareRenderPacket(decoded.packet)).not.toThrow();
+  it("rejects a pose it cannot decode instead of publishing undeformed geometry", async () => {
+    await expect(decodeDeformablePacketGlb(deformedFixture(el => { el.skins = [{ joints: [1, 2], skeleton: 1, inverseBindMatrices: 3,
+      extensions: { VENDOR_unknown: {} } }]; }), undefined, { resourcePrefix: "character", liveDeformation: true }))
+      .rejects.toMatchObject({ code: "unsupported" });
   });
 
   it("classifies glTF documents from JSON only", () => {

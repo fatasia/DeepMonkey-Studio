@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { applicationPath } from "../adapters/browserRuntimeConfig";
 import { ImageDown,
   ArrowLeft,
   Copy,
@@ -378,7 +379,7 @@ export function DashboardRuntimePreview({
                 onClick={() => {
                   setCopyMessage("");
                   setManualCopyUrl("");
-                  const url = `${window.location.origin}/apps/${encodeURIComponent(application.metadata.id)}`;
+                  const url = new URL(applicationPath(`/apps/${encodeURIComponent(application.metadata.id)}`), window.location.origin).href;
                   void Promise.resolve().then(() => navigator.clipboard.writeText(url))
                     .then(() => setCopyMessage(tr(locale, "发布链接已复制", "Published URL copied")))
                     .catch(() => {

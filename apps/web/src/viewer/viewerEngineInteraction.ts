@@ -115,8 +115,8 @@ export abstract class ViewerEngineInteraction extends ViewerEngineAnimationContr
       ...(this.clippingHelper && !nativeHelpers ? [this.clippingHelper] : []),
       ...(this.measurementPreview && !nativeMeasurement(this.measurementPreview) ? [this.measurementPreview] : []),
       ...annotationAndSceneRoots,
-      ...(nativeHelpers ? [] : Array.from(this.sceneLightProxies.values()).flatMap(proxy =>
-        [proxy.position, ...(proxy.target ? [proxy.target] : []), ...(proxy.line ? [proxy.line] : [])]))];
+      ...Array.from(this.sceneLightProxies.values()).flatMap(proxy =>
+        [proxy.position, ...(proxy.target ? [proxy.target] : []), ...(proxy.line ? [proxy.line] : [])])];
     return [...new Set(roots)];
   }
   /** Deep 原生测量原语(切片 B)的只读输入:两点线段与角度三点。 */
@@ -159,16 +159,9 @@ export abstract class ViewerEngineInteraction extends ViewerEngineAnimationContr
       selected: this.selectedAnnotationId === state.id,
     }));
   }
-  /** Deep 原生灯光代理线/手柄;灯光状态仍由作者引擎维护。 */
+  /** Author proxy meshes/dashed lines are projected by getDeepEditorOverlayRoots. */
   getDeepLightProxyInputs(): DeepLightProxyInput[] {
-    if (this.presentationRendererBackend !== "webgpu" && this.presentationRendererBackend !== "wasm") return [];
-    return [...this.sceneLightProxies.values()].map((proxy) => {
-      proxy.position.updateWorldMatrix(true, false);
-      const position = proxy.position.getWorldPosition(new THREE.Vector3());
-      if (!proxy.target) return { position };
-      proxy.target.updateWorldMatrix(true, false);
-      return { position, target: proxy.target.getWorldPosition(new THREE.Vector3()) };
-    });
+    return [];
   }
   getDeepGrid(): THREE.Object3D | undefined { return this.gridHelper; }
   setInteractionScripts(scripts: SceneInteractionScriptState[]): void {

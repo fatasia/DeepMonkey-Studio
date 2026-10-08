@@ -40,7 +40,7 @@ try {
         savedAt: new Date(Date.now() + 1000).toISOString(), scene: expanded };
       await draftRecord(page, draft);
       const writes = []; page.on("request", request => { if (new URL(request.url()).pathname.startsWith("/api/") && ["POST", "PUT", "PATCH", "DELETE"].includes(request.method())) writes.push(request.method() + " " + new URL(request.url()).pathname); });
-      await page.goto(scenePath); await page.locator(".viewport canvas").waitFor();
+      await page.goto(scenePath); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
       const recovery = page.getByRole("dialog", { name: "恢复未保存工作", exact: true });
       for (let attempt = 0; attempt < 50 && await draftRecord(page, draft, true); attempt++) await page.waitForTimeout(100);
       assert.equal(await recovery.count(), 0, "Equivalent empty collections must not show recovery");

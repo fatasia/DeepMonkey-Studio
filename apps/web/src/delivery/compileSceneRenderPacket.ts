@@ -269,15 +269,8 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
       if (cached && cacheKey) {
         decodedBytes = cached.decodedBytes;
         source = cached.decoded.packet;
-        if (cached.decoded.mode !== "static") {
-          assetDeformation.set(assetId, { mode: cached.decoded.mode, features: cached.decoded.features,
-            ...(cached.decoded.fallbackReason ? { fallbackReason: cached.decoded.fallbackReason } : {}) });
-          deformationSources.push(...cached.decoded.packet.deformation?.sources ?? []);
-          posesByAsset.set(assetId, new Map(cached.decoded.packet.deformation?.poses.map(pose => [pose.id, pose])));
-        }
-        geometries.push(...cached.decoded.packet.geometries); textures.push(...cached.decoded.packet.textures ?? []);
-        for (const geometry of cached.decoded.packet.geometries) sourceGeometries.set(geometry.id, geometry);
-        assets.set(assetId, cached.decoded.packet);
+        // The common decoded path below stages each asset exactly once,
+        // including cached geometry, textures and deformation bindings.
       }
       let decoded: Awaited<ReturnType<typeof decodeDeformablePacketGlb>> | undefined = cached?.decoded;
       try {

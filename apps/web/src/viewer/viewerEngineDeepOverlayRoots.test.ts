@@ -1,8 +1,26 @@
 import * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";
 import { ViewerEngineInteraction } from "./viewerEngineInteraction";
+import { projectStudioEditorOverlay } from "./studioDeepEditorOverlay";
 
 describe("Deep editor overlay roots", () => {
+  it("preserves author light proxy meshes, dashed colors and opacity without duplicate primitives", () => {
+    const position = new THREE.Group(), target = new THREE.Group();
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 1, 0)]),
+      new THREE.LineDashedMaterial({ color: 0x76afff, toneMapped: false, dashSize: .35, gapSize: .22,
+        depthTest: false, depthWrite: false, transparent: true, opacity: .55 }));
+    line.computeLineDistances(); line.updateMatrixWorld(true);
+    const host = { scene: new THREE.Scene(), transform: { getHelper: () => new THREE.Group() },
+      sceneLightProxies: new Map([["light", { position, target, line }]]), presentationRendererBackend: "webgpu" } as unknown as ViewerEngineInteraction;
+    const roots = ViewerEngineInteraction.prototype.getDeepEditorOverlayRoots.call(host);
+    expect(roots).toEqual([position, target, line]);
+    expect(ViewerEngineInteraction.prototype.getDeepLightProxyInputs.call(host)).toEqual([]);
+    const camera = new THREE.PerspectiveCamera(60, 1, .1, 10); camera.position.z = 3; camera.updateMatrixWorld(true);
+    const vertices = projectStudioEditorOverlay(roots, camera, 100, 100, 1);
+    expect(vertices.length).toBeGreaterThan(6 * 8);
+    expect(vertices[4]).toBeCloseTo(0x76 / 255); expect(vertices[5]).toBeCloseTo(0xaf / 255);
+    expect(vertices[6]).toBeCloseTo(1); expect(vertices[23]).toBeCloseTo(.55);
+  });
   it("projects transient BIM visuals while excluding the model root", () => {
     const modelRoot = new THREE.Group();
     const scene = new THREE.Scene();

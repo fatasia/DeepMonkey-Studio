@@ -74,6 +74,12 @@ export class ThreeTextureProjector {
   projectEmissive(value: unknown): ProjectedTexture {
     return this.projectSingle(value, "material.emissiveMap", "emissive", convertSrgbSample);
   }
+  projectSpecular(value: unknown): ProjectedTexture {
+    return this.projectSingle(value, "material.specularIntensityMap", "specular", convertLinearSample);
+  }
+  projectSpecularColor(value: unknown): ProjectedTexture {
+    return this.projectSingle(value, "material.specularColorMap", "specularColor", convertSrgbSample);
+  }
 
   projectNormal(value: unknown): ProjectedTexture {
     return this.projectSingle(value, "material.normalMap", "normal", convertLinearSample);

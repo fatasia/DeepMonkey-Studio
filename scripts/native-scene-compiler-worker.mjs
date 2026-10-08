@@ -11,6 +11,7 @@ import { normalizeNativeSceneDraco } from "./lib/nativeSceneDraco.mjs";
 
 const { scene, models, packageId, packageVersion, maxSourceBytes } = workerData;
 const assets = new Map(models);
+const textures = new Map(workerData.textures ?? []);
 
 /**
  * F3 发布一致性：从服务端持久化候选中按"当前场景的编译器严格源投影哈希"挑选烘焙结果。
@@ -42,6 +43,12 @@ try {
     ...(hdrEnvironment ? {hdrEnvironment} : {}),
     ...(irradianceProbes ? {irradianceProbes} : {}),
     normalizeModel: normalizeNativeSceneDraco,
+    advancedMaterials: true, textureBudgetBytes: 112 * 1024 * 1024,
+    ...(textures.size ? { loadTexture: async url => {
+      const bytes = textures.get(url);
+      if (!bytes) throw new Error("冻结作者贴图缺失");
+      return Uint8Array.from(bytes);
+    } } : {}),
     loadModel: async id => {
       const bytes = assets.get(id);
       if (!bytes) throw new Error(`冻结模型缺失：${id}`);

@@ -219,13 +219,13 @@ try {
   // ── 步骤 4：导入模型（仓内生成 fixture，走产品上传链路） ──
   const sceneEditorUrl = `${productOrigin}/studio/${encodeURIComponent(project.id)}/applications/${encodeURIComponent(application.metadata.id)}/scenes/${encodeURIComponent(scene.id)}`;
   await page.goto(sceneEditorUrl, { waitUntil: "networkidle", timeout: 60_000 });
-  await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ state: "visible", timeout: 30_000 });
   const uploadResponse = page.waitForResponse((response) => response.url().includes(`/api/projects/${project.id}/models?`) && response.request().method() === "POST");
   await page.locator('input[type="file"][accept*=".glb"]').setInputFiles(fixturePath);
   const uploadedModel = await readJsonResponse(uploadResponse, 202);
   await waitForModelReady(page, project.id, uploadedModel.id);
   await page.reload({ waitUntil: "networkidle", timeout: 60_000 });
-  await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ state: "visible", timeout: 30_000 });
   await openSceneResourcePanel(page);
   const modelRow = page.locator(`.scene-resource-row[data-model-id="${uploadedModel.id}"]`);
   try {
@@ -307,7 +307,7 @@ try {
 
   // ── 步骤 6：工程分析报告生成与下载 ──
   await page.goto(sceneEditorUrl, { waitUntil: "networkidle", timeout: 60_000 });
-  await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ state: "visible", timeout: 30_000 });
   await dismissRecoveryDialog(page);
   const dockInspect = page.getByRole("toolbar", { name: "场景编辑工具" });
   await dockInspect.getByRole("button", { name: "查看与分析", exact: true }).click();
@@ -343,7 +343,7 @@ try {
 
   // ── 步骤 8：断网重开验证 ──
   await page.reload({ waitUntil: "networkidle", timeout: 60_000 });
-  await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ state: "visible", timeout: 30_000 });
   await openSceneResourcePanel(page);
   const reopenedRow = page.locator(`.scene-resource-row[data-model-id="${uploadedModel.id}"]`);
   await reopenedRow.waitFor({ state: "visible", timeout: 30_000 });

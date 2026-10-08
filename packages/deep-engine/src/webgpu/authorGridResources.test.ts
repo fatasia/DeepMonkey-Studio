@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { spawnSync } from "node:child_process";
-import { AUTHOR_GRID_WGSL, AuthorGridResources } from "./authorGridResources.js";
-import { authorGridUniforms, prepareAuthorGridTexture, type AuthorGridView } from "./authorGridTypes.js";
+import { AUTHOR_GRID_COVERAGE_SAMPLES, AUTHOR_GRID_WGSL, AuthorGridResources } from "./authorGridResources.js";
+import { authorGridUniforms, prepareAuthorGridTexture, prepareAuthorGridTextureAsync, type AuthorGridView } from "./authorGridTypes.js";
 import type { DeviceSession } from "./deviceSession.js";
 const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 const source = (): AuthorGridView => ({ model: identity, color: [1, 1, 1, 0.5], texture: {
@@ -21,6 +21,48 @@ function fixture() {
     encode: (view?: AuthorGridView) => owner.encode(encoder as unknown as GPUCommandEncoder, {} as GPUTextureView, {} as GPUTextureView, identity, identity, view) };
 }
 describe("authored world grid GPU ownership", () => {
+  it("preserves authored clamp boundaries, trilinear mips and anisotropy at upload", () => {
+    const f = fixture(); f.encode(source());
+    expect(f.session.device.createSampler).toHaveBeenCalledWith({ addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge",
+      minFilter: "linear", magFilter: "linear", mipmapFilter: "linear", maxAnisotropy: 8 });
+    const explicit = { ...source().texture, sampler: { addressModeU: "repeat" as const, addressModeV: "mirror-repeat" as const } };
+    expect(prepareAuthorGridTexture(explicit).sampler).toMatchObject({ addressModeU: "repeat", addressModeV: "mirror-repeat" });
+  });
+  it("integrates phase-changing subpixel lines without moving affine texture detail", () => {
+    // Analytic reference: a projected one-pixel-period line has mean coverage .5.
+    // A center lookup changes from 0 to 1 with pan phase; the production quadrature
+    // cancels that harmonic and retains constant/linear color and coverage fields.
+    for (const phase of [0, .1, .23, .41, .5, .73, .99]) {
+      for (const axis of [0, 1] as const) {
+        const coverage = AUTHOR_GRID_COVERAGE_SAMPLES.reduce((sum, offset) =>
+          sum + .5 + .5 * Math.cos(2 * Math.PI * (phase + offset[axis])), 0) / AUTHOR_GRID_COVERAGE_SAMPLES.length;
+        expect(coverage).toBeCloseTo(.5, 12);
+      }
+      const affine = AUTHOR_GRID_COVERAGE_SAMPLES.reduce((sum, [x, y]) => sum + 2 * (phase + x) + 3 * y, 0) / 4;
+      expect(affine).toBeCloseTo(2 * phase, 12);
+    }
+    expect(AUTHOR_GRID_WGSL.match(/textureSampleGrad\(/g)).toHaveLength(4);
+    expect(AUTHOR_GRID_WGSL).toContain("let dx = dpdx(in.uv); let dy = dpdy(in.uv)");
+    const f = fixture(); f.encode(source());
+    // A single-sample resolved color/depth pair remains a valid overlay pass.
+    expect(f.createRenderPipeline.mock.calls[0]?.[0]).not.toHaveProperty("multisample");
+    expect(f.encoder.beginRenderPass).toHaveBeenCalledTimes(1);
+  });
+  it("yields mip preparation without changing any linear-light mip bytes", async () => {
+    const texture = { ...source().texture, width: 64, height: 64,
+      data: Uint8Array.from({ length: 64 * 64 * 4 }, (_, index) => (index * 83 + index % 13) % 256) };
+    let yielded = false; setTimeout(() => { yielded = true; }, 0);
+    const expected = prepareAuthorGridTexture(texture), actual = await prepareAuthorGridTextureAsync(texture);
+    expect(yielded).toBe(true); expect(actual).toEqual(expected);
+  });
+  it("single-flights preparation and rejects disposal before admitting resources", async () => {
+    const f = fixture(), view = source();
+    await Promise.all([f.owner.prepare(view), f.owner.prepare(view)]); f.encode(view);
+    expect(f.createTexture).toHaveBeenCalledTimes(1);
+    const next = { ...view, texture: { ...view.texture, revision: 2 } };
+    const pending = f.owner.prepare(next); f.owner.dispose();
+    await expect(pending).rejects.toThrow("unavailable");
+  });
   it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("passes Naga semantic validation", () => {
     const result = spawnSync(process.env.DEEP_SHADER_NAGA_BIN!, ["--stdin-file-path", "author-grid.wgsl", "--input-kind", "wgsl"], { input: AUTHOR_GRID_WGSL, encoding: "utf8" });
     expect(result.status, result.stderr).toBe(0);

@@ -101,6 +101,9 @@ describe("author skin pose snapshot", () => {
     mesh.bindMatrixInverse.copy(mesh.bindMatrix).invert();
     mesh.updateWorldMatrix(true, true);
     const pose = captureAuthorSkinPose(mesh, 0);
+    const typed = captureAuthorSkinPalette(mesh, 0);
+    expect([...typed.matrices]).toEqual([...pose.matrices]);
+    expect([...typed.normalMatrices!]).toEqual([...pose.normalMatrices]);
     let largestError = 0;
     for (let joint = 0; joint < 64; joint++) {
       const expected = new THREE.Matrix4().multiplyMatrices(
@@ -113,6 +116,14 @@ describe("author skin pose snapshot", () => {
       }
     }
     expect(largestError).toBeLessThan(1e-5);
+    skeleton.bones[32]!.rotation.y += 0.17; mesh.updateWorldMatrix(true, true);
+    const animated = captureAuthorSkinPalette(mesh, 1, typed);
+    expect(animated).not.toBe(typed);
+    const reference = captureAuthorSkinPose(mesh, 1);
+    expect([...animated.matrices]).toEqual([...reference.matrices]);
+    expect([...animated.normalMatrices!]).toEqual([...reference.normalMatrices]);
+    const copied = reference.copyPalette(); copied.matrices.fill(0);
+    expect(reference.matrices[15]).toBe(1);
   });
 
   it.each([-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])("rejects revision %s", revision => {
@@ -150,6 +161,25 @@ describe("author skin pose snapshot", () => {
     expect(() => captureAuthorSkinPalette(mesh, 2, palette)).toThrow("components");
     second.matrixWorld.identity(); mesh.updateWorldMatrix(true, true);
     expect([...captureAuthorSkinPalette(mesh, 2, palette).matrices]).toEqual([...captureAuthorSkinPose(mesh, 2).copyPalette().matrices]);
+  });
+
+  it("reuses unchanged nonidentity poses without hiding animation, inverse edits or palette corruption", () => {
+    const { mesh, bone, skeleton } = fixture();
+    const first = captureAuthorSkinPalette(mesh, 0);
+    expect(captureAuthorSkinPalette(mesh, 1, first)).toBe(first);
+    bone.position.y += 1; mesh.updateWorldMatrix(true, true);
+    const animated = captureAuthorSkinPalette(mesh, 1, first);
+    expect(animated).not.toBe(first);
+    expect(animated.matrices).toEqual(captureAuthorSkinPose(mesh, 1).copyPalette().matrices);
+    skeleton.boneInverses[0]!.elements[12] += 0.25;
+    const rebound = captureAuthorSkinPalette(mesh, 2, animated);
+    expect(rebound).not.toBe(animated);
+    expect(rebound.matrices).toEqual(captureAuthorSkinPose(mesh, 2).copyPalette().matrices);
+    rebound.matrices[0] = NaN;
+    const repaired = captureAuthorSkinPalette(mesh, 3, rebound);
+    expect(repaired.matrices).toEqual(captureAuthorSkinPose(mesh, 3).copyPalette().matrices);
+    bone.matrixWorld.elements[0] = Infinity;
+    expect(() => captureAuthorSkinPalette(mesh, 4, repaired)).toThrow("components");
   });
 
   it("matches Three vertex skinning at the 1e-4 position tolerance", () => {

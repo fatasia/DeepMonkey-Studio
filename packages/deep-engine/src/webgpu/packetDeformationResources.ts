@@ -10,6 +10,8 @@ import type { GpuDeformationHistoryResult, GpuDeformationHistorySource, GpuDefor
 import { assertSnapshotRevisions, canonicalPose } from "./packetDeformationRevision.js";
 import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.js";
 import { DeformationStaticSources, type DeformationStaticSourceStage } from "./deformationStaticSources.js";
+import { retainDeformationPoseValidator } from "../renderPacketPoseUpdate.js";
+import type { PreparedSkinningInput } from "./gpuSkinningTypes.js";
 
 type Deformer = GpuSkinner | GpuMorphDeformer | GpuMorphSkinner;
 interface Entry {
@@ -41,31 +43,42 @@ export class PacketDeformationResources {
   get hasIncompleteUploads(): boolean { return this.snapshot !== undefined && !this.ready; }
 
   prepare(input: DeformationSnapshot, geometryRevisions: ReadonlyMap<string, number> = new Map()): void {
+    const work = this.prepareSteps(input, geometryRevisions);
+    while (!work.next().done) { /* Synchronous SDK entry retains full validation. */ }
+  }
+
+  /** Internal staging of privately owned validator output; caller owns cancellation and rollback. */
+  *prepareSteps(input: DeformationSnapshot, geometryRevisions: ReadonlyMap<string, number> = new Map(),
+    ownedInputs?: ReadonlyMap<string, PreparedSkinningInput>): Generator<void, void> {
     this.assertIdle();
-    const snapshot = snapshotDeformation(input);
+    const snapshot = ownedInputs ? input : snapshotDeformation(input);
     assertSnapshotRevisions(snapshot, this.snapshot);
-    const validator = new DeformationPoseValidator(snapshot);
+    const validator = new DeformationPoseValidator(snapshot, ownedInputs !== undefined);
     const candidate = new Map<string, Entry>();
     const staticStage = this.staticSources.stage();
+    let completed = false;
     try {
       for (const pose of snapshot.poses) {
+        yield;
         const source = snapshot.sources.find(item => item.id === pose.source)!;
         const staticUpload = staticStage.source(source, geometryRevisions.get(source.geometry) ?? source.revision);
         const gpu = source.kind === "skin" ? new GpuSkinner(this.session, staticUpload)
           : source.kind === "morph" ? new GpuMorphDeformer(this.session, staticUpload) : new GpuMorphSkinner(this.session, staticUpload);
         const entry = { source, uploaded: pose, gpu, history: new GpuDeformationHistory(this.session) };
         candidate.set(pose.id, entry);
-        if (gpu instanceof GpuSkinner) gpu.setSource(source.skinning!, pose.palette!);
+        if (gpu instanceof GpuSkinner) gpu.setSource(source.skinning!, pose.palette!, ownedInputs?.get(pose.id));
         else if (gpu instanceof GpuMorphDeformer) gpu.setSource(source.morph!, pose.morphWeights!);
         else gpu.setSource({ morph: source.morph!, skinning: source.skinning! }, { morphWeights: pose.morphWeights!, palette: pose.palette! });
       }
-    } catch (error) {
-      failWithResourceCleanup(error, "Packet deformation preparation failed.", [...cleanup([...candidate.values()]), () => staticStage.dispose()]);
+      completed = true;
+    } finally {
+      if (!completed) runResourceCleanup("Packet deformation preparation rollback failed.", [...cleanup([...candidate.values()]), () => staticStage.dispose()]);
     }
     this.retired.push(...this.entries.values());
     if (this.staticStage) this.retiredStatic.push(this.staticStage);
     this.staticStage = staticStage;
     this.entries = candidate; this.snapshot = snapshot; this.validator = validator; this.ready = true;
+    if (ownedInputs !== undefined) retainDeformationPoseValidator(input, validator);
   }
 
   /** Only PacketBuffers' successful asynchronous GPU validation commit may call this. */

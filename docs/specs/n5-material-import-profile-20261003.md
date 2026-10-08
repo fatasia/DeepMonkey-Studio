@@ -3,6 +3,8 @@
 行定义：「第三方 GLB unlit/无 TANGENT profile 的导入/生成/损失处理，避免零配置样板被拒；范围先核查」（4-8h）。
 本文为进行中文档：现状核查已完成，夹具实测与最小补齐进行中。
 
+2026-10-07更新：`advancedMaterials:true` 的导入路径现在保留 KHR_materials_specular 因子与两种贴图，经UV/变换、颜色空间、Browser packet和生产GPU消费。默认关闭能力时仍沿用本文的第三方profile fallback；unlit与非中性specular组合依然明确拒绝。真实SMT六张纹理/零导入loss、GPU静态+morph八项通过，见 [SMT高光贴图核查](studio-source-specular-audit-20261007.md)。本文下方矩阵是原profile基线，不是最新高级路径支持清单。
+
 ## 1. 现状核查（六步，2026-10-03 完成）
 
 1. **全仓 grep**（packages/*/src、apps/*/src，含未跟踪文件）：`KHR_materials_unlit` 生产代码仅

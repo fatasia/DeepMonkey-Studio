@@ -46,7 +46,7 @@ it("owns restored parameter, color and UV arrays independently of the caller JSO
 });
 it("admits clearcoat-subset extendedParameters into the Native publish profile", () => {
   // C9/native(2026-10-06):stock 扩展带接通,clearcoat 子集经同一闭合域校验
-  // 放行;未消费的 anisotropy/transmission 非零仍 fail-closed(下组用例)。
+  // 放行;未消费的 anisotropy 非零仍 fail-closed(下组用例)。
   const input = JSON.parse(serializeBrowserRenderPacket(packet()));
   delete input.materials[0].layered;
   expect(() => validateRuntimeRenderPacket(input, "$.packet")).not.toThrow();
@@ -57,8 +57,6 @@ it("admits clearcoat-subset extendedParameters into the Native publish profile",
 it.each([
   (input: any) => { input.materials[0].extendedParameters = { clearcoat: { factor: .25, roughness: .4 },
     anisotropy: { strength: .4, rotation: 0 }, transmission: { factor: 0 } }; },
-  (input: any) => { input.materials[0].extendedParameters = { clearcoat: { factor: .25, roughness: .4 },
-    anisotropy: { strength: 0, rotation: 0 }, transmission: { factor: .5 } }; },
 ])("keeps the Native extendedParameters subset fail-closed", mutate => {
   const input = JSON.parse(serializeBrowserRenderPacket(packet()));
   delete input.materials[0].layered;

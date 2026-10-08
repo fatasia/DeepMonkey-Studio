@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { RendererPipelineWarmupScheduler } from "./rendererPipelineWarmup";
+import { RendererPipelineWarmupScheduler, createBrowserPipelineWarmupScheduler } from "./rendererPipelineWarmup";
 
 describe("RendererPipelineWarmupScheduler", () => {
+  it("submits coalesced browser compilation before the next frame and cancels disposal", async () => {
+    const scheduler = createBrowserPipelineWarmupScheduler(), stale = vi.fn(), latest = vi.fn();
+    scheduler.request(stale); scheduler.request(latest);
+    expect(latest).not.toHaveBeenCalled(); await Promise.resolve(); await Promise.resolve();
+    expect(stale).not.toHaveBeenCalled(); expect(latest).toHaveBeenCalledOnce();
+    const cancelled = createBrowserPipelineWarmupScheduler(), task = vi.fn();
+    cancelled.request(task); cancelled.dispose(); await Promise.resolve(); expect(task).not.toHaveBeenCalled();
+  });
   it("does not execute a cancelled callback even when its host delivers it late", async () => {
     let callback!: () => void;
     const cancel = vi.fn(), task = vi.fn();

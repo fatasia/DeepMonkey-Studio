@@ -8,6 +8,8 @@ const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 
 export async function prepareLocalPublicationRuntime(options) {
   const outputRoot = path.resolve(options.outputRoot);
+  const includeAndroid = options.includeAndroid !== false;
+  const version = options.version ?? JSON.parse(await readFile(path.join(repositoryRoot, "package.json"), "utf8")).version;
   const publicationRoot = path.join(outputRoot, "publication");
   const inputs = {
     nativeExecutable: path.resolve(options.nativeExecutable ?? path.join(repositoryRoot,
@@ -19,7 +21,7 @@ export async function prepareLocalPublicationRuntime(options) {
     androidBuildTools: path.resolve(options.androidBuildTools ?? discoverAndroidBuildTools()),
     javaHome: path.resolve(options.javaHome ?? process.env.JAVA_HOME ?? ""),
   };
-  await validateInputs(inputs);
+  await validateInputs(inputs, includeAndroid);
   await rm(publicationRoot, { recursive: true, force: true });
   const destinations = {
     nativeExecutable: path.join(publicationRoot, "native/deep-engine-native.exe"),
@@ -31,38 +33,38 @@ export async function prepareLocalPublicationRuntime(options) {
   await Promise.all([
     copyFile(inputs.nativeExecutable, destinations.nativeExecutable),
     copyFile(inputs.nativeProbePackage, destinations.nativeProbePackage),
-    copyFile(inputs.androidTemplate, destinations.androidTemplate),
-    copyFile(path.join(inputs.androidBuildTools, "zipalign.exe"), path.join(destinations.androidBuildTools, "zipalign.exe")),
-    copyFile(path.join(inputs.androidBuildTools, "lib/apksigner.jar"), path.join(destinations.androidBuildTools, "lib/apksigner.jar")),
+    ...(includeAndroid ? [copyFile(inputs.androidTemplate, destinations.androidTemplate),
+      copyFile(path.join(inputs.androidBuildTools, "zipalign.exe"), path.join(destinations.androidBuildTools, "zipalign.exe")),
+      copyFile(path.join(inputs.androidBuildTools, "lib/apksigner.jar"), path.join(destinations.androidBuildTools, "lib/apksigner.jar"))] : []),
   ]);
-  await run(path.join(inputs.javaHome, "bin/jlink.exe"), ["--add-modules", "java.base,java.logging", "--strip-debug",
+  if (includeAndroid) await run(path.join(inputs.javaHome, "bin/jlink.exe"), ["--add-modules", "java.base,java.logging", "--strip-debug",
     "--no-header-files", "--no-man-pages", "--output", destinations.javaHome]);
   const resources = {
     nativeExecutable: await describeFile(outputRoot, destinations.nativeExecutable),
     nativeProbePackage: await describeFile(outputRoot, destinations.nativeProbePackage),
-    androidTemplate: await describeFile(outputRoot, destinations.androidTemplate),
-    androidZipalign: await describeFile(outputRoot, path.join(destinations.androidBuildTools, "zipalign.exe")),
-    androidApksigner: await describeFile(outputRoot, path.join(destinations.androidBuildTools, "lib/apksigner.jar")),
-    javaExecutable: await describeFile(outputRoot, path.join(destinations.javaHome, "bin/java.exe")),
+    ...(includeAndroid ? { androidTemplate: await describeFile(outputRoot, destinations.androidTemplate),
+      androidZipalign: await describeFile(outputRoot, path.join(destinations.androidBuildTools, "zipalign.exe")),
+      androidApksigner: await describeFile(outputRoot, path.join(destinations.androidBuildTools, "lib/apksigner.jar")),
+      javaExecutable: await describeFile(outputRoot, path.join(destinations.javaHome, "bin/java.exe")) } : {}),
   };
   const manifest = {
     schema: "deep-monkey.local-publication-runtime", schemaVersion: 1,
     resources,
     environment: {
       NATIVE_SCENE_VERIFIER_EXECUTABLE: resources.nativeExecutable.path,
-      JAVA_HOME: relative(outputRoot, destinations.javaHome),
+      ...(includeAndroid ? { JAVA_HOME: relative(outputRoot, destinations.javaHome) } : {}),
       DASHBOARD_NATIVE_DEPLOYMENT_FILE: "@generated:workspace/config/dashboard-native.json",
       THREE_SCENE_VIEWER_LAUNCHER_EXECUTABLE: "@runtime:current-executable",
     },
     dashboardDeploymentTemplate: {
       nativeExecutable: { resource: "nativeExecutable" },
       deviceFingerprint: { mode: "runtime-local", probePackagePath: { resource: "nativeProbePackage" } },
-      configuration: { locale: "zh-CN", packageVersion: "0.1.0" },
-      androidApk: {
+      configuration: { locale: "zh-CN", packageVersion: version },
+      ...(includeAndroid ? { androidApk: {
         templateApkPath: { resource: "androidTemplate" },
         templateApkSha256: resources.androidTemplate.sha256,
         buildToolsPath: { relativePath: relative(outputRoot, destinations.androidBuildTools) },
-      },
+      } } : {}),
     },
     materialization: {
       resourceRoot: ".",
@@ -85,7 +87,13 @@ function discoverAndroidBuildTools() {
   return path.join(sdk, "build-tools/35.0.0");
 }
 
-async function validateInputs(inputs) {
+async function validateInputs(inputs, includeAndroid) {
+  if (!includeAndroid) {
+    await Promise.all([boundedFile(inputs.nativeExecutable, 1024 * 1024, "Native executable"),
+      boundedFile(inputs.nativeProbePackage, 64, "Native probe package")]);
+    if (!(await readPrefix(inputs.nativeExecutable, 2)).equals(Buffer.from("MZ"))) throw new Error("Native executable is not a PE file");
+    return;
+  }
   const [native, probe, apk, zipalign, apksigner, jlink] = await Promise.all([
     boundedFile(inputs.nativeExecutable, 1024 * 1024, "Native executable"),
     boundedFile(inputs.nativeProbePackage, 64, "Native probe package"),
@@ -128,7 +136,7 @@ if (path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
     values[name.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = value;
   }
   if (!values.output) throw new Error("Expected --output <directory>");
-  const manifest = await prepareLocalPublicationRuntime({ ...values, outputRoot: values.output });
+  const manifest = await prepareLocalPublicationRuntime({ ...values, includeAndroid: values.includeAndroid !== "false", outputRoot: values.output });
   console.log(`Local publication runtime prepared: ${path.resolve(values.output)}`);
-  console.log(`Native ${manifest.resources.nativeExecutable.sha256}; Android ${manifest.resources.androidTemplate.sha256}`);
+  console.log(`Native ${manifest.resources.nativeExecutable.sha256}; Android ${manifest.resources.androidTemplate?.sha256 ?? "excluded"}`);
 }

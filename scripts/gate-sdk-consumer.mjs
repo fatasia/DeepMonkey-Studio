@@ -9,6 +9,7 @@ import { bundleConsumer, checkBrowser } from "./lib/sdkConsumerBrowser.mjs";
 
 // Read existing dist only. The caller owns the dependency-ordered production build.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const cpuOnly = process.argv.includes("--cpu-only");
 const workspace = await mkdtemp(join(tmpdir(), "bim-sdk-consumer-"));
 assert.ok(!isWithin(root, workspace), "Consumer must be outside the monorepo");
 const reportDir = join(root, "test-output/runs/2026-09-06", `sdk-consumer-${workspace.split(/[\\/]/).at(-1).replace("bim-sdk-consumer-", "")}`);
@@ -58,8 +59,8 @@ try {
   const viteRequire = createRequire(require.resolve("vite"));
   const esbuild = await import(pathToFileURL(viteRequire.resolve("esbuild")).href);
   report.bundle = await bundleConsumer({ consumer: installed.consumer, reportDir, esbuild });
-  report.browser = await checkBrowser({ root, consumer: installed.consumer, reportDir, bundle: report.bundle, expected: report.types.result });
-  report.status = "passed";
+  if (!cpuOnly) report.browser = await checkBrowser({ root, consumer: installed.consumer, reportDir, bundle: report.bundle, expected: report.types.result });
+  report.status = cpuOnly ? "cpu-passed" : "passed";
 } catch (error) {
   report.status = "failed";
   report.error = error.stack ?? String(error);

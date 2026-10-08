@@ -66,7 +66,7 @@ describe("Studio Deep bridge author lighting", () => {
     const bridge = new StudioDeepWebGpuBridge(viewer, container as unknown as HTMLElement,
       { loadModule: async () => module, onRuntimeFailure: failure });
     bridges.push(bridge);
-    return { bridge, scene, camera, backend, create, authorCanvas, container, presentation, failure, unsubscribe, shadowMap };
+    return { bridge, scene, camera, viewer, backend, create, authorCanvas, container, presentation, failure, unsubscribe, shadowMap };
   }
   async function activate(bridge: StudioDeepWebGpuBridge) {
     const pending = bridge.switchTo("webgpu"); await settle(); await frame();
@@ -122,6 +122,38 @@ describe("Studio Deep bridge author lighting", () => {
     expect(backend.render.mock.calls.at(-1)![0].lights).toEqual({ directional: [], points: [], spots: [] });
     light.visible = true; light.intensity = 0; await frame();
     expect(backend.render.mock.calls.at(-1)![0].lights?.directional).toEqual([]);
+  });
+  it("carries authored colored fill lights, exposure and DPR through candidate creation and live frames", async () => {
+    const { bridge, scene, viewer, create, backend } = fixture();
+    const ambient = new THREE.AmbientLight(new THREE.Color().setRGB(0.2, 0.4, 0.6), 0.7);
+    const hemisphere = new THREE.HemisphereLight(new THREE.Color().setRGB(0.1, 0.3, 0.5),
+      new THREE.Color().setRGB(0.4, 0.2, 0.1), 0.9);
+    hemisphere.position.set(0, 7, 0); scene.add(ambient, hemisphere);
+    Object.assign(viewer.renderer, { toneMappingExposure: 1.37, getPixelRatio: () => 1.5 });
+    await activate(bridge);
+    expect(create.mock.calls[0]![0].view).toMatchObject({ lights: {
+      ambient: [{ color: [0.2, 0.4, 0.6], intensity: 0.7 }],
+      hemisphere: [{ directionWorld: [0, 1, 0], skyColor: [0.1, 0.3, 0.5], groundColor: [0.4, 0.2, 0.1], intensity: 0.9 }],
+    } });
+    expect(backend.prepareScene.mock.calls[0]![1]).toMatchObject({ exposure: 1.37, pixelRatio: 1.5 });
+    ambient.color.setRGB(0.6, 0.4, 0.2); ambient.intensity = 0.14;
+    hemisphere.intensity = 0.18; viewer.renderer.toneMappingExposure = 0.72;
+    await frame();
+    expect(backend.render.mock.calls.at(-1)![0]).toMatchObject({ exposure: 0.72, lights: {
+      ambient: [{ color: [0.6, 0.4, 0.2], intensity: 0.14 }], hemisphere: [{ intensity: 0.18 }],
+    } });
+  });
+  it("projects the resolved GI gain without adding its hemisphere light or applying weather twice", async () => {
+    const { bridge, scene, create, backend } = fixture();
+    const gi = new THREE.HemisphereLight(0xbddcff, 0x75634d, 0.5 * 2 * 0.58);
+    gi.name = "scene-light:global-illumination"; scene.add(gi);
+    await activate(bridge);
+    expect(create.mock.calls[0]![0].view.globalIlluminationIntensity).toBeCloseTo(0.58);
+    expect(create.mock.calls[0]![0].view.lights?.hemisphere).toBeUndefined();
+    gi.intensity = 2; await frame();
+    expect(backend.render.mock.calls.at(-1)![0].globalIlluminationIntensity).toBe(2);
+    gi.visible = false; await frame();
+    expect(backend.render.mock.calls.at(-1)![0].globalIlluminationIntensity).toBe(0);
   });
   it("projects author fog at creation and follows density/type/disabled changes", async () => {
     const { bridge, scene, create, backend } = fixture();

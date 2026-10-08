@@ -20,7 +20,6 @@ import {
 } from "../appDefaults";
 import { syncSceneIntoApplication } from "../studio/sceneApplicationSync";
 import { resolveSceneEntryCamera } from "../studio/sceneEntryCamera";
-import { captureSceneThumbnail } from "../studio/sceneThumbnailCapture";
 import { workspaceSaveFailureGuidance } from "../studio/workspaceSaveProtection";
 import { createWorkspaceRecoveryDraft, deleteWorkspaceRecoveryDraft, writeWorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
 import { normalizeSceneCoordinates } from "../viewer/sceneCoordinates";
@@ -38,8 +37,8 @@ import { createSceneWorkspaceNavigationActions } from "./sceneWorkspaceNavigatio
 import { createSceneSimulationController, mergeSavedSimulationScene } from "./sceneSimulationController";
 
 /**
- * 离开三维工作台的预捕获保存件（P2-5「返回二维立即生效」）：作者快照与视口缩略图
- * 在引擎存活时同步取好，导航立即生效，持久化经 saveScene(carry) 转后台执行。
+ * 离开三维工作台时保存作者快照，沿用快照中已有的缩略图，不读取 GPU 画布。
+ * 导航立即生效，持久化经 saveScene(carry) 转后台执行。
  */
 export interface SceneSaveCarry {
   scene: SceneSnapshot;
@@ -47,6 +46,8 @@ export interface SceneSaveCarry {
 }
 
 /** 统一场景快照、保存、发布、导入导出事务，保证各入口使用同一套一致性规则。 */
+const engineSaveEpochs = new WeakMap<object, number>();
+
 export function createScenePersistenceController(context: ScenePersistenceControllerContext) {
   const {
     engine,
@@ -152,13 +153,13 @@ export function createScenePersistenceController(context: ScenePersistenceContro
 
   /**
    * P2-5（2026-10-06 对抗测试第二轮 §4.2）：离开三维工作台的预捕获保存件。
-   * 作者快照与视口缩略图在引擎存活时同步取好；导航随即生效，持久化转后台
+   * 作者快照在引擎存活时同步取好；导航随即生效，持久化转后台
    * （saveScene(carry) 消费），"返回二维"不再被大场景的网络保存阻塞十几秒。
    */
   function captureSceneSaveCarry(): SceneSaveCarry | undefined {
     const snapshot = makeSnapshot();
     if (!snapshot) return undefined;
-    const thumbnail = captureSceneThumbnail(engine);
+    const thumbnail = snapshot.thumbnail;
     return thumbnail ? { scene: snapshot, thumbnail } : { scene: snapshot };
   }
 
@@ -174,11 +175,14 @@ export function createScenePersistenceController(context: ScenePersistenceContro
     if (!snapshot || !project) return;
     const projectId = project.id;
     const applyVersion = sceneApplyVersionRef.current;
+    const saveEpoch = engine ? (engineSaveEpochs.get(engine) ?? 0) + 1 : 0;
+    if (engine && !carry) engineSaveEpochs.set(engine, saveEpoch);
     if (route.applicationId && (applicationBaseline?.metadata.id !== route.applicationId || applicationBaseline.metadata.projectId !== projectId)) return;
     if (!automatic) setBusy(true);
     try {
-      // 保存时抓取当前视口作为场景缩略图（U1-9d：卡片默认展示最后保存的画面）；失败不阻断保存。
-      const sceneThumbnail = carry ? carry.thumbnail : captureSceneThumbnail(engine);
+      const sceneThumbnail = carry?.thumbnail;
+      if (!carry && (engineSaveEpochs.get(engine!) !== saveEpoch || !engine?.isSceneSnapshotReady(activeScene?.id) || sceneApplyVersionRef.current !== applyVersion
+        || context.getActiveScene()?.id !== activeScene?.id)) throw new Error("场景已切换或正在重新载入，本次保存已取消");
       if (sceneThumbnail) snapshot.thumbnail = sceneThumbnail;
       // 引擎快照可比 React 闭包中的应用更新；送出前 Store 是并发编辑合并的唯一基线。
       const applicationDraft = route.applicationId && applicationBaseline?.metadata.id === route.applicationId
@@ -186,11 +190,11 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       // 网络请求发出前先保存轻量恢复副本；IndexedDB 不可用时仍继续正式保存。
       await writeWorkspaceRecoveryDraft(createWorkspaceRecoveryDraft(projectId, applicationDraft, snapshot));
       // carry 路径不读引擎：快照是导航前事实，引擎/代际门只保护"引擎读回"型保存。
-      if (!carry && (!engine?.isSceneSnapshotReady(activeScene?.id) || sceneApplyVersionRef.current !== applyVersion
+      if (!carry && (engineSaveEpochs.get(engine!) !== saveEpoch || !engine?.isSceneSnapshotReady(activeScene?.id) || sceneApplyVersionRef.current !== applyVersion
         || context.getActiveScene()?.id !== activeScene?.id)) throw new Error("场景已切换或正在重新载入，本次保存已取消");
       const workspace = applicationDraft ? await api.saveApplicationWorkspace(applicationDraft, snapshot) : undefined;
       const saved = workspace?.scene ?? (await api.saveScene(snapshot));
-      if (!carry && (!engine?.isSceneSnapshotReady(activeScene?.id) || sceneApplyVersionRef.current !== applyVersion || context.getActiveScene()?.id !== activeScene?.id)) return saved;
+      if (!carry && (engineSaveEpochs.get(engine!) !== saveEpoch || !engine?.isSceneSnapshotReady(activeScene?.id) || sceneApplyVersionRef.current !== applyVersion || context.getActiveScene()?.id !== activeScene?.id)) return saved;
       if (workspace) applicationSessionRef.current.acknowledgeSave(workspace.application, applicationBaseline);
       if (!activeScene) context.onFirstSceneSave?.(saved);
       engine?.bindSavedSceneSnapshot(saved.id);

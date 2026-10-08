@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   GitBranch,
@@ -7,6 +7,8 @@ import {
   Plus,
   Save,
   XCircle,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
@@ -19,14 +21,15 @@ import type {
 import { api } from "../api";
 import { DataPipelineCanvas } from "./DataPipelineCanvas";
 import { DataPipelineDebugPanel } from "./DataPipelineDebugPanel";
-import { insertPipelineNodeAfter } from "./DataPipelineEditing";
+import { insertPipelineNodeAfter, removePipelineNode } from "./DataPipelineEditing";
 import { DataPipelineLibrary } from "./DataPipelineLibrary";
+import { usePipelineHistory } from "./usePipelineHistory";
+import { validateDataPipeline } from "@bim-studio/data-runtime/pipeline";
 import {
   NodeInspector,
   createTransformNode,
   errorMessage,
   derivePipelineFieldHints,
-  normalizeLinearPipeline,
   validatePipelineDraft,
   type TransformNodeType,
 } from "./DataPipelineStudioParts";
@@ -50,13 +53,21 @@ export function DataPipelineStudio({
   const [preview, setPreview] = useState<DataPipelinePreview>();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [draggedNodeId, setDraggedNodeId] = useState<string>();
+  const loadEpoch = useRef(0);
+  const current = useRef({ projectId, draft });
+  current.current = { projectId, draft };
+
   const [validationMessage, setValidationMessage] = useState<string>();
+  const history = usePipelineHistory(draft, (next) => {
+    setDraft(next); setPreview(undefined); setValidationMessage(undefined);
+  });
 
   async function load(preferredId?: string) {
+    const epoch = ++loadEpoch.current;
     setLoading(true);
     try {
       const next = await api.listDataPipelines(projectId);
+      if (epoch !== loadEpoch.current || current.current.projectId !== projectId) return;
       setPipelines(next);
       const selected = next.find((item) => item.id === preferredId) ?? next[0];
       setDraft(selected ? structuredClone(selected) : undefined);
@@ -64,14 +75,16 @@ export function DataPipelineStudio({
       setPreview(undefined);
       setValidationMessage(undefined);
     } catch (reason) {
-      onError(errorMessage(reason));
+      if (epoch === loadEpoch.current && current.current.projectId === projectId) onError(errorMessage(reason));
     } finally {
-      setLoading(false);
+      if (epoch === loadEpoch.current && current.current.projectId === projectId) setLoading(false);
     }
   }
 
   useEffect(() => {
+    setDraft(undefined); setPipelines([]); setPreview(undefined); setBusy(false);
     void load();
+    return () => { loadEpoch.current++; };
   }, [projectId]);
 
   function createPipeline() {
@@ -127,34 +140,37 @@ export function DataPipelineStudio({
 
   async function save(runAfter = false, throughNodeId?: string) {
     if (!draft) return;
+    const epoch = loadEpoch.current;
+    const isCurrent = () => epoch === loadEpoch.current && current.current.projectId === projectId;
     const validationError = validatePipelineDraft(draft, datasets);
     if (validationError) {
       setValidationMessage(validationError);
       onError(validationError);
       return;
     }
+    try { validateDataPipeline(draft); }
+    catch (reason) { const message = errorMessage(reason); setValidationMessage(message); onError(message); return; }
     setValidationMessage(undefined);
     setBusy(true);
     onError("");
     try {
-      const normalized = normalizeLinearPipeline(draft);
-      const saved = await api.saveDataPipeline(projectId, normalized);
-      const nextPipelines = [
-        ...pipelines.filter((item) => item.id !== saved.id),
-        saved,
-      ];
-      setPipelines(nextPipelines);
-      setDraft(structuredClone(saved));
-      if (runAfter) {
+      const saved = await api.saveDataPipeline(projectId, draft);
+      if (!isCurrent()) return;
+      setPipelines(previous => [...previous.filter(item => item.id !== saved.id), saved]);
+      const unchanged = current.current.draft === draft;
+      const savedDraft = structuredClone(saved);
+      if (unchanged) { current.current = { projectId, draft: savedDraft }; setDraft(savedDraft); }
+      if (runAfter && unchanged) {
         const result = await api.previewDataPipeline(projectId, saved.id, throughNodeId);
+        if (!isCurrent() || current.current.draft !== savedDraft) return;
         setPreview(result);
         if (result.failedNodeId) setSelectedNodeId(result.failedNodeId);
         if (result.error) onError(result.error);
       }
     } catch (reason) {
-      onError(errorMessage(reason));
+      if (isCurrent()) onError(errorMessage(reason));
     } finally {
-      setBusy(false);
+      if (isCurrent()) setBusy(false);
     }
   }
 
@@ -171,7 +187,7 @@ export function DataPipelineStudio({
       return;
     try {
       await api.deleteDataPipeline(projectId, pipeline.id);
-      await load();
+      if (current.current.projectId === projectId) await load();
     } catch (reason) {
       onError(errorMessage(reason));
     }
@@ -179,19 +195,11 @@ export function DataPipelineStudio({
 
   function addNode(type: TransformNodeType, afterNodeId = selectedNodeId) {
     if (!draft) return;
-    const outputIndex = draft.nodes.findIndex((item) => item.type === "output");
-    const fallbackIndex = outputIndex < 0 ? draft.nodes.length : outputIndex;
-    const selectedIndex = draft.nodes.findIndex((item) => item.id === afterNodeId);
-    const insertIndex = selectedIndex < 0
-      ? fallbackIndex
-      : Math.min(selectedIndex + 1, fallbackIndex);
-    const fieldsAtInsertion = derivePipelineFieldHints(
-      draft.nodes,
-      draft.nodes[insertIndex]?.id,
-      datasetFields,
-    );
-    const node = createTransformNode(type, locale, fieldsAtInsertion);
-    setDraft(insertPipelineNodeAfter(draft, node, afterNodeId));
+    const fieldsAtInsertion = derivePipelineFieldHints(draft.nodes, afterNodeId, datasetFields, draft.edges);
+    const predecessor = draft.nodes.find(node => node.id === afterNodeId);
+    const outputFields = predecessor ? derivePipelineFieldHints([predecessor], undefined, fieldsAtInsertion) : datasetFields;
+    const node = createTransformNode(type, locale, outputFields);
+    history.commit(insertPipelineNodeAfter(draft, node, afterNodeId));
     setSelectedNodeId(node.id);
     setPreview(undefined);
     setValidationMessage(undefined);
@@ -199,7 +207,7 @@ export function DataPipelineStudio({
 
   function updateNode(updater: (node: DataPipelineNode) => DataPipelineNode) {
     if (!draft || !selectedNodeId) return;
-    setDraft({
+    history.commit({
       ...draft,
       nodes: draft.nodes.map((node) =>
         node.id === selectedNodeId ? updater(node) : node,
@@ -214,7 +222,7 @@ export function DataPipelineStudio({
     const node = draft.nodes.find((item) => item.id === nodeId);
     if (!node || node.type === "source" || node.type === "output") return;
     const nodes = draft.nodes.filter((item) => item.id !== nodeId);
-    setDraft(normalizeLinearPipeline({ ...draft, nodes }));
+    history.commit(removePipelineNode(draft, nodeId));
     setSelectedNodeId(
       nodes[
         Math.max(0, draft.nodes.findIndex((item) => item.id === nodeId) - 1)
@@ -226,45 +234,17 @@ export function DataPipelineStudio({
 
   function moveNode(nodeId: string, offset: -1 | 1) {
     if (!draft) return;
-    const index = draft.nodes.findIndex((item) => item.id === nodeId);
-    const target = index + offset;
-    if (index <= 0 || target <= 0 || target >= draft.nodes.length - 1) return;
-    const nodes = [...draft.nodes];
-    [nodes[index], nodes[target]] = [nodes[target]!, nodes[index]!];
-    setDraft(normalizeLinearPipeline({ ...draft, nodes }));
-    setPreview(undefined);
-    setValidationMessage(undefined);
+    history.commit({ ...draft, nodes: draft.nodes.map(node => node.id === nodeId
+      ? { ...node, position: { ...node.position, x: node.position.x + offset * 48 } } : node) });
   }
 
-  function dropNode(event: DragEvent, targetId: string) {
-    event.preventDefault();
-    if (!draft || !draggedNodeId || draggedNodeId === targetId) return;
-    const moving = draft.nodes.find((node) => node.id === draggedNodeId);
-    const target = draft.nodes.find((node) => node.id === targetId);
-    if (
-      !moving ||
-      moving.type === "source" ||
-      moving.type === "output" ||
-      !target ||
-      target.type === "source"
-    )
-      return;
-    const nodes = draft.nodes.filter((node) => node.id !== draggedNodeId);
-    nodes.splice(
-      nodes.findIndex((node) => node.id === targetId),
-      0,
-      moving,
-    );
-    setDraft(normalizeLinearPipeline({ ...draft, nodes }));
-    setDraggedNodeId(undefined);
-    setPreview(undefined);
-    setValidationMessage(undefined);
+  function editGraph(next: DataPipelineDefinition) {
+    history.commit(next);
   }
-
   const selectedNode = draft?.nodes.find((node) => node.id === selectedNodeId);
   const sourceNode = draft?.nodes.find((node): node is Extract<DataPipelineNode, { type: "source" }> => node.type === "source");
   const datasetFields = datasets.find((dataset) => dataset.id === sourceNode?.datasetId)?.fields ?? [];
-  const sourceFields = derivePipelineFieldHints(draft?.nodes ?? [], selectedNodeId, datasetFields);
+  const sourceFields = derivePipelineFieldHints(draft?.nodes ?? [], selectedNodeId, datasetFields, draft?.edges);
   const diagnostics = useMemo(
     () =>
       new Map(preview?.diagnostics.map((item) => [item.nodeId, item]) ?? []),
@@ -289,7 +269,7 @@ export function DataPipelineStudio({
         pipelines={pipelines}
         activeId={draft?.id}
         canCreate={Boolean(datasets.length)}
-        canInsert={Boolean(draft && selectedNode?.type !== "output")}
+        canInsert={Boolean(draft)}
         loading={loading}
         onCreate={createPipeline}
         onSelect={selectPipeline}
@@ -351,6 +331,8 @@ export function DataPipelineStudio({
                 </span>
               </div>
               <div className="pipeline-actions">
+                <button title={tr(locale, "撤销", "Undo")} aria-label={tr(locale, "撤销", "Undo")} disabled={!history.canUndo || busy} onClick={history.undo}><Undo2 size={14} /></button>
+                <button title={tr(locale, "重做", "Redo")} aria-label={tr(locale, "重做", "Redo")} disabled={!history.canRedo || busy} onClick={history.redo}><Redo2 size={14} /></button>
                 <button
                   disabled={busy || !draft.name.trim()}
                   onClick={() => void save()}
@@ -381,13 +363,12 @@ export function DataPipelineStudio({
             {validationMessage && <div className="pipeline-validation-banner"><XCircle size={14} /><span>{validationMessage}</span></div>}
             <DataPipelineCanvas
               locale={locale}
-              nodes={draft.nodes}
+              definition={draft}
               selectedNodeId={selectedNodeId}
               diagnostics={diagnostics}
               onSelect={setSelectedNodeId}
-              onDragStart={setDraggedNodeId}
-              onDrop={dropNode}
-              onInsert={addNode}
+              onChange={editGraph}
+              onError={(message) => { setValidationMessage(message || undefined); onError(message); }}
             />
             <div className="pipeline-lower">
               <NodeInspector

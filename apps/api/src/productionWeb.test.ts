@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -12,6 +12,23 @@ afterEach(async () => {
 });
 
 describe("production web hosting", () => {
+  it("serves hashed Vite assets ahead of the object wildcard while retaining project objects", async () => {
+    const root = await createWebRoot();
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets/index-a1b2c3.js"), "console.log('bundle')");
+    await writeFile(path.join(root, "assets/index-a1b2c3.js.br"), "compressed-bundle");
+    const app = Fastify();
+    app.get<{ Params: { "*": string } }>("/assets/*", async (request, reply) =>
+      request.params["*"] === "projects/project/model.glb" ? "project-model" : reply.code(404).send("object-missing"));
+    await registerProductionWeb(app, { enabled: true, root });
+    const bundle = await app.inject({ url: "/assets/index-a1b2c3.js" });
+    expect(bundle.statusCode).toBe(200); expect(bundle.body).toBe("console.log('bundle')");
+    const compressed = await app.inject({ url: "/assets/index-a1b2c3.js", headers: { "accept-encoding": "br" } });
+    expect(compressed.headers["content-encoding"]).toBe("br"); expect(compressed.body).toBe("compressed-bundle");
+    expect((await app.inject({ url: "/assets/projects/project/model.glb" })).body).toBe("project-model");
+    expect((await app.inject({ url: "/assets/not-a-build.js" })).statusCode).toBe(404);
+    await app.close();
+  });
   it("serves bundled assets and falls back to the SPA entry", async () => {
     const root = await createWebRoot();
     const app = Fastify();

@@ -1,6 +1,6 @@
 [package]
 name = "deep-engine-wasm"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.93"
 description = "DeepMonkey engine core compiled to WebAssembly (WebGPU backend)"
@@ -21,7 +21,7 @@ crate-type = ["cdylib", "rlib"]
 deep-engine-native = { path = "../deep-engine-native" }
 wasm-bindgen = "=0.2.128"
 wasm-bindgen-futures = "=0.4.78"
-web-sys = { version = "=0.3.105", features = ["Window", "HtmlCanvasElement", "GpuCanvasContext", "Document", "Element"] }
+web-sys = { version = "=0.3.105", features = ["Window", "HtmlCanvasElement", "GpuCanvasContext", "Document", "Element", "AbortSignal"] }
 js-sys = "=0.3.105"
 console_error_panic_hook = "=0.1.7"
 bytemuck = { version = "=1.25.2", features = ["derive"] }

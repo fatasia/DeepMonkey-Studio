@@ -42,7 +42,7 @@ try {
       const application = await created.json();
       const appPath = `/api/projects/${project.id}/applications/${application.metadata.id}`;
       const scenePath = `${gate.origin}/studio/${project.id}/applications/${application.metadata.id}/scenes/${application.scenes[0].id}`;
-      await page.goto(scenePath); await page.locator(".viewport canvas").waitFor();
+      await page.goto(scenePath); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
       if (await page.getByLabel("自动保存", { exact: true }).isChecked()) await page.getByLabel("自动保存", { exact: true }).uncheck();
       await open(); await panel.locator(".light-system-head select").selectOption("directional");
       const lightEditor = panel.locator(".light-editor");
@@ -54,7 +54,7 @@ try {
       };
       await setVector(0, [6, 5, 4]); await setVector(1, [0, 0, 0]);
       await vectors.nth(1).scrollIntoViewIfNeeded(); await page.waitForTimeout(500);
-      const canvas = page.locator(".viewport canvas");
+      const canvas = page.locator('.viewport canvas:not([aria-hidden="true"])');
       // 元素截图会包含覆盖其上的表单；只取未被环境面板遮挡的3D区域。
       const viewport = await canvas.boundingBox(), overlay = await panel.boundingBox();
       assert.ok(viewport && overlay);
@@ -75,7 +75,7 @@ try {
       entry.changedPixels = changedPixels; await shot("moved");
       const saving = page.waitForResponse(response => response.url().endsWith(`${appPath}/workspace`) && response.request().method() === "PUT");
       await page.getByRole("button", { name: "保存项目", exact: true }).click(); assert.equal((await saving).status(), 200);
-      await page.reload(); await page.locator(".viewport canvas").waitFor(); await open();
+      await page.reload(); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor(); await open();
       await panel.locator(".light-tabs").getByRole("button", { name: "验收方向光", exact: true }).click();
       const position = await vectors.nth(0).locator("input").evaluateAll(inputs => inputs.map(input => Number(input.value)));
       const target = await vectors.nth(1).locator("input").evaluateAll(inputs => inputs.map(input => Number(input.value)));

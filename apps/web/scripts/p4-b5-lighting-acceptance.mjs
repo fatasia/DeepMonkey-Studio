@@ -37,7 +37,7 @@ const shot = async (page, name) => {
 };
 /** 画布平均亮度（0-1）：页面内解码截图像素，为灯光/背景切换提供确定性视觉证据。 */
 const averageLuminance = async (page) => {
-  const base64 = await page.locator(".viewport canvas").first().screenshot({ type: "png" });
+  const base64 = await page.locator('.viewport canvas:not([aria-hidden="true"])').first().screenshot({ type: "png" });
   return page.evaluate(async (encoded) => {
     const image = new Image();
     image.src = `data:image/png;base64,${encoded}`;
@@ -85,7 +85,7 @@ try {
   check("scene-created", Boolean(scene?.id && application.metadata?.id), { projectId: project.id, sceneId: scene?.id });
   const sceneEditorUrl = `${gate.origin}/studio/${encodeURIComponent(project.id)}/applications/${encodeURIComponent(application.metadata.id)}/scenes/${encodeURIComponent(scene.id)}`;
   await page.goto(sceneEditorUrl, { waitUntil: "networkidle", timeout: 90_000 });
-  await page.locator(".viewport canvas").waitFor();
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
   const theme = await page.evaluate(() => document.documentElement.getAttribute("data-theme"));
   check("dark-theme", theme !== "light", { theme });
   step("scene-editor-ready");
@@ -210,7 +210,7 @@ try {
   check("save-env-persisted", saved.environment?.environmentIntensity === 1.4 && saved.environment?.backgroundColor === "#101418",
     { intensity: saved.environment?.environmentIntensity, bg: saved.environment?.backgroundColor });
   await page.reload({ waitUntil: "domcontentloaded", timeout: 90_000 });
-  await page.locator(".viewport canvas").waitFor({ timeout: 90_000 });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ timeout: 90_000 });
   await page.waitForTimeout(1500);
   await shot(page, "04-after-reload");
   // reload 后浏览器重建编辑器会话,重发现 active-editor(轴 5 事务用新会话)。

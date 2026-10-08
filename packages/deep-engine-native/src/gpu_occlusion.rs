@@ -2,8 +2,7 @@
 //!
 //! 与 [`crate::gpu_culling::GpuCulling`] 的 frustum pass 串联:frustum 先、
 //! 遮挡后。遮挡 pass 重放与 frustum pass 逐位一致的视锥判定,再用主视锥
-//! HiZ 金字塔(标准 Z、min 缩减,与 webgpu 侧 hiZPyramid 的 conservative
-//! 档语义一致)做遮挡判定,输出 per-instance u32 标志。
+//! HiZ 金字塔(标准 Z、max 缩减)做完整遮挡判定,输出 per-instance u32 标志。
 //!
 //! 纪律:全步定序、无原子、无 workgroup 共享内存;阈值带 1e-6 裕量;
 //! 判定只少剔不误剔(半径/矩形全部取保守上界)。逐实例 mip 定档
@@ -11,7 +10,7 @@
 //! 固定顶层采样:小足迹读细层修精度,大足迹读粗层保定序成本。
 //!
 //! 边界(如实):深度金字塔纹理由调用方提供;生产金字塔已由
-//! `renderer/hi_z_pyramid.rs`(MSAA 深度 resolve → r32float min 链)在
+//! `renderer/hi_z_pyramid.rs`(MSAA 深度 resolve → r32float max 链)在
 //! 显式开关下挂载,判定内核本身未改;两阶段完整管线(可见性缓冲 +
 //! indirect)仍属下一切片。
 
@@ -21,7 +20,7 @@ use deep_engine_native::mesh_abi::FrameUniform;
 use std::sync::mpsc;
 use wgpu::util::DeviceExt;
 
-/// 遮挡判定裕量:场景最近深度比实例最近判定深度近超该值才判遮挡。
+/// 遮挡判定裕量:足迹内最远深度比实例最近判定深度近超该值才判遮挡。
 pub const OCCLUSION_MARGIN: f32 = 1e-6;
 /// 足迹矩形单边 texel 迭代上限(顶层为 1,下探低层时兜底,保定序成本)。
 pub const OCCLUSION_RECT_SIDE_CAP: u32 = 16;

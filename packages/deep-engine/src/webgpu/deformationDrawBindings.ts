@@ -44,7 +44,8 @@ export class DeformationDrawBindings {
       layout: material ? "materialRow" in material ? this.pipelines.materialLayout.material
         : (this.pipelines.textureArrayFallback ?? this.pipelines).materialLayout.material
         : this.pipelines.deformationPlainLayout!,
-      entries: [...(material ? "materialRow" in material ? arrayEntries(material) : textureEntries(material) : []),
+      entries: [...(material ? "materialRow" in material ? arrayEntries(material)
+        : textureEntries(material, (this.pipelines.textureArrayFallback ?? this.pipelines).materialLayout.advancedMaterials === true) : []),
         { binding: 11, resource: { buffer: streams.current, size: bytes } },
         { binding: 12, resource: { buffer: streams.previous, size: bytes } }],
     });
@@ -73,9 +74,9 @@ function arrayEntries(row: TextureArrayMaterialTableRow): GPUBindGroupEntry[] {
     { binding: 10, resource: { buffer: row.table } }];
 }
 
-function textureEntries(material: MaterialBinding): GPUBindGroupEntry[] {
+function textureEntries(material: MaterialBinding, advanced: boolean): GPUBindGroupEntry[] {
   const fallback = material.base ?? material.metallicRoughness ?? material.normal ?? material.occlusion ?? material.emissive
-    ?? material.layered?.textures.find(Boolean) ?? material.neutral;
+    ?? material.specular ?? material.specularColor ?? material.layered?.textures.find(Boolean) ?? material.neutral;
   if (!fallback) throw new Error("Deformation material has no texture binding.");
   const base = material.base ?? fallback, mr = material.metallicRoughness ?? fallback;
   const ao = material.occlusion ?? fallback, normal = material.normal ?? fallback, emissive = material.emissive ?? fallback;
@@ -87,5 +88,11 @@ function textureEntries(material: MaterialBinding): GPUBindGroupEntry[] {
     { binding: 7, resource: normal.view }, { binding: 8, resource: normal.sampler },
     { binding: 9, resource: emissive.view }, { binding: 10, resource: emissive.sampler },
     ...(material.layered?.entries ?? []),
+    ...(advanced ? [
+      { binding: 16, resource: (material.specular ?? fallback).view },
+      { binding: 17, resource: (material.specular ?? fallback).sampler },
+      { binding: 18, resource: (material.specularColor ?? fallback).view },
+      { binding: 19, resource: (material.specularColor ?? fallback).sampler },
+    ] : []),
   ];
 }

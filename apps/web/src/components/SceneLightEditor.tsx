@@ -2,6 +2,7 @@ import { Trash2 } from "lucide-react";
 import type { GlobalLightingState, SceneLightState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { DeferredNumberInput } from "./AppFormControls";
+import { DraftRange } from "./DraftRange";
 import { SceneIesEditor } from "./SceneIesEditor";
 import { SceneSpotShadowEditor } from "./SceneSpotShadowEditor";
 import { SceneLightParameters } from "./SceneLightParameters";
@@ -19,7 +20,7 @@ export function SceneLightEditor({
   lighting: GlobalLightingState;
   light: SceneLightState;
   onLightingChange: (next: GlobalLightingState) => void;
-  onUpdate: (patch: Partial<SceneLightState>) => void;
+  onUpdate: (patch: Partial<SceneLightState>, previewOnly?: boolean) => void;
   onRemove: () => void;
 }) {
   return (
@@ -41,17 +42,10 @@ export function SceneLightEditor({
       </label>
       <label className="light-intensity">
         <span>{tr(locale, "强度", "Intensity")}</span>
-        <input
-          type="range"
-          min="0"
-          max="20"
-          step="0.05"
-          value={light.intensity}
-          onChange={(event) =>
-            onUpdate({ intensity: Number(event.target.value) })
-          }
-        />
-        <output>{light.intensity.toFixed(2)}</output>
+        <DraftRange label={tr(locale, "强度", "Intensity")} min={0} max={20} step={0.05}
+          numericLabel={tr(locale, "强度数值", "Intensity value")}
+          value={light.intensity} numeric onPreview={intensity => onUpdate({ intensity }, true)}
+          onChange={intensity => onUpdate({ intensity })} />
       </label>
       <SceneLightParameters locale={locale} light={light} onUpdate={onUpdate} />
       {light.position && (
@@ -72,19 +66,10 @@ export function SceneLightEditor({
       {light.type === "spot" && (
         <><label className="light-parameter">
           <span>{tr(locale, "锥角", "Cone")}</span>
-          <input
-            type="range"
-            min="5"
-            max="90"
-            step="1"
-            value={((light.angle ?? Math.PI / 6) * 180) / Math.PI}
-            onChange={(event) =>
-              onUpdate({ angle: (Number(event.target.value) * Math.PI) / 180 })
-            }
-          />
-          <output>
-            {Math.round(((light.angle ?? Math.PI / 6) * 180) / Math.PI)}°
-          </output>
+          <DraftRange label={tr(locale, "锥角", "Cone")} min={5} max={90} step={1}
+            value={((light.angle ?? Math.PI / 6) * 180) / Math.PI} format={angle => `${Math.round(angle)}°`}
+            onPreview={angle => onUpdate({ angle: angle * Math.PI / 180 }, true)}
+            onChange={angle => onUpdate({ angle: angle * Math.PI / 180 })} />
         </label></>
       )}
       {light.type === "rectArea" && (

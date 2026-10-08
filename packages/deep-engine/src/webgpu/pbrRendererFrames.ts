@@ -1,8 +1,7 @@
 //! PBR 帧编排(原 PbrRenderer.renderPreparedFrame 私有方法域,整体迁出守住 800 行体量门)。
-//! host 为类型层结构视图(运行时即 PbrRenderer 实例本体);成员语义与原类内一致,函数体逐字未改。
+//! host 为类型层结构视图(运行时即 PbrRenderer 实例本体)。
 import { DeviceSession } from "./deviceSession.js";
 import { RendererDeviceEpoch } from "./rendererDeviceEpoch.js";
-import { uploadBuffer } from "./meshBuffers.js";
 import { authoredShadowPipelines, PBR_FRAME_UNIFORM_FLOATS, type Pipelines } from "./pipelines.js";
 import { openPbrRenderer } from "./pbrRendererBootstrap.js";
 import { snapshotPipelineCompileRecords } from "./pipelineCompileSnapshot.js";
@@ -46,6 +45,7 @@ import { validatePbrRenderView } from "./pbrRenderViewValidation.js";
 import { beginPbrOpaquePass } from "./pbrOpaquePass.js";
 import { LocalSpotShadowRuntime } from "./localSpotShadowRuntime.js";
 import { pbrDirectDisplayClear } from "./pbrDirectDisplay.js";
+import { encodePbrSrgbColor } from "./pbrDisplayColor.js";
 import { createPbrGround, drawPbrGround, type PbrGroundResources } from "./pbrGroundPass.js";
 import { PbrTransientTexturePool } from "./pbrTransientTexturePool.js";
 import type { PbrTransientTextureHandle } from "./pbrTransientTextureTypes.js";
@@ -86,15 +86,12 @@ import { VirtualTextureTileLookupPass } from "./virtualTextureSampling.js";
 import { resolveRtShadowRoute, tickRtShadowScheduling, rtShadowRouteMetrics } from "./rtShadowScheduling.js";
 import { invertColumnMajor4x4 } from "./rtShadowFrame.js";
 import { encodeRtReflectionsFrame, type RtReflectionFrameContribution } from "./pbrRtReflectionsFrame.js";
-
 import { driveVirtualTextures, validateFrame, collectVirtualShadowObjects, resolutionScaleMetrics,
   passTimingsMetrics, sampleAdaptiveQuality, captureForFrame, allocationPlanFor, executedCapturePassIds } from "./pbrRendererFrameSupport.js";
 export { driveVirtualTextures, validateFrame } from "./pbrRendererFrameSupport.js";
 
 import type { PbrRendererFrameHost } from "./pbrRendererFrameHost.js";
 export type { PbrRendererFrameHost };
-
-/** 原类私有帧编排(体逐字未改;this → host)。 */
 
 /** a2c 设备探针每帧只跑一次的帧号去重(模块级;进程生命周期语义)。 */
 const a2cDeviceProbeSettled = new Set<number>();
@@ -103,7 +100,8 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     const begin = host.now();
     if (host.session.state !== "ready") return undefined;
     if (host.session.hasErrors) throw new Error("GPU validation failed; inspect device diagnostics.");
-    validatePbrRenderView(view);
+    validatePbrRenderView(view, host.features);
+    if (view.authorDirectDisplay && host.session.hdrCanvasActive) throw new Error("Author direct display requires an SDR canvas.");
     // F8 自动曝光(opt-in):环境 mip 亮度静态代理(零 readback)→ ±EV 包络 →
     // 时域平滑(帧间收敛上限防闪烁)。无可靠亮度时 advance 返回 undefined,保持
     // 调用方固定启发式 view.exposure(fail-closed);原因见 FrameMetrics.autoExposure。
@@ -120,7 +118,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       host.previousTemporalLights = view.lights; host.temporalLightRevision += 1;
     }
     const sceneLighting = resolvePbrSceneLighting(view.lights);
-    if (host.mainBindings.update(view.lights, view.fog)) host.historyDirty = true;
+    if (host.mainBindings.update(view.lights, view.fog, view.authorDirectDisplay, view.globalIlluminationIntensity)) host.historyDirty = true;
     // F1 scene-radiance latch: the producer packs whatever was latest at capture encode time,
     // so probes shade with the same primary light the raster pass uses. The ambient term is
     // the environment's GPU-read average — the F1 slice-2 contract (d1626b2f), which
@@ -158,7 +156,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     }
     if (host.resolutionScaler && host.frame > 0) {
       // 前一帧的 CPU 编码时间驱动缩放决策；无样本（首帧/诊断关闭）保持 1 不猜测。
-      const previousCpu = host.diagnostics.performance.snapshot().stages["frame-encode"];
+      const previousCpu = host.diagnostics.performance.stageSummary("frame-encode");
       const frameMs = previousCpu?.p50Ms;
       if (frameMs !== undefined) {
         const decision = host.resolutionScaler.observe(frameMs);
@@ -170,9 +168,9 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     }
     // F4 时域超分联动:激活(特性开 + scale<1)时画布保持全分辨率、渲染目标按 scale
     // 降档,链尾上采样核重建到画布;未激活沿用原口径(画布即渲染分辨率,浏览器拉伸)。
-    const upscaling = temporalUpscaleActive(host.features.temporalUpscale, host.resolutionScale);
+    const upscaling = !view.authorDirectDisplay && temporalUpscaleActive(host.features.temporalUpscale, host.resolutionScale);
     const surface = host.session.resize(view.width, view.height,
-      view.pixelRatio * (upscaling ? 1 : host.resolutionScale));
+      view.pixelRatio * (upscaling || view.authorDirectDisplay ? 1 : host.resolutionScale));
     if (!surface) return undefined;
     const size = upscaling ? internalRenderSize(surface, host.resolutionScale) : surface;
     const authorShadowSize = sceneLighting.primary.shadow?.mapSize;
@@ -194,7 +192,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     // 无法消费页表,虚拟档请求存在时强制走完整 HDR 链(fail-closed,不静默降质)。
     const virtualShadowRequested = host.shadowMode === "virtual" && host.virtualShadows !== undefined
       && !sceneLighting.primary.shadow;
-    const outlined = host.packets.hasOutline();
+    const outlined = !view.authorDirectDisplay && host.packets.hasOutline();
     const directClear = outlined || host.session.hdrCanvasActive || drawProfile.hasDeformation || view.authorGrid || host.particleRuntime || host.splats?.current?.splatCount || virtualShadowRequested
       ? undefined : pbrDirectDisplayClear(view, host.features, drawProfile.hasTransparent, host.writeGeometryBuffers);
     const directionalDisplay = directClear !== undefined && !host.lighting.hasProbeClipmap && !hasClusteredLights(sceneLighting.clustered)
@@ -205,7 +203,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     // 行为与历史逐位一致。
     const rtShadowRoute = host.rtShadows !== undefined && host.rtShadowScheduling !== undefined
       ? resolveRtShadowRoute({
-          rtHealthy: host.rtShadows.sceneStaged && host.rtShadows.disabled === undefined,
+          rtHealthy: host.rtShadows.sceneStaged && host.rtShadows.ready && host.rtShadows.disabled === undefined,
           ...(host.rtShadows.disabled?.reason !== undefined
             ? { controllerFallbackReason: host.rtShadows.disabled.reason } : {}),
           shadowTier: host.adaptiveQuality?.state().knobs.shadowTier ?? "ultra",
@@ -262,16 +260,16 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       // plan construction. F1: receipts are now regular — every frame carries
       // pass order / executed set, while per-pass GPU timings stay on the
       // async gpuPassTimings channel.
-      const capturePlan = captureForFrame(host, size, drawProfile.hasTransparent, postProcess, directClear !== undefined, depthConsumedAfterPass);
+      const capturePlan = captureForFrame(host, size, drawProfile.hasTransparent, postProcess, directClear !== undefined, depthConsumedAfterPass, view.authorDirectDisplay);
       if (host.frameCapture && capturePlan) {
         // begin() 返回 false = 会话被宿主门禁拒绝(如切换后关闭诊断):本帧
         // 跳过全部捕获侧 encode/readback/collect 工作,保持渲染循环原速。
         captureOpen = host.frameCapture.begin(`frame-${frameNumber}`, capturePlan.plan) !== false;
       }
-      const allocationPlan = allocationPlanFor(host, drawProfile.hasTransparent, postProcess, directClear !== undefined);
+      const allocationPlan = allocationPlanFor(host, drawProfile.hasTransparent, postProcess, directClear !== undefined, view.authorDirectDisplay);
       // Capture can append readbacks outside the production graph; keep its resources physically distinct.
       // 直出 display 帧不经 MSAA 主通路,不分配 MSAA 附件(第 4 参)。
-      host.targets.beginFrame(size, host.frameCapture ? [] : allocationPlan.resources, host.writeGeometryBuffers,
+      host.targets.beginFrame(size, captureOpen ? [] : allocationPlan.resources, host.writeGeometryBuffers,
         !directClear);
     let lighting: ReturnType<ForwardPlusPbrRuntime["prepareAndEncode"]> | undefined;
     // Static packets have no deformation work. Encode their light assignment in the main
@@ -287,6 +285,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
         }],
       ]), { encoderLabelPrefix: "Deep PBR prepare" });
     const encoder = device.createCommandEncoder({ label: "Deep frame" });
+    host.packets.encodeClusterLod?.(encoder, view.eye, view.target, size.height, frameState.projection.verticalFovRadians);
     // M2 方向光 RT 阴影(opt-in):mask dispatch 先于直接光绘制(同一 encoder)。
     // 深度为上一已提交帧的主帧 depth(mask 恒一帧延迟,与 TAA 抖动序列同构);
     // 钩子返回 undefined(pass 未就绪/降级/分辨率失配)时开关位已为 0,级联生效。
@@ -299,7 +298,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
         host.rtShadowMaskEpoch = host.rtShadows.maskViewEpoch;
         host.shadowState.setRayTracedShadowMaskView(host.rtShadows.maskView);
       }
-      void host.rtShadows.encodeFrame({ encoder, width: size.width, height: size.height,
+      void host.rtShadows.encodeFrameValidated({ encoder, width: size.width, height: size.height,
         depthTexture: host.targets.depthTexture,
         viewProjection: frameState.depthViewProjection,
         lightDirection: sceneLighting.primary.rayDirectionWorld, extent: view.extent });
@@ -335,7 +334,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     const detailedTiming = directClear === undefined && !view.editorOverlay?.vertices.length;
     // F1 逐 pass 计时:pass 清单取自同一帧的执行计划 ∩ executed 集合(单一 pass 身份
     // 来源,禁止第二套)。scope 不可用(不支持/槽忙/超容)时回退帧级三段计时。
-    const executedPasses = executedCapturePassIds(host, directClear !== undefined, postProcess, hasTransparent, upscaling);
+    const executedPasses = executedCapturePassIds(host, directClear !== undefined, postProcess, hasTransparent, upscaling, view.authorDirectDisplay);
     const passTiming = capturePlan && host.gpuTimer.passTimingEnabled ? host.gpuTimer.beginPasses(host.frame + 1,
       capturePlan.plan.mappedPassIds.filter(passId => executedPasses.has(passId))) : undefined;
     const timing = passTiming ? undefined : host.gpuTimer.begin(host.frame + 1, detailedTiming);
@@ -435,7 +434,8 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     // B1 Brief-VSM:group 2 绑定按档分派(虚拟档=页表+页 atlas;级联档=级联数组)。
     const shadowBinding = virtualShadowActive && host.virtualShadows ? host.virtualShadows.binding
       : host.shadows.binding;
-    const main = beginPbrOpaquePass(encoder, { targets: host.targets, background: directClear ?? view.background,
+    const main = beginPbrOpaquePass(encoder, { targets: host.targets,
+      background: directClear ?? (view.authorDirectDisplay ? encodePbrSrgbColor(view.background) : view.background),
       writeGeometryBuffers: host.writeGeometryBuffers, drawBackground: host.mainBindings.prepareBackground(view, host.environment.current, size.width / size.height, host.writeGeometryBuffers, host.mainSampleCount),
       ...(present ? { directDisplayView: present.view } : {}), ...(mainTimestamps ? { timestampWrites: mainTimestamps } : {}),
       depthConsumedAfterPass });
@@ -449,8 +449,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       directClear && directionalDisplay ? host.pipelines.displayDirectionalMain! : directClear ? host.pipelines.displayMain! : host.pipelines.main,
       host.ground.mesh, host.ground.instance, directClear !== undefined);
     drawCalls += groundStats.drawCalls; triangles += groundStats.triangles;
-    // G1-S1：簇级前沿 bundle（executeBundles 计 1 次绘制调用；GPU indirect 命令数在
-    // metrics.clusterLod.draws 如实报告）。选层为一帧延迟：首帧 warming 不绘制。
+    // Explicit diagnostic slot only; Studio uses packet-owned PBR replacement.
     if (clusterLod && clusterLodSupported && !clusterLod.hasFallback()) {
       const clusterLodStats = clusterLod.draw(main);
       if (clusterLodStats) { drawCalls += 1; triangles += clusterLodStats.triangles; }
@@ -563,7 +562,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       } catch (error) {
         projectedTextureMetrics = { active: false, projectors: 0, fallbackReason: (error as Error).message };
       }
-    }    const postProcessInput: PbrPostProcessInput = { encoder, targets: host.targets, revision: history.revision,
+    }    const postProcessInput: PbrPostProcessInput = { encoder, targets: host.targets, revision: history.revision, authorDirectDisplay: view.authorDirectDisplay === true,
       ...(postProcess.volumetricFog && postProcess.volumetricFogProfile.godRaysStrength !== undefined
         ? { godRays: { ...pbrGodRaysFrame(sceneLighting.primary, frameState.worldToView),
           shadows: virtualShadowActive && host.virtualShadows ? host.virtualShadows.godRaysSource()
@@ -604,7 +603,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
         ...(passTiming ? { passTiming } : {}),
         ...(particleReactive ? { reactiveTarget: { texture: particleReactive.texture, view: particleReactive.view } } : {}),
         viewOf: texture => host.outputs.view(texture), draw: pass => {
-          pass.setBindGroup(0, host.mainBindings.binding); pass.setBindGroup(2, shadowBinding);
+          pass.setBindGroup(0, host.mainBindings.forTransparency(host.outputs.view(opaqueEffects.color))); pass.setBindGroup(2, shadowBinding);
 
           pass.setBindGroup(lighting!.bindGroupIndex, lighting!.bindGroup);
           return host.packets.draw(pass, host.pipelines, "transparent", undefined, true);
@@ -623,7 +622,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     // 相机切换帧强度归零(fail-closed)。opt-in:features.contactShadows,默认关闭。
     let presentColor = finalEffects.color;
     let contactApplied = false;
-    if (host.contactShadows && !directClear) {
+    if (host.contactShadows && !directClear && !view.authorDirectDisplay) {
       const contactFrame = host.contactShadows.prepare({
         verticalFovRadians: frameState.projection.verticalFovRadians,
         aspect: size.width / size.height, near: frameState.projection.near, far: frameState.projection.far,
@@ -663,10 +662,10 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       }
       passTiming?.beginMarker(encoder, "present");
       present = host.outputs.present(encoder, presentInput, view.authorColorEffects, host.performanceTelemetry.enabled,
-        view.editorOverlay?.vertices.length ? undefined : timing?.queries, host.frameCapture !== undefined,
+        view.editorOverlay?.vertices.length ? undefined : timing?.queries, captureOpen,
         detailedTiming && timing !== undefined);
       passTiming?.endMarker(encoder, "present");
-      drawCalls += host.features.spatialAa ? 2 : 1; triangles += host.features.spatialAa ? 2 : 1;
+      drawCalls += host.outputs.spatialAaActive ? 2 : 1; triangles += host.outputs.spatialAaActive ? 2 : 1;
     }
     if (host.mainBindings.encodeDisplayBackground(encoder, present!.view, host.targets.depth, view,
       host.environment.current, size.width / size.height)) { drawCalls++; triangles++;
@@ -677,6 +676,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       host.frameCapture.encodeReadbacks(encoder, device, {
         "present-color": presentColor,
         "opaque-hdr": host.targets.hdrTexture,
+        "composited-hdr": temporalInput,
         "linear-depth": host.targets.linearDepthTexture,
       });
     }
@@ -707,6 +707,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     submitAttempted = true; device.queue.submit([...(preparation?.commandBuffers ?? []), commands]);
     // G1-S1：读回本帧选层槽位并派生下一帧命令；异常走槽位 sticky fallback，不打断渲染循环。
     if (clusterLod && clusterLodSupported) void clusterLod.ingest().catch(error => clusterLod.noteIngestFailure(error));
+    host.packets.clusterLodAfterSubmit?.();
     // TAA 已在 submit 前读取响应掩码；队列有序保证提交后释放可安全回池复用。
     if (particleReactive) { host.transientTextures.release(particleReactive); particleReactive = undefined; }
     releaseRtReflectionFrameContribution(host, rtReflectionsFrame);
@@ -733,6 +734,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
     host.shadowDirty = false; host.historyDirty = false;
     host.diagnostics.recordFrame(frameNumber, begin, encoded, submitted, present!.acquireMs);
     const a2cProbeMetrics = host.a2cProbe?.metrics();
+    const clusterLodProduction = host.packets.clusterLodMetrics?.();
     const metrics: FrameMetrics = { frame: ++host.frame, cpuSubmitMs: host.now() - begin, drawCalls, triangles, ...lodWork.snapshot(),
       width: size.width, height: size.height, resources: host.session.resourceCount, shadowUpdated, transientTextures: host.targets.transientStats,
       deviceResourceMemory: host.session.resourceMemory,
@@ -740,6 +742,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
       ...(a2cProbeMetrics ? { a2cProbe: a2cProbeMetrics } : {}),
       ...(host.autoExposure ? { autoExposure: host.autoExposure.metrics() } : {}),
       ...(clusterLod ? { clusterLod: clusterLod.metrics() } : {}),
+      ...(clusterLodProduction ? { clusterLodProduction } : {}),
       ...(rtShadowRoute ? { rtShadowRoute: rtShadowRouteMetrics(rtShadowRoute) } : {}),
       ...(projectedTextureMetrics ? { projectedTextures: projectedTextureMetrics } : {}),
       cameraCut: history.cameraCut, postProcessPasses: opaqueEffects.passCount + finalEffects.passCount + (hasTransparent ? 2 + Number(host.transparency.currentReactiveMask !== undefined) : 0) + (upscaling ? 1 : 0) + (!directClear && host.outputs.spatialAaActive ? 1 : 0),
@@ -763,14 +766,14 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
           frustumCulledBatches: opaqueCulling.frustumBatches, hiZOccludedBatches: opaqueCulling.occlusionBatches },
       } : {}),
       ...(host.gpuTimer.passTimingEnabled ? { gpuPassTimings: passTimingsMetrics(host, frameNumber) } : {}),
-      ...(host.resolutionScale === 1 ? {} : { resolutionScale: resolutionScaleMetrics(host, surface) }),
+      ...(host.resolutionScale === 1 || view.authorDirectDisplay ? {} : { resolutionScale: resolutionScaleMetrics(host, surface) }),
       ...(upscaleMetrics ? { temporalUpscale: upscaleMetrics } : {}),
       ...(finalEffects.outline ? { outline: finalEffects.outline } : {}),
       ...host.shadows.metrics,
       ...(host.virtualShadows ? host.virtualShadows.metrics : {}),
       ...(virtualShadowMetrics ? { virtualShadow: virtualShadowMetrics } : {}),
       ...(virtualTexturesMetrics ? { virtualTextures: virtualTexturesMetrics } : {}),
-      ...(host.contactShadows ? host.contactShadows.metrics : {}),
+      ...(host.contactShadows && !view.authorDirectDisplay ? host.contactShadows.metrics : {}),
       ...(host.sdfGi ? host.sdfGi.metrics : {}),
       ...(host.megaLights ? { megaLights: host.megaLights.metrics } : {}),
       ...(rtReflectionsFrame?.metrics ? { rtReflections: rtReflectionsFrame.metrics } : {}) };

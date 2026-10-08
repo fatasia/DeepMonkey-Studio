@@ -22,6 +22,11 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
         if self.renderer_initializing {
             return;
         }
+        #[cfg(target_arch = "wasm32")]
+        if self.presentation_paused_at.is_some() {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+            return;
+        }
         // Also refresh newly opened packages whose initial CPU content is 1x.
         text_scale::refresh(self);
         #[cfg(windows)]
@@ -186,25 +191,19 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
                 Err(error) => crate::app_startup::mark_wasm_renderer_failed(error),
             },
             #[cfg(target_arch = "wasm32")]
-            GpuEvent::WasmScenePackage(bytes) => {
-                match crate::runtime_package_startup::load_bytes(&bytes) {
-                    Ok(package) => {
-                        self.physics_stage_epoch = self.physics_stage_epoch.wrapping_add(1);
-                        self.physics_stage_pending = false;
-                        self.physics_present_pending = false;
-                        let content = package.into_content();
-                        let view =
-                            content.view_after_reload(self.content.active(), self.state.view);
-                        let controls = content.camera_controls();
-                        self.product_physics_playback =
-                            super::dynamic_playback::ProductPhysicsPlayback::for_content(&content);
-                        self.renderer = None;
-                        self.content = PublishedState::new(content);
-                        self.state.set_camera(view, controls);
-                        self.initialize_renderer();
-                    }
-                    Err(error) => crate::app_startup::mark_wasm_renderer_failed(error),
-                }
+            GpuEvent::WasmScenePackage(package) => {
+                self.physics_stage_epoch = self.physics_stage_epoch.wrapping_add(1);
+                self.physics_stage_pending = false;
+                self.physics_present_pending = false;
+                let content = (*package).into_content();
+                let view = content.view_after_reload(self.content.active(), self.state.view);
+                let controls = content.camera_controls();
+                self.product_physics_playback =
+                    super::dynamic_playback::ProductPhysicsPlayback::for_content(&content);
+                self.renderer = None;
+                self.content = PublishedState::new(content);
+                self.state.set_camera(view, controls);
+                self.initialize_renderer();
             }
             #[cfg(target_arch = "wasm32")]
             GpuEvent::WasmPhysicsPoseQuery {
@@ -242,6 +241,21 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
             }
             #[cfg(target_arch = "wasm32")]
             GpuEvent::WasmStop => event_loop.exit(),
+            #[cfg(target_arch = "wasm32")]
+            GpuEvent::WasmPresentationPaused(paused) => {
+                if paused {
+                    self.presentation_paused_at.get_or_insert_with(web_time::Instant::now);
+                } else if let Some(started) = self.presentation_paused_at.take() {
+                    let duration = started.elapsed();
+                    if let Some(playback) = self.product_dynamic_playback.as_mut() {
+                        playback.resume_after_pause(duration);
+                    }
+                    if let Some(playback) = self.product_physics_playback.as_mut() {
+                        playback.resume_after_pause(duration);
+                    }
+                    self.request_redraw();
+                }
+            }
             #[cfg(windows)]
             GpuEvent::XReady => {
                 x_runtime::tick(self, event_loop);

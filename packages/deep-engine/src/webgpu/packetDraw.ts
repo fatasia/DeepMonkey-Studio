@@ -2,6 +2,8 @@ import type { PreparedBatch } from "../renderPacket.js";
 import type { CachedPacketBatch, CachedPacketGeometry } from "./packetBufferTypes.js";
 import { GPU_CULLING_MIN_INSTANCES, type PacketCullingResources } from "./packetCulling.js";
 import type { PacketLodResources } from "./packetLodResources.js";
+import { hasSceneTransmission } from "./packetTransmission.js";
+import { packetMainPipelineKey } from "./packetPipelinePreparation.js";
 import { resolveDeformationDraw, type PacketDeformationDrawContext } from "./packetDeformationDraw.js";
 import {
   mainPipelineKey,
@@ -33,10 +35,12 @@ export function drawPacketBatches(
   directionalOnly = false,
   authorShadow = false,
   deformation?: PacketDeformationDrawContext,
+  clusterDraw?: (pass: GPURenderPassEncoder, batch: CachedPacketBatch, previous: boolean) =>
+    { drawCalls: number; triangles: number } | undefined,
 ): { drawCalls: number; triangles: number } {
   const candidates = Array.from(batches.values()).filter(({ source }) => phase === "shadow"
     ? (source.alphaMode !== "BLEND" || authorShadow) && source.castShadow !== false
-    : (source.alphaMode === "BLEND") === (phase === "transparent"));
+    : (source.alphaMode === "BLEND" || hasSceneTransmission(source, pipelines.materialLayout?.advancedMaterials === true)) === (phase === "transparent"));
   const draws = candidates.map(cached => {
     const dynamic = resolveDeformationDraw(cached.source, phase, authorShadow, deformation);
     const materialNeeded = (phase !== "shadow" && cached.source.textures !== undefined)
@@ -72,6 +76,10 @@ export function drawPacketBatches(
       ?? ((phase !== "shadow" && source.textures) || shadowMaterial ? cached.material!.group : undefined);
     if (materialGroup && materialGroup !== activeMaterialGroup) {
       pass.setBindGroup(1, materialGroup); activeMaterialGroup = materialGroup;
+    }
+    if (!dynamic && (phase === "opaque" || phase === "display")) {
+      const clusters = clusterDraw?.(pass, cached, phase === "opaque");
+      if (clusters) { drawCalls += clusters.drawCalls; triangles += clusters.triangles; continue; }
     }
     if (source.lod) {
       const draws = lod?.draws(source.key);
@@ -152,8 +160,9 @@ function mainPipeline(pipelines: Pipelines, batch: PreparedBatch, directDisplay:
   // WebGPU validation 禁止 alphaToCoverageEnabled × sampleCount=1,物理不支持)。
   // directDisplay 档 a2c 批次回退普通管线 —— 管线侧退化为 alphaTest 语义(a2c 位
   // 的 alpha 直通在 1x 无消费),能力边界在能力声明与交付报告中披露。
-  const alphaToCoverage = !directDisplay && batch.alphaToCoverage === true;
-  const key = mainPipelineKey(mode, batch.alphaMode === "BLEND", rasterMode(batch.mirrored, batch.doubleSided), alphaToCoverage);
+  const transparent = batch.alphaMode === "BLEND" || hasSceneTransmission(batch, pipelines.materialLayout?.advancedMaterials === true);
+  const alphaToCoverage = !transparent && !directDisplay && batch.alphaToCoverage === true;
+  const key = packetMainPipelineKey(batch, pipelines.materialLayout?.advancedMaterials === true, directDisplay);
   const optimized = directDisplay && directionalOnly && mode === "plain"
     ? pipelines.displayDirectionalPipelines.get(key) : undefined;
   const source = directDisplay ? pipelines.displayPipelines : pipelines.mainPipelines;

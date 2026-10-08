@@ -188,7 +188,7 @@ try {
       entry.steps.push("existing-auto-save-persists-only-new-file-without-running");
       if (width === 1280) {
         await page.goto(`${gate.origin}/studio/${project.id}/applications/${app.metadata.id}/scenes/${sceneId}`);
-        const viewport = page.locator(".viewport canvas");
+        const viewport = page.locator('.viewport canvas:not([aria-hidden="true"])');
         await viewport.waitFor();
         await page.locator(".topbar-auto-save input").uncheck();
         await viewport.hover(); await page.mouse.wheel(0, -200);

@@ -29,7 +29,7 @@ import type {
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 
-export type TransformNodeType = "filter" | "formula" | "script" | "select" | "deduplicate" | "aggregate" | "sort" | "limit";
+export type TransformNodeType = "filter" | "formula" | "script" | "select" | "deduplicate" | "aggregate" | "sort" | "limit" | "merge";
 
 export function validatePipelineDraft(draft: DataPipelineDefinition, datasets: DataDatasetRecord[]): string | undefined {
   if (!draft.name.trim()) return "流水线名称不能为空";
@@ -148,13 +148,13 @@ export function NodeInspector({
           {node.type !== "source" && node.type !== "output" && (
             <>
               <button
-                title={tr(locale, "向前移动", "Move left")}
+                title={tr(locale, "向左移动节点", "Move node left")}
                 onClick={() => onMove(node.id, -1)}
               >
                 <ArrowLeft size={13} />
               </button>
               <button
-                title={tr(locale, "向后移动", "Move right")}
+                title={tr(locale, "向右移动节点", "Move node right")}
                 onClick={() => onMove(node.id, 1)}
               >
                 <ArrowRight size={13} />
@@ -457,6 +457,7 @@ export function createTransformNode(
   );
   const firstSortField =
     sourceFields.find((field) => field.type === "datetime") ?? firstField;
+  if (type === "merge") return { ...base, type, name: tr(locale, "合并数据", "Merge data") };
   if (type === "filter")
     return {
       ...base,
@@ -566,7 +567,7 @@ export function normalizeLinearPipeline(
   };
 }
 
-function nodeIcon(type: DataPipelineNode["type"]): ReactNode {
+export function nodeIcon(type: DataPipelineNode["type"]): ReactNode {
   if (type === "source") return <Database size={17} />;
   if (type === "filter") return <Filter size={17} />;
   if (type === "formula") return <Calculator size={17} />;
@@ -580,7 +581,7 @@ function nodeIcon(type: DataPipelineNode["type"]): ReactNode {
   return <Box size={17} />;
 }
 
-function nodeTypeLabel(type: DataPipelineNode["type"]): string {
+export function nodeTypeLabel(type: DataPipelineNode["type"]): string {
   return {
     source: "DATASET",
     filter: "FILTER",
@@ -596,7 +597,7 @@ function nodeTypeLabel(type: DataPipelineNode["type"]): string {
   }[type];
 }
 
-function nodeSummary(node: DataPipelineNode): string {
+export function nodeSummary(node: DataPipelineNode): string {
   if (node.type === "source") return "Dataset";
   if (node.type === "filter") return node.formula;
   if (node.type === "formula" || node.type === "script") return `→ ${node.key}`;
@@ -649,7 +650,27 @@ export function derivePipelineFieldHints(
   nodes: DataPipelineNode[],
   selectedNodeId: string | undefined,
   sourceFields: DataDatasetField[],
+  edges?: DataPipelineDefinition["edges"],
 ): DataDatasetField[] {
+  if (edges) {
+    const byId = new Map(nodes.map(node => [node.id, node]));
+    const memo = new Map<string, DataDatasetField[]>(), visiting = new Set<string>();
+    function outputFields(id: string): DataDatasetField[] {
+      if (memo.has(id)) return memo.get(id)!;
+      if (visiting.has(id)) return [];
+      visiting.add(id);
+      const node = byId.get(id);
+      const inputs = edges!.filter(edge => edge.targetNodeId === id).flatMap(edge => outputFields(edge.sourceNodeId));
+      const incoming = [...new Map(inputs.map(field => [field.key, field])).values()];
+      const result = !node ? [] : node.type === "source" ? sourceFields
+        : derivePipelineFieldHints([node], undefined, incoming);
+      visiting.delete(id); memo.set(id, result); return result;
+    }
+    const selected = byId.get(selectedNodeId ?? "");
+    if (selected?.type === "source") return [...sourceFields];
+    const inputs = edges.filter(edge => edge.targetNodeId === selectedNodeId).flatMap(edge => outputFields(edge.sourceNodeId));
+    return [...new Map(inputs.map(field => [field.key, field])).values()];
+  }
   let fields = [...sourceFields];
   for (const node of nodes) {
     if (node.id === selectedNodeId) break;

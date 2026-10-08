@@ -36,7 +36,7 @@ pub enum GpuEvent {
     /// event loop. The renderer is rebuilt on the same canvas and the author
     /// surface stays visible until the ready generation advances.
     #[cfg(target_arch = "wasm32")]
-    WasmScenePackage(Vec<u8>),
+    WasmScenePackage(Box<crate::runtime_package_startup::PreparedRuntimePackage>),
     #[cfg(target_arch = "wasm32")]
     WasmPhysicsPoseQuery {
         request_id: u32,
@@ -53,6 +53,8 @@ pub enum GpuEvent {
     },
     #[cfg(target_arch = "wasm32")]
     WasmStop,
+    #[cfg(target_arch = "wasm32")]
+    WasmPresentationPaused(bool),
     /// A watched RenderPacket file changed and validated; the payload carries the
     /// fully prepared content and a monotonic watcher generation. Delivery is
     /// best-effort: closing the window drops pending updates and keeps the last

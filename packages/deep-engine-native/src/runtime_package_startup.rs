@@ -400,7 +400,7 @@ pub fn run_state_ops(ops_path: &Path, package: PreparedRuntimePackage) -> Result
     )
 }
 
-fn prepare(package: LoadedRuntimePackage) -> Result<PreparedRuntimePackage, String> {
+pub(crate) fn prepare(package: LoadedRuntimePackage) -> Result<PreparedRuntimePackage, String> {
     let summary = package.summary();
     let id = package.package_id.clone();
     let version = package.package_version.clone();

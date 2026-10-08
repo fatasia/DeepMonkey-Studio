@@ -81,7 +81,7 @@ export function buildPbrFrameGraph(options: PbrFrameGraphOptions): RenderGraphBu
       .addResource({ id: "oit-accumulation", descriptor: "rgba16float" })
       .addResource({ id: "oit-revealage", descriptor: "r16float" })
       .addResource({ id: "composited-hdr", descriptor: "rgba16float", aliasKey: "full-rgba16float" })
-      .addPass({ id: "transparent-oit", kind: "render", inputs: ["visible-draws", ...(geometry ? ["linear-depth"] : []), "shadow-atlas", "light-grid"],
+      .addPass({ id: "transparent-oit", kind: "render", inputs: ["visible-draws", ...(geometry ? ["linear-depth"] : []), "shadow-atlas", "light-grid", temporalInput],
         outputs: ["oit-accumulation", "oit-revealage"] })
       .addPass({ id: "composite-oit", kind: "render", inputs: [temporalInput, "oit-accumulation", "oit-revealage"], outputs: ["composited-hdr"] });
     temporalInput = "composited-hdr";

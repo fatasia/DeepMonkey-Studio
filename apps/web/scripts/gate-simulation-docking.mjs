@@ -91,7 +91,7 @@ try {
     try {
       await gate.loginPage(page);
       await page.goto(`${gate.origin}/studio/${data.project.id}/applications/${data.application.metadata.id}/scenes/${data.scene.id}`);
-      await page.locator(".viewport canvas").waitFor();
+      await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
       if (candidateCss) await page.addStyleTag({ content: candidateCss });
       // Establish a real author snapshot before the zero-write layout phase. The deliberately
       // sparse API fixture otherwise differs from renderer defaults during recovery comparison.
@@ -106,11 +106,11 @@ try {
         if (["GET", "HEAD", "OPTIONS"].includes(route.request().method())) return route.fallback();
         entry.writes.push(route.request().url()); await route.fulfill({ status: 409, json: { message: "Unexpected layout-test write blocked" } });
       });
-      const originalCanvas = await page.locator(".viewport canvas").elementHandle();
+      const originalCanvas = await page.locator('.viewport canvas:not([aria-hidden="true"])').elementHandle();
       const original = await dimensions(page); entry.measurements.push({ name: "original", ...original });
       const sameCanvas = async () => {
         assert.equal(await originalCanvas.evaluate(canvas => canvas.isConnected), true, "Docking must not detach the renderer canvas");
-        assert.equal(await page.locator(".viewport canvas").evaluate((canvas, original) => canvas === original, originalCanvas), true, "Keep the original rendering surface");
+        assert.equal(await page.locator('.viewport canvas:not([aria-hidden="true"])').evaluate((canvas, original) => canvas === original, originalCanvas), true, "Keep the original rendering surface");
       };
       await open(); await seed.fill("keep-through-docking"); await duration.fill("173");
       const originalSeed = await seed.elementHandle();
@@ -168,7 +168,7 @@ try {
       await page.getByRole("button", { name: "关闭仿真面板", exact: true }).click(); await panel.waitFor({ state: "detached" });
       assert.ok(Math.abs((await dimensions(page)).canvas.width - original.canvas.width) <= 1); await sameCanvas();
       await open(); assert.equal(await panel.getAttribute("data-placement"), "right"); assert.equal(await seed.inputValue(), "scene-1");
-      await page.reload(); await page.locator(".viewport canvas").waitFor();
+      await page.reload(); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
       if (candidateCss) await page.addStyleTag({ content: candidateCss });
       assert.equal(await page.getByRole("dialog", { name: "恢复未保存工作", exact: true }).isVisible(), false, "A saved layout-only flow must not need recovery");
       await open();

@@ -1,12 +1,13 @@
 import type { ScenePostProcessingState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import type { RendererBackend } from "../viewer/ViewerEngine";
+import { DraftRange } from "./DraftRange";
 
 interface ScenePostProcessingEditorProps {
   locale: AppLocale;
   rendererBackend: RendererBackend;
   value: ScenePostProcessingState;
-  onChange: (next: ScenePostProcessingState) => void;
+  onChange: (next: ScenePostProcessingState, previewOnly?: boolean) => void;
 }
 
 export function ScenePostProcessingEditor({
@@ -17,8 +18,8 @@ export function ScenePostProcessingEditor({
 }: ScenePostProcessingEditorProps) {
   const available = rendererBackend === "webgl" || rendererBackend === "webgpu" || rendererBackend === "wasm";
   const controlsEnabled = value.enabled;
-  const update = (patch: Partial<ScenePostProcessingState>) =>
-    onChange({ ...value, ...patch });
+  const update = (patch: Partial<ScenePostProcessingState>, previewOnly?: boolean) =>
+    onChange({ ...value, ...patch }, previewOnly);
 
   return (
     <div className="post-processing-control" title={tr(locale,
@@ -152,7 +153,7 @@ export function ScenePostProcessingEditor({
           step={0.1}
           value={value.ssaoIntensity}
           digits={1}
-          onChange={(next) => update({ ssaoIntensity: next })}
+          onChange={(next, previewOnly) => update({ ssaoIntensity: next }, previewOnly)}
         />
       )}
       {value.gtao && (
@@ -164,7 +165,7 @@ export function ScenePostProcessingEditor({
           step={0.1}
           value={value.gtaoIntensity ?? 1}
           digits={1}
-          onChange={(next) => update({ gtaoIntensity: next })}
+          onChange={(next, previewOnly) => update({ gtaoIntensity: next }, previewOnly)}
         />
       )}
       {value.screenSpaceReflection && <>
@@ -213,7 +214,7 @@ export function ScenePostProcessingEditor({
             step={0.05}
             value={value.bloomStrength}
             digits={2}
-            onChange={(next) => update({ bloomStrength: next })}
+            onChange={(next, previewOnly) => update({ bloomStrength: next }, previewOnly)}
           />
           <EffectRange
             label={tr(locale, "辉光阈值", "Bloom threshold")}
@@ -223,7 +224,7 @@ export function ScenePostProcessingEditor({
             step={0.01}
             value={value.bloomThreshold}
             digits={2}
-            onChange={(next) => update({ bloomThreshold: next })}
+            onChange={(next, previewOnly) => update({ bloomThreshold: next }, previewOnly)}
           />
         </>
       )}
@@ -236,7 +237,7 @@ export function ScenePostProcessingEditor({
           step={0.1}
           value={value.outlineStrength ?? 2.5}
           digits={1}
-          onChange={(next) => update({ outlineStrength: next })}
+          onChange={(next, previewOnly) => update({ outlineStrength: next }, previewOnly)}
         />
       )}
       {value.depthOfField && (
@@ -249,7 +250,7 @@ export function ScenePostProcessingEditor({
             step={0.5}
             value={value.focusDistance ?? 10}
             digits={1}
-            onChange={(next) => update({ focusDistance: next })}
+            onChange={(next, previewOnly) => update({ focusDistance: next }, previewOnly)}
           />
           <EffectRange
             label={tr(locale, "虚化", "Blur")}
@@ -259,7 +260,7 @@ export function ScenePostProcessingEditor({
             step={0.001}
             value={value.maxBlur ?? 0.006}
             digits={3}
-            onChange={(next) => update({ maxBlur: next })}
+            onChange={(next, previewOnly) => update({ maxBlur: next }, previewOnly)}
           />
         </>
       )}
@@ -272,7 +273,7 @@ export function ScenePostProcessingEditor({
           step={0.05}
           value={value.vignetteDarkness ?? 1.2}
           digits={2}
-          onChange={(next) => update({ vignetteDarkness: next })}
+          onChange={(next, previewOnly) => update({ vignetteDarkness: next }, previewOnly)}
         />
       )}
       {value.filmGrain && (
@@ -284,7 +285,7 @@ export function ScenePostProcessingEditor({
           step={0.01}
           value={value.filmGrainIntensity ?? 0.18}
           digits={2}
-          onChange={(next) => update({ filmGrainIntensity: next })}
+          onChange={(next, previewOnly) => update({ filmGrainIntensity: next }, previewOnly)}
         />
       )}
       {value.afterimage && (
@@ -296,17 +297,17 @@ export function ScenePostProcessingEditor({
           step={0.01}
           value={value.afterimageDamp ?? 0.9}
           digits={2}
-          onChange={(next) => update({ afterimageDamp: next })}
+          onChange={(next, previewOnly) => update({ afterimageDamp: next }, previewOnly)}
         />
       )}
       {value.colorGrading && (
         <>
-          <EffectRange label={tr(locale, "色相", "Hue")} disabled={!value.enabled} min={-180} max={180} step={1} value={value.hue ?? 0} digits={0} onChange={(next) => update({ hue: next })} />
-          <EffectRange label={tr(locale, "饱和度", "Saturation")} disabled={!value.enabled} min={-1} max={1} step={0.01} value={value.saturation ?? 0} digits={2} onChange={(next) => update({ saturation: next })} />
-          <EffectRange label={tr(locale, "亮度", "Brightness")} disabled={!value.enabled} min={-1} max={1} step={0.01} value={value.brightness ?? 0} digits={2} onChange={(next) => update({ brightness: next })} />
-          <EffectRange label={tr(locale, "对比度", "Contrast")} disabled={!value.enabled} min={-1} max={1} step={0.01} value={value.contrast ?? 0} digits={2} onChange={(next) => update({ contrast: next })} />
-          <EffectRange label={tr(locale, "色温", "Temperature")} disabled={!value.enabled} min={-1} max={1} step={0.01} value={value.temperature ?? 0} digits={2} onChange={(next) => update({ temperature: next })} />
-          <EffectRange label={tr(locale, "色调偏移", "Tint")} disabled={!value.enabled} min={-1} max={1} step={0.01} value={value.tint ?? 0} digits={2} onChange={(next) => update({ tint: next })} />
+          <EffectRange label={tr(locale, "色相", "Hue")} disabled={!value.enabled} min={-180} max={180} step={1} value={value.hue ?? 0} digits={0} onChange={(next, previewOnly) => update({ hue: next }, previewOnly)} />
+          <EffectRange label={tr(locale, "饱和度", "Saturation")} disabled={!value.enabled} min={-1} max={1} step={0.01} value={value.saturation ?? 0} digits={2} onChange={(next, previewOnly) => update({ saturation: next }, previewOnly)} />
+          <EffectRange label={tr(locale, "亮度", "Brightness")} disabled={!value.enabled} min={-1} max={1} step={0.01} value={value.brightness ?? 0} digits={2} onChange={(next, previewOnly) => update({ brightness: next }, previewOnly)} />
+          <EffectRange label={tr(locale, "对比度", "Contrast")} disabled={!value.enabled} min={-1} max={1} step={0.01} value={value.contrast ?? 0} digits={2} onChange={(next, previewOnly) => update({ contrast: next }, previewOnly)} />
+          <EffectRange label={tr(locale, "色温", "Temperature")} disabled={!value.enabled} min={-1} max={1} step={0.01} value={value.temperature ?? 0} digits={2} onChange={(next, previewOnly) => update({ temperature: next }, previewOnly)} />
+          <EffectRange label={tr(locale, "色调偏移", "Tint")} disabled={!value.enabled} min={-1} max={1} step={0.01} value={value.tint ?? 0} digits={2} onChange={(next, previewOnly) => update({ tint: next }, previewOnly)} />
         </>
       )}
     </div>
@@ -321,23 +322,16 @@ interface EffectRangeProps {
   step: number;
   value: number;
   digits: number;
-  onChange: (value: number) => void;
+  onChange: (value: number, previewOnly?: boolean) => void;
 }
 
 function EffectRange(props: EffectRangeProps) {
   return (
     <label className="light-parameter">
       <span>{props.label}</span>
-      <input
-        disabled={props.disabled}
-        type="range"
-        min={props.min}
-        max={props.max}
-        step={props.step}
-        value={props.value}
-        onChange={(event) => props.onChange(Number(event.target.value))}
-      />
-      <output>{props.value.toFixed(props.digits)}</output>
+      <DraftRange label={props.label} disabled={props.disabled} min={props.min} max={props.max} step={props.step}
+        value={props.value} format={next => next.toFixed(props.digits)}
+        onPreview={next => props.onChange(next, true)} onChange={next => props.onChange(next)} />
     </label>
   );
 }

@@ -437,7 +437,7 @@ checksum = "0c87e182de0887fd5361989c677c4e8f5000cd9491d6d563161a8f3a5519fc7f"
 
 [[package]]
 name = "deep-engine-native"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bytemuck",
  "cosmic-text",
@@ -459,7 +459,7 @@ dependencies = [
 
 [[package]]
 name = "deep-scene-viewer-android"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "android-activity",
  "bytemuck",

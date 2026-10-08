@@ -108,7 +108,7 @@ export class PbrFrameCapture {
 
   /** Encodes whitelisted resource snapshots on the frame encoder; must run before encoder.finish(). */
   encodeReadbacks(encoder: GPUCommandEncoder, device: GPUDevice,
-    textures: Readonly<Record<PbrFrameReadbackResourceId, GPUTexture | undefined>>): void {
+    textures: Readonly<Partial<Record<PbrFrameReadbackResourceId, GPUTexture | undefined>>>): void {
     if (this.readbackPlan === undefined) return;
     if (this.currentFrameId === undefined) throw new Error("PBR frame capture readbacks require an open capture frame.");
     this.readbackPlan.beginFrame(this.currentFrameId, device, encoder, textures);

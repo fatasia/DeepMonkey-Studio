@@ -38,6 +38,21 @@ describe("projectStudioDeepLights excludes the WebGL GI stand-in light", () => {
     expect(result.lights.hemisphere?.[0]).toMatchObject({ skyColor: authored.color.toArray(), intensity: 1.25 });
   });
 
+  it("preserves the resolved author fill only when a deformed packet cannot capture probes", () => {
+    const scene = new THREE.Scene();
+    const fill = new THREE.HemisphereLight(0xbddcff, 0x75634d, 0.32);
+    fill.name = GLOBAL_ILLUMINATION_STAND_IN_LIGHT_NAME;
+    fill.position.set(0, 4, 0); scene.add(fill); scene.updateMatrixWorld(true);
+    const projection = () => projectStudioDeepLights(scene, 0xffffffff, true, THREE.PCFShadowMap, true);
+    expect(projection().lights.hemisphere).toEqual([{ directionWorld: [0, 1, 0],
+      skyColor: fill.color.toArray(), groundColor: fill.groundColor.toArray(), intensity: 0.32 }]);
+    expect(projectStudioDeepLights(scene).lights).not.toHaveProperty("hemisphere");
+    fill.visible = false; expect(projection().lights).not.toHaveProperty("hemisphere");
+    fill.visible = true; fill.intensity = 0; expect(projection().lights).not.toHaveProperty("hemisphere");
+    fill.intensity = 0.32; fill.layers.set(2);
+    expect(projectStudioDeepLights(scene, 1, true, THREE.PCFShadowMap, true).lights).not.toHaveProperty("hemisphere");
+  });
+
   it("keeps the exclusion independent of the GI toggle path: a stand-in at intensity 0 stays excluded", () => {
     // GI 关闭时 rig 将该灯 visible=false/intensity 0;两种形态都必须不进投影。
     const scene = new THREE.Scene();

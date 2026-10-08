@@ -15,7 +15,7 @@ function fixture(supported = true, onTiming?: (timing: { frame: number; millisec
         unmap: vi.fn(() => { buffer.mapState = "unmapped"; }), destroy: vi.fn() };
       readbacks.push(buffer); return buffer;
     }) };
-  const session = { device, state: "ready", own: <T>(value: T): T => { resources.push(value); return value; } };
+  const session = { device, state: "ready", release: vi.fn(), own: <T>(value: T): T => { resources.push(value); return value; } };
   return { timer: new GpuTimer(session as unknown as DeviceSession, onTiming), session, device, resources, readbacks };
 }
 
@@ -34,6 +34,20 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("asynchronous GPU timing", () => {
+  it("drains pending readbacks before releasing idle resources and reallocates on resume", async () => {
+    const f = fixture(); f.timer.enabled = true;
+    let finish!: () => void;
+    const frame = f.timer.begin(1)!;
+    f.readbacks[1]!.mapAsync.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    frame.read();
+    const release = f.timer.releaseIdleResources();
+    expect(f.timer.begin(2)).toBeUndefined(); expect(f.session.release).not.toHaveBeenCalled();
+    finish(); await release;
+    expect(f.session.release).toHaveBeenCalledTimes(3);
+    expect(await f.timer.collect(1, 1)).toEqual([]);
+    f.timer.enabled = true; expect(f.timer.begin(3)).toBeDefined();
+    expect(f.resources).toHaveLength(6);
+  });
   it("allocates nothing outside sampling or on unsupported devices", () => {
     const f = fixture(); expect(f.timer.begin(1)).toBeUndefined(); expect(f.resources).toHaveLength(0);
     const unsupported = fixture(false); unsupported.timer.enabled = true;

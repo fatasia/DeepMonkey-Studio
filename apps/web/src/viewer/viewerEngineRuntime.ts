@@ -12,6 +12,7 @@ import { advanceSceneAnimationTime, normalizeSceneAnimationPlaybackRange } from 
 import { resolveOrbitCameraRange } from "./cameraFraming";
 import { RuntimeFollowCamera } from "./runtimeFollowCamera";
 import { sceneGridCloseupOpacity } from "./sceneGrid";
+import { interactionRenderActivity } from "./interactionRenderActivity";
 import { updateViewerDeviceSignals } from "./viewerDeviceSignals";
 import { presentViewerFrame } from "./viewerFramePresentation";
 import { updateAuthorLodSelection } from "./authorLodSelection";
@@ -197,6 +198,10 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
   };
 
   private drawAuthorScene(delta: number, offscreenFrame: boolean): void {
+    // Preserve the previous author frame while asynchronous shader compilation runs.
+    // Calling render now would wait in getProgramInfoLog and freeze UI input.
+    if (this.rendererBackend === "webgl" && !offscreenFrame && !this.xrActive
+      && this.pipelineWarmupScheduler.snapshot().status === "running") return;
     // 相机连续运动时节流遮挡重算（≥40ms 一次）；节流帧清空剔除集全量绘制，绝不应用过期姿态的剔除结果。
     this.conservativeOcclusion.update(this.modelRoot, this.camera,
       this.clippingState.enabled || this.hasContinuousRenderActivity(), this.getSelected()?.object, { minIntervalMs: 40 });
@@ -247,7 +252,7 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
     if (this.xrActive || this.sceneAnimationPlaying || this.physicsState.enabled && this.physicsState.playing
       || this.animationEnabledIds.size > 0 || this.visibilityTransitionCancels.size > 0 || this.transform.dragging
       || this.navigationMode !== "orbit" || this.orbit.autoRotate || this.weatherEffect || this.fragmentModels.size > 0
-      || this.interactionScripts.some(script => script.enabled)
+      || interactionRenderActivity(this.interactionScripts)
       || this.postProcessingState.enabled && (this.postProcessingState.filmGrain || this.postProcessingState.afterimage)) return true;
     for (const prefab of this.modelPrefabStates.values()) if (prefab.motionRoute && prefab.operatingState === "running") return true;
     for (const runtime of this.modelEffectRuntimes.values()) if (runtime.scan || runtime.fire || runtime.vfx) return true;

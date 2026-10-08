@@ -73,6 +73,7 @@ pub fn instance_material_words_unchanged(before: &[PbrMaterial], after: &[PbrMat
             && before.alpha_cutoff == after.alpha_cutoff
             && before.emissive_factor == after.emissive_factor
             && before.alpha_mode == after.alpha_mode
+            && before.draw_alpha_mode() == after.draw_alpha_mode()
             && before.double_sided == after.double_sided
             && before.premultiplied_alpha == after.premultiplied_alpha
             && before.fog == after.fog
@@ -88,7 +89,7 @@ mod tests {
         PreparedMaterial {
             id: "m".into(),
             normal_mapped: false,
-            texture_indices: [None; 5],
+            texture_indices: [None; 7],
             uniform: [uniform; deep_engine_native::mesh_abi::MATERIAL_UNIFORM_ROW_FLOATS],
             layered: None,
         }
@@ -156,6 +157,8 @@ mod tests {
             occlusion_texture: None,
             emissive_factor: None,
             emissive_texture: None,
+            specular_factor: None, specular_color_factor: None,
+            specular_texture: None, specular_color_texture: None,
             base_color_alpha: None,
             alpha_mode: None,
             alpha_cutoff: None,

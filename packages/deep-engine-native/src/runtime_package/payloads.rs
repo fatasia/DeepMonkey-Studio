@@ -41,11 +41,29 @@ fn validate_object_bindings(bindings: &[RuntimeObjectBinding]) -> Result<(), Run
 pub(super) fn decode(
     package: RuntimePackageEnvelope,
 ) -> Result<LoadedRuntimePackage, RuntimePackageError> {
+    decode_prepared(package, None)
+}
+
+pub(super) fn validate_render_environment(package: &RuntimePackageEnvelope) -> Result<(), RuntimePackageError> {
+    solid_environment::validate_static_lightmap(
+        payload(package, &package.entrypoints.environment)?,
+        payload(package, &package.entrypoints.render_packet)?,
+    ).map_err(RuntimePackageError)?;
+    Ok(())
+}
+
+pub(super) fn decode_prepared(
+    package: RuntimePackageEnvelope,
+    prepared_render: Option<(crate::contract::RenderPacket, crate::contract::ContractSummary)>,
+) -> Result<LoadedRuntimePackage, RuntimePackageError> {
     let render_id = package.entrypoints.render_packet.as_str();
     descriptor(&package, render_id, RuntimeResourceKind::RenderPacket)?;
     validate_object_bindings(&package.object_bindings)?;
-    let (render_packet, render_summary) =
-        render_packet::decode(render_id, payload(&package, render_id)?)?;
+    if prepared_render.is_none() { validate_render_environment(&package)?; }
+    let (render_packet, render_summary) = match prepared_render {
+        Some(prepared) => prepared,
+        None => render_packet::decode(render_id, payload(&package, render_id)?)?,
+    };
     let deep2d = package
         .entrypoints
         .deep2d
@@ -71,11 +89,6 @@ pub(super) fn decode(
         .map(|id| decode_dynamic_runtime(&package, id))
         .transpose()?;
     let environment = decode_environment(&package, &package.entrypoints.environment)?;
-    solid_environment::validate_static_lightmap(
-        payload(&package, &package.entrypoints.environment)?,
-        payload(&package, render_id)?,
-    )
-    .map_err(RuntimePackageError)?;
     let probe_grid_records =
         solid_environment::decode_probe_grid(payload(&package, &package.entrypoints.environment)?)
             .map_err(RuntimePackageError)?;

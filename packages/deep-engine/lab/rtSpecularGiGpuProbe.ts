@@ -120,6 +120,9 @@ export const RT_SPECULAR_PROBE_INSTANCE_ALBEDOS = Float32Array.from([
 ]);
 
 export interface RtSpecularGpuProbeResult {
+  readonly sourceDepthBase64?: string;
+  readonly hit2Base64?: string;
+  readonly shading2Base64?: string;
   readonly hitRecordsBase64: string;
   readonly linearDepthBase64: string;
   /** 视法线 GBuffer 上传字节(rgba8unorm 行主序;CPU 仲裁腿同源消费)。 */
@@ -132,6 +135,8 @@ export interface RtSpecularGpuProbeResult {
   readonly ssrOutputBase64: string;
   readonly traceBase64: string;
   readonly wallMs: { readonly indirection: number; readonly fillOn: number; readonly ssrOnly: number };
+  readonly wallSamplesMs?: Readonly<Record<string, readonly number[]>>;
+  readonly gpuFullChainSamplesMs?: readonly number[];
   /** 诊断:命中记录 t>0 数 / 线性深度>0 数 / 深度读回 min-max(证据与失败归因)。 */
   readonly diagnostics?: { readonly hitRecords: number; readonly positiveLinear: number;
     readonly depthMin: number; readonly depthMax: number };
@@ -271,7 +276,7 @@ export function buildReceiverViewNormals(scene: ReflectionScene, depth: Float32A
  */
 export function buildRtSpecularCpuReference(hitRecords: Float32Array, linearDepth: Float32Array,
   viewNormalBytes: Uint8Array, ssrOutput: Float64Array, trace: Float64Array,
-  bounceShading?: Float32Array):
+  bounceShading?: Float32Array, secondRecords?: Float32Array, secondShading?: Float32Array):
   { readonly indirection: Float64Array; readonly fill: Float64Array; readonly hits: number } {
   const pixels = RES * RES;
   const indirection = new Float64Array(pixels * 4);
@@ -291,7 +296,12 @@ export function buildRtSpecularCpuReference(hitRecords: Float32Array, linearDept
             visibility: bounceShading[base + 3]! };
       const record2 = rtSpecularIndirectionRecordCpu(record, [nx, ny, nz], roughness, linearDepth[p]!,
         x, y, RES, RES, { tanHalfFov: Math.tan(50 * Math.PI / 360), aspect: 1,
-          ...RT_SPECULAR_PROBE_LIGHT, fresnelF0: RT_SPECULAR_PROBE_FRESNEL_F0 }, shading);
+          ...RT_SPECULAR_PROBE_LIGHT, fresnelF0: RT_SPECULAR_PROBE_FRESNEL_F0 }, shading,
+        secondRecords && secondShading ? {
+          record: [secondRecords[base]!, secondRecords[base + 1]!, secondRecords[base + 2]!, secondRecords[base + 3]!],
+          shading: { albedo: [secondShading[base]!, secondShading[base + 1]!, secondShading[base + 2]!],
+            visibility: secondShading[base + 3]! },
+        } : undefined);
       indirection.set(record2, base);
       if (record2[3] > 0) hits++;
       const outRgb: readonly [number, number, number] = [ssrOutput[base]!, ssrOutput[base + 1]!, ssrOutput[base + 2]!];
@@ -437,7 +447,7 @@ async function readbackF32(device: GPUDevice, texture: GPUTexture, bytesPerPixel
 }
 
 /** 浏览器探针主入口(page.evaluate 调用)。 */
-export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResult> {
+export async function runRtSpecularGiGpuProbe(options: { secondBounce?: boolean } = {}): Promise<RtSpecularGpuProbeResult> {
   const errors: string[] = [];
   const empty: RtSpecularGpuProbeResult = { hitRecordsBase64: "", linearDepthBase64: "",
     viewNormalBase64: "", bounceShadingBase64: "", indirectionBase64: "", fillOnBase64: "",
@@ -448,7 +458,8 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
   }
   const adapter = await navigator.gpu.requestAdapter();
   if (adapter === null) return { ...empty, errors: ["navigator.gpu.requestAdapter() returned null."] };
-  const device = await adapter.requestDevice();
+  const timestampQuery = adapter.features.has("timestamp-query");
+  const device = await adapter.requestDevice({ requiredFeatures: timestampQuery ? ["timestamp-query"] : [] });
   device.addEventListener?.("uncapturederror", (event: Event) => {
     errors.push(`uncaptured: ${(event as GPUUncapturedErrorEvent).error.message}`);
   });
@@ -506,11 +517,15 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
     // 只进 uncapturederror/compilationInfo;管线无效时 dispatch 静默 no-op —— 探针
     // 依赖 uncapturederror 监听 + runner 打印 probe.errors 兜底,closest.encode 必须
     // await(见 closestEncode 注)。
-    const closest = new RayTraceClosestFramePass(device, scene.tlas.packed, { illumination: true });
+    const closest = new RayTraceClosestFramePass(device, scene.tlas.packed,
+      { illumination: true, secondBounce: options.secondBounce === true });
     const hitTexture = device.createTexture({ size: [RES, RES], format: "rgba32float",
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC });
     const bounceShadingTexture = device.createTexture({ size: [RES, RES], format: "rgba32float",
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC });
+    const secondTextures = options.secondBounce ? Array.from({ length: 2 }, () => device.createTexture({
+      size: [RES, RES], format: "rgba32float", usage: GPUTextureUsage.STORAGE_BINDING
+        | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC })) : [];
     const depthReadback = new Float32Array(await readbackF32(device, depthTexture, 4));
     // 视法线 GBuffer(CPU 单源生成后 upload;仲裁腿复用同一函数与字节)。
     const basis = worldToView;
@@ -542,8 +557,12 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
       { bytesPerRow: RES * 8, rowsPerImage: RES }, [RES, RES, 1]);
     const fillOn = makeStorageTexture("rgba16float");
     const fillOff = makeStorageTexture("rgba16float");
-    const indirectionPass = new RtSpecularIndirectionPass(device);
+    const indirectionPass = new RtSpecularIndirectionPass(device, { secondBounce: options.secondBounce === true });
     const fillPass = new RtSpecularFillPass(device);
+    const query = timestampQuery ? device.createQuerySet({ type: "timestamp", count: 2 }) : undefined;
+    const queryResolve = query ? device.createBuffer({ size: 16, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC }) : undefined;
+    const queryRead = query ? device.createBuffer({ size: 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ }) : undefined;
+    const gpuSamples: number[] = [];
     // 帧编码:on = closest(illumination)→ indirection → fill;计时取 warmup 后最小值链
     // (evidence-only)。遮蔽记录由 closest 每帧重写(单缓冲,同 encoder 内读写有序)。
     // closest.encode 必须 await:WGSL 校验 promise 拒绝必须上抛进 probe.errors —— void
@@ -551,6 +570,7 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
     const closestEncode = async (encoder: GPUCommandEncoder): Promise<void> => {
       await closest.encode(encoder, { depthView: depthTexture.createView(), hitView: hitTexture.createView(),
         bounceShadingView: bounceShadingTexture.createView(),
+        ...(secondTextures.length ? { hit2View: secondTextures[0]!.createView(), bounceShading2View: secondTextures[1]!.createView() } : {}),
         lightDirectionWorld: RT_SPECULAR_PROBE_LIGHT.surfaceToLightWorld,
         instanceAlbedos: RT_SPECULAR_PROBE_INSTANCE_ALBEDOS,
         width: RES, height: RES, invViewProjection: invViewProjectionTuple, eye: REFLECTION_EYE, tMax: REFLECTION_T_MAX,
@@ -561,6 +581,7 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
         linearDepthView: linearTexture.createView(), viewNormalView: normalTexture.createView(),
         brdfLutView: dfgTexture.createView(), rtHitView: hitTexture.createView(),
         bounceShadingView: bounceShadingTexture.createView(),
+        ...(secondTextures.length ? { rtHit2View: secondTextures[0]!.createView(), bounceShading2View: secondTextures[1]!.createView() } : {}),
         indirectionView: indirection.createView(), width: RES, height: RES,
         params: { width: RES, height: RES, tanHalfFov: Math.tan(50 * Math.PI / 360), aspect: 1,
           surfaceToLightWorld: [...RT_SPECULAR_PROBE_LIGHT.surfaceToLightWorld],
@@ -572,15 +593,22 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
     const encodeFrame = async (indirection: GPUTexture, fill: GPUTexture,
       dispatchIndirection: boolean): Promise<void> => {
       const encoder = device.createCommandEncoder();
+      if (query) encoder.beginComputePass({ timestampWrites: { querySet: query, beginningOfPassWriteIndex: 0 } }).end();
       await closestEncode(encoder);
       if (dispatchIndirection) indirectionEncode(encoder, indirection);
       fillPass.encode(encoder, { ssrOutputView: ssrOutputTexture.createView(),
         ssrTraceView: traceTexture.createView(), indirectionView: indirection.createView(),
         outputView: fill.createView(), width: RES, height: RES });
+      if (query && queryResolve && queryRead) {
+        encoder.beginComputePass({ timestampWrites: { querySet: query, endOfPassWriteIndex: 1 } }).end();
+        encoder.resolveQuerySet(query, 0, 2, queryResolve, 0);
+        encoder.copyBufferToBuffer(queryResolve, 0, queryRead, 0, 16);
+      }
       device.queue.submit([encoder.finish()]);
     };
     // 计时含 onSubmittedWorkDone(GPU 完成墙钟;纯 enqueue 墙钟在 128² 上 <0.05ms 无意义)。
-    const timed = async (run: () => Promise<void>, warmups: number, iterations: number): Promise<number> => {
+    const wallSamples: Record<string, number[]> = {};
+    const timed = async (run: () => Promise<void>, warmups: number, iterations: number, name: string): Promise<number> => {
       for (let i = 0; i < warmups; i++) await run();
       const samples: number[] = [];
       for (let i = 0; i < iterations; i++) {
@@ -588,7 +616,14 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
         await run();
         await device.queue.onSubmittedWorkDone();
         samples.push(performance.now() - start);
+        if (name === "fullChain" && queryRead) {
+          await queryRead.mapAsync(GPUMapMode.READ);
+          const timestamps = new BigUint64Array(queryRead.getMappedRange());
+          gpuSamples.push(Number(timestamps[1]! - timestamps[0]!) / 1e6);
+          queryRead.unmap();
+        }
       }
+      wallSamples[name] = [...samples];
       samples.sort((a, b) => a - b);
       const p = (q: number): number => samples[Math.min(samples.length - 1, Math.ceil(q * samples.length) - 1)]!;
       return p(0.95);
@@ -600,13 +635,14 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
       await closestEncode(encoder);
       indirectionEncode(encoder, indirectionOn);
       device.queue.submit([encoder.finish()]);
-    }, 3, 20);
-    const wallFillOn = await timed(() => encodeFrame(indirectionOn, fillOn, true), 3, 20);
+    }, 3, 20, "indirection");
+    const wallFillOn = await timed(() => encodeFrame(indirectionOn, fillOn, true), 3, 20, "fullChain");
     const wallSsrOnly = await timed(async () => {
       const encoder = device.createCommandEncoder();
       await closestEncode(encoder);
       device.queue.submit([encoder.finish()]);
-    }, 3, 20);
+    }, 3, 20, "closest");
+    const secondReadback = await Promise.all(secondTextures.map(texture => readbackF32(device, texture, 16)));
     const [hitRecords, linearDepth, bounceShadingReadback, indirectionReadback, fillOnReadback, fillOffReadback]
       = await Promise.all([
       readbackF32(device, hitTexture, 16), readbackF32(device, linearTexture, 4),
@@ -640,18 +676,23 @@ export async function runRtSpecularGiGpuProbe(): Promise<RtSpecularGpuProbeResul
     sentinel.set(new Uint32Array(sentinelStaging.getMappedRange()));
     sentinelStaging.unmap(); sentinelStaging.destroy();
     for (const pass of [closest, indirectionPass, fillPass]) pass.destroy();
+    query?.destroy(); queryResolve?.destroy(); queryRead?.destroy();
     for (const texture of [depthTexture, linearTexture, dfgTexture, hitTexture, bounceShadingTexture,
-      normalTexture, ssrOutputTexture, traceTexture, indirectionOn, indirectionOff, fillOn, fillOff]) {
+      normalTexture, ssrOutputTexture, traceTexture, indirectionOn, indirectionOff, fillOn, fillOff, ...secondTextures]) {
       texture.destroy();
     }
     device.destroy();
     return { hitRecordsBase64: toBase64(hitRecords), linearDepthBase64: toBase64(linearDepth),
+      sourceDepthBase64: toBase64(depthReadback.buffer),
+      ...(secondReadback.length ? { hit2Base64: toBase64(secondReadback[0]!), shading2Base64: toBase64(secondReadback[1]!) } : {}),
       viewNormalBase64: toBase64(normals.bytes.buffer as ArrayBuffer),
       bounceShadingBase64: toBase64(bounceShadingReadback),
       indirectionBase64: toBase64(indirectionReadback), fillOnBase64: toBase64(fillOnReadback),
       fillOffBase64: toBase64(fillOffReadback), ssrOutputBase64: toBase64(synthetic.output),
       traceBase64: toBase64(synthetic.trace),
       wallMs: { indirection: wallIndirection, fillOn: wallFillOn, ssrOnly: wallSsrOnly },
+      wallSamplesMs: wallSamples,
+      gpuFullChainSamplesMs: gpuSamples,
       diagnostics, stackOverflows: sentinel[0]!, adapter: adapterInfo === undefined ? "unknown"
         : `${adapterInfo.vendor ?? "unknown"}/${adapterInfo.architecture ?? ""}`,
       features: [...adapter.features], errors };

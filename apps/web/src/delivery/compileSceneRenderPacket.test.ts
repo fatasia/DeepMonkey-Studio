@@ -6,13 +6,19 @@ import { buildDeepRuntimePackage, validateDeepRuntimePackage } from "@bim-studio
 import { Color, Matrix4, Object3D } from "three";
 import sharp from "sharp";
 import { compileSceneRenderPacket } from "./compileSceneRenderPacket";
+import { decodeAuthorModel, type AuthorModelDecoder } from "./authorModelDecode";
+import { describeDeepCompileNotice } from "./deepCompileNotice";
 
 const box = readFileSync(new URL("../../../../packages/deep-engine/lab/assets/Box.glb", import.meta.url));
-function materialBox(alphaMode: "MASK" | "BLEND", alphaCutoff = 0.5): Uint8Array {
+function materialBox(alphaMode: "MASK" | "BLEND", alphaCutoff = 0.5, transmission?: number): Uint8Array {
   const jsonLength = box.readUInt32LE(12);
   const gltf = JSON.parse(box.subarray(20, 20 + jsonLength).toString("utf8"));
   Object.assign(gltf.materials[0], { alphaMode, alphaCutoff });
   gltf.materials[0].pbrMetallicRoughness.baseColorFactor[3] = 0.25;
+  if (transmission !== undefined) {
+    gltf.extensionsUsed = ["KHR_materials_transmission"];
+    gltf.materials[0].extensions = { KHR_materials_transmission: { transmissionFactor: transmission } };
+  }
   const json = Buffer.from(JSON.stringify(gltf));
   const padded = Buffer.alloc(Math.ceil(json.length / 4) * 4, 0x20); json.copy(padded);
   const rest = box.subarray(20 + jsonLength);
@@ -30,6 +36,16 @@ function scene(models: SceneModelState[]): SceneSnapshot {
 }
 
 describe("saved scene GLB compilation", () => {
+  it("reuses a decoded asset across author edits without duplicating resource or deformation IDs", async () => {
+    const decodedAssetCache = new Map();
+    const first = await compileSceneRenderPacket(scene([model("one")]), { loadModel: async () => box, decodedAssetCache });
+    const edited = { ...model("one"), colorOverride: "#ff0000" };
+    const warm = await compileSceneRenderPacket(scene([edited]), { loadModel: async () => box, decodedAssetCache });
+    const cold = await compileSceneRenderPacket(scene([edited]), { loadModel: async () => box });
+    expect(warm).toEqual(cold);
+    expect(warm.packet.geometries).toHaveLength(first.packet.geometries.length);
+    expect(new Set(warm.packet.geometries.map(geometry => geometry.id)).size).toBe(warm.packet.geometries.length);
+  });
   it("binds every procedural road part to one author object without asset IO", async () => {
     const road = { modelId: "road", name: "Road", kind: "box", visible: true, opacity: 1, color: "#808080",
       transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } },
@@ -66,7 +82,7 @@ describe("saved scene GLB compilation", () => {
   });
   it.each([0.999, 1])("preserves authored alpha test at model opacity %s", async opacity => {
     const result = await compileSceneRenderPacket(scene([{ ...model("mask"), opacity }]), { loadModel: async () => materialBox("MASK", 0.35) });
-    expect(result.packet.materials[0]).toMatchObject({ alphaMode: "MASK", alphaCutoff: 0.35, baseColorAlpha: opacity });
+    expect(result.packet.materials[0]).toMatchObject({ alphaMode: "MASK", alphaCutoff: 0.35, baseColorAlpha: 0.25 * opacity });
     const runtime = buildDeepRuntimePackage({ packageId: "mask.scene", packageVersion: "1.0.0",
       renderPacket: { id: "scene", revision: 1, value: result.packet } });
     expect(validateDeepRuntimePackage(JSON.parse(JSON.stringify(runtime))).valid).toBe(true);
@@ -76,13 +92,48 @@ describe("saved scene GLB compilation", () => {
       loadModel: async () => materialBox("MASK"),
     })).rejects.toThrow(/镂空材质与半透明/);
   });
-  it("allows a disabled alpha test and keeps opaque overrides of blended source material", async () => {
+  it("allows a disabled alpha test while multiplying its source alpha", async () => {
     const transparent = await compileSceneRenderPacket(scene([{ ...model("mask"), opacity: 0.5 }]), {
       loadModel: async () => materialBox("MASK", 0),
     });
-    expect(transparent.packet.materials[0]).toMatchObject({ alphaMode: "BLEND", baseColorAlpha: 0.5 });
-    const opaque = await compileSceneRenderPacket(scene([model("blend")]), { loadModel: async () => materialBox("BLEND") });
-    expect(opaque.packet.materials[0]).toMatchObject({ alphaMode: "OPAQUE", baseColorAlpha: 1 });
+    expect(transparent.packet.materials[0]).toMatchObject({ alphaMode: "BLEND", baseColorAlpha: 0.125 });
+  });
+  it.each([1, 0.5, 0])("preserves imported BLEND and applies scene opacity %s once", async opacity => {
+    const result = await compileSceneRenderPacket(scene([{ ...model("glass"), opacity }]), {
+      loadModel: async () => materialBox("BLEND"),
+    });
+    expect(result.packet.materials[0]).toMatchObject({ alphaMode: "BLEND", baseColorAlpha: 0.25 * opacity });
+  });
+  it("preserves source alpha while applying explicit instance and slot material edits", async () => {
+    const result = await compileSceneRenderPacket(scene([{ ...model("glass"), opacity: 0.5,
+      colorOverride: "#ffffff", material: { roughness: 0.7,
+        slotOverrides: { "gltf:0": { color: "#808080", roughness: 0.2, transmission: 0.8 } } },
+    }]), { loadModel: async () => materialBox("BLEND") });
+    expect(result.packet.materials[0]).toMatchObject({ alphaMode: "BLEND", baseColorAlpha: 0.125,
+      roughness: 0.2, extendedParameters: { transmission: { factor: 0.8 } } });
+    expect(result.packet.materials[0]!.baseColor).toEqual(new Color("#808080").toArray());
+  });
+  it("retains untextured imported transmission through the worker decode boundary", async () => {
+    const bytes = materialBox("BLEND", 0.5, 1);
+    const decode = vi.fn(async () => { throw new Error("glass has no texture"); });
+    const decodeModel = vi.fn(async (...[source, settings, signal]: Parameters<AuthorModelDecoder>) =>
+      decodeAuthorModel(source, settings, signal, async value => value, { decode }));
+    const result = await compileSceneRenderPacket(scene([model("glass")]), {
+      loadModel: async () => bytes, advancedMaterials: true, decodeModel,
+    });
+    expect(decodeModel.mock.calls[0]![1]).toMatchObject({ advancedMaterials: true });
+    expect(result.packet.materials[0]).toMatchObject({ alphaMode: "BLEND", baseColorAlpha: 0.25,
+      extendedParameters: { transmission: { factor: 1 } } });
+    expect(result.materialLosses).toBeUndefined();
+    expect(decode).not.toHaveBeenCalled();
+  });
+  it("keeps unsupported source material losses visible per placement", async () => {
+    const result = await compileSceneRenderPacket(scene([model("a"), model("b")]), {
+      loadModel: async () => materialBox("BLEND", 0.5, 1),
+    });
+    expect(result.materialLosses?.map(loss => loss.modelId)).toEqual(["a", "b"]);
+    expect(result.materialLosses?.[0]?.loss.code).toBe("material-profile-unsupported");
+    expect(describeDeepCompileNotice(result)).toContain("2 个对象存在材质降级");
   });
   it("embeds decoded texture pixels with independent asset namespaces", async () => {
     const textured = readFileSync(new URL("../../../../packages/deep-engine/lab/assets/BoxTextured.glb", import.meta.url));

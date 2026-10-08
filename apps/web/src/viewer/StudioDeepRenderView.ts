@@ -8,7 +8,7 @@ import type { StudioDeepShadowSession } from "./StudioDeepShadowSession";
 import { StudioDeepEditorOverlaySession } from "./StudioDeepEditorOverlaySession";
 import type { DeepOverlayPrimitiveSource } from "./deepOverlayPrimitiveSource";
 import { StudioDeepGridSession } from "./StudioDeepGridSession";
-import { projectStudioDeepLights } from "./studioDeepEnvironmentLights";
+import { projectStudioDeepLights, readStudioDeepGlobalIlluminationIntensity } from "./studioDeepEnvironmentLights";
 import { readStudioDeepEnvironmentView } from "./studioDeepEnvironmentView";
 import { readStudioDeepFog } from "./studioDeepFog";
 import { readStudioDeepColorEffects, readStudioDeepPostProcess } from "./studioDeepColorEffects";
@@ -28,7 +28,9 @@ interface SourceView extends EnvironmentView {
   fog: NonNullable<RenderView["fog"]> | null;
   authorColorEffects: NonNullable<RenderView["authorColorEffects"]>;
   postProcess: NonNullable<RenderView["postProcess"]>;
+  authorDirectDisplay: boolean;
   exposure: number;
+  globalIlluminationIntensity: number;
   roughness: number;
   lights: NonNullable<RenderView["lights"]>;
 }
@@ -38,6 +40,8 @@ export class StudioDeepRenderView {
   private readonly editorOverlay = new StudioDeepEditorOverlaySession();
   private readonly grid = new StudioDeepGridSession();
   private deepOverlayPrimitives: DeepOverlayPrimitiveSource | undefined;
+  private independentPacketBounds = false;
+  private independentPacketNeedsGiFill = false;
   private projectionExtent: number | undefined;
   private cachedGestureSource: { source: SourceView; at: number; sceneRevision: number } | undefined;
   /** 场景修订号(由桥从 renderDemand 诊断同步);-1 表示不可用,退回 TTL 兜底。 */
@@ -50,15 +54,18 @@ export class StudioDeepRenderView {
   constructor(private readonly viewer: ViewerEngine, private readonly container: HTMLElement,
     private readonly environmentSession: () => StudioDeepEnvironmentSession | undefined,
     private readonly shadowSession: () => StudioDeepShadowSession | undefined) {}
-  reset(): void { this.editorOverlay.dispose(); this.grid.dispose(); this.projectionExtent = undefined; this.cachedGestureSource = undefined; }
-  invalidateProjectionBounds(): void { this.projectionExtent = undefined; this.cachedGestureSource = undefined; }
+  reset(): void { this.editorOverlay.dispose(); this.grid.dispose(); this.projectionExtent = undefined; this.independentPacketBounds = false; this.independentPacketNeedsGiFill = false; this.cachedGestureSource = undefined; }
+  invalidateProjectionBounds(): void { if (!this.independentPacketBounds) this.projectionExtent = undefined; this.cachedGestureSource = undefined; }
   /**
    * Supplies bounds for the immutable packet path.  This keeps Deep WebGPU
    * view construction from traversing the author Three hierarchy merely to
    * derive an orbit extent.
    */
   setIndependentPacketBounds(packet: RenderPacket): void {
-    this.projectionExtent = packetExtent(packet);
+    this.projectionExtent = packetExtent(packet); this.independentPacketBounds = true;
+    // The current ray-scene producer rejects any deformation snapshot. Preserve
+    // the author's fill while no probe field can exist; static packets stay probe-only.
+    this.independentPacketNeedsGiFill = packet.deformation !== undefined;
     this.cachedGestureSource = undefined;
   }
   /** Deep 原生编辑辅助图形(切片 A/B/C)顶点来源;未注册时保持纯 Three 投影行为。 */
@@ -68,10 +75,12 @@ export class StudioDeepRenderView {
   renderView(module: BridgeModule, canvas: HTMLCanvasElement): RenderView {
     const source = this.renderViewSource(canvas);
     return { ...module.threeRenderView(source), lights: source.lights, authorGrid: source.authorGrid,
+      authorDirectDisplay: source.authorDirectDisplay,
       authorColorEffects: source.authorColorEffects,
       postProcess: source.postProcess,
       fog: source.fog,
       environmentIntensity: source.environmentIntensity,
+      globalIlluminationIntensity: source.globalIlluminationIntensity,
       ...(source.panoramaBackground ? { panoramaBackground: source.panoramaBackground } : {}) };
   }
 
@@ -84,6 +93,7 @@ export class StudioDeepRenderView {
         source.width, source.height, source.pixelRatio,
         this.deepOverlayPrimitives?.(source.width, source.height, source.pixelRatio) ?? []),
       authorGrid: source.authorGrid,
+      authorDirectDisplay: source.authorDirectDisplay,
       width: source.width,
       height: source.height,
       pixelRatio: source.pixelRatio,
@@ -94,6 +104,7 @@ export class StudioDeepRenderView {
       background: source.background,
       floor: source.floor,
       exposure: source.exposure,
+      globalIlluminationIntensity: source.globalIlluminationIntensity,
       authorColorEffects: source.authorColorEffects,
       postProcess: source.postProcess,
       roughness: source.roughness,
@@ -116,11 +127,16 @@ export class StudioDeepRenderView {
     const gestureCacheValid = cameraGesture && this.cachedGestureSource !== undefined
       && this.cachedGestureSource.sceneRevision === this.sceneRevision
       && (this.sceneRevision >= 0 || performance.now() - this.cachedGestureSource.at < 200);
-    if (gestureCacheValid) return this.cachedGestureSource!.source;
+    if (gestureCacheValid) return { ...this.cachedGestureSource!.source,
+      target: tuple(this.viewer.orbit.target),
+      width: Math.max(this.container.clientWidth, canvas.clientWidth, 1),
+      height: Math.max(this.container.clientHeight, canvas.clientHeight, 1),
+      pixelRatio: this.viewer.renderer.getPixelRatio() };
     const post = this.viewer.getPostProcessing(), composerActive = this.viewer.usesAuthorPostProcessing();
     const fog = readStudioDeepFog(this.viewer.scene, composerActive);
     const lighting = projectStudioDeepLights(this.viewer.scene, this.viewer.camera.layers.mask,
-      this.viewer.renderer.shadowMap?.enabled ?? true, this.viewer.renderer.shadowMap?.type ?? DISPLAY_THREE_SHADOW_MAP_TYPE);
+      this.viewer.renderer.shadowMap?.enabled ?? true, this.viewer.renderer.shadowMap?.type ?? DISPLAY_THREE_SHADOW_MAP_TYPE,
+      this.independentPacketNeedsGiFill);
     if (lighting.issues.length) throw new Error(lighting.issues.map(issue => `${issue.path}: ${issue.message}`).join("\n"));
     const extent = this.projectionExtent ?? (() => {
       const bounds = new THREE.Box3().setFromObject(this.viewer.getDeepProjectionRoot() as THREE.Object3D);
@@ -138,10 +154,12 @@ export class StudioDeepRenderView {
       pixelRatio: this.viewer.renderer.getPixelRatio(),
       extent,
       ...environment,
+      authorDirectDisplay: !composerActive,
       fog,
       authorColorEffects: readStudioDeepColorEffects(post, composerActive),
       postProcess: readStudioDeepPostProcess(post, composerActive),
       exposure: this.viewer.renderer.toneMappingExposure,
+      globalIlluminationIntensity: readStudioDeepGlobalIlluminationIntensity(this.viewer.scene),
       roughness: 1,
       lights: this.shadowSession()?.lights(lighting.lights) ?? lighting.lights,
     };

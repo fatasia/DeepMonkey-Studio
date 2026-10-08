@@ -49,7 +49,7 @@ try {
     try {
       await gate.loginPage(page);
       await page.goto(`${gate.origin}/studio/${project.id}/applications/${application.metadata.id}/scenes/${scene.id}`);
-      await page.locator(".viewport canvas").waitFor(); await open();
+      await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor(); await open();
       for (const role of roles) {
         await flow.getByLabel("物流场景对象").selectOption(role); await flow.getByLabel("物流角色", { exact: true }).selectOption(role);
         await flow.getByRole("button", { name: "绑定", exact: true }).click();
@@ -92,7 +92,7 @@ try {
       await page.getByRole("button", { name: "保存项目", exact: true }).click(); await saveResponse;
       const saved = await gate.json("GET", appPath); const savedScene = saved.scenes.find(item => item.id === scene.id);
       assert.equal(savedScene.simulationEntities.length, 7);
-      await page.reload(); await page.locator(".viewport canvas").waitFor(); await open();
+      await page.reload(); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor(); await open();
       assert.equal(await flow.locator(".scene-plant-node").count(), 4); assert.equal(await flow.locator(".scene-plant-links li").count(), 3);
       entry.steps.push("configuration-save-reload");
       const responsePromise = page.waitForResponse(response => response.url().endsWith(studyPath) && response.request().method() === "POST");
@@ -195,7 +195,7 @@ function pixelDifference(left, right) {
 }
 
 async function stableCanvas(page) {
-  const canvas = page.locator(".viewport canvas").first();
+  const canvas = page.locator('.viewport canvas:not([aria-hidden="true"])').first();
   const geometrySamples = [];
   const capture = async () => {
     const buffer = await canvas.screenshot();

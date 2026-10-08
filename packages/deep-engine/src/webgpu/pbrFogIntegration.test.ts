@@ -32,7 +32,8 @@ describe("PBR author fog GPU integration", () => {
     expect(sceneShader.indexOf("deepFog.colorMode.w < 2.5")).toBeLessThan(sceneShader.indexOf("let distance = length(frame.eye.xyz - world)"));
     expect(PBR_FOG_WGSL).toContain("@group(0) @binding(8)");
     expect(PBR_FOG_WGSL).toContain("smoothstep(deepFog.parameters.x, deepFog.parameters.y, viewDepth)");
-    expect(PBR_FOG_WGSL).toContain("mix(color, deepFog.colorMode.rgb, factor)");
+    expect(PBR_FOG_WGSL).toContain("mix(color, fogColor, factor)");
+    expect(PBR_FOG_WGSL).toContain("deepApplyAuthorFogColor(color, viewDepth, deepFog.colorMode.rgb)");
     expect(PBR_FOG_WGSL.slice(0, PBR_FOG_WGSL.indexOf("fn deepApplySceneFog"))).not.toContain("0.95");
   });
 

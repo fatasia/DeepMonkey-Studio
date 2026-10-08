@@ -15,6 +15,7 @@ import { VIRTUAL_SHADOW_WGSL } from "./virtualShadowSampling.js";
 // 由 PBR_DISPLAY_COLOR_WGSL 先于本段定义）。
 import { FRAME_STRUCTS_WGSL } from "../frameAbi/generated/frameStructsWgsl.js";
 import { PBR_REFLECTION_PROBE_WGSL } from "./pbrReflectionProbeWgsl.js";
+import { PBR_PROBE_IRRADIANCE_GAIN_WGSL } from "./pbrGlobalIlluminationIntensity.js";
 export { outputShader } from "./pbrOutputShader.js";
 
 /** 自研验证管线：GGX / Smith / Schlick，线性 HDR，中间过程不做显示编码。 */
@@ -272,7 +273,7 @@ fn shade(fragmentCoordinate: vec2f, world: vec3f, normalInput: vec3f, geometryNo
     let energyCompensation = vec3f(1.0) + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
     let specularFraction = clamp(f0 * dfg.x + dfg.y, vec3f(0.0), vec3f(1.0)) * energyCompensation;
     let environmentIrradiance = textureSampleLevel(diffuseEnvironment, environmentSampler, n, 0.0).rgb * frame.lightDirection.w;
-    let gi = deepGiSampleTexture(world, n); let irradiance = mix(environmentIrradiance, gi.rgb, gi.a);
+    let gi = deepGiSampleTexture(world, n); let irradiance = mix(environmentIrradiance, ${PBR_PROBE_IRRADIANCE_GAIN_WGSL}, gi.a);
     let occlusion = clamp(occlusionInput, 0.0, 1.0);
     color += (1.0 - specularFraction) * (1.0 - metal) * base * irradiance * occlusion * frame.eye.w;
     let reflection = reflect(-view, n);

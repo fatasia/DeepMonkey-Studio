@@ -1,5 +1,14 @@
 import type { DeviceSession } from "./deviceSession.js";
-import { snapshotEditorOverlay, type EditorOverlaySnapshot } from "./editorOverlayTypes.js";
+import { EDITOR_OVERLAY_MAX_VERTICES, snapshotEditorOverlay, type EditorOverlaySnapshot } from "./editorOverlayTypes.js";
+
+/** Compare against our validated copy so mutable caller arrays never bypass revision checks. */
+function sameOwnedVertices(input: EditorOverlaySnapshot, owned: EditorOverlaySnapshot): boolean {
+  if (!Number.isSafeInteger(input.revision) || input.revision < 0 || !(input.vertices instanceof Float32Array)
+    || !(input.vertices.buffer instanceof ArrayBuffer) || input.vertices.length !== owned.vertices.length
+    || input.vertices.length > EDITOR_OVERLAY_MAX_VERTICES * 8) return false;
+  for (let index = 0; index < input.vertices.length; index++) if (input.vertices[index] !== owned.vertices[index]) return false;
+  return true;
+}
 
 export function editorOverlayShader(format: GPUTextureFormat): string {
   return `struct Vertex { @builtin(position) position: vec4f, @location(0) color: vec4f };
@@ -34,10 +43,10 @@ export class EditorOverlayPass {
   encode(encoder: GPUCommandEncoder, target: GPUTextureView, snapshot?: EditorOverlaySnapshot, queries?: GPUQuerySet): number {
     if (this.disposed) throw new Error("Editor overlay is disposed.");
     if (!snapshot) { this.current = undefined; return 0; }
-    const next = snapshotEditorOverlay(snapshot), previous = this.current;
+    const previous = this.current;
+    const same = previous !== undefined && sameOwnedVertices(snapshot, previous);
+    const next = same ? { revision: snapshot.revision, vertices: previous!.vertices } : snapshotEditorOverlay(snapshot);
     if (previous && next.revision < previous.revision) throw new Error("Editor overlay revision went backwards.");
-    const same = previous && next.vertices.length === previous.vertices.length
-      && next.vertices.every((value, index) => value === previous.vertices[index]);
     if (previous && next.revision === previous.revision && !same) throw new Error("Editor overlay changed without a revision.");
     if (!next.vertices.length) { this.current = next; return 0; }
     if (!same) {

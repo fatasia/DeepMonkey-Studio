@@ -17,7 +17,7 @@ it("keeps original Three derivative and BRDF math while packing actual response"
   const re = ShaderChunk.lights_physical_pars_fragment.match(/^void RE_Direct_Physical\([^]*?^\}/m)![0];
   expect(packed.originalHash).toBe(baseline.originalHash);
   expect(packed.lights_physical_pars_fragment).toContain(re.slice(0, -1));
-  expect(packed.lights_physical_pars_fragment).toContain("vec3( material.roughness, ( irradiance * ( BRDF_GGX(");
+  expect(packed.lights_physical_pars_fragment).toContain("vec3( material.roughness, ( irradiance * ( specularBRDF + BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F ) ) ).rg )");
   expect(ShaderChunk.lights_physical_fragment).toContain("dFdx( nonPerturbedNormal )");
 });
 it("rejects unknown derivative policies before runtime or chunk mutation", () => {

@@ -32,6 +32,7 @@ export async function prepareFrozenNativeScenePayload(input: SceneSnapshot, depe
   const renderPacketHash = runtime.resources.find(resource => resource.kind === "render-packet")?.contentHash.value;
   if (!cameraHash || !renderPacketHash || compilation.compileGraphHash !== runtimeContentSha256({
     recipe: compilation.recipe, sourceSemanticHash: compilation.sourceSemanticHash, sourceAssets: compilation.sourceAssets,
+    ...(compilation.sourceTextures?.length ? { sourceTextures: compilation.sourceTextures } : {}),
     packageId: runtime.packageId, packageVersion: runtime.packageVersion, maxSourceBytes: compilation.maxSourceBytes,
     localCoordinates: compilation.localCoordinates, cameraHash, renderPacketHash,
   })) throw new Error("冻结 Native 编译图身份不一致");

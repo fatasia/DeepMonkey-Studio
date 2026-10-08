@@ -6,6 +6,8 @@ import type { FrameMetrics, PbrRendererOptions } from "@bim-studio/deep-engine/w
 import type { ViewerEngine } from "./ViewerEngine";
 import { DEFAULT_POST_PROCESSING } from "../appDefaults";
 import { StudioDeepWebGpuBridge } from "./StudioDeepWebGpuBridge";
+import { threePrototypeHooks } from "./studioDeepWebGpuBridgeSceneHelpers";
+import { assertSnapshotRevisions } from "../../../../packages/deep-engine/src/webgpu/packetDeformationRevision";
 
 // Studio、Three投影和Deep backend均真实执行；仅GPU runtime以可控边界替代。
 describe("Studio author animation integration", () => {
@@ -25,12 +27,14 @@ describe("Studio author animation integration", () => {
   async function frame() {
     const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(16)); await microtasks();
   }
-  function fixture(qualityProfile?: "performance" | "balanced" | "quality" | "ultra") {
+  function fixture(qualityProfile?: "performance" | "balanced" | "quality" | "ultra", independent = false, poseCount = 1) {
     const geometry = new THREE.PlaneGeometry(2, 2);
     geometry.morphTargetsRelative = true;
     geometry.morphAttributes.position = [new THREE.Float32BufferAttribute(new Array(12).fill(0.2), 3)];
     const author = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial());
     const scene = new THREE.Scene(), root = new THREE.Group(); root.add(author); scene.add(root);
+    const authors = [author];
+    for (let index = 1; index < poseCount; index++) { const mesh = author.clone(); mesh.geometry = geometry.clone(); root.add(mesh); authors.push(mesh); }
     scene.background = new THREE.Color("#123456");
     const camera = new THREE.PerspectiveCamera(); camera.position.z = 5;
     const authorCanvas = canvas(), authorFrames = new Set<() => void>(), failure = vi.fn();
@@ -39,6 +43,7 @@ describe("Studio author animation integration", () => {
       usesAuthorPostProcessing: () => true, getPostProcessing: () => ({ ...DEFAULT_POST_PROCESSING, enabled: false, ...(qualityProfile ? { qualityProfile } : {}) }),
       getDeepProjectionRoot: () => root, getDeepEditorOverlayRoots: () => [], getDeepSelectionBox: () => undefined,
       getDeepTransformGizmoInput: () => undefined, getDeepMeasurementSegmentInputs: () => [],
+      listModels: () => [{ id: "author-model", object: root }],
       setPresentationRendererBackend: vi.fn(), setPresentationPerformanceSource: vi.fn(),
       setAuthorPacketIndependent: vi.fn(),
       subscribePresentationFrames: (callback: () => void) => { authorFrames.add(callback); return () => authorFrames.delete(callback); },
@@ -60,9 +65,21 @@ describe("Studio author animation integration", () => {
         deep.DeepWebGpuBackend.create(request, { create: createRuntime }) },
     } as unknown as typeof deep;
     const container = { append: vi.fn(), clientWidth: 640, clientHeight: 480 };
+    const packetCompiler = new deep.ThreeProjectionBridge({ hooks: threePrototypeHooks(), capabilities: { authorDeformation: true } });
+    const authorRenderPacket = async () => {
+      root.updateWorldMatrix(true, true);
+      const result = packetCompiler.project(root, { cameraLayerMask: camera.layers.mask });
+      if (!result.ok) throw new Error(JSON.stringify(result.issues));
+      return { ...result.packet,
+        ...(result.packet.deformation ? { deformation: { ...result.packet.deformation,
+          poses: result.packet.deformation.poses.map(pose => ({ ...pose, revision: 0,
+            ...(pose.palette ? { palette: { ...pose.palette, revision: 0 } } : {}),
+            ...(pose.morphWeights ? { morphWeights: { ...pose.morphWeights, revision: 0 } } : {}) })) } } : {}),
+        objectBindings: [{ nodeId: "author-model", instanceIds: result.packet.instances.map(instance => instance.id) }] };
+    };
     const bridge = new StudioDeepWebGpuBridge(viewer, container as unknown as HTMLElement,
-      { loadModule: async () => module, onRuntimeFailure: failure }); bridges.push(bridge);
-    return { bridge, author, root, scene, runtime, createRuntime, constructorOptions, authorCanvas, authorFrames, failure, container };
+      { loadModule: async () => module, onRuntimeFailure: failure, ...(independent ? { authorRenderPacket } : {}) }); bridges.push(bridge);
+    return { bridge, author, authors, root, scene, viewer, runtime, createRuntime, constructorOptions, authorCanvas, authorFrames, failure, container };
   }
   async function activate(f: ReturnType<typeof fixture>) {
     const pending = f.bridge.switchTo("webgpu"); await microtasks(); await frame();
@@ -71,6 +88,82 @@ describe("Studio author animation integration", () => {
     for (let i = 0; i < 18; i++) await frame();
   }
   async function notify(f: ReturnType<typeof fixture>) { for (const callback of f.authorFrames) callback(); await microtasks(); }
+
+  it("keeps all three live pose revisions monotonic across two fresh asset replacements", async () => {
+    const f = fixture(undefined, true, 3); let revision = 1;
+    Object.assign(f.viewer, { getRenderDemandDiagnostics: () => ({ invalidationRevision: revision }) });
+    let live: RenderPacket["deformation"];
+    f.runtime.setPacketValidated.mockImplementation(async packet => {
+      assertSnapshotRevisions(packet.deformation!, live); live = structuredClone(packet.deformation!);
+    });
+    f.runtime.updateInstances.mockImplementation(update => {
+      if (update.poses) { const next = { ...live!, poses: update.poses }; assertSnapshotRevisions(next, live); live = structuredClone(next); }
+    });
+    await activate(f); expect(live?.poses).toHaveLength(3);
+    for (let round = 1; round <= 2; round++) {
+      for (let step = 1; step <= 8; step++) {
+        f.authors.forEach((mesh, index) => { mesh.morphTargetInfluences![0] = (round * 8 + step + index) / 32; });
+        await notify(f);
+      }
+      const before = live!.poses.map(pose => pose.revision);
+      (f.author.material as THREE.MeshStandardMaterial).color.set(round === 1 ? "#224466" : "#664422"); revision++;
+      await notify(f); await notify(f);
+      expect(f.failure).not.toHaveBeenCalled(); expect(f.bridge.activeBackend).toBe("webgpu");
+      expect(live!.poses.every((pose, index) => pose.revision > before[index]!)).toBe(true);
+      expect(live!.poses.map(pose => pose.morphWeights!.values[0]))
+        .toEqual(f.authors.map(mesh => Math.fround(mesh.morphTargetInfluences![0]!)));
+    }
+  });
+
+  it("retains animated frames throughout a light replacement and replays the latest pose after validation", async () => {
+    const f = fixture(undefined, true); let revision = 1;
+    Object.assign(f.viewer, { getRenderDemandDiagnostics: () => ({ invalidationRevision: revision }) });
+    await activate(f);
+    let finish!: () => void; let pending = false;
+    f.runtime.setPacketValidated.mockImplementationOnce(async () => {
+      pending = true; await new Promise<void>(resolve => { finish = resolve; }); pending = false;
+    });
+    f.runtime.updateInstances.mockImplementation(() => {
+      if (pending) throw new DOMException("Packet update cancelled or superseded.", "AbortError");
+    });
+    const light = new THREE.DirectionalLight(); light.position.set(3, 4, 5);
+    f.scene.add(light); f.scene.updateMatrixWorld(true); revision++;
+    await notify(f); expect(pending, JSON.stringify(f.failure.mock.calls.map(call => String(call[0])))).toBe(true);
+    f.runtime.updateInstances.mockClear(); const rendered = f.runtime.render.mock.calls.length;
+    for (let index = 1; index <= 50; index++) {
+      f.author.morphTargetInfluences![0] = index / 50; await notify(f);
+    }
+    expect(f.runtime.updateInstances).not.toHaveBeenCalled();
+    expect(f.runtime.render.mock.calls.length).toBeGreaterThan(rendered);
+    expect(f.bridge.activeBackend).toBe("webgpu");
+    finish(); await microtasks(); await notify(f);
+    const latest = f.runtime.updateInstances.mock.calls.at(-1)?.[0];
+    expect(latest?.poses?.[0]?.morphWeights?.values[0]).toBe(1);
+    expect(f.failure).not.toHaveBeenCalled(); expect(f.bridge.activeBackend).toBe("webgpu");
+  });
+
+  it.each(["cancelled", "failed"] as const)("isolates %s author validation from a replacement owner", async outcome => {
+    const f = fixture(undefined, true); let revision = 1;
+    Object.assign(f.viewer, { getRenderDemandDiagnostics: () => ({ invalidationRevision: revision }) });
+    await activate(f);
+    let reject!: (reason: Error) => void;
+    f.runtime.setPacketValidated.mockImplementationOnce(() => new Promise<void>((_resolve, no) => { reject = no; }));
+    (f.author.material as THREE.MeshStandardMaterial).color.set("#885544"); revision++;
+    await notify(f); expect(reject).toBeDefined();
+    if (outcome === "cancelled") f.bridge.dispose();
+    const next = outcome === "cancelled" ? fixture(undefined, true) : undefined;
+    if (next) await activate(next);
+    reject(outcome === "cancelled" ? new DOMException("Packet update cancelled or superseded.", "AbortError")
+      : new Error("replacement GPU validation failed"));
+    await microtasks();
+    if (next) {
+      expect(f.failure).not.toHaveBeenCalled(); expect(next.failure).not.toHaveBeenCalled();
+      expect(next.bridge.activeBackend).toBe("webgpu");
+    } else {
+      expect(f.failure).toHaveBeenCalledOnce(); expect(f.failure.mock.calls[0]![0].message).toContain("replacement GPU validation failed");
+      expect(f.bridge.activeBackend).toBe("webgl");
+    }
+  });
 
   it("enables both real projection and renderer deformation, then forwards changing and paused poses", async () => {
     const f = fixture(); await activate(f);

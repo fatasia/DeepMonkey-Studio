@@ -45,67 +45,39 @@
 
 ## 演示视频
 
-https://github.com/user-attachments/assets/63f8cce2-0360-4ba9-a2cb-92086a57aca3
+https://github.com/user-attachments/assets/b6059d6a-04c1-4fe1-b11e-9a46a42184d2
 
 从模型接入、轻量化与数据连接，到 AI 工作流、自研引擎和多端交付。
 
 ### 系统核心功能录屏
 
-https://github.com/user-attachments/assets/cb60822e-f2ee-41ec-ab45-943929da2f5a
+https://github.com/user-attachments/assets/d562bbec-f85a-4d75-890c-1aaa7f561105
 
 ## 功能亮点
 
-- **AI 直接读写工程对象**：助手面对的是带稳定 ID 的场景、构件、数据集与语义对象，不是截图问答。修改先出差异，确认后执行，失败可回滚，全程留审计。
-- **自研 WebGPU 引擎**：TypeScript 内核 + Rust/wgpu 原生执行器 + WASM 一套合约；GPU 剔除、间接绘制、LOD 流送、实例化与资源驻留，帧成本可观测；与 Three.js 基线共用显示合约，逐像素对拍防回退。
-- **工业格式本地离线导入**：IFC、STEP、IGES、JT、X_T、DWG、OpenUSD、URDF、glTF 等格式在浏览器与本地队列完成转换，不依赖云服务，不安装 CAD 软件；RVT 走自研 Revit 转换链。
-- **一个工程装下工业全栈**：32 类数据连接、2D 看板、3D 场景、设备拓扑、语义本体、视觉 AI 事件，与产线仿真、虚拟调试、机器人工作站、PPR 工艺共用一套合同。
-- **一次制作，多端交付**：同一份发布合同输出 Web、只读 Viewer、Windows、WASM 和 Android 包，发布前自动体检能力、资源与兼容性。
+- **AI 与本体，理解工程并执行任务**：本体描述工程对象、关系与可执行动作；AI 结合场景、构件、数据和运行状态回答问题，按授权修改对象、查询数据、运行分析。修改可预览，执行可取消、追溯。
+- **模型、数据与仿真在同一个工程里**：组合 2D 看板、3D 场景、设备拓扑、实时数据和告警，并接入产线仿真、机器人工作站与虚拟调试。
+- **工业模型接入与轻量化**：导入 IFC、STEP、IGES、DWG、glTF、URDF 等模型，支持构件查询、属性定位、减面和贴图压缩；格式范围见[支持说明](docs/converter-plugin-and-format-support.md)。
+- **自研引擎，可独立集成和扩展**：WebGPU、Rust 原生与 WASM 共享场景包；通过引擎 SDK、Scene/Server SDK、脚本 API、插件和 MCP 接入自己的应用。
+- **一次制作，多端交付**：发布为 Web、只读 Viewer、Windows、WASM 或 Android，自动检查目标端能力、资源依赖与兼容性。
 
 ## 性能实测
 
-### 同场景引擎基准(四引擎同轮,2026-10-07)
+同一布局、几何和机位,六个引擎按各自采样窗口跑多轮取中位(2026-10-07,RTX 4060 Laptop)。时间单位为 ms。*Unity 与 Deep Native 是 Windows 原生运行时(Unity 为 Mono,Deep Native 为 Rust/wgpu),与浏览器四列不可直接对比,仅供参考;"—"为未采集或未校准项。
 
-裸引擎 fixture:同确定性布局、同 6 形 6 色 PBR、同机位 48° FOV;每用例三角面守卫(容差 1%,本轮全部 73,842 / 614,294 零差异);3 次冷启动运行取中位;帧时间分位口径遵循 PresentMon/CapFramex 体系。RTX 4060 Laptop,Chrome + WebGPU,单位 ms。
+| 指标 | three.js WebGL | three.js WebGPU | Babylon.js WebGPU | Deep WebGPU | Unity 2022.3 原生* | Deep Native 原生* |
+| --- | --- | --- | --- | --- | --- | --- |
+| 静置 P50(120 / 1000 物体) | 6.9 / 6.9 | 6.9 / 6.9 | 6.9 / 10.2 | 6.9 / 6.9 | 6.94 / 6.94 | 6.94 / 6.94 |
+| 静置 P95(120 / 1000 物体) | 7.1 / 7.1 | 7.1 / 7.1 | 7.4 / 15.0 | 7.1 / 7.1 | 7.27 / 7.12 | 7.55 / 7.40 |
+| 动态 P95(1000 物体) | 7.1 | 7.1 | 13.7 | 14.0 | 7.26 | 12.82 |
+| 静置最大帧(120 物体) | 27.7 | 159.6 | 240.2 | **7.2** | 8.29 | 9.90 |
+| 首帧(1000 物体) | **72.7** | 283.2 | 876.0 | 1,623.3 | 2,575.7 | 1,459.8 |
+| GPU 帧时 P50(1000 物体) | 0.9 | **0.7** | 1.3 | 2.9 | — | 0.51 |
+| 20 轮重建(1000 物体) | **3.2** | 3.6 | 410.2 | **3.2** | 45.3 | 8.27 |
+| Draw Calls(1000 物体) | 1,055 | 1,056 | 2,001 | **7** | — | 9 |
+| 重建堆增最差(1000 物体,MiB) | **0.1** | 90.9 | 21.6 | **0.6** | 121.2 | 0.34 |
 
-| 指标 | three.js WebGL | three.js WebGPU | Babylon.js WebGPU | Deep WebGPU |
-| --- | --- | --- | --- | --- |
-| 静置 P95(120 / 1000 物体) | 7.1 / 7.1 | 7.1 / 7.1 | 7.3 / 17.2 | 7.1 / 7.1 |
-| 动态 P95(1000 物体) | 7.1 | 7.1 | 18.2 | 14.0 |
-| 静置最大帧中位(120 物体) | 34.7 | 194.5 | 283.3 | **7.2** |
-| 首帧(1000 物体) | **77.9** | 284.6 | 868.2 | 5,638.8(冷启动管线编译,攻坚中) |
-| GPU 帧时 P50(1000 物体) | 1.0 | **0.6** | 0.7 | 2.8 |
-| 20 轮重建(1000 物体) | **3.3** | 4.5 | 467.9 | 6.6 |
-| Draw Calls(1000 物体) | 1,055 | 1,056 | 2,001 | **7**(GPU 剔除+间接绘制+合批) |
-| 重建堆增最差(1000 物体,MiB) | **0.1** | 90.9 | 21.6 | **0.6** |
-
-复现:`BIM_STUDIO_RENDER_BENCHMARK_ENGINES=three-webgl,three-webgpu,babylon-webgpu,deep-webgpu pnpm --filter @bim-studio/web benchmark:render-engines`;完整 23 列证据与守卫判定见 `test-output/render-engine-comparison/report.md`。指标全集、原生参考表协议与逐轮拦截记录见[基准程序](docs/specs/render-benchmark-program-20261007.md)。
-
-### 原生参考表(Unity 2022.3,Windows x64)
-
-> 原生运行时(Mono 后端,IL2CPP 模块未装如实采用 Mono;Win64 窗口+垂直同步),**与上表浏览器口径不可直接对比,仅供参考**。同一 fixture 布局合约,帧尾采样 600 帧,RTX 4060 Laptop 同机;指标口径与浏览器表一致。
-
-| 指标 | Unity 2022.3(Mono) |
-| --- | --- |
-| 静置 P50 / P95(120 / 1000 物体) | 6.94 / 7.12 ms |
-| 动态 P95(1000 物体) | 7.26 ms |
-| 静置最大帧(120 物体) | 8.29 ms |
-| 1% Low FPS(1000 物体静置) | 137.9 |
-| 卡顿帧(>16.7ms / >20ms) | 0 / 0 |
-
-Deep Native 列在基准程序 P3.1(原生帧时输出小改,约 1-1.5 天)完成后并入本表;完整采样数据见 `test-output/unity-native-bench/summary.json`。
-
-### 产品场景公平对拍(Deep vs three WebGL)
-
-同场景、同相机位姿、静置 120 帧(RTX 4060,2026-10-05):
-
-| 指标 | Deep WebGPU | three.js WebGL |
-| --- | --- | --- |
-| 帧时间 P99(静置) | **7.1 ms** | 27.7 ms |
-| 帧时间 max(静置) | **13.8 ms** | 104.1 ms |
-| 自确定性 SSIM | 1.0 | 1.0 |
-| 黑帧 | 0 | 0 |
-
-输入延迟与首帧仍在优化,达标前不上表。1% Low FPS、卡顿率、INP/LCP 对齐与原生参考表(Deep Native vs Unity)按[基准程序](docs/specs/render-benchmark-program-20261007.md)分阶段补充;引擎定性能力对照见[引擎能力对照](docs/engine-comparison.md)。
+复现方法、采样口径与完整证据见[基准程序](docs/specs/render-benchmark-program-20261007.md)；功能对照见[引擎能力对照](docs/engine-comparison.md)。
 
 ## 完整功能列表
 
@@ -517,8 +489,4 @@ Deep Engine 包含 TypeScript WebGPU 内核、Rust `wgpu` 原生执行器与 WAS
 ## 联系我
 
 邮箱 15184552744@163.com 或提交issues，有时会看一下。
-
-
-
-
 

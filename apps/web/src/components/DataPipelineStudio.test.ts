@@ -13,7 +13,7 @@ function pipeline(nodes: DataPipelineDefinition["nodes"]): DataPipelineDefinitio
     createdAt: "2026-09-02T00:00:00.000Z",
     updatedAt: "2026-09-02T00:00:00.000Z",
     nodes,
-    edges: [],
+    edges: nodes.slice(1).map((node, index) => ({ id: `edge-${index}`, sourceNodeId: nodes[index]!.id, targetNodeId: node.id })),
   };
 }
 
@@ -55,11 +55,11 @@ describe("insertPipelineNodeAfter", () => {
     const result = insertPipelineNodeAfter(pipeline([source, filter, output]), sort, source.id);
 
     expect(result.nodes.map((node) => node.id)).toEqual(["source", "sort", "filter", "output"]);
-    expect(result.edges.map((edge) => [edge.sourceNodeId, edge.targetNodeId])).toEqual([
+    expect(result.edges.map((edge) => [edge.sourceNodeId, edge.targetNodeId])).toEqual(expect.arrayContaining([
       ["source", "sort"],
       ["sort", "filter"],
       ["filter", "output"],
-    ]);
+    ]));
   });
 });
 

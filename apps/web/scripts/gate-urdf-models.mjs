@@ -63,7 +63,7 @@ async function runCase(theme, width, packaged) {
     assert.equal(source.manifest.robot.joints.length, 6); assert.equal(source.manifest.robot.links.length, 7);
     assert.ok(source.manifest.robot.links.find(link => link.name === "base").inertial); entry.sourceModelId = source.id;
     await page.getByRole("button", { name: "适应全部", exact: true }).click(); await page.waitForTimeout(1200);
-    const canvas = page.locator(".viewport canvas"), neutral = await canvas.screenshot();
+    const canvas = page.locator('.viewport canvas:not([aria-hidden="true"])'), neutral = await canvas.screenshot();
     const shoulder = page.getByRole("spinbutton", { name: "shoulder_pitch (°)", exact: true });
     await shoulder.fill("30"); await shoulder.press("Enter");
     await page.getByRole("spinbutton", { name: "gripper_open (m)", exact: true }).fill("0.04");
@@ -93,7 +93,7 @@ async function runCase(theme, width, packaged) {
     const saved = await saveScene(page, appPath); assert.equal(saved.models.length, 3);
     assert.deepEqual(poseOf(saved, source.id), poseOf(original, source.id)); assert.deepEqual(poseOf(saved, copy.modelId), poseOf(independent, copy.modelId));
     await shot("package-loaded");
-    await page.reload(); await page.locator(".viewport canvas").waitFor();
+    await page.reload(); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
     row = await ensureRows(page, copy.modelId); await row.getByRole("button", { name: "隐藏", exact: true }).waitFor(); await row.locator(".asset-main").click();
     await page.locator(".robot-joint-preview").waitFor(); assert.equal(Number(await page.getByRole("spinbutton", { name: "shoulder_pitch (°)", exact: true }).inputValue()), 60);
     const reloaded = await saveScene(page, appPath); assert.deepEqual(reloaded.models, saved.models); assert.deepEqual(reloaded.camera, saved.camera); await shot("saved-reloaded");

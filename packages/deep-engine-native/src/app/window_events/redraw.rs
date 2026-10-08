@@ -2,6 +2,8 @@ use super::*;
 
 pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
     #[cfg(target_arch = "wasm32")]
+    if app.presentation_paused_at.is_some() { return; }
+    #[cfg(target_arch = "wasm32")]
     if app.physics_stage_pending {
         return;
     }
@@ -178,6 +180,18 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         }
         replay.use_alternate = !replay.use_alternate;
     }
+    if let Some(benchmark) = app.benchmark.as_mut()
+        && let Some(renderer) = app.renderer.as_mut()
+        && let Err(error) = benchmark.before_render(
+            renderer,
+            app.content.active_mut(),
+            app.telemetry_warmup_frames_remaining == 0,
+        )
+    {
+        app.state.failed(error);
+        event_loop.exit();
+        return;
+    }
     let outcome = app.renderer.as_mut().map(|renderer| {
         #[cfg(all(test, windows))]
         let present_started = super::super::device_loss_probe_tests::begin_present_measurement();
@@ -193,6 +207,12 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         }
         outcome
     });
+    if let Some(benchmark) = app.benchmark.as_mut() {
+        benchmark.after_render(
+            matches!(outcome, Some(RenderOutcome::Presented)),
+            app.telemetry_warmup_frames_remaining == 0,
+        );
+    }
     if let Some(RenderOutcome::Failed(error)) = outcome.as_ref() {
         app.state.failure = Some(error.clone());
         eprintln!("native frame failed: {error}");
@@ -381,9 +401,12 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
             return;
         }
         if app.telemetry_sample_frames_remaining == 1
-            && let Some(report) = app.renderer.as_ref().and_then(Renderer::telemetry_report)
+            && let Some(mut report) = app.renderer.as_ref().and_then(Renderer::telemetry_report)
         {
             app.telemetry_sample_frames_remaining = 0;
+            if let Some(benchmark) = &app.benchmark {
+                report["metrics"]["benchmark"] = benchmark.report();
+            }
             println!("native telemetry report: {report}");
         }
         let size = app.window.as_ref().expect("window exists").inner_size();

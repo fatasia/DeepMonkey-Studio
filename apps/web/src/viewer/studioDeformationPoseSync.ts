@@ -88,6 +88,27 @@ export class StudioDeformationPoseSync {
     return new StudioDeformationPoseSync(bindings, { bound: bindings.length, unmatched }, deformation.poses.slice());
   }
 
+  /** A fresh author asset starts at revision zero; a replacement still shares the live GPU pose IDs. */
+  prepareReplacement(packet: RenderPacket, host: PoseSyncHost): RenderPacket {
+    if (!packet.deformation) return packet;
+    const live = new Map(this.allPoses.map(pose => [pose.id, pose]));
+    const poses = packet.deformation.poses.map(pose => {
+      const previous = live.get(pose.id);
+      if (!previous || previous.source !== pose.source) return pose;
+      return { ...pose, revision: Math.max(pose.revision, previous.revision + 1),
+        ...(pose.palette ? { palette: { ...pose.palette,
+          revision: Math.max(pose.palette.revision, (previous.palette?.revision ?? -1) + 1) } } : {}),
+        ...(pose.morphWeights ? { morphWeights: { ...pose.morphWeights,
+          revision: Math.max(pose.morphWeights.revision, (previous.morphWeights?.revision ?? -1) + 1) } } : {}) };
+    });
+    let candidate: RenderPacket = { ...packet, deformation: { ...packet.deformation, poses } };
+    const reader = StudioDeformationPoseSync.create(candidate, host);
+    reader?.apply({ updateDeformationPoses: current => {
+      candidate = { ...candidate, deformation: { ...candidate.deformation!, poses: current.slice() } };
+    } });
+    return candidate;
+  }
+
   /** 读取 Three 当前姿态并推送给 Deep;姿态未变化时不上传,返回是否发生变化。 */
   apply(target: PoseSyncTarget): boolean {
     if (!this.bindings.length) return false;
@@ -95,7 +116,8 @@ export class StudioDeformationPoseSync {
     for (const root of this.roots) root.updateWorldMatrix(true, true);
     let changed = false;
     for (const binding of this.bindings) {
-      const previous = binding.current, revision = previous.revision + 1;
+      const previous = binding.current;
+      const revision = Math.max(previous.revision, previous.palette?.revision ?? 0, previous.morphWeights?.revision ?? 0) + 1;
       const palette = binding.skinned ? captureAuthorSkinPalette(binding.mesh, revision, previous.palette) : undefined;
       const morph = binding.morphTargets ? readInfluences(binding.mesh as THREE.Mesh, previous.morphWeights?.values) : undefined;
       const paletteSame = !palette || palette === previous.palette || sameArray(palette.matrices, previous.palette?.matrices)

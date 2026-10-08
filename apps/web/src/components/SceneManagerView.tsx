@@ -1,4 +1,5 @@
 import { CloudRenderQualityEntry } from "./CloudRenderQualityDialog";
+import { routePath } from "../appRoute";
 import {
   Activity,
   BookOpen,
@@ -459,7 +460,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
                             <summary role="button" aria-label={tr(locale, "更多场景操作", "More scene actions")} title={tr(locale, "更多", "More")}><MoreHorizontal size={15} /></summary>
                             <div className="scene-card-more-menu">
                               {scene.publishedAt && <button onClick={() => void onBrowsePublished(scene)}><Eye size={13} />{tr(locale, "查看发布版", "View published")}</button>}
-                              {scene.publishedAt && <button onClick={(event) => { const menu = event.currentTarget.closest("details"); if (menu) { menu.open = false; menu.querySelector("summary")?.focus(); } void copyLink(new URL(`/published/${encodeURIComponent(scene.id)}`, window.location.origin).href); }}><Copy size={13} />{tr(locale, "复制发布链接", "Copy published link")}</button>}
+                              {scene.publishedAt && <button onClick={(event) => { const menu = event.currentTarget.closest("details"); if (menu) { menu.open = false; menu.querySelector("summary")?.focus(); } void copyLink(new URL(routePath({ view: "published", sceneId: scene.id }), window.location.origin).href); }}><Copy size={13} />{tr(locale, "复制发布链接", "Copy published link")}</button>}
                               {scene.publishedAt && <button onClick={() => void onUnpublish(scene)}><Square size={12} />{tr(locale, "撤回发布", "Unpublish")}</button>}
                               {cloudSceneLinks[scene.id] && <button onClick={() => void copyLink(cloudSceneLinks[scene.id]!)}><CloudCog size={13} />{tr(locale, "复制云渲染链接", "Copy cloud link")}</button>}
                               {isAdmin && scene.publishedAt && <CloudRenderQualityEntry sceneId={scene.id} locale={locale} />}

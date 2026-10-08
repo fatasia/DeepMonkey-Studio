@@ -1,5 +1,5 @@
 import { assertMorphWeightRange, packMorphWeights, prepareMorphInput } from "../webgpu/gpuMorphPacking.js";
-import { packJointPalette } from "../webgpu/gpuSkinningPacking.js";
+import { validateJointPalette } from "../webgpu/gpuSkinningPacking.js";
 import type { DeformationPose, DeformationSnapshot } from "./types.js";
 import { validateDeformationObject, validateDeformationSnapshot } from "./validation.js";
 
@@ -13,8 +13,8 @@ interface PoseProfile {
 export class DeformationPoseValidator {
   private readonly profiles = new Map<string, PoseProfile>();
 
-  constructor(snapshot: DeformationSnapshot) {
-    validateDeformationSnapshot(snapshot);
+  constructor(snapshot: DeformationSnapshot, ownedValidated = false) {
+    if (!ownedValidated) validateDeformationSnapshot(snapshot);
     const sources = new Map(snapshot.sources.map(source => [source.id, source]));
     const morphProfiles = new Map<string, NonNullable<PoseProfile["morph"]>>();
     for (const source of snapshot.sources) if (source.morph) {
@@ -50,8 +50,7 @@ export class DeformationPoseValidator {
       }
       if (pose.palette) {
         validateDeformationObject(pose.palette, ["revision", "matrices", "normalMatrices"]);
-        const packed = packJointPalette(pose.palette);
-        if (packed.length !== profile.jointCount! * 28) throw new Error("Pose joint count changed without preparation.");
+        if (validateJointPalette(pose.palette) !== profile.jointCount) throw new Error("Pose joint count changed without preparation.");
       }
     }
   }

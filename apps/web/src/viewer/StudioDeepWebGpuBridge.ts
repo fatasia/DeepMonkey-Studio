@@ -6,16 +6,22 @@ import type {
 import type { AuthoredQualityProfile, HdrDisplayRequest } from "@bim-studio/deep-engine/webgpu";
 import { publishStudioQualityTelemetry, type StudioDeepQualityTelemetrySampler } from "./StudioDeepQualityTelemetry";
 import { StudioDeepRenderView } from "./StudioDeepRenderView";
+import { StudioDeepEnvironmentCache } from "./StudioDeepEnvironmentCache";
+import { StudioDeepAuthorPacketSync } from "./StudioDeepAuthorPacketSync";
+import { StudioDeepInactiveCandidate, STUDIO_DEEP_INACTIVE_MAX_BYTES } from "./StudioDeepInactiveCandidate";
+import { prepareStudioRendererCandidate } from "./prepareStudioRendererCandidate";
+import { isStudioDeepEnvironmentSourceCurrent } from "./studioDeepEnvironmentSource";
 import type { ViewerEngine } from "./ViewerEngine";
 import type { RendererBackend } from "./viewerTypes";
 import { recoveredAttemptCount } from "./studioRecoveryCandidate";
 import { TemporalFrameSettler } from "./temporalFrameSettler";
+import { StudioDeepFrameQueue } from "./StudioDeepFrameQueue";
 import type { PreparedStudioDeepEnvironment } from "./studioDeepEnvironmentSource";
 import type { StudioDeepEnvironmentSession } from "./StudioDeepEnvironmentSession";
 import type { StudioDeepShadowSession } from "./StudioDeepShadowSession";
 import type { StudioDeepPerformance } from "./StudioDeepPerformance";
-import type { StudioDeformationPoseSync } from "./studioDeformationPoseSync";
-import type { StudioDeepOutlineSync } from "./studioDeepOutlineSync";
+import { StudioDeformationPoseSync } from "./studioDeformationPoseSync";
+import { StudioDeepOutlineSync } from "./studioDeepOutlineSync";
 import { sameHostCameraPose, type DeepCameraController } from "./deepCameraController";
 import type { DeepCameraInputSession } from "./deepCameraInputSession";
 import { DeepGizmoInteraction } from "./deepGizmoInteraction";
@@ -38,6 +44,12 @@ export { t11PipelineBootstrap, t07DynamicResolutionPolicy, b4HlodClusterEnabled,
   t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled, sdfGiEnabled, ssgiEnabled,
   projectedTexturesEnabled, megaLightsEnabled, rayTracedShadowsEnabled, rayTracedReflectionsEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
 export type { StudioDeepWebGpuBridgeOptions, StudioRendererSwitchResult } from "./studioDeepWebGpuBridgeOptions";
+
+interface InactiveDeepCandidate {
+  backend: DeepWebGpuBackend; canvas: HTMLCanvasElement; environment: PreparedStudioDeepEnvironment;
+  packet: RenderPacket; shadowMapSize: number; qualityProfile: AuthoredQualityProfile | null;
+  deformationSync?: StudioDeformationPoseSync;
+}
 
 /**
  * Studio 保留唯一的 WebGL 作者 Viewer，Deep 只持有可重建的投影快照和独立画布。
@@ -66,6 +78,11 @@ export class StudioDeepWebGpuBridge {
   private qualityProfile: AuthoredQualityProfile | null = null;
   private frameCaptureSession: FrameCaptureSession | undefined;
   private readonly viewReader: StudioDeepRenderView;
+  private readonly environmentCache = new StudioDeepEnvironmentCache();
+  private readonly authorPacketSync = new StudioDeepAuthorPacketSync();
+  private readonly inactive = new StudioDeepInactiveCandidate<InactiveDeepCandidate>(null);
+  private warmup: Promise<StudioRendererSwitchResult> | undefined;
+  private backgroundPreparation = false;
   private projectionBridge: import("@bim-studio/deep-engine/three-bridge").ThreeProjectionBridge | undefined;
   private readonly temporalSettler = new TemporalFrameSettler({ initialDelayFrames: 1,
     onSettled: () => this.performanceSource?.pause(), onError: reason => this.failRuntime(reason) });
@@ -75,10 +92,7 @@ export class StudioDeepWebGpuBridge {
   private cameraFramesSubmitted = 0;
   private cameraFramesCoalesced = 0;
   private cameraMaxInFlight = 0;
-  /** TAA settle frames share the same WebGPU queue as camera frames. Keep at
-   * most one settle submission pending so RAF cannot build an unbounded queue. */
-  private settleFrameInFlight = false;
-  private settleFrameBackend: DeepWebGpuBackend | undefined;
+  private readonly frameQueue: StudioDeepFrameQueue<DeepWebGpuBackend>;
   /** F5-L4 探针捕获心跳泵:探针仍有捕获欠账时的一条自终止 RAF 心跳。渲染帧曾是
    * 唯一捕获驱动,静置场景因此饿死捕获,GI 采样回退全量 IBL(门态无关洗光)。 */
   private probePumpArmed = false;
@@ -135,6 +149,13 @@ export class StudioDeepWebGpuBridge {
       collectDeepOverlayPrimitives(this.viewer, width, height, pixelRatio));
     this.loadModule = options.loadModule ?? (() => import("@bim-studio/deep-engine/three-bridge"));
     this.cameraFrameInFlightLimit = options.cameraFrameInFlightLimit ?? 2;
+    this.frameQueue = new StudioDeepFrameQueue(this.cameraFrameInFlightLimit,
+      backend => !this.closed && this.deepBackend === backend, reason => this.failRuntime(reason), () => {
+        const stats = this.frameQueue.stats;
+        this.cameraFramesInFlight = stats.inFlight; this.cameraMaxInFlight = stats.maxInFlight;
+        this.cameraFramesSubmitted = stats.submitted; this.cameraFramesCoalesced = stats.coalesced;
+        if (!stats.pendingLatest) this.pendingCameraView = undefined;
+      });
     this.hdrDisplayRequest = options.hdrDisplay === undefined ? undefined : Object.freeze({ ...options.hdrDisplay });
     this.authorCanvas = viewer.renderer.domElement;
     this.authorStyle = captureAuthorStyle(this.authorCanvas);
@@ -143,6 +164,10 @@ export class StudioDeepWebGpuBridge {
   }
 
   get activeBackend(): RendererBackend { return this.activeBackendValue; }
+  get retainedGpuBytes(): number {
+    const session = this.deepBackend?.runtime.session as (RuntimeSession & { resourceMemory?: { estimatedBytes: number } }) | undefined;
+    return session?.resourceMemory?.estimatedBytes ?? this.inactive.retainedBytes;
+  }
 
   get diagnostics() {
     if (!this.deepBackend) return undefined;
@@ -159,7 +184,36 @@ export class StudioDeepWebGpuBridge {
     this.pending = undefined;
   }
 
-  async switchTo(target: RendererBackend): Promise<StudioRendererSwitchResult> {
+  switchTo(target: RendererBackend,
+    beforePublish?: (signal: AbortSignal) => Promise<void>): Promise<StudioRendererSwitchResult> {
+    if (target === "webgpu" && this.warmup) {
+      const generation = this.generation;
+      return this.warmup.then(() => generation === this.generation && !this.closed
+        ? this.runSwitch(target, beforePublish) : this.result("cancelled"));
+    }
+    return this.runSwitch(target, beforePublish);
+  }
+
+  /** Keep a validated GPU candidate for the current scene; never publish it in the background. */
+  prewarm(signal: AbortSignal): Promise<StudioRendererSwitchResult> {
+    if (this.warmup) return this.warmup;
+    if (this.pending) return Promise.resolve(this.result("cancelled"));
+    if (this.activeBackendValue === "webgpu" || this.inactive.available) return Promise.resolve(this.result("unchanged"));
+    signal.throwIfAborted();
+    const abort = () => this.cancelPendingSwitch();
+    signal.addEventListener("abort", abort, { once: true });
+    this.backgroundPreparation = true;
+    const task = this.runSwitch("webgpu", undefined, true).finally(() => {
+      signal.removeEventListener("abort", abort);
+      this.backgroundPreparation = false;
+      if (this.warmup === task) this.warmup = undefined;
+    });
+    this.warmup = task;
+    return task;
+  }
+
+  private async runSwitch(target: RendererBackend,
+    beforePublish?: (signal: AbortSignal) => Promise<void>, prepareOnly = false): Promise<StudioRendererSwitchResult> {
     const replacementBudget = this.replacementBudget;
     this.replacementBudget = undefined;
     this.recoveryCandidateFailure = undefined;
@@ -173,7 +227,9 @@ export class StudioDeepWebGpuBridge {
       try {
         await nextFrame(controller.signal);
         if (this.closed || generation !== this.generation) return this.result("cancelled");
-        this.publishWebGl();
+        const park = await this.prepareInactiveParking();
+        controller.signal.throwIfAborted();
+        this.publishWebGl(park);
         return this.result("switched");
       } catch (reason) {
         if (controller.signal.aborted) return this.result("cancelled");
@@ -187,22 +243,78 @@ export class StudioDeepWebGpuBridge {
     const controller = new AbortController();
     this.pending = controller;
     markSwitchPhase("deep-webgpu:switch-start");
-    const canvas = createDeepCanvas(this.container);
+    const authorKey = this.options.authorPacketKey?.();
+    const warm = this.inactive.take();
+    const canvas = warm?.canvas ?? createDeepCanvas(this.container);
+    canvas.dataset.rendererPreparing = "true";
     // 单次事务内 create 写入、尾部与 finally 读回的可变局部量(原 switchTo 闭包 let)。
     const frame: StudioDeepSwitchCandidateFrame = { environment: undefined, shadowMapSize: 1024,
       frameCaptureSession: undefined, candidateObserver: undefined };
     // create/prepare 候选事务本体在 studioDeepWebGpuBridgeSwitchCandidate(本桥实例
     // 以类型层映射传入,字段读写语义与桥内一致)。
     try {
-      const prepared = await prepareStudioDeepSwitchCandidate(this as unknown as StudioDeepBridgeSwitchHost, canvas,
+      const prepared = warm ? await prepareStudioRendererCandidate({ signal: controller.signal,
+        timeoutMs: this.options.preparationTimeoutMs ?? 30_000, loadModule: async () => undefined,
+        create: async () => warm.backend,
+        prepare: async (backend, signal) => {
+          markSwitchPhase("deep-webgpu:inactive-reused");
+          this.qualityProfile = warm.qualityProfile; this.independentPacketPath = true;
+          this.viewer.setAuthorPacketIndependent(true);
+          this.viewReader.setIndependentPacketBounds(warm.packet);
+          const packet = await this.options.authorRenderPacket!(signal);
+          if (packet !== warm.packet) throw new Error("作者包在热切换期间改变。");
+          await backend.prepareView(this.viewReader.renderViewDirect(canvas), signal, true);
+          frame.environment = warm.environment; frame.shadowMapSize = warm.shadowMapSize;
+          this.pendingDeformationPacket = warm.packet.deformation ? warm.packet : undefined;
+        }, dispose: backend => backend.dispose(), removeCanvas: () => canvas.remove(),
+      }) : await prepareStudioDeepSwitchCandidate(this as unknown as StudioDeepBridgeSwitchHost, canvas,
         controller.signal, generation, replacementBudget, this.options.preparationTimeoutMs ?? 30_000, frame);
-      if (prepared.status !== "ready") return this.result(prepared.status, prepared.error?.message);
+      if (prepared.status !== "ready") {
+        if (warm) this.viewer.setAuthorPacketIndependent(false);
+        return this.result(prepared.status, prepared.error?.message);
+      }
       const backend = prepared.value;
+      if (authorKey !== undefined && this.options.authorPacketKey?.() !== authorKey) {
+        try { backend.dispose(); } finally { canvas.remove(); }
+        return this.result("failed", "场景在 WebGPU 准备期间改变，请重试。");
+      }
+      try {
+        controller.signal.throwIfAborted();
+        await beforePublish?.(controller.signal);
+      } catch (reason) {
+        try { backend.dispose(); } finally { canvas.remove(); }
+        if (controller.signal.aborted) return this.result("cancelled");
+        return this.result("failed", reason instanceof Error ? reason.message : String(reason));
+      }
       if (this.closed || controller.signal.aborted || generation !== this.generation) {
         try { backend.dispose(); } finally { canvas.remove(); }
         return this.result("cancelled");
       }
+      if (prepareOnly) {
+        const packet = this.authorPacketSync.current(backend);
+        const runtime = backend.runtime as { releaseIdleResources?(): number;
+          gpuTimer?: { releaseIdleResources?(): Promise<void> }; session?: RuntimeSession & {
+          resourceMemory?: { estimatedBytes: number; unknownResources: number } } };
+        await runtime.gpuTimer?.releaseIdleResources?.();
+        if (this.closed || controller.signal.aborted || generation !== this.generation) {
+          try { backend.dispose(); } finally { canvas.remove(); }
+          return this.result("cancelled");
+        }
+        runtime.releaseIdleResources?.();
+        const memory = runtime.session?.resourceMemory;
+        const bytes = memory?.unknownResources === 0 ? memory.estimatedBytes : Number.NaN;
+        if (!packet || !frame.environment || !this.retainInactive({ backend, canvas, packet,
+          environment: frame.environment, shadowMapSize: frame.shadowMapSize, qualityProfile: this.qualityProfile }, bytes)) {
+          try { backend.dispose(); } finally { canvas.remove(); }
+          return this.result("failed", `后台渲染器未保留：资源 ${bytes} 字节，未知资源 ${memory?.unknownResources}，设备 ${runtime.session?.state}，场景 ${!!packet}，环境 ${!!frame.environment && isStudioDeepEnvironmentSourceCurrent(this.viewer.scene, frame.environment)}。`);
+        }
+        markSwitchPhase("deep-webgpu:prewarmed");
+        return this.result("switched");
+      }
       this.publishDeep(canvas, backend, frame.environment!, frame.shadowMapSize, frame.frameCaptureSession);
+      if (warm?.deformationSync) this.deformationSync = warm.deformationSync;
+      const currentPacket = this.authorPacketSync.current(backend);
+      if (currentPacket) this.viewReader.setIndependentPacketBounds(currentPacket);
       markSwitchPhase("deep-webgpu:published");
       return this.result("switched");
     } finally {
@@ -214,6 +326,8 @@ export class StudioDeepWebGpuBridge {
   dispose(): void {
     if (this.closed) return;
     this.closed = true;
+    this.inactive.clear();
+    this.environmentCache.clear();
     this.generation++;
     this.pending?.abort();
     this.pending = undefined;
@@ -226,12 +340,75 @@ export class StudioDeepWebGpuBridge {
 
   private publishDeep(canvas: HTMLCanvasElement, backend: DeepWebGpuBackend, environment: PreparedStudioDeepEnvironment,
     shadowMapSize: number, frameCaptureSession: FrameCaptureSession | undefined): void {
+    this.frameQueue.reset();
     publishDeepPresentation(this as unknown as StudioDeepBridgePresentationHost, canvas, backend, environment, shadowMapSize, frameCaptureSession);
   }
 
-  private publishWebGl(): void { publishWebGlPresentation(this as unknown as StudioDeepBridgePresentationHost); }
+  private publishWebGl(park = false): void {
+    this.frameQueue.reset();
+    this.authorPacketSync.cancel();
+    const backend = this.deepBackend, canvas = this.deepCanvas, environment = this.environmentSession?.prepared();
+    const packet = backend && this.authorPacketSync.current(backend);
+    const session = backend?.runtime.session as (RuntimeSession & { resourceMemory?: { estimatedBytes: number; unknownResources: number } }) | undefined;
+    const bytes = session?.resourceMemory?.unknownResources === 0 ? session.resourceMemory.estimatedBytes : Number.NaN;
+    const canPark = park && backend?.usesIndependentPacket === true && canvas && packet && environment
+      && this.options.authorRenderPacket && !this.syncPending && bytes <= STUDIO_DEEP_INACTIVE_MAX_BYTES;
+    if (park) markSwitchPhase(`deep-webgpu:inactive-park-${canPark ? "eligible" : "rejected"}-bytes-${bytes}-unknown-${session?.resourceMemory?.unknownResources}-pending-${!!this.syncPending}`);
+    const shadowMapSize = this.shadowSession?.mapSize ?? 1024, qualityProfile = this.qualityProfile;
+    const deformationSync = this.deformationSync;
+    const settings = JSON.stringify(this.viewer.getPostProcessing());
+    publishWebGlPresentation(this as unknown as StudioDeepBridgePresentationHost, !!canPark);
+    if (!canPark || !backend || !canvas || !packet || !environment) return;
+    canvas.style.opacity = "0"; canvas.style.visibility = "hidden";
+    if (!this.retainInactive({ backend, canvas, packet, environment, shadowMapSize, qualityProfile,
+      ...(deformationSync ? { deformationSync } : {}) }, bytes)) {
+      try { backend.dispose(); } finally { canvas.remove(); }
+    }
+  }
 
-  private releaseDeep(): void { releaseDeepPresentation(this as unknown as StudioDeepBridgePresentationHost); }
+  private retainInactive(candidate: InactiveDeepCandidate, bytes: number): boolean {
+    const { backend, canvas, environment } = candidate;
+    const session = backend.runtime.session as RuntimeSession | undefined;
+    const settings = JSON.stringify(this.viewer.getPostProcessing());
+    let revision = this.viewer.getRenderDemandDiagnostics?.().invalidationRevision;
+    const authorKey = this.options.authorPacketKey?.();
+    let authorCurrent = true;
+    return this.inactive.retain(candidate, bytes,
+      () => {
+        const currentRevision = this.viewer.getRenderDemandDiagnostics?.().invalidationRevision;
+        if (currentRevision !== revision) {
+          authorCurrent = authorKey !== undefined && this.options.authorPacketKey?.() === authorKey;
+          revision = currentRevision;
+        }
+        return session?.state === "ready" && revision !== undefined && authorCurrent
+          && JSON.stringify(this.viewer.getPostProcessing()) === settings
+          && isStudioDeepEnvironmentSourceCurrent(this.viewer.scene, environment);
+      },
+      () => { try { backend.dispose(); } finally { canvas.remove(); } }, invalidate => {
+        const unsubscribe = this.viewer.subscribePresentationFrames(() => this.inactive.check());
+        const loss = backend.onFatalLoss?.(invalidate);
+        // Promise listeners cannot unsubscribe; release the candidate captured by invalidate on transfer.
+        let notifyLoss: (() => void) | undefined = invalidate;
+        void session?.device?.lost.then(() => notifyLoss?.());
+        return () => { notifyLoss = undefined; unsubscribe(); loss?.(); };
+      });
+  }
+
+  private async prepareInactiveParking(): Promise<boolean> {
+    if (!this.deepBackend?.usesIndependentPacket || !this.options.authorRenderPacket) return false;
+    const backend = this.deepBackend;
+    const runtime = backend.runtime as { gpuTimer?: { releaseIdleResources?(): Promise<void> }; releaseIdleResources?(): number } | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([this.authorPacketSync.whenIdle().then(async () => {
+        await runtime?.gpuTimer?.releaseIdleResources?.();
+        if (this.closed || this.deepBackend !== backend) return false;
+        runtime?.releaseIdleResources?.(); return true;
+      }), new Promise<false>(resolve => { timer = setTimeout(() => resolve(false), 80); })]);
+    } finally { clearTimeout(timer); }
+  }
+
+  private releaseDeep(): void { this.frameQueue.reset(); this.authorPacketSync.dispose(); releaseDeepPresentation(this as unknown as StudioDeepBridgePresentationHost); }
 
   private replaceRecoveredBackend(backend: DeepWebGpuBackend): void {
     if (this.closed || this.deepBackend !== backend) return;
@@ -266,6 +443,7 @@ export class StudioDeepWebGpuBridge {
   }
 
   private readonly renderPresentationFrame = (): void => {
+    this.applyGesturePose();
     // The presenter owns the scene traversal. Refresh only the tiny camera
     // node here so direct test/host callbacks and late controls events cannot
     // expose a stale matrixWorld, without forcing the whole author tree again.
@@ -280,25 +458,29 @@ export class StudioDeepWebGpuBridge {
     const canvas = this.deepCanvas;
     if (this.closed || this.activeBackendValue !== "webgpu" || !backend || !canvas) return;
     try {
-      this.temporalSettler.cancel();
       // presentViewerFrame already updates author matrices/LOD before notifying
       // the external renderer. Keep the explicit path for environment/shadow
       // callbacks and trailing syncs which can run outside an author frame.
       if (!authorMatricesCurrent) this.updateAuthorMatrices();
       // Three AnimationMixer 已在作者帧推进;把骨骼/形变姿态读成 Deep 姿态。姿态变化即视为新画面,
       // 清除静置指纹以绕过 TAA 收敛背压,保证动画每帧都被绘制。
-      if (this.deformationSync?.apply(backend)) this.settledViewKey = "";
-      if (this.outlineSync?.apply(backend, this.viewer, () => {
+      // Instance mutations cancel PacketBuffers' pending full candidate. Keep drawing
+      // the retained packet during author replacement; the rebound pose owner catches up.
+      if (this.syncPending !== backend && this.deformationSync?.apply(backend)) this.settledViewKey = "";
+      if (this.syncPending !== backend && this.outlineSync?.apply(backend, this.viewer, () => {
         // 流送包的实例位异步落地:完成后补绘一帧。
         if (this.deepBackend !== backend) return;
         this.settledViewKey = ""; this.renderDeepFrame();
       })) this.settledViewKey = "";
+      const demand = this.viewer.getRenderDemandDiagnostics?.();
+      this.viewReader.setSceneRevision(demand?.invalidationRevision);
       const camera = cameraSnapshot(this.viewer);
       if (probe) recordProbeSample(probe, "cam", camera[0]!, camera[1]!, camera[3]!, camera[4]!);
       const cameraChanged = !sameSnapshot(camera, this.lastCameraSnapshot);
       this.lastCameraSnapshot = camera;
       const shouldSync = !cameraChanged;
       if (!shouldSync) {
+        this.temporalSettler.cancel();
         if (probe) probe.cameraPath++;
         if (this.syncPending === backend) this.syncAgain = backend;
         // Camera input can arrive every author frame. Render only the latest view
@@ -315,8 +497,6 @@ export class StudioDeepWebGpuBridge {
       // 编辑/资源/相机复位必然经 renderDemand.invalidate 递增修订号;修订与呈现
       // 指纹都未变时跳过 sync 与首绘,静置负载归零。修订号不可用(测试宿主/旧
       // 集成)时保守视为"可能变化",维持每帧 sync 的既有行为。
-      const demand = this.viewer.getRenderDemandDiagnostics?.();
-      this.viewReader.setSceneRevision(demand?.invalidationRevision);
       { const p2 = flowProbe(); if (p2) (p2 as DeepFlowProbe & { demand?: unknown }).demand = demand; }
       const demandRevision = demand?.invalidationRevision;
       const sceneMutated = demandRevision === undefined
@@ -333,6 +513,7 @@ export class StudioDeepWebGpuBridge {
         && !this.syncPending && viewKey === this.settledViewKey) {
         return;
       }
+      this.temporalSettler.cancel();
       // An immutable RenderPacket backend has no author hierarchy to sync. The
       // generic sync call is intentionally retained for the legacy Three path,
       // but awaiting its already-committed no-op here adds a promise turn to
@@ -340,6 +521,29 @@ export class StudioDeepWebGpuBridge {
       // packet directly while preserving the same bounded TAA settle sequence.
       if (backend.usesIndependentPacket === true
         || (backend.usesIndependentPacket === undefined && this.options.authorRenderPacket !== undefined)) {
+        if (sceneMutated && demandRevision !== undefined && this.options.authorRenderPacket
+          && typeof backend.prepareRenderPacket === "function") {
+          if (this.syncPending) { this.syncAgain = backend; }
+          else {
+            this.syncPending = backend;
+            void this.authorPacketSync.refresh(backend, this.options.authorRenderPacket,
+              () => this.viewReader.renderViewDirect(canvas),
+              packet => this.deformationSync?.prepareReplacement(packet, this.viewer) ?? packet).then(packet => {
+              if (this.deepBackend !== backend) return;
+              if (packet) {
+                this.viewReader.setIndependentPacketBounds(packet);
+                this.deformationSync = StudioDeformationPoseSync.create(packet, this.viewer);
+                this.outlineSync = new StudioDeepOutlineSync(); this.settledViewKey = "";
+              }
+              this.renderCommittedFrame(backend, canvas, this.viewReader.renderViewDirect(canvas));
+            }).catch(reason => { if (this.deepBackend === backend) this.failRuntime(reason); })
+              .finally(() => {
+                if (this.syncPending !== backend) return;
+                this.syncPending = undefined;
+                if (this.syncAgain === backend) { this.syncAgain = undefined; this.lastDemandRevision = -1; this.renderDeepFrame(); }
+              });
+          }
+        }
         this.renderCommittedFrame(backend, canvas, view);
         return;
       }
@@ -385,116 +589,51 @@ export class StudioDeepWebGpuBridge {
     // 尾随 sync 以全量 source 追平;实测场景遍历是输入拖尾的主嫌疑之一。
     view = this.viewReader.renderViewDirect(canvas, true)): void {
     const probe = flowProbe();
-    if (this.cameraFramesInFlight >= this.cameraFrameInFlightLimit) {
-      // Replace, never append: stale camera poses have no semantic value after
-      // newer input. Scene/material edits are preserved by the trailing sync.
-      // 消费时机由 renderDeepFrame 驱动(下一作者帧相机路径覆盖/主路径呈现后
-      // 清空),GPU 完成回调不做即时重放——见 completeCameraFrame 的合并注释。
-      this.pendingCameraView = view;
-      this.cameraFramesCoalesced++;
-      if (probe) probe.coalesced++;
-      // 合并不再静默丢帧:本 rAF 必须至少完成一次 submit,否则该帧在 GPU 侧
-      // 零呈现,输入尾延迟撞上整帧间隔(submitGap p95 45ms 的来源)。提交即
-      // 释放名额的语义下,在飞计数只反映同一事件循环内的重入;真实节流由
-      // swapchain present 上限承担,pending 交给下一帧覆盖。
-      if (this.cameraFramesInFlight > 0) this.cameraFramesInFlight--;
-      this.renderCommittedFrame(backend, canvas, view, false);
-      return;
-    }
-    this.cameraFramesInFlight++;
-    this.cameraMaxInFlight = Math.max(this.cameraMaxInFlight, this.cameraFramesInFlight);
-    this.cameraFramesSubmitted++;
-    try {
-      this.renderCommittedFrame(backend, canvas, view, false);
-    } catch (error) {
-      this.cameraFramesInFlight--;
-      throw error;
-    }
-    // 提交即释放名额。相机帧的在飞计数只保护同一帧内的重复进入,不再等待
-    // queue.onSubmittedWorkDone:该回调在 Chrome/Dawn 按 vsync 粒度滞后 2-3 帧
-    // 才 resolve,把它当提交背压会把相机帧限流到每 2 帧一次(submitGap p50
-    // 33ms,pointer→submit P95 40ms+)。真实帧率背压由浏览器 swapchain 的
-    // present 上限与作者帧 rAF 节奏提供;GPU 帧编码仅 0.1ms 级,队列不会积压。
-    // pending 的合并语义不变:被合并的旧 view 不回放,由下一次 renderDeepFrame
-    // 以更新后的 view 覆盖,80ms 尾随 sync 兜底。
-    this.completeCameraFrame(backend);
-  }
-
-  /** 释放一个在飞名额(同帧内重复进入仍受 cameraFrameInFlightLimit 约束)。 */
-  private completeCameraFrame(backend: DeepWebGpuBackend): void {
-    if (this.deepBackend !== backend) return;
-    this.cameraFramesInFlight = Math.max(0, this.cameraFramesInFlight - 1);
+    if (!this.renderCommittedFrame(backend, canvas, view, false) && probe) probe.coalesced++;
   }
 
   private renderCommittedFrame(backend: DeepWebGpuBackend, canvas: HTMLCanvasElement,
-    view = this.viewReader.renderViewDirect(canvas), settle = true): void {
-    // settle 背压只作用于"同一 view 的 TAA 收敛重绘";view 指纹变化(相机、
-    // 编辑辅助投影、尺寸)意味着用户可见状态更新,首绘无条件直绘。
-    // onSubmittedWorkDone 在 Chrome 按 vsync 粒度滞后 2-3 帧 resolve,若它连
-    // 新 view 一起挡住,场景编辑/资源同步期间的呈现会被限流到每 2-3 个 rAF
-    // 一次(submitGap p50 32ms 的第二处来源);而完全静置(view 不变)时保留
-    // 背压,避免 settle 序列被每帧首绘不断重启(静置 P95 7.2ms 的前提)。
+    view = this.viewReader.renderViewDirect(canvas), settle = true): boolean {
+    settle = settle && view.authorDirectDisplay !== true;
+    // 首绘保留唯一最新 view；TAA 重绘仅重试，所有路径共享真实 GPU completion 上限。
     let settling = false;
     const viewKey = renderViewFingerprint(view);
     const draw = (): boolean => {
-      if (this.deepBackend !== backend) return false;
-      if (settling && this.settleFrameInFlight && this.settleFrameBackend === backend
-        && viewKey === this.settledViewKey) return false;
-      settling = true;
-      this.settledViewKey = viewKey;
-      const probe = flowProbe();
-      backend.setProbeClipmapEnabled(this.probeClipmapEnabled());
-      const renderStart = probe ? performance.now() : 0;
-      const metrics = backend.render(view);
-      if (probe) { probe.draws++; probe.renderMs += performance.now() - renderStart; }
-      if (metrics) {
-        this.performanceSource?.record(metrics, view.width, document.visibilityState !== "hidden");
-        // T25:帧循环唯一采集点;true = 完成一次聚合落账,发布最新遥测状态。
-        if (this.quality?.record(metrics) === true) publishStudioQualityTelemetry(this.quality.status());
-        // A2C-P1 运行时降级决策点(渲染器只披露,决策在桥):探针判 a2c 掩码未生效、
-        // 且当前 backend 是 a2c 门创建且未降级时,走与 restartWithAlphaToCoverage 同族的
-        // 粘性事务重建。setTimeout(0) 逃出帧回调,不在渲染中重入切换事务。
-        if (metrics.a2cProbe?.verdict === "ineffective" && this.alphaToCoverageActive
-          && !this.a2cMaskFallbackActive && !this.a2cMaskFallbackRequested) {
-          setTimeout(() => { if (!this.closed) this.restartWithAlphaToCoverageMaskFallback(); }, 0);
+      const latest = !settling;
+      return this.frameQueue.submit(backend, () => {
+        settling = true;
+        this.settledViewKey = viewKey;
+        const probe = flowProbe();
+        backend.setProbeClipmapEnabled(this.probeClipmapEnabled());
+        const renderStart = probe ? performance.now() : 0;
+        const metrics = backend.render(view);
+        if (probe) { probe.draws++; probe.renderMs += performance.now() - renderStart; }
+        if (metrics) {
+          this.performanceSource?.record(metrics, view.width, document.visibilityState !== "hidden");
+          // T25:帧循环唯一采集点;true = 完成一次聚合落账,发布最新遥测状态。
+          if (this.quality?.record(metrics) === true) publishStudioQualityTelemetry(this.quality.status());
+          // A2C-P1:宿主收到 ineffective 探针后在帧回调之外受控重建。
+          if (metrics.a2cProbe?.verdict === "ineffective" && this.alphaToCoverageActive
+            && !this.a2cMaskFallbackActive && !this.a2cMaskFallbackRequested) {
+            setTimeout(() => { if (!this.closed) this.restartWithAlphaToCoverageMaskFallback(); }, 0);
+          }
         }
-      }
-      this.shadowSession?.acknowledgeMapSize(metrics?.shadowMapSize);
-      // F5-L4: 渲染帧之外仍可能欠捕获(初始填充/包 dirty/调度器 deferred),武装心跳泵。
-      this.pumpProbeCapture();
-      const session = (backend.runtime as { session?: RuntimeSession }).session;
-      if (!metrics && session?.state === "lost") {
-        throw new Error(session.diagnostics?.at(-1)?.message || "Deep WebGPU device was lost.");
-      }
-      if (settle) {
-        const completion = session?.device?.queue?.onSubmittedWorkDone();
-        if (completion) {
-          this.settleFrameInFlight = true;
-          this.settleFrameBackend = backend;
-          void Promise.resolve(completion).then(() => {
-            if (this.settleFrameBackend === backend) {
-              this.settleFrameInFlight = false;
-              this.settleFrameBackend = undefined;
-            }
-          }).catch(reason => {
-            if (this.settleFrameBackend === backend) {
-              this.settleFrameInFlight = false;
-              this.settleFrameBackend = undefined;
-              if (this.deepBackend === backend) this.failRuntime(reason);
-            }
-          });
+        this.shadowSession?.acknowledgeMapSize(metrics?.shadowMapSize);
+        this.pumpProbeCapture();
+        const session = (backend.runtime as { session?: RuntimeSession }).session;
+        if (!metrics && session?.state === "lost") {
+          throw new Error(session.diagnostics?.at(-1)?.message || "Deep WebGPU device was lost.");
         }
-      }
-      return true;
+        return metrics !== undefined;
+      }, () => (backend.runtime as { session?: RuntimeSession }).session?.device?.queue?.onSubmittedWorkDone(), latest);
     };
-    draw();
-    // 呈现已覆盖到这份(更新的)view:待补位的旧相机帧不再有价值,清空以避免
-    // 在后续回调里回放旧画面。失败路径(throw)不清,由异常处理接管。
-    this.pendingCameraView = undefined;
+    const rendered = draw();
+    if (!rendered && this.frameQueue.stats.pendingLatest) this.pendingCameraView = view;
     // 只重绘这一份快照以收敛TAA；不重扫Box3、不上传资源、不推进作者动画。
     // 手势相机帧(settle=false)不重启收敛序列;收敛只在相机静止(主路径/尾随
     // sync)后发生,且每轮有界(frames 默认 16,构造硬限 1..120)。
     if (settle) this.temporalSettler.restart(draw);
+    return rendered;
   }
 
   private acceptSyncResult(result: DeepWebGpuSyncResult): void {
@@ -574,6 +713,7 @@ export class StudioDeepWebGpuBridge {
     const dt = this.lastGestureTickAt === undefined ? 16 : Math.min(100, now - this.lastGestureTickAt);
     this.lastGestureTickAt = now;
     const stillConverging = this.controller.tick(dt);
+    this.viewer.setContinuousRender?.("deep-camera", stillConverging);
     const state = this.viewer.getCameraState();
     if (!sameHostCameraPose(state, this.lastAppliedPose)) {
       // 宿主相机偏离控制器最后同步姿态 = 程序性变更(fitAll/标准视角/快照恢复):
@@ -583,9 +723,9 @@ export class StudioDeepWebGpuBridge {
       this.lastAppliedPose = this.controller.getPose();
       return;
     }
-    if (stillConverging) {
+    {
       const pose = this.controller.getPose();
-      this.viewer.applyViewportCameraPose?.(pose);
+      if (!sameHostCameraPose(state, pose)) this.viewer.applyViewportCameraPose?.(pose);
       this.lastAppliedPose = pose;
     }
   };

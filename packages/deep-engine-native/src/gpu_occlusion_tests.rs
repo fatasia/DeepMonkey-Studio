@@ -3,7 +3,7 @@
 //! 三场景(全视锥/全遮挡/混合)+ 低层足迹矩形 + 投影项提取单测 +
 //! frustum-only vs frustum+occlusion 性能对照(≥5 样本取中位)。
 //! 需要 real GPU 的用例按本 crate 惯例 `#[ignore]`,显式 `--ignored` 运行。
-//! 深度约定:标准 Z(越小越近),深度金字塔 r32float、min 缩减;
+//! 深度约定:标准 Z(越小越近),深度金字塔 r32float、max 缩减;
 //! 合成金字塔是该契约的受控输入,native 侧金字塔生产接线不在本切片。
 
 use bytemuck::cast_slice;
@@ -399,7 +399,7 @@ fn scenario_mixed_depths_split_visibility() {
 }
 
 /// 场景四:mip 0 足迹矩形——HiZ 左半列为遮挡深度,右半远平面;
-/// 屏幕左半实例被剔,右半幸存(验证 rect 采样与定序最小值)。
+/// 屏幕左半实例被剔,右半幸存(验证 rect 采样与定序最远值)。
 #[test]
 #[ignore = "requires a real GPU; run explicitly with --ignored"]
 fn scenario_level0_footprint_splits_by_screen_half() {
@@ -427,6 +427,27 @@ fn scenario_level0_footprint_splits_by_screen_half() {
         "scenario D level0 footprint: occluder_depth={occluder_depth:.6} frustum_visible={frustum_visible} occlusion_visible={occlusion_visible:?}"
     );
     assert_eq!(frustum_visible, 2);
+    assert_eq!(occlusion_visible, Some(1));
+}
+
+/// A real uncovered texel inside the object's footprint invalidates full occlusion.
+#[test]
+#[ignore = "requires a real GPU; run explicitly with --ignored"]
+fn scenario_partial_occluder_preserves_visible_instance() {
+    let bench = pollster::block_on(bench_device());
+    let view = scenario_view(6.0);
+    let scene = Scene {
+        instances: vec![packed_instance(world_point(view, 2.0, 0.0, 0.0))],
+        frame: frame_for(view),
+    };
+    let near = standard_depth(1.0);
+    let mut level0 = [near; 16];
+    level0[5] = 1.0;
+    let (_texture, hiz_view) = hiz_pyramid(&bench.device, &bench.queue,
+        &[&level0, &[1.0, near, near, near], &[1.0]]);
+    let mut culling = build_culling(&bench, &scene, Some((&hiz_view, 4, 4, 2)), true);
+    let (frustum_visible, occlusion_visible) = run_once(&mut culling, &bench, &scene.frame);
+    assert_eq!(frustum_visible, 1);
     assert_eq!(occlusion_visible, Some(1));
 }
 

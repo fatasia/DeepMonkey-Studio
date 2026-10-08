@@ -32,9 +32,17 @@ export function prepareMaterialTextures(
     const normal = prepareNormalTextureSlot(material.normalTexture, textureSemantics);
     const occlusion = prepareOcclusionTextureSlot(material.occlusionTexture, textureSemantics);
     const emissive = prepareTextureSlot(material.emissiveTexture, "emissive", textureSemantics);
+    const specular = prepareTextureSlot(material.specularTexture, "specular", textureSemantics);
+    const specularColor = prepareTextureSlot(material.specularColorTexture, "specularColor", textureSemantics);
+    const specularFactor = material.specularFactor ?? 1, specularColorFactor = material.specularColorFactor ?? [1, 1, 1] as const;
+    const hasSpecular = specular !== undefined || specularColor !== undefined || specularFactor !== 1
+      || specularColorFactor.some(value => value !== 1);
     const layerParameters = material.layered === undefined ? undefined
       : normalizeLayeredSurfaceParameters({ ...material.layered, base: material.layered.base ?? material.extendedParameters });
     if (layerParameters && material.shadingModel === "unlit") throw new Error("Unlit materials cannot consume response layers.");
+    if (hasSpecular && (layerParameters || material.shadingModel === "unlit")) {
+      throw new Error("Specular materials cannot consume response layers or unlit shading.");
+    }
     if (layerParameters && layerParameters.base.ior !== Math.fround(material.ior ?? 1.5))
       throw new Error("Layer base IOR must match the material instance IOR field.");
     const layered = layerParameters?.layers.some(layer => layer.coverage > 0) ? {
@@ -50,9 +58,11 @@ export function prepareMaterialTextures(
       : normalizeAdvancedMaterialParameters(material.advancedParameters);
     const advanced = advancedNormalized && hasAdvancedMaterialFeatures(advancedNormalized) ? advancedNormalized : undefined;
     // 无纹理的扩展/advanced 材质由 advancedMaterials 变体用中性纹理承载;未启用变体时在绑定阶段 fail-closed。
-    const untexturedLobes = (extendedParameters !== undefined || advanced !== undefined) && !layered
+    const untexturedLobes = (extendedParameters !== undefined || advanced !== undefined || hasSpecular) && !layered
       && !baseColor && !metallicRoughness && !normal && !occlusion && !emissive;
-    result.set(material.id, baseColor || metallicRoughness || normal || occlusion || emissive || layered || untexturedLobes ? {
+    result.set(material.id, baseColor || metallicRoughness || normal || occlusion || emissive || specular || specularColor || layered || untexturedLobes ? {
+      ...(hasSpecular ? { specularFactor: Math.fround(specularFactor), specularColorFactor: specularColorFactor.map(Math.fround) as [number, number, number] } : {}),
+      ...(specular ? { specular } : {}), ...(specularColor ? { specularColor } : {}),
       ...(layered ? { layered } : {}),
       ...(advanced ? { advanced } : {}),
       emissiveStrength: Math.fround(emissiveStrength),
@@ -68,6 +78,14 @@ export function prepareMaterialTextures(
 }
 
 function validateMaterial(material: PbrMaterial): number {
+  if (material.specularFactor !== undefined && !unitFloat(material.specularFactor)) {
+    throw new Error("PBR material specularFactor must be in 0..1.");
+  }
+  if (material.specularColorFactor !== undefined && (!Array.isArray(material.specularColorFactor)
+    || material.specularColorFactor.length !== 3
+    || !material.specularColorFactor.every(value => finiteFloat32(value) && value >= 0))) {
+    throw new Error("PBR material specularColorFactor must be nonnegative finite float32 RGB.");
+  }
   packMaterialIor(material.ior, STOCK_MATERIAL_INSTANCE_OPTIONS);
   if (material.advancedParameters !== undefined && material.shadingModel === "unlit") {
     throw new Error("Unlit materials cannot consume PBR extension lobes.");

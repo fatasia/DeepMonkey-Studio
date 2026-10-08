@@ -7,6 +7,32 @@ use deep_engine_native::megalights_ies::evaluate_ies_shading_factor;
 use deep_engine_native::megalights_ris::{DirectLightingPath, DirectLightingPathReason};
 use deep_engine_native::runtime_package::{LightIes, LightProfile};
 
+#[test]
+fn first_frame_camera_and_light_changes_replace_history() {
+    let mut lighting = lighting_with(vec![point_light([2.0, 0.0, 2.0], [1.0; 3])]);
+    let mut runtime = MegaLightsFrameRuntime::build(&lighting, MegaLightsGate::Force, None, true);
+    runtime.advance(view(), Some(&lighting), true);
+    assert_eq!(runtime.gpu_alpha_blend(), 1.0);
+    runtime.history_valid = true;
+    runtime.advance(view(), Some(&lighting), true);
+    assert_eq!(runtime.gpu_alpha_blend(), 1.0 / 32.0);
+    lighting.local_lights[0].position[0] += 1.0;
+    runtime.advance(view(), Some(&lighting), true);
+    assert_eq!(runtime.gpu_alpha_blend(), 1.0);
+    runtime.history_valid = true;
+    let mut moved = view(); moved.yaw += 0.1;
+    runtime.advance(moved, Some(&lighting), true);
+    assert_eq!(runtime.gpu_alpha_blend(), 1.0);
+    runtime.history_valid = true;
+    runtime.note_scene_content(42);
+    assert_eq!(runtime.gpu_alpha_blend(), 1.0);
+    runtime.history_valid = true;
+    runtime.note_scene_content(42);
+    assert_eq!(runtime.gpu_alpha_blend(), 1.0 / 32.0);
+    runtime.note_scene_content(43);
+    assert_eq!(runtime.gpu_alpha_blend(), 1.0);
+}
+
 fn lighting_with(lights: Vec<LocalLight>) -> DirectionalLighting {
     let mut local = std::array::from_fn(|_| LocalLight::default());
     for (index, light) in lights.into_iter().enumerate() {
@@ -135,7 +161,7 @@ fn decision_follows_gate_and_budget() {
     );
     assert_eq!(
         forced.telemetry().execution_leg,
-        MegaLightsExecutionLeg::PendingRealMachineGate
+        MegaLightsExecutionLeg::ColdStandby
     );
     let auto = MegaLightsFrameRuntime::build(&lighting, MegaLightsGate::Auto, None, false);
     assert_eq!(

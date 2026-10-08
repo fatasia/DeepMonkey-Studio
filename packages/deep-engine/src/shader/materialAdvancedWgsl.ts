@@ -1,8 +1,9 @@
 /** advancedMaterials 变体的 WGSL 片段(sheen / iridescence / clearcoat IBL / 体积透射)。
  * 数学逐项对齐 three r185 lights_physical_pars_fragment / iridescence_fragment / transmission_*;
  * 仅由 composeAdvancedMaterialSceneShader 注入,未启用该变体的管线不含这段文本。 */
+import { PBR_PROBE_IRRADIANCE_GAIN_WGSL } from "../webgpu/pbrGlobalIlluminationIntensity.js";
 
-export const ADVANCED_MATERIAL_STRUCT_FIELDS_WGSL = "extended0: vec4f, extended1: vec4f,\n  advanced0: vec4f, advanced1: vec4f, advanced2: vec4f,";
+export const ADVANCED_MATERIAL_STRUCT_FIELDS_WGSL = "extended0: vec4f, extended1: vec4f,\n  advanced0: vec4f, advanced1: vec4f, advanced2: vec4f,\n  specularParameters: vec4f, specularRow0: vec4f, specularRow1: vec4f, specularColorRow0: vec4f, specularColorRow1: vec4f,";
 
 export const ADVANCED_MATERIAL_MATH_WGSL = /* wgsl */ `
 const DEEP_ADV_PI: f32 = 3.141592653589793;
@@ -111,7 +112,7 @@ fn deepAdvancedShade(v: Vertex, normal: vec3f, geometryNormal: vec3f, surface: S
   var irid = 0.0;
   if (film.z > 0.0) { irid = clamp(film.x, 0.0, 1.0); }
   if (irid > 0.0) {
-    if (metal < 1.0) { iridFresnel = deepAdvEvalIridescence(1.0, film.y, nv, film.z, vec3f(dielectric)); }
+    if (metal < 1.0) { iridFresnel = deepAdvEvalIridescence(1.0, film.y, nv, film.z, deepAdvMaterialF0(base, 0.0, dielectric)); }
     if (metal > 0.0) { iridFresnel = mix(iridFresnel, deepAdvEvalIridescence(1.0, film.y, nv, film.z, base), metal); }
   }
   let iridF0 = deepAdvSchlickToF0(iridFresnel, nv);
@@ -133,7 +134,7 @@ fn deepAdvancedShade(v: Vertex, normal: vec3f, geometryNormal: vec3f, surface: S
     + deepSampleDirectMultiscattering(normal, view, light, base, metal, rough, dielectric);
   var sunBrdf = stockBrdf;
   if (irid > 0.0) {
-    let fStock = fresnel(vh, mix(vec3f(dielectric), base, metal));
+    let fStock = fresnel(vh, deepAdvMaterialF0(base, metal, dielectric));
     sunBrdf += (mix(fStock, iridFresnel, irid) - fStock) * (deepAdvGgx(nl, nvSafe, nh, rough) * nl);
   }
   var energyDirect = 1.0;
@@ -152,10 +153,12 @@ fn deepAdvancedShade(v: Vertex, normal: vec3f, geometryNormal: vec3f, surface: S
   let iblOn = frame.eye.w > 0.0;
   let occlusion = clamp(surface.occlusion, 0.0, 1.0);
   var irradiance = vec3f(0.0);
+  var sceneDisplayContribution = vec3f(0.0);
+  var sceneDisplayWeight = vec3f(0.0);
   if (iblOn && (sheenPeak > 0.0 || transmission > 0.0)) {
     let environmentIrradiance = textureSampleLevel(diffuseEnvironment, environmentSampler, normal, 0.0).rgb * frame.lightDirection.w;
     let gi = deepGiSampleTexture(v.world, normal);
-    irradiance = mix(environmentIrradiance, gi.rgb, gi.a);
+    irradiance = mix(environmentIrradiance, ${PBR_PROBE_IRRADIANCE_GAIN_WGSL}, gi.a);
   }
   if (sheenPeak > 0.0 && iblOn) { color += irradiance * sheenColor * sheenAlbedoView * occlusion * frame.eye.w; }
   if (transmission > 0.0) {
@@ -163,19 +166,30 @@ fn deepAdvancedShade(v: Vertex, normal: vec3f, geometryNormal: vec3f, surface: S
     let sunDiffuse = diffuseContribution * (nl / DEEP_ADV_PI) * sunRadiance * visibility * energyDirect;
     var iblDiffuse = vec3f(0.0);
     var transmitted = vec3f(0.0);
+    let dfg = textureSampleLevel(brdfLut, environmentSampler, vec2f(clamp(nv, 0.001, 1.0), rough), 0.0).rg;
+    let f0 = deepAdvMaterialF0(base, metal, dielectric);
     if (iblOn) {
-      let dfg = textureSampleLevel(brdfLut, environmentSampler, vec2f(clamp(nv, 0.001, 1.0), rough), 0.0).rg;
-      let f0 = mix(vec3f(dielectric), base, metal);
       let f0Film = mix(f0, iridF0, irid);
       let energyCompensation = vec3f(1.0) + f0Film * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
-      let specularFraction = clamp(f0Film * dfg.x + dfg.y, vec3f(0.0), vec3f(1.0)) * energyCompensation;
+      let specularFraction = clamp(f0Film * dfg.x + deepAdvCurrentSpecularF90() * dfg.y, vec3f(0.0), vec3f(1.0)) * energyCompensation;
       iblDiffuse = (vec3f(1.0) - specularFraction) * diffuseContribution * irradiance * occlusion * frame.eye.w * energyIndirect;
       let refracted = refract(-view, normal, 1.0 / ior);
       let direction = select(-view, safeNormalize(refracted, -view), dot(refracted, refracted) > 0.0);
       let sampled = deepPbrReflectionRadiance(v.world, direction, rough * clamp(ior * 2.0 - 2.0, 0.0, 1.0))
         * frame.lightDirection.w * frame.eye.w;
-      transmitted = (vec3f(1.0) - (f0 * dfg.x + dfg.y)) * diffuseContribution
+      transmitted = (vec3f(1.0) - (f0 * dfg.x + deepAdvCurrentSpecularF90() * dfg.y)) * diffuseContribution
         * deepAdvBeer(film.w, volume.xyz, volume.w) * sampled;
+    }
+    let scene = deepSceneTransmissionSample(v.world, normal, view, ior, film.w, surface.rough);
+    if (scene.a > 0.5) {
+      let weight = (vec3f(1.0) - clamp(f0 * dfg.x + deepAdvCurrentSpecularF90() * dfg.y, vec3f(0.0), vec3f(1.0)))
+        * diffuseContribution * deepAdvBeer(film.w, volume.xyz, volume.w);
+      if (deepFog.parameters.w > 0.5) {
+        // Direct author source already contains ACES/sRGB; contribute after conversion once.
+        transmitted = vec3f(0.0);
+        sceneDisplayWeight = transmission * weight;
+        sceneDisplayContribution = scene.rgb * sceneDisplayWeight;
+      } else { transmitted = scene.rgb * weight; }
     }
     color += transmission * (transmitted - sunDiffuse - iblDiffuse);
   }
@@ -188,13 +202,23 @@ fn deepAdvancedShade(v: Vertex, normal: vec3f, geometryNormal: vec3f, surface: S
         * frame.lightDirection.w * frame.eye.w * (0.04 * dfg.x + dfg.y);
     }
     color = color * (1.0 - coat * deepAdvSchlick(0.04, nv)) + coatSpecular * coat;
+    sceneDisplayWeight *= 1.0 - coat * deepAdvSchlick(0.04, nv);
+    sceneDisplayContribution *= 1.0 - coat * deepAdvSchlick(0.04, nv);
   }
-  return deepApplySceneFog(select(color, base, flag(v.material.w, 64u)), v.world, v.material.w);
+  let displayed = deepApplySceneFog(select(color, base, flag(v.material.w, 64u)), v.world, v.material.w);
+  if (any(sceneDisplayWeight > vec3f(0.0))) {
+    let fogFill = deepApplySceneFog(vec3f(0.0), v.world, v.material.w);
+    return displayed + sceneDisplayContribution - fogFill * sceneDisplayWeight;
+  }
+  return displayed;
 }
 fn extendedShade(v: Vertex, normal: vec3f, geometryNormal: vec3f, surface: SurfaceSample) -> vec3f {
+  deepAdvSampleSpecular(v, surface.metal);
   let ext0 = materialTextures.extended0;
   let film = materialTextures.advanced1;
-  if (ext0.y > 0.0 || materialTextures.extended1.y > 0.0 || deepAdvMax3(materialTextures.advanced0.xyz) > 0.0
+  if (materialTextures.specularParameters.w != 1.0 || any(materialTextures.specularParameters.xyz != vec3f(1.0))
+    || materialTextures.specularRow0.w > 0.5 || materialTextures.specularColorRow0.w > 0.5
+    || ext0.y > 0.0 || materialTextures.extended1.y > 0.0 || deepAdvMax3(materialTextures.advanced0.xyz) > 0.0
     || (film.x > 0.0 && film.z > 0.0)) {
     return deepAdvancedShade(v, normal, geometryNormal, surface);
   }

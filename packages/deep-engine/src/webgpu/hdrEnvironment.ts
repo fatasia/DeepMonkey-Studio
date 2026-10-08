@@ -75,11 +75,11 @@ export async function createHdrEnvironment(session: DeviceSession, image: Radian
         { bytesPerRow: background.bytesPerRow, rowsPerImage: background.height }, [background.width, background.height]);
     }
     const specular = texture({ label: "Deep HDRI specular", size: [baseSize, baseSize, 6],
-      mipLevelCount: selection.keptMips, format: "rgba16float", usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
+      mipLevelCount: selection.keptMips, format: "rgba16float", usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
     const diffuse = texture({ label: "Deep HDRI diffuse", size: [diffuseSize, diffuseSize, 6],
       format: "rgba16float", usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
     const brdf = texture({ label: "Deep HDRI DFG LUT", size: [128, 128], format: "rgba16float",
-      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
+      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
     const stride = Math.max(256, device.limits.minUniformBufferOffsetAlignment), records = selection.keptMips + 1;
     const data = new ArrayBuffer(stride * records), floats = new Float32Array(data), integers = new Uint32Array(data);
     for (let level = 0; level < records; level++) {
@@ -121,7 +121,7 @@ export async function createHdrEnvironment(session: DeviceSession, image: Radian
     session.release(settings); settings = undefined;
     if (panorama !== source) { session.release(source); owned.splice(owned.indexOf(source), 1); }
     let disposed = false;
-    return Object.freeze({ specular: specular.createView({ dimension: "cube" }),
+    return Object.freeze({ specular: specular.createView({ dimension: "cube" }), specularTexture: specular,
       specularMipSelection: selection,
       diffuse: diffuse.createView({ dimension: "cube" }), brdf: brdf.createView(),
       sampler: device.createSampler({ minFilter: "linear", magFilter: "linear", mipmapFilter: "linear" }),

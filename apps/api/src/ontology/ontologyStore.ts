@@ -166,6 +166,9 @@ export class OntologyPackageStore {
       if (record.current.status !== "draft" && record.current.status !== "review") {
         throw new OntologyPackageError("conflict", `本体包处于“${record.current.status}”状态，不能直接修改；请基于已发布版本开新草稿`);
       }
+      if (input.revision !== record.current.revision) {
+        throw new OntologyPackageError("conflict", "本体包已被修改，请读取最新版本后再保存");
+      }
       if (draft.records.some((item) => item.current.id !== input.id && item.current.name.trim() === input.name.trim())) {
         throw new OntologyPackageError("conflict", `本体包名称“${input.name}”已被使用`);
       }

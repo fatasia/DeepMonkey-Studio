@@ -51,6 +51,21 @@ it("drops retired identities and leaves failed bindings retryable", () => {
   expect(() => f.bindings.get("pose", { ...f.streams, vertexCount: 4 })).toThrow("complete unmapped");
 });
 
+it("preserves advanced high-gloss slots and neutral fallbacks alongside both pose streams", () => {
+  const f = fixture(), texture = { view: {}, sampler: {} }, color = { view: {}, sampler: {} };
+  const pipelines = (f.bindings as unknown as { pipelines: Pipelines }).pipelines;
+  Object.assign(pipelines.materialLayout, { advancedMaterials: true });
+  const material = { parameters: {}, specularColor: color, specular: texture } as unknown as MaterialBinding;
+  f.bindings.get("pose", f.streams, material);
+  const entries = f.device.createBindGroup.mock.calls[0]![0].entries;
+  expect(entries.map((entry: GPUBindGroupEntry) => entry.binding)).toEqual([0,1,2,3,4,5,6,7,8,9,10,16,17,18,19,11,12]);
+  expect(entries.find((entry: GPUBindGroupEntry) => entry.binding === 16)!.resource).toBe(texture.view);
+  expect(entries.find((entry: GPUBindGroupEntry) => entry.binding === 18)!.resource).toBe(color.view);
+  f.bindings.get("neutral", f.streams, { parameters: {}, base: texture } as unknown as MaterialBinding);
+  const neutral = f.device.createBindGroup.mock.calls[1]![0].entries;
+  expect(neutral.find((entry: GPUBindGroupEntry) => entry.binding === 18)!.resource).toBe(texture.view);
+});
+
 it("composes array-table buffers with deformation streams using the array layout", () => {
   const f = fixture(), arrayLayout = {}, fallbackLayout = {};
   const pipelines = (f.bindings as unknown as { pipelines: Pipelines }).pipelines;

@@ -37,15 +37,16 @@ export function createSceneGrid(): THREE.Mesh {
   const canvas = document.createElement("canvas");
   canvas.width = layout.textureSize;
   canvas.height = layout.textureSize;
-  const context = canvas.getContext("2d");
+  // The Deep adapter reads pixels once; keep this author texture CPU backed.
+  const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) throw new Error("无法创建场景网格画布");
 
   drawGridLines(context, layout);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
-  // 放大时禁止线性插值把单 texel 网格扩散成灰色宽边；远景仍由三线性 mipmap 抗摩尔纹。
-  texture.magFilter = THREE.NearestFilter;
+  // All-linear filtering permits the same anisotropic sampler on WebGL and WebGPU.
+  texture.magFilter = THREE.LinearFilter;
   texture.generateMipmaps = true;
   // Oblique CAD views need anisotropic sampling to keep one-texel minor lines distinct.
   // Three clamps this request to the adapter limit, so low-end devices keep a valid path.

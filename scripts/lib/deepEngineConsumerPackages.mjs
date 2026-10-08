@@ -22,7 +22,10 @@ export async function packDeepEngineConsumerDependencies({ root, workspace, repo
     label: "webgpu-types", required: ["dist/index.d.ts"] });
   assert.equal(webgpu.manifest.name, "@webgpu/types");
   assert.equal(webgpu.manifest.version, "0.1.72");
-  return [engine, webgpu].map(pkg => ({ name: pkg.manifest.name, version: pkg.manifest.version,
+  const compression = await packDeepEngineCompression({ root, archiveDir, reportDir });
+  assert.equal(compression.manifest.name, "fflate");
+  assert.equal(compression.manifest.version, engine.manifest.dependencies.fflate);
+  return [engine, webgpu, compression].map(pkg => ({ name: pkg.manifest.name, version: pkg.manifest.version,
     archive: pkg.archive, sha256: pkg.sha256, entries: pkg.entries.length }));
 }
 
@@ -33,7 +36,7 @@ export async function installDeepEngineConsumer({ root, workspace, reportDir, pn
   await writeFile(join(consumer, "package.json"), JSON.stringify({ name: "deep-engine-external-consumer",
     private: true, type: "module", dependencies }, null, 2) + "\n");
   await writeFile(join(consumer, "pnpm-workspace.yaml"), JSON.stringify({ packages: [],
-    overrides: { "@webgpu/types": dependencies["@webgpu/types"] },
+    overrides: { "@webgpu/types": dependencies["@webgpu/types"], fflate: dependencies.fflate },
     registry: "http://127.0.0.1:9/", cacheDir: join(workspace, "empty-cache") }, null, 2) + "\n");
   await runLogged(process.execPath, [pnpm, "install", "--offline", "--ignore-scripts", "--store-dir", join(workspace, "empty-store")],
     { cwd: consumer, reportDir, label: "install-offline", env: { npm_config_registry: "http://127.0.0.1:9/" } });
@@ -45,6 +48,34 @@ export async function installDeepEngineConsumer({ root, workspace, reportDir, pn
   }
   assert.ok((await readdir(join(workspace, "empty-store"))).length > 0, "The isolated install must populate its empty store");
   return { consumer, installed };
+}
+
+/** Keep the audited upstream tarball; its prepack expects sources absent from an installed package. */
+export async function packDeepEngineCompression({ root, archiveDir, reportDir }) {
+  const engine = JSON.parse(await readFile(join(root, "packages/deep-engine/package.json"), "utf8"));
+  const version = engine.dependencies.fflate;
+  assert.equal(version, "0.8.3");
+  const lock = await readFile(join(root, "pnpm-lock.yaml"), "utf8");
+  const integrity = /^  fflate@0\.8\.3:\r?\n\s+resolution: \{integrity: ([^}]+)\}/m.exec(lock)?.[1];
+  assert.ok(integrity?.startsWith("sha512-"), "fflate must have a pinned lockfile integrity");
+  const archive = join(archiveDir, `fflate-${version}.tgz`);
+  let bytes;
+  try { bytes = await readFile(archive); } catch { /* First run downloads the immutable version. */ }
+  if (!bytes) {
+    const response = await fetch(`https://registry.npmjs.org/fflate/-/fflate-${version}.tgz`);
+    assert.equal(response.status, 200);
+    bytes = Buffer.from(await response.arrayBuffer());
+  }
+  assert.equal(`sha512-${createHash("sha512").update(bytes).digest("base64")}`, integrity);
+  await writeFile(archive, bytes);
+  const entries = (await runLogged("tar", ["-tf", archive], { cwd: root, reportDir, label: "contents-fflate" })).trim().split(/\r?\n/);
+  const manifest = JSON.parse(await runLogged("tar", ["-xOf", archive, "package/package.json"],
+    { cwd: root, reportDir, label: "manifest-fflate" }));
+  assert.equal(manifest.name, "fflate"); assert.equal(manifest.version, version); assert.equal(manifest.license, "MIT");
+  for (const file of ["esm/browser.js", "esm/index.mjs", "lib/index.d.ts", "LICENSE"])
+    assert.ok(entries.includes(`package/${file}`), `fflate is missing ${file}`);
+  assert.ok(entries.every(file => !/(^|\/)(?:\.env(?:\.[^/]*)?|\.git|node_modules)(\/|$)/.test(file)));
+  return { manifest, archive, entries, sha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
 async function packPackage({ cwd, archiveDir, reportDir, pnpm, label, required }) {

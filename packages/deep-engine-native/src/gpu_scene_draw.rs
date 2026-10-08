@@ -60,6 +60,7 @@ impl GpuScene {
             } else {
                 self.bind_color(pass, pipelines, batch, frame);
                 pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                deep_engine_native::benchmark_observer::note_draw();
                 pass.draw_indexed(
                     0..self.geometries[batch.geometry_index].index_count,
                     0,
@@ -155,6 +156,7 @@ impl GpuScene {
             visible.slice(u64::from(batch.instance_start) * GPU_CULLING_INSTANCE_BYTES..),
         );
         pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        deep_engine_native::benchmark_observer::note_draw();
         pass.draw_indexed_indirect(indirect, indirect_index as u64 * GPU_CULLING_INDIRECT_BYTES);
     }
 
@@ -259,6 +261,7 @@ impl GpuScene {
             1,
             visible.slice(u64::from(batch.instance_start) * GPU_CULLING_INSTANCE_BYTES..),
         );
+        deep_engine_native::benchmark_observer::note_draw();
         pass.draw_indexed_indirect(indirect, index as u64 * GPU_CULLING_INDIRECT_BYTES);
     }
 
@@ -429,6 +432,7 @@ impl GpuScene {
             1,
             visible.slice(u64::from(batch.instance_start) * GPU_CULLING_INSTANCE_BYTES..),
         );
+        deep_engine_native::benchmark_observer::note_draw();
         pass.draw_indexed_indirect(indirect, indirect_index as u64 * GPU_CULLING_INDIRECT_BYTES);
     }
 }

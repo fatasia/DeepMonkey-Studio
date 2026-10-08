@@ -23,7 +23,8 @@ export function readStudioDeepPostProcess(state: ScenePostProcessingState,
     screenSpaceReflection,
     ...(screenSpaceReflection ? { screenSpaceReflectionProfile: Object.freeze({ steps: state.ssrSteps ?? 32,
       thicknessScale: state.ssrThickness ?? 0.01, maxDistanceScale: state.ssrMaxDistance ?? 2 }) } : {}),
-    ...(volumetricFogProfile ? { volumetricFog: true, volumetricFogProfile } : {}),
+    volumetricFog,
+    ...(volumetricFogProfile ? { volumetricFogProfile } : {}),
     // 对象级描边外观跟随作者 outlineStrength(three OutlinePass.edgeStrength);是否绘制由 packet 的 outline 实例决定。
     ...(state.outlineStrength === undefined ? {} : { instanceOutline: Object.freeze({ strength: state.outlineStrength }) }),
     bloom, ...(bloom ? { authorBloom: Object.freeze({ strength: state.bloomStrength, threshold: state.bloomThreshold }) } : {}) });

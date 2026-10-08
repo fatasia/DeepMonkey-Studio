@@ -62,6 +62,7 @@ export abstract class ViewerEngineNavigationTools extends ViewerEngineMeasuremen
   applyViewportCameraPose(pose: { readonly eye: readonly [number, number, number]; readonly target: readonly [number, number, number] }): void {
     this.camera.position.set(pose.eye[0], pose.eye[1], pose.eye[2]);
     this.orbit.target.set(pose.target[0], pose.target[1], pose.target[2]);
+    this.camera.lookAt(this.orbit.target);
     this.camera.updateMatrixWorld(true);
     this.cameraCollisionDirty = true;
   }
@@ -418,7 +419,12 @@ export abstract class ViewerEngineNavigationTools extends ViewerEngineMeasuremen
     this.emitCameraChange(true);
   }
   protected frameScene(): void {
-    this.focusBox(this.sceneContentBox(), new THREE.Vector3(0.8, 0.55, 0.8));
+    this.focusBox(this.framingSceneBox(), new THREE.Vector3(0.8, 0.55, 0.8));
+  }
+  private framingSceneBox(): THREE.Box3 {
+    const box = new THREE.Box3();
+    for (const model of this.models.values()) if (model.visible) box.union(visibleObjectBox(model.object, true));
+    return box;
   }
   getCameraState(): CameraState {
     const view = this.captureNavigationState(this.navigationMode);
@@ -452,7 +458,7 @@ export abstract class ViewerEngineNavigationTools extends ViewerEngineMeasuremen
     if (this.navigationMode !== "orbit") this.setNavigationMode("orbit");
     const selected = this.getSelected();
     const targetObject = this.inspectedObject && this.inspectedObject !== selected?.object ? this.inspectedObject : undefined;
-    const box = targetObject ? new THREE.Box3().setFromObject(targetObject) : this.sceneContentBox();
+    const box = targetObject ? visibleObjectBox(targetObject, true) : this.framingSceneBox();
     if (box.isEmpty()) return;
     const directions: Record<StandardView, THREE.Vector3> = {
       top: new THREE.Vector3(0, 1, 0),

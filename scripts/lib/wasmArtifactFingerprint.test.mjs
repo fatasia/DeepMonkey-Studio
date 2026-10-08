@@ -18,6 +18,9 @@ test("wasm input fingerprint changes with shared Rust and embedded shader assets
     "scripts/lib/wasmArtifactFingerprint.mjs",
     "packages/deep-engine-native/src/physics.rs",
     "packages/deep-engine-native/assets/shaders/main.wgsl",
+    "packages/deep-engine-native/geometry_dag/src/lib.rs",
+    "packages/deep-engine-native/geometry_dag/Cargo.toml",
+    "packages/deep-engine-native/geometry_dag/Cargo.lock",
   ];
   try {
     for (const file of files) {
@@ -26,6 +29,12 @@ test("wasm input fingerprint changes with shared Rust and embedded shader assets
     }
     const first = wasmSourceFingerprint(repo);
     assert.deepEqual(wasmSourceFingerprint(repo), first);
+    writeFileSync(join(repo, "packages/deep-engine-native/geometry_dag/src/lib.rs"), "changed");
+    const dag = wasmSourceFingerprint(repo);
+    assert.notEqual(dag.sha256, first.sha256);
+    writeFileSync(join(repo, "packages/deep-engine-native/geometry_dag/Cargo.lock"), "changed");
+    const dagDependencies = wasmSourceFingerprint(repo);
+    assert.notEqual(dagDependencies.sha256, dag.sha256);
     writeFileSync(join(repo, "packages/deep-engine-native/src/physics.rs"), "changed");
     const rust = wasmSourceFingerprint(repo);
     assert.notEqual(rust.sha256, first.sha256);

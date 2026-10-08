@@ -21,8 +21,9 @@ function hash(value: unknown, path: string): string {
   requireValue(object.algorithm === "sha256" && typeof object.value === "string" && /^[a-f0-9]{64}$/.test(object.value), path, "Expected lowercase SHA-256.");
   return object.value;
 }
-function validate(input: unknown): DeepRuntimePackage {
-  const value = record(snapshotJson(input), "$");
+interface OwnedRuntimeHashes { readonly packageHash: string; readonly resources: ReadonlyMap<string, string> }
+function validate(input: unknown, owned?: OwnedRuntimeHashes): DeepRuntimePackage {
+  const value = record(owned ? input : snapshotJson(input), "$");
   const entrypointShape = record(value.entrypoints, "$.entrypoints");
   const hasDynamicRuntime = value.schemaVersion === DEEP_RUNTIME_PACKAGE_DYNAMIC_VERSION;
   const hasCamera = value.schemaVersion === 3 || hasDynamicRuntime && Object.hasOwn(entrypointShape, "camera");
@@ -37,7 +38,7 @@ function validate(input: unknown): DeepRuntimePackage {
   requireValue(packageId.length <= 128 && !/[/:]/.test(packageId), "$.packageId", "Invalid package identifier.");
   const version = string(value.packageVersion, "$.packageVersion");
   requireValue(/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(version), "$.packageVersion", "Invalid package version.");
-  requireValue(hash(value.packageHash, "$.packageHash") === runtimePackageSha256(value), "$.packageHash", "Package hash mismatch.");
+  requireValue(hash(value.packageHash, "$.packageHash") === (owned?.packageHash ?? runtimePackageSha256(value)), "$.packageHash", "Package hash mismatch.");
   const entries = array(value.resources, "$.resources", LIMITS.resources);
   requireValue(entries.length >= 2, "$.resources", "Runtime package requires at least two resources.");
   const index = new Map<string, { kind: RuntimeResourceKind; revision: number; hash: string }>();
@@ -54,7 +55,7 @@ function validate(input: unknown): DeepRuntimePackage {
   }
   const payloads = record(value.payloads, "$.payloads");
   requireValue(Object.keys(payloads).length === index.size && Object.keys(payloads).every(id => index.has(id)), "$.payloads", "Payload keys must exactly match the resource index.");
-  for (const [id, entry] of index) requireValue(runtimeContentSha256(payloads[id]) === entry.hash, `$.payloads.${id}`, "Resource content hash mismatch.");
+  for (const [id, entry] of index) requireValue((owned?.resources.get(id) ?? runtimeContentSha256(payloads[id])) === entry.hash, `$.payloads.${id}`, "Resource content hash mismatch.");
   const entry = entrypointShape;
   fields(entry, ["renderPacket", "deep2d", "environment", "shaderPackages", ...(hasCamera ? ["camera"] : []),
     ...(hasChart || hasDashboard ? ["chart", "chartSim"] : []), ...(hasDashboard ? ["dashboard"] : []), ...(hasDynamicRuntime ? ["dynamicRuntime"] : [])], [], "$.entrypoints");
@@ -126,6 +127,11 @@ export function validateDeepRuntimePackage(input: unknown): RuntimePackageValida
     return { valid: false, issues: [{ path: error instanceof RuntimePackageError ? error.path : "$",
       message: error instanceof Error ? error.message : "Invalid runtime package." }] };
   }
+}
+
+/** Internal constructor seam; not exported by the public runtime-package entry. */
+export function validateOwnedBuiltRuntimePackage(input: unknown, hashes: OwnedRuntimeHashes): DeepRuntimePackage {
+  return validate(input, hashes);
 }
 
 /** 节点级拾取映射的包层不变量:nodeId 非空且全局唯一,instanceIds 非空且条目内唯一。 */

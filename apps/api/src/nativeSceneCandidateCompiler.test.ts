@@ -1,5 +1,7 @@
 import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import sharp from "sharp";
+import { authorTextureTestGlb } from "../../web/src/delivery/sceneAuthorTextureTestFixture";
 import { beforeAll, afterAll, expect, it } from "vitest";
 import type { SceneSnapshot } from "@bim-studio/contracts";
 import { createNativeSceneCandidateCompiler, createVerifiedNativeSceneCandidateAssessor } from "./nativeSceneCandidateCompiler.js";
@@ -56,6 +58,23 @@ it("decodes embedded texture offline using API sharp", async () => {
  const result = await compileNativeSceneCandidate({ ...input, signal: AbortSignal.timeout(12_000) });
  expect(JSON.parse(result.packageJson).payloads["scene.main"].textures.length).toBeGreaterThan(0);
 }, 15_000);
+it("compiles frozen author textures through the deployed worker without URL access", async () => {
+ const input = options();
+ input.scene.models = [{ modelId: "author", assetModelId: "asset", name: "Author texture", visible: true, opacity: 1,
+   transform: { position: { x: 1e9, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } },
+   material: { baseColorMapUrl: "https://unreachable.invalid/author.png", textureRepeat: 2 } }];
+ input.models.set("asset", authorTextureTestGlb());
+ const image = await sharp({ create: { width: 4, height: 4, channels: 4,
+   background: { r: 80, g: 160, b: 200, alpha: 1 } } }).png().toBuffer();
+ const textures = new Map([["https://unreachable.invalid/author.png", image]]);
+ const result = await compileNativeSceneCandidate({ ...input, textures });
+ const packet = JSON.parse(result.packageJson).payloads["scene.main"];
+ expect(packet.textures.find((texture: { id: string }) => texture.id === packet.materials[0].baseColorTexture.texture).data.slice(0, 4))
+   .toEqual([80, 160, 200, 255]);
+ expect(result.evidence.sourceTextures).toEqual([{ bytes: image.length, sha256: createHash("sha256").update(image).digest("hex") }]);
+ await expect(compileNativeSceneCandidate({ ...input, textures: new Map([["unrelated", image]]) })).rejects.toThrow("冻结作者贴图缺失");
+ await expect(compileNativeSceneCandidate({ ...input, textures, maxSourceBytes: 1 })).rejects.toThrow("预算");
+});
 it("terminates a worker cancelled during startup and allows a later compile", async () => {
  const controller = new AbortController(); const operation = compileNativeSceneCandidate({ ...options(), signal: controller.signal });
  const timer = setTimeout(() => controller.abort(new Error("cancel active")), 25);

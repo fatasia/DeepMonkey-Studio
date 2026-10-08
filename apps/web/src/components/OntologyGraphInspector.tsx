@@ -6,7 +6,7 @@ import { StatusBadge } from "./OntologyWorkspace";
 import { actionRiskPresentation, GRAPH_NODE_KIND_META } from "./ontologyGraphLogic";
 import type { OntologyActionPlanInput, OntologyActionPreview } from "@bim-studio/contracts";
 import OntologyDecisionChainPanel from "./OntologyDecisionChainPanel";
-import { useEffect, useState } from "react";
+import ActionPreviewPanel from "./OntologyActionPreviewPanel";
 
 /**
  * 图谱检查器：点击节点/边后的属性/来源/版本/权限/证据明细（方案 §4.3）。
@@ -37,72 +37,6 @@ function RelationEvidence({ relation, locale }: { relation: OntologyRelationType
   );
 }
 
-/** H-C4-P3 行动预览面板：调 /ai/ontology-actions/preview，4xx 理由码 fail-closed 直呈，不猜测不放行。 */
-function ActionPreviewPanel({ pkgId, action, locale, previewAction }: {
-  pkgId: string;
-  action: OntologyActionType;
-  locale: AppLocale;
-  previewAction: (input: OntologyActionPlanInput) => Promise<OntologyActionPreview>;
-}) {
-  const [preview, setPreview] = useState<OntologyActionPreview | undefined>(undefined);
-  const [error, setError] = useState<{ message: string; reasonCodes?: string[] } | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
-  const objectKey = action.boundObject || "";
-  const run = async () => {
-    setBusy(true); setError(undefined); setPreview(undefined);
-    try {
-      setPreview(await previewAction({
-        actionKey: action.key,
-        target: { objectKey, canonicalId: `ontology:${pkgId}:${objectKey}` },
-        arguments: {},
-      }));
-    } catch (cause) {
-      const body = cause as { message?: string; reasonCodes?: string[] };
-      setError({ message: body.message || tr(locale, "预览请求失败", "Preview request failed"), ...(body.reasonCodes ? { reasonCodes: body.reasonCodes } : {}) });
-    } finally { setBusy(false); }
-  };
-  useEffect(() => { if (objectKey) void run(); /* 只读预览，选中即出 */ }, [objectKey, previewAction]);
-  return (
-    <div className="ontology-graph-action-preview">
-      <button type="button" disabled={busy || !objectKey} onClick={run}>
-        {busy ? tr(locale, "预览生成中…", "Previewing…") : tr(locale, "重新生成预览", "Regenerate preview")}
-      </button>
-      {!objectKey && <small>{tr(locale, "行动未绑定对象，无法预览", "Action has no bound object; preview unavailable")}</small>}
-      {error && (
-        <p role="alert" className="ontology-graph-action-preview-error">
-          {error.message}
-          {error.reasonCodes?.length ? <code> [{error.reasonCodes.join(", ")}]</code> : null}
-        </p>
-      )}
-      {preview && (
-        <dl>
-          <dt>{tr(locale, "包/版本", "Package/version")}</dt><dd>{preview.packageId} v{preview.packageVersion}</dd>
-          <dt>{tr(locale, "目标对象", "Target")}</dt><dd><code>{preview.target.canonicalId}</code></dd>
-          <dt>{tr(locale, "风险", "Risk")}</dt><dd>{preview.risk}</dd>
-          <dt>{tr(locale, "需要审批", "Approval")}</dt><dd>{preview.approvalRequired ? tr(locale, "是", "Yes") : tr(locale, "否", "No")}</dd>
-          <dt>{tr(locale, "幂等键", "Idempotency")}</dt><dd><code>{preview.idempotencyKey}</code></dd>
-          <dt>{tr(locale, "前置条件", "Preconditions")}</dt>
-          <dd>{preview.preconditions.length ? preview.preconditions.map((item, index) => (
-            <span key={index}>{item.label}: {item.status}</span>
-          )) : tr(locale, "无", "None")}</dd>
-          <dt>{tr(locale, "影响范围", "Impact")}</dt>
-          <dd>{preview.impact.length ? preview.impact.map((item, index) => (
-            <span key={index}>{item.objectKey} ← {item.relationKey} ({item.hops} 跳)</span>
-          )) : tr(locale, "无邻域影响", "No neighborhood impact")}</dd>
-          <dt>{tr(locale, "可执行", "Executable")}</dt>
-          <dd>{preview.executable ? tr(locale, "是", "Yes") : tr(locale, "否（存在阻断）", "No (blocked)")}</dd>
-          <dt>{tr(locale, "回滚", "Rollback")}</dt><dd>{preview.rollback || tr(locale, "无", "None")}</dd>
-          {preview.blockingReasons.length ? <dt>{tr(locale, "阻断理由", "Blocking reasons")}</dt> : null}
-          {preview.blockingReasons.length ? (
-            <dd>{preview.blockingReasons.map((item, index) => (
-              <span key={index}><code>{item.code}</code> {item.message}</span>
-            ))}</dd>
-          ) : null}
-        </dl>
-      )}
-    </div>
-  );
-}
 function ActionMeta({ action, locale }: { action: OntologyActionType; locale: AppLocale }) {
   const risk = actionRiskPresentation(action.riskLevel);
   return (
@@ -237,7 +171,7 @@ function NodeDetail({ pkg, projectId, node, locale, onFocusRoot, onCollapse, pre
         </dl>
         {action ? <ActionMeta action={action} locale={locale} /> : <small>{tr(locale, "行动定义缺失", "Action definition missing")}</small>}
         {action && previewAction && pkg && (
-          <ActionPreviewPanel pkgId={pkg.id} action={action} locale={locale} previewAction={previewAction} />
+          <ActionPreviewPanel key={`${pkg.id}:${pkg.revision}:${action.key}`} pkg={pkg} action={action} locale={locale} previewAction={previewAction} />
         )}
         {action && <OntologyDecisionChainPanel projectId={projectId} pkg={pkg} objectKey={action.boundObject} actionKey={action.key} locale={locale} />}
         <div className="ontology-graph-inspector-actions">

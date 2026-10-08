@@ -15,20 +15,23 @@
 //! 显式 RIS)。关闭 = 零构造零帧成本,既有簇光路径逐位不变。运行时存在后,
 //! 决策回落簇光(未强制且 ≤ 预算)同样零回归——灯池/IES/可见性只是驻留供给。
 //!
-//! == 执行腿(如实)==
-//! RIS 求值执行腿 = GPU RIS 核 dispatch(`megaLightsRis.wgsl`),在 wgpu 30
-//! naga 编译路径有已知执行限制且真机复验未做(见 megalights_gpu_probe_tests)。
-//! 本切片接线 = 决策 + 灯池/IES/可见性驻留供给,执行腿状态如实为
-//! [`MegaLightsExecutionLeg::PendingRealMachineGate`];GBuffer 表面供给与
-//! 像素消费 pass 为后继切片,绝不虚报生产能力。现役直射恒走既有簇光。
+//! == 执行腿(2026-10-07 GPU dispatch 生产化)==
+//! RIS consumes actual opaque material/depth and winner TLAS visibility.
+//! It replaces opaque local lighting and retains the transparent MSAA resolve.
+//! Resources are created at the first RIS frame; rejected profiles retain clusters.
+//! 门关/auto-预算内帧零 dispatch 零字节变化。
 
+#[path = "megalights_runtime_gpu.rs"] mod gpu;
+#[path = "megalights_runtime_lights.rs"] mod lights;
+use lights::{count_pool_lights, build_view_space_pool, remap_ies_spot_rows};
+pub(crate) use lights::to_view;
 use deep_engine_native::local_lighting::{LocalLight, LocalLightKind, MAX_LOCAL_LIGHTS};
 use deep_engine_native::megalights_abi::{
     MegaLight, MegaLightKind, PackedMegaLights, pack_mega_lights,
 };
 use deep_engine_native::megalights_ies::MegaLightsIesPacking;
 use deep_engine_native::megalights_ris::{
-    DirectLightingPathDecision, resolve_direct_lighting_path,
+    DirectLightingPath, DirectLightingPathDecision, resolve_direct_lighting_path,
 };
 use deep_engine_native::player_view::PlayerView;
 use deep_engine_native::scene_lighting::DirectionalLighting;
@@ -59,12 +62,17 @@ fn parse_megalights_gate(value: Option<&str>) -> MegaLightsGate {
     }
 }
 
-/// RIS 求值执行腿状态(词汇封闭;本切片恒 PendingRealMachineGate)。
+/// RIS 求值执行腿状态(词汇封闭;真机门已过,状态随 GPU 链挂载结果如实推进)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MegaLightsExecutionLeg {
-    /// GPU RIS 核 dispatch 待真机门复验(wgpu 30 naga 已知限制);帧内视觉
-    /// 恒走既有簇光路径。
-    PendingRealMachineGate,
+    /// 执行腿待命(门开但 GPU 链未挂载:auto 预算内恒簇光,链在首个 RIS
+    /// 决策帧懒构造;真机门已过,挂载即驻留)。
+    ColdStandby,
+    /// GPU 生产链驻留:表面重建 + RIS 两趟 + 加性合成,首个 RIS 决策帧起
+    /// 帧内 dispatch(TS 生产合同同构;真机三腿已验)。
+    GpuDispatchResident,
+    /// GPU 资源面被设备拒/超限(fail-closed;视觉恒走既有簇光,原因经诊断披露)。
+    GpuDegraded,
 }
 
 /// 胜者可见性档位供给状态(TS `visibilitySource` 词汇同构)。
@@ -72,7 +80,7 @@ pub(crate) enum MegaLightsExecutionLeg {
 pub(crate) enum MegaLightsVisibilitySource {
     /// 场景 TLAS 驻留在场(RT 驻留构建成功);可见性档位可供给。
     TlasResident,
-    /// 无 TLAS(fail-closed);可见性恒 1 = M1 旧行为。
+    /// 无 TLAS;生产 RIS 保留完整簇光。
     Off,
 }
 
@@ -92,6 +100,19 @@ pub(crate) struct MegaLightsFrameRuntime {
     pub(crate) decision: DirectLightingPathDecision,
     pub(crate) visibility_source: MegaLightsVisibilitySource,
     pub(crate) frame_index: u32,
+    /// GPU 执行腿链(首个 RIS 决策帧懒构造;None = 待命或已降级)。
+    pub(crate) gpu: Option<super::megalights_gpu::MegaLightsGpuChain>,
+    /// GPU 腿已 dispatch 帧数(遥测/证据链)。
+    gpu_dispatched_frames: u32,
+    /// 首挂载视口注入(frame.rs 每帧写入前向前向尺寸)。
+    pending_viewport: (u32, u32),
+    /// 最近一次挂载失败拒因(sticky;诊断披露)。
+    pub(crate) gpu_reject_reason: Option<&'static str>,
+    pub(super) gbuffer: Option<super::megalights_gbuffer::MegaLightsGBuffer>,
+    history_valid: bool,
+    last_view: Option<PlayerView>,
+    shadow_mask: u32,
+    last_scene_key: Option<u64>,
 }
 
 impl MegaLightsFrameRuntime {
@@ -111,7 +132,7 @@ impl MegaLightsFrameRuntime {
             resolve_direct_lighting_path(points, spots, 0, forced, Some(MAX_LOCAL_LIGHTS));
         Self {
             gate,
-            execution_leg: MegaLightsExecutionLeg::PendingRealMachineGate,
+            execution_leg: MegaLightsExecutionLeg::ColdStandby,
             pool: Vec::new(),
             packed: None,
             ies,
@@ -122,6 +143,15 @@ impl MegaLightsFrameRuntime {
                 MegaLightsVisibilitySource::Off
             },
             frame_index: 0,
+            gpu: None,
+            gpu_dispatched_frames: 0,
+            pending_viewport: (0, 0),
+            gpu_reject_reason: None,
+            gbuffer: None,
+            history_valid: false,
+            last_view: None,
+            shadow_mask: 0,
+            last_scene_key: None,
         }
     }
 
@@ -141,7 +171,17 @@ impl MegaLightsFrameRuntime {
         self.decision =
             resolve_direct_lighting_path(points, spots, 0, forced, Some(MAX_LOCAL_LIGHTS));
         self.pool = build_view_space_pool(lighting, view, self.ies_spot_ordinals());
-        self.packed = (!self.pool.is_empty()).then(|| pack_mega_lights(&self.pool));
+        let packed = (!self.pool.is_empty()).then(|| pack_mega_lights(&self.pool));
+        if self.last_view != Some(view) || self.packed.as_ref().map(|p| &p.data) != packed.as_ref().map(|p| &p.data) {
+            self.history_valid = false;
+        }
+        let shadow_mask = lighting.local_lights.iter().filter(|light|
+            matches!(light.kind, LocalLightKind::Point | LocalLightKind::Spot)).enumerate()
+            .fold(0, |mask, (i, light)| mask | (u32::from(light.cast_shadow) << i));
+        if self.shadow_mask != shadow_mask { self.history_valid = false; }
+        self.shadow_mask = shadow_mask;
+        self.last_view = Some(view);
+        self.packed = packed;
         self.visibility_source = if tlas_resident {
             MegaLightsVisibilitySource::TlasResident
         } else {
@@ -150,10 +190,25 @@ impl MegaLightsFrameRuntime {
         self.frame_index = self.frame_index.wrapping_add(1);
     }
 
+    pub(crate) fn note_scene_content(&mut self, key: u64) {
+        if self.last_scene_key != Some(key) { self.history_valid = false; }
+        self.last_scene_key = Some(key);
+    }
+
     /// IES 档位在灯池内的行号视图(重映射载荷的 spot 序;None = 恒 1)。
     pub(crate) fn ies_packing(&self) -> Option<MegaLightsIesPacking<'_>> {
         let (words, spot_count) = self.ies.as_ref()?;
         Some(MegaLightsIesPacking::new(words, *spot_count))
+    }
+
+    /// 挂载前的视口注入(frame.rs 每帧写入前向前向尺寸;首挂载尺寸来源)。
+    pub(crate) fn note_pending_viewport(&mut self, width: u32, height: u32) {
+        self.pending_viewport = (width, height);
+    }
+
+    /// 最近一次挂载失败拒因(诊断披露;None = 未降级)。
+    pub(crate) fn telemetry_gpu_reject_reason(&self) -> Option<&'static str> {
+        self.gpu_reject_reason
     }
 
     fn ies_spot_ordinals(&self) -> bool {
@@ -170,11 +225,12 @@ impl MegaLightsFrameRuntime {
             ies_spot_count: self.ies.as_ref().map_or(0, |(_, count)| *count),
             visibility_source: self.visibility_source,
             frame_index: self.frame_index,
+            gpu_dispatched_frames: self.gpu_dispatched_frames,
         }
     }
 }
 
-/// 帧遥测快照(词面与 TS FrameMetrics.megaLights 同构)。
+/// 帧遥测快照(词面与 TS FrameMetrics.megaLights 同构;GPU 腿字段为 native 扩展)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct MegaLightsTelemetry {
     pub gate: MegaLightsGate,
@@ -184,163 +240,8 @@ pub(crate) struct MegaLightsTelemetry {
     pub ies_spot_count: usize,
     pub visibility_source: MegaLightsVisibilitySource,
     pub frame_index: u32,
-}
-
-/// 参与统一灯池的灯数(点/聚;方向光与半球不入池——方向光走方向光通路,
-/// 半球无 MegaLight kind,如实不入池不虚报)。
-fn count_pool_lights(lighting: &DirectionalLighting) -> (usize, usize) {
-    let mut points = 0usize;
-    let mut spots = 0usize;
-    for light in lighting.local_lights.iter() {
-        match light.kind {
-            LocalLightKind::Point => points += 1,
-            LocalLightKind::Spot => spots += 1,
-            _ => {}
-        }
-    }
-    (points, spots)
-}
-
-/// 视空间变换(TS `worldToView` 刚体 look-at 同口径:view z = −depth,前向为
-/// −z;native basis 行 = (right, up, forward),第三行取负 = TS 的 backward 行;
-/// 点带平移、方向只取行点积)。
-fn to_view(view: PlayerView, world: [f32; 3], translate: bool) -> [f64; 3] {
-    let [right, up, forward] = view.basis();
-    let vector = if translate {
-        let eye = view.eye();
-        [
-            f64::from(world[0]) - f64::from(eye[0]),
-            f64::from(world[1]) - f64::from(eye[1]),
-            f64::from(world[2]) - f64::from(eye[2]),
-        ]
-    } else {
-        [
-            f64::from(world[0]),
-            f64::from(world[1]),
-            f64::from(world[2]),
-        ]
-    };
-    let dot = |row: [f32; 3]| -> f64 {
-        f64::from(row[0]) * vector[0]
-            + f64::from(row[1]) * vector[1]
-            + f64::from(row[2]) * vector[2]
-    };
-    [dot(right), dot(up), -dot(forward)]
-}
-
-/// 作者局部灯 → 统一灯池(视空间;Disabled/Directional/Hemisphere 不入池)。
-/// `ies_mapped` = IES 重映射成功:携带 IES 的 spot 按池序获得行号(与重映射
-/// 迭代同序);否则恒 None(因子恒 1)。
-fn build_view_space_pool(
-    lighting: &DirectionalLighting,
-    view: PlayerView,
-    ies_mapped: bool,
-) -> Vec<MegaLight> {
-    let mut ies_ordinal = 0usize;
-    lighting
-        .local_lights
-        .iter()
-        .filter(|light| matches!(light.kind, LocalLightKind::Point | LocalLightKind::Spot))
-        .map(|light: &LocalLight| {
-            let is_spot = light.kind == LocalLightKind::Spot;
-            let ies_spot_index = if is_spot && light.ies.is_some() && ies_mapped {
-                let index = ies_ordinal;
-                ies_ordinal += 1;
-                Some(index as u32)
-            } else {
-                None
-            };
-            MegaLight {
-                kind: if is_spot {
-                    MegaLightKind::Spot
-                } else {
-                    MegaLightKind::Point
-                },
-                position_view: to_view(view, light.position, true),
-                range: f64::from(light.range),
-                color: [
-                    f64::from(light.radiance[0]),
-                    f64::from(light.radiance[1]),
-                    f64::from(light.radiance[2]),
-                ],
-                intensity: 1.0,
-                decay: f64::from(light.decay),
-                direction_view: if is_spot {
-                    to_view(view, light.direction, false)
-                } else {
-                    [0.0, 0.0, 1.0]
-                },
-                inner_cone_cos: f64::from(light.inner_cos),
-                outer_cone_cos: f64::from(light.outer_cos),
-                half_extent: [0.0, 0.0],
-                two_sided: false,
-                ies_spot_index,
-            }
-        })
-        .collect()
-}
-
-/// 既有 IES 存储的表节起点(16 灯槽参数节之后;与 `ies_shading` 的
-/// `IES_LIGHT_ROWS` 同值,本地互钉避免跨模块私有依赖)。
-const IES_TABLE_SECTION_BASE: usize = 16;
-
-/// IES 档位:light-slot 行 → spot-ordinal 行重映射(TS `packIesShading` 的
-/// `[0, spotCount)` spot 参数节合同)。池序 spot 携带 IES 时,逐行拷贝既有
-/// 4 词(profileIndex/rotationHalfDeg/scaleFactor/metaBase)并把 metaBase
-/// 重定基到本载荷表节(spot 行数 + profile 序),表节(元数据 + 展开表,
-/// 存储行 16..)逐词拷贝;`evaluate_ies_shading_factor` 的寻址合同
-/// (spot 行 4 词 + metaBase→[tableBase,count,halfStep,symmetry])由测试对拍。
-/// 任一环节缺失(profile 未声明/槽行缺省/表节缺席)整体 fail-closed 回退
-/// None(因子恒 1),绝不半挂载。
-fn remap_ies_spot_rows(
-    lighting: &DirectionalLighting,
-    storage_rows: Option<&[[f32; 4]]>,
-) -> Option<(Vec<f32>, usize)> {
-    let rows = storage_rows?;
-    if rows.len() <= IES_TABLE_SECTION_BASE {
-        return None;
-    }
-    let profiles = lighting.light_profiles.as_deref().unwrap_or_default();
-    // 一趟携带槽行 4 词 + profile 序(metaBase 重定基需要两者)。
-    let mut spot_rows: Vec<([f32; 4], usize)> = Vec::new();
-    for (slot, light) in lighting.local_lights.iter().enumerate() {
-        let (LocalLightKind::Spot, Some(ies)) = (&light.kind, &light.ies) else {
-            continue;
-        };
-        let profile_index = profiles
-            .iter()
-            .position(|profile| profile.profile_id == ies.profile_id)?;
-        let slot_row = rows.get(slot)?;
-        if slot_row[0] < 0.0 {
-            // 槽行缺省(-1)= 打包侧未登记该灯的 IES,合同不一致,整体回退。
-            return None;
-        }
-        spot_rows.push((*slot_row, profile_index));
-    }
-    if spot_rows.is_empty() {
-        return None;
-    }
-    let spot_count = spot_rows.len();
-    let table_rows = rows.len() - IES_TABLE_SECTION_BASE;
-    let metadata_rows = profiles.len().min(table_rows);
-    let mut words = Vec::with_capacity(spot_count * 4 + table_rows * 4);
-    for (row, profile_index) in &spot_rows {
-        // metaBase 重定基:本载荷表节起点 = spot 行数;profile 元数据行 =
-        // 表节起点 + profile 序(与 TS metaBase = spotCount + profileIndex 同式)。
-        let mut remapped = *row;
-        remapped[3] = (spot_count + profile_index) as f32;
-        words.extend_from_slice(&remapped);
-    }
-    // 表节逐行拷贝;元数据行的 tableBase(word 0)同为 native 存储坐标,
-    // 同步重定基:new = spotCount + (old − 16),否则 factor 求值越界回 0。
-    for (offset, row) in rows.iter().skip(IES_TABLE_SECTION_BASE).enumerate() {
-        let mut copied = *row;
-        if offset < metadata_rows && copied[0] >= IES_TABLE_SECTION_BASE as f32 {
-            copied[0] = (spot_count as f32) + copied[0] - IES_TABLE_SECTION_BASE as f32;
-        }
-        words.extend_from_slice(&copied);
-    }
-    Some((words, spot_count))
+    /// GPU 执行腿已 dispatch 帧数(0 = 执行腿未激活/未到 RIS 帧)。
+    pub gpu_dispatched_frames: u32,
 }
 
 #[cfg(test)]

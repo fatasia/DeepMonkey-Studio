@@ -11,6 +11,8 @@ import { deformationBoundsEnvelope, type DeformationBoundsEnvelope, type Deforma
 import { authoredShadowPipelines, type Pipelines } from "./pipelines.js";
 import { runResourceCleanup } from "./resourceCleanup.js";
 import type { MaterialBinding } from "./materialBindings.js";
+import type { PreparedBatch } from "../renderPacket.js";
+import { preparePacketMainPipelines } from "./packetPipelinePreparation.js";
 
 /** 包发布和成功提交是两个边界：被替换的姿态资源保留到新帧提交。 */
 export class PacketDeformationState {
@@ -27,6 +29,9 @@ export class PacketDeformationState {
 
   constructor(private readonly session: DeviceSession, pipelines?: Pipelines) {
     if (pipelines) this.attachPipelines(pipelines);
+  }
+  prepareMainPipelines(batches: readonly PreparedBatch[]): Promise<void> | undefined {
+    return preparePacketMainPipelines(this.pipelines, batches.filter(batch => batch.pose !== undefined));
   }
 
   /** 延迟变形变体就绪后原地附着；附着前 enabled=false，含变形候选被 packet 门禁拦截。 */

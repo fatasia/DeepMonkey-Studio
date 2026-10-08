@@ -23,6 +23,16 @@ describe("Three-compatible author output color effects", () => {
     expect(apply(source, [0, 0], {})).toEqual(source);
     expect(apply(source, [0, 0], { colorGrading: neutral })).toEqual(source);
   });
+  it("keeps negative graded colors unchanged when white balance is disabled", () => {
+    const negative = [-0.4, -0.2, -0.1] as const;
+    expect(apply(negative, [0.5, 0.5], { colorGrading: neutral })).toEqual(negative);
+    expect(outputShader).toContain("if (wb.x != 0.0 || wb.y != 0.0)");
+  });
+  it("uses an absolute denominator for negative balanced luminance", () => {
+    const result = apply([-0.4, -0.2, -0.1], [0.5, 0.5], { colorGrading: { ...neutral, temperature: 1 } });
+    expect(result.every(value => Number.isFinite(value) && Math.abs(value) < 1)).toBe(true);
+    expect(outputShader).toContain("max(abs(dot(color, vec3f(0.2126, 0.7152, 0.0722)))");
+  });
   it.each([[[], [0, 0]], [[1, 2], [0, 0]], [[1, 2, 3, 4], [0, 0]], [[1, 2, 3], []],
     [[1, 2, 3], [0, 0, 0]], [[Infinity, 2, 3], [0, 0]], [[1, 2, 3], [NaN, 0]]])
   ("rejects malformed CPU color/UV tuples", (color, uv) => {

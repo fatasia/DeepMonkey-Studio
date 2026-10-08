@@ -6,6 +6,7 @@ const SOURCE_ROOTS = [
   "packages/deep-engine-wasm/src",
   "packages/deep-engine-native/src",
   "packages/deep-engine-native/assets",
+  "packages/deep-engine-native/geometry_dag/src",
 ];
 const SOURCE_FILES = [
   "packages/deep-engine-wasm/Cargo.toml",
@@ -13,6 +14,8 @@ const SOURCE_FILES = [
   "packages/deep-engine-native/Cargo.toml",
   "packages/deep-engine-native/build.rs",
   "packages/deep-engine-native/rust-toolchain.toml",
+  "packages/deep-engine-native/geometry_dag/Cargo.toml",
+  "packages/deep-engine-native/geometry_dag/Cargo.lock",
   "scripts/build-wasm-bundle.mjs",
   "scripts/lib/wasmArtifactFingerprint.mjs",
 ];

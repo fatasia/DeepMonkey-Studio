@@ -10,6 +10,7 @@ import { installDeepEngineConsumer, packDeepEngineConsumerDependencies } from ".
 import { isWithin, locatePnpm, runLogged } from "./lib/sdkConsumerPackages.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const cpuOnly = process.argv.includes("--cpu-only");
 const workspace = await mkdtemp(join(tmpdir(), "deep-engine-consumer-"));
 assert.ok(!isWithin(root, workspace), "External consumer must be outside the monorepo");
 const reportDir = join(root, "test-output/deep-engine-consumer-20260922"); await mkdir(reportDir, { recursive: true });
@@ -58,8 +59,8 @@ try {
   const require = createRequire(join(root, "apps/web/package.json")), viteRequire = createRequire(require.resolve("vite"));
   const esbuild = await import(pathToFileURL(viteRequire.resolve("esbuild")).href);
   report.bundle = await bundleConsumer({ consumer: report.install.consumer, reportDir, esbuild });
-  report.browser = await checkDeepEngineBrowser({ root, consumer: report.install.consumer, reportDir, bundle: report.bundle });
-  report.status = "passed";
+  if (!cpuOnly) report.browser = await checkDeepEngineBrowser({ root, consumer: report.install.consumer, reportDir, bundle: report.bundle });
+  report.status = cpuOnly ? "cpu-passed" : "passed";
 } catch (error) {
   report.status = "failed"; report.error = error.stack ?? String(error); process.exitCode = 1; console.error(report.error);
 } finally {

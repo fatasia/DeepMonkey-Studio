@@ -52,8 +52,12 @@ export const DEFAULT_ADVANCED_MATERIAL_PARAMETERS: NormalizedAdvancedMaterialPar
 export const ADVANCED_PARAMETER_FLOAT_COUNT = 12 as const;
 /** 材质 uniform 内 advanced 带起始 float 偏移(紧随 40..47 扩展带)。 */
 export const MATERIAL_PARAMETER_ADVANCED_BAND_FLOAT_OFFSET = 48 as const;
-/** advanced 管线变体的材质 uniform 总 float 数(240B,16B 对齐)。 */
-export const MATERIAL_PARAMETER_ADVANCED_FLOATS = 60 as const;
+/** Specular factor/color at 60..63; independent UV slots at 64..79. */
+export const MATERIAL_PARAMETER_SPECULAR_FACTOR_FLOAT_OFFSET = 60 as const;
+export const MATERIAL_PARAMETER_SPECULAR_TEXTURE_FLOAT_OFFSET = 64 as const;
+export const MATERIAL_PARAMETER_SPECULAR_COLOR_TEXTURE_FLOAT_OFFSET = 72 as const;
+/** Advanced variant only; stock remains 192B and its ABI is unchanged. */
+export const MATERIAL_PARAMETER_ADVANCED_FLOATS = 80 as const;
 
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const f32 = (value: number): number => Math.fround(value);

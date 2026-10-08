@@ -61,12 +61,14 @@ export interface ThirdPartyMaterialProfile {
  * 不再整文件拒绝（glTF 规范允许忽略非必需扩展，损失合同要求"不静默丢弃"）。
  * required 扩展原样保留，由严格 manifest 层精确 fail-closed；caller-owned 文档不被修改。
  */
-export function projectThirdPartyMaterialProfile(json: unknown): ThirdPartyMaterialProfile {
+export function projectThirdPartyMaterialProfile(json: unknown,
+  additionalSupported: ReadonlySet<string> = new Set()): ThirdPartyMaterialProfile {
   const document = object(json, "$");
   const used = list(document.extensionsUsed, "extensionsUsed");
   const required = new Set(list(document.extensionsRequired, "extensionsRequired"));
   const losses: CapabilityFailure[] = [];
-  const retainedUsed = used.filter(name => required.has(name as string) || DOCUMENT_SUPPORTED_EXTENSIONS.has(name as string));
+  const retainedUsed = used.filter(name => required.has(name as string) || DOCUMENT_SUPPORTED_EXTENSIONS.has(name as string)
+    || additionalSupported.has(name as string));
   const result: JsonObject = { ...document, extensionsUsed: retainedUsed };
   if (!retainedUsed.length) delete result.extensionsUsed;
   if (document.materials !== undefined) {
@@ -77,7 +79,7 @@ export function projectThirdPartyMaterialProfile(json: unknown): ThirdPartyMater
       const kept: JsonObject = {};
       for (const name of Object.keys(extensions)) {
         const projected = !required.has(name) && name !== KHR_MATERIALS_EMISSIVE_STRENGTH
-          && !DOCUMENT_SUPPORTED_EXTENSIONS.has(name);
+          && !DOCUMENT_SUPPORTED_EXTENSIONS.has(name) && !additionalSupported.has(name);
         if (!projected) {
           kept[name] = extensions[name]!;
           continue;

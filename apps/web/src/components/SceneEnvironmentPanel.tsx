@@ -35,12 +35,12 @@ interface SceneEnvironmentPanelProps {
   onCoordinatesChange: (next: SceneCoordinateSystemState) => void;
   onWeatherChange: (next: WeatherMode) => void;
   onEnvironmentChange: (next: SceneEnvironmentState) => void;
-  onLightingChange: (next: GlobalLightingState) => void;
-  onPostProcessingChange: (next: ScenePostProcessingState) => void;
+  onLightingChange: (next: GlobalLightingState, previewOnly?: boolean) => void;
+  onPostProcessingChange: (next: ScenePostProcessingState, previewOnly?: boolean) => void;
   onChooseEnvironmentMap: () => void;
   onSelectLight: (id: string) => void;
   onAddLight: (type: SceneLightState["type"]) => void;
-  onUpdateLight: (id: string, patch: Partial<SceneLightState>) => void;
+  onUpdateLight: (id: string, patch: Partial<SceneLightState>, previewOnly?: boolean) => void;
   onRemoveLight: (id: string) => void;
   /** F3 探针网格烘焙：可选；透传给灯光编辑器的 GI 区块。 */
   probeBakeState?: ProbeGridBakeUiState;

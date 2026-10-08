@@ -2,7 +2,7 @@ import type {
   GpuResidencyUploader, GpuResidencyUploadRequest, GpuResidencyUploadResult,
 } from "../streaming/index.js";
 import {
-  prepareTextures, type DecodedTexture, type PreparedTexture, type PreparedTextureFormat,
+  prepareTextures, TEXTURE_SEMANTICS, type DecodedTexture, type PreparedTexture, type PreparedTextureFormat,
   type TextureCompressionFeature, type TextureSemantic,
 } from "../textures/decodedTexture.js";
 import type { DeviceSession } from "./deviceSession.js";
@@ -150,7 +150,7 @@ function validateSource(source: PreparedTexture, request: GpuResidencyUploadRequ
   }
   if (typeof source.id !== "string" || !source.id.trim() || source.id.length > 256
     || !Number.isSafeInteger(source.revision) || source.revision < 0) throw new Error("Invalid texture residency identity.");
-  if (!["baseColor", "metallicRoughness", "normal", "occlusion", "emissive"].includes(source.semantic)) {
+  if (!TEXTURE_SEMANTICS.includes(source.semantic)) {
     throw new Error("Invalid texture residency semantic.");
   }
   const layout = FORMAT_LAYOUT[source.format] as FormatLayout | undefined;

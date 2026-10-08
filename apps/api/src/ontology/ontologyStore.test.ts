@@ -85,6 +85,13 @@ export function publishableContext(): OntologyPublishContext {
 }
 
 describe("OntologyPackageStore（原子写 + 版本纪律）", () => {
+  it("rejects a stale graph relation edit without losing a newer saved package", async () => {
+    const store = await createStore();
+    const first = await store.createPackage("project-1", buildPublishablePackage());
+    const latest = await store.savePackageDraft("project-1", { ...first, name: "新设备本体" });
+    await expect(store.savePackageDraft("project-1", { ...first, name: "过期图谱" })).rejects.toMatchObject({ code: "conflict" });
+    expect(await store.getPackage("project-1", first.id)).toEqual(latest);
+  });
   it("并发创建互不丢失（链内串行读改写回归）", async () => {
     const store = await createStore();
     const base = buildPublishablePackage();

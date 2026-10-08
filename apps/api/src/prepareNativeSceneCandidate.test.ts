@@ -8,7 +8,7 @@ import { migrateSceneSnapshotV1, type ModelRecord, type SceneSnapshot } from "@b
 import { JsonStore } from "./jsonStore.js";
 import { LocalObjectStore } from "./objects.js";
 import { prepareNativeSceneCandidate } from "./prepareNativeSceneCandidate.js";
-import type { NativeSceneCandidate } from "./nativeSceneCandidateCompiler.js";
+import type { NativeSceneCandidate, NativeSceneCandidateInput } from "./nativeSceneCandidateCompiler.js";
 const directories: string[] = [];
 afterEach(async () => { vi.restoreAllMocks(); await Promise.all(directories.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
 const compiled = { packageJson: "{}", evidence: {}, report: { status: "blocked" }, compilerSha256: "a".repeat(64) } as NativeSceneCandidate;
@@ -36,6 +36,26 @@ it("reads frozen bytes after source replacement, deduplicates visible assets and
  const result = await prepareNativeSceneCandidate(f, compiler);
  expect(result.compiled).toBe(compiled); expect(compiler).toHaveBeenCalledTimes(1);
  expect(result.capture.resources).toHaveLength(1);
+});
+it("freezes inline author images once across instances and material slots without network reads", async () => {
+ const f = await fixture();
+ const url = "data:image/png;base64,iVBORw0KGgo=";
+ f.scene.models[0]!.material = { baseColorMapUrl: url, slotOverrides: { "0": { normalMapUrl: url } } };
+ f.scene.models[1]!.material = { roughnessMapUrl: url };
+ await f.store.saveScene(f.scene);
+ const compiler = vi.fn(async (_input: NativeSceneCandidateInput) => compiled);
+ await prepareNativeSceneCandidate(f, compiler);
+ const textures = compiler.mock.calls[0]![0]!.textures!;
+ expect([...textures.keys()]).toEqual([url]);
+ expect(Buffer.from(textures.get(url)!)).toEqual(Buffer.from("iVBORw0KGgo=", "base64"));
+});
+it("rejects malformed inline author images before starting compilation", async () => {
+ const f = await fixture();
+ f.scene.models[0]!.material = { baseColorMapUrl: "data:image/svg+xml;base64,AAAA" };
+ await f.store.saveScene(f.scene);
+ const compiler = vi.fn(async () => compiled);
+ await expect(prepareNativeSceneCandidate(f, compiler)).rejects.toThrow("PNG/JPEG");
+ expect(compiler).not.toHaveBeenCalled();
 });
 it.each(["missing", "corrupt"])("rejects %s private resource before compilation", async kind => {
  const f = await fixture(), originalRead = f.objects.read.bind(f.objects);
@@ -97,4 +117,3 @@ it("loads persisted probe-bake candidates from disk and forwards gzip bytes to t
  await prepareNativeSceneCandidate(empty, emptyCompiler);
  expect(emptyCompiler.mock.calls[0]![0]!.probeBakeCandidates).toBeUndefined();
 });
-

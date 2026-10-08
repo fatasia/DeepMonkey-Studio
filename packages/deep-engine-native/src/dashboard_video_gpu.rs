@@ -463,10 +463,12 @@ impl DashboardVideoGpuCompositor {
             pass.set_bind_group(0, &self.frame_bind_group, &[]);
             pass.set_bind_group(1, &self.videos[slot.video_index].bind_group, &[]);
             pass.set_vertex_buffer(0, slot.vertex_buffer.slice(..));
+            deep_engine_native::benchmark_observer::note_draw();
             pass.draw(0..6, 0..1);
             pass.set_pipeline(&self.solid_pipeline);
             pass.set_bind_group(0, &self.frame_bind_group, &[]);
             pass.set_vertex_buffer(0, slot.controls_buffer.slice(..));
+            deep_engine_native::benchmark_observer::note_draw();
             pass.draw(0..CONTROL_VERTEX_COUNT as u32, 0..1);
         }
     }

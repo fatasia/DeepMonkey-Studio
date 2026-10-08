@@ -25,7 +25,9 @@ export async function registerProductionWeb(app: FastifyInstance, options: Produ
   await app.register(staticFiles, {
     root,
     prefix: "/",
-    wildcard: true,
+    // Bundled /assets/<hash> must outrank the object store's /assets/* route.
+    // Production files are immutable between builds; register their exact paths.
+    wildcard: false,
     cacheControl: true,
     immutable: false,
     maxAge: "1h",

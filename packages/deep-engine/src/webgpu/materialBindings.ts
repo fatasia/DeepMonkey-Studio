@@ -2,6 +2,8 @@ import type { PreparedMaterialTextures } from "../renderPacket.js";
 import { DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS } from "../shaderAbi/contract.js";
 import { packExtendedParameterBlock } from "../shader/materialParameterAbi.js";
 import { MATERIAL_PARAMETER_ADVANCED_BAND_FLOAT_OFFSET, MATERIAL_PARAMETER_ADVANCED_FLOATS,
+  MATERIAL_PARAMETER_SPECULAR_FACTOR_FLOAT_OFFSET, MATERIAL_PARAMETER_SPECULAR_TEXTURE_FLOAT_OFFSET,
+  MATERIAL_PARAMETER_SPECULAR_COLOR_TEXTURE_FLOAT_OFFSET,
   packAdvancedParameterBlock } from "../shader/materialAdvancedParameters.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { uploadBuffer } from "./meshBuffers.js";
@@ -16,6 +18,8 @@ export interface MaterialBinding {
   readonly normal?: TextureBinding;
   readonly occlusion?: TextureBinding;
   readonly emissive?: TextureBinding;
+  readonly specular?: TextureBinding;
+  readonly specularColor?: TextureBinding;
   readonly key: string;
   readonly layered?: LayeredMaterialBinding;
   readonly neutral?: TextureBinding;
@@ -103,7 +107,7 @@ export class MaterialBindingPool {
 
   private poolKey(textures: PreparedMaterialTextures, lookup: (id: string) => TextureBinding): string {
     const slots = [textures.baseColor, textures.metallicRoughness, textures.normal,
-      textures.occlusion, textures.emissive,
+      textures.occlusion, textures.emissive, textures.specular, textures.specularColor,
       ...(textures.layered?.textures.flatMap(layer => [layer.baseColor, layer.metallicRoughness]) ?? [])];
     const identities = slots.map(slot => slot ? this.textureId(lookup(slot.texture)) : 0);
     return `${materialKey(textures)}|${identities.join(",")}`;
@@ -146,8 +150,10 @@ export function createMaterialBinding(session: DeviceSession, layouts: MaterialL
   if (!textures) return undefined;
   if (!layouts) throw new Error("Material bind group layout is unavailable.");
   if (textures.layered && !layouts.layeredMaterials) throw new Error("PBR capability layered-materials/not-enabled.");
-  if (textures.advanced && !layouts.advancedMaterials) throw new Error("PBR capability advanced-materials/not-enabled.");
+  if ((textures.advanced || textures.specularFactor !== undefined) && !layouts.advancedMaterials)
+    throw new Error("PBR capability advanced-materials/not-enabled.");
   const fallbackSlot = textures.baseColor ?? textures.metallicRoughness ?? textures.normal ?? textures.occlusion ?? textures.emissive
+    ?? textures.specular ?? textures.specularColor
     ?? textures.layered?.textures.flatMap(layer => [layer.baseColor, layer.metallicRoughness]).find(Boolean);
   const neutral = fallbackSlot ? undefined
     : layouts.layeredMaterials || layouts.advancedMaterials ? createLayeredNeutralTexture(session) : undefined;
@@ -158,6 +164,8 @@ export function createMaterialBinding(session: DeviceSession, layouts: MaterialL
   const normal = textures.normal ? lookup(textures.normal.texture) : undefined;
   const occlusion = textures.occlusion ? lookup(textures.occlusion.texture) : undefined;
   const emissive = textures.emissive ? lookup(textures.emissive.texture) : undefined;
+  const specular = textures.specular ? lookup(textures.specular.texture) : undefined;
+  const specularColor = textures.specularColor ? lookup(textures.specularColor.texture) : undefined;
   let parameters: GPUBuffer;
   try { parameters = pooledParameters
     ?? uploadBuffer(session, "Deep material textures", packMaterialParameters(textures, layouts.advancedMaterials === true), GPUBufferUsage.UNIFORM); }
@@ -174,10 +182,15 @@ export function createMaterialBinding(session: DeviceSession, layouts: MaterialL
       { binding: 5, resource: ao.view }, { binding: 6, resource: ao.sampler },
       { binding: 7, resource: n.view }, { binding: 8, resource: n.sampler },
       { binding: 9, resource: e.view }, { binding: 10, resource: e.sampler },
+      ...(layouts.advancedMaterials ? [
+        { binding: 16, resource: actual(specular).view }, { binding: 17, resource: actual(specular).sampler },
+        { binding: 18, resource: actual(specularColor).view }, { binding: 19, resource: actual(specularColor).sampler },
+      ] : []),
       ...(layered?.entries ?? []),
     ] });
     return { group, parameters, ...(base ? { base } : {}), ...(metallicRoughness ? { metallicRoughness } : {}),
       ...(normal ? { normal } : {}), ...(occlusion ? { occlusion } : {}), ...(emissive ? { emissive } : {}),
+      ...(specular ? { specular } : {}), ...(specularColor ? { specularColor } : {}),
       ...(layered ? { layered } : {}), ...(neutral ? { neutral } : {}), key: materialKey(textures) };
   } catch (error) {
     if (layered) session.release(layered.uniform);
@@ -194,6 +207,7 @@ export function materialBindingMatches(binding: MaterialBinding | undefined, tex
   return binding.base === actual(textures.baseColor) && binding.metallicRoughness === actual(textures.metallicRoughness)
     && binding.normal === actual(textures.normal) && binding.occlusion === actual(textures.occlusion)
     && binding.emissive === actual(textures.emissive) && binding.key === materialKey(textures)
+    && binding.specular === actual(textures.specular) && binding.specularColor === actual(textures.specularColor)
     && (!textures.layered || textures.layered.parameters.layers.map((layer, index) => ({ layer, index }))
       .filter(value => value.layer.coverage > 0)
       .flatMap(({ index }) => [textures.layered!.textures[index]?.baseColor, textures.layered!.textures[index]?.metallicRoughness])
@@ -250,6 +264,11 @@ export function packMaterialParameters(textures: PreparedMaterialTextures, advan
     data.set(packExtendedParameterBlock(textures.extendedParameters), MATERIAL_PARAMETER_EXTENDED_BAND_FLOAT_OFFSET);
   }
   if (advancedLayout && textures.advanced) data.set(packAdvancedParameterBlock(textures.advanced), MATERIAL_PARAMETER_ADVANCED_BAND_FLOAT_OFFSET);
+  if (advancedLayout) {
+    data.set([...(textures.specularColorFactor ?? [1, 1, 1]), textures.specularFactor ?? 1], MATERIAL_PARAMETER_SPECULAR_FACTOR_FLOAT_OFFSET);
+    writeTransform(data, MATERIAL_PARAMETER_SPECULAR_TEXTURE_FLOAT_OFFSET, textures.specular, textures.specular !== undefined);
+    writeTransform(data, MATERIAL_PARAMETER_SPECULAR_COLOR_TEXTURE_FLOAT_OFFSET, textures.specularColor, textures.specularColor !== undefined);
+  }
   return data;
 }
 

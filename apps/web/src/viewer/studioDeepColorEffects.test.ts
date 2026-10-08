@@ -7,13 +7,13 @@ const state: ScenePostProcessingState = { enabled: true, smaa: false, ssao: fals
 
 describe("Studio author color effects", () => {
   it("turns default AO and bloom off unless those author passes are active", () => {
-    expect(readStudioDeepPostProcess(state, true)).toEqual({ ambientOcclusion: false, screenSpaceReflection: false, bloom: false });
+    expect(readStudioDeepPostProcess(state, true)).toEqual({ ambientOcclusion: false, screenSpaceReflection: false, volumetricFog: false, bloom: false });
     const enabled = { ...state, ssao: true, bloom: true };
-    expect(readStudioDeepPostProcess(enabled, true)).toEqual({ ambientOcclusion: true, screenSpaceReflection: false, bloom: true,
+    expect(readStudioDeepPostProcess(enabled, true)).toEqual({ ambientOcclusion: true, screenSpaceReflection: false, volumetricFog: false, bloom: true,
       authorBloom: { strength: 0.35, threshold: 0.9 } });
-    expect(readStudioDeepPostProcess({ ...enabled, enabled: false }, true)).toEqual({ ambientOcclusion: false, screenSpaceReflection: false, bloom: false });
-    expect(readStudioDeepPostProcess(enabled, false)).toEqual({ ambientOcclusion: false, screenSpaceReflection: false, bloom: false });
-    expect(readStudioDeepPostProcess({ ...state, gtao: true }, true)).toEqual({ ambientOcclusion: true, screenSpaceReflection: false, bloom: false });
+    expect(readStudioDeepPostProcess({ ...enabled, enabled: false }, true)).toEqual({ ambientOcclusion: false, screenSpaceReflection: false, volumetricFog: false, bloom: false });
+    expect(readStudioDeepPostProcess(enabled, false)).toEqual({ ambientOcclusion: false, screenSpaceReflection: false, volumetricFog: false, bloom: false });
+    expect(readStudioDeepPostProcess({ ...state, gtao: true }, true)).toEqual({ ambientOcclusion: true, screenSpaceReflection: false, volumetricFog: false, bloom: false });
   });
   it("compiles bounded author SSR quality into the Deep per-frame profile", () => {
     const result = readStudioDeepPostProcess({ ...state, screenSpaceReflection: true,

@@ -40,7 +40,7 @@ try {
       // 直接打开专用 QA 三维路由；2D→3D 会先保存工作区，不属于本项只读布局验收。
       await page.goto("http://127.0.0.1:5173/studio/dfc62dfa-22f7-40ce-8cbe-aab2271cdc56/applications/abe8f38f-bdc3-47c7-89e3-a18c93069a9b/scenes/abe8f38f-bdc3-47c7-89e3-a18c93069a9b");
       await page.getByLabel("自动保存", { exact: true }).uncheck();
-      await page.locator(".viewport canvas").waitFor();
+      await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
       await page.getByRole("button", { name: "查看与分析", exact: true }).click();
       await page.getByRole("menuitem", { name: "环境与灯光", exact: true }).click();
       const panel = page.getByLabel("环境与全局灯光", { exact: true });

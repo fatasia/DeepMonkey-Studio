@@ -10,6 +10,7 @@ import { FrameCaptureSourceMapPanel } from "./FrameCaptureSourceMapPanel";
 import { rendererBackendLabel } from "../viewer/rendererBackendLabel";
 import { rendererCapabilityRows } from "../rendererCapabilityUserFace";
 import { rendererCapabilityEvidencePath } from "@bim-studio/contracts";
+import { useStudioRendererPreparation } from "../viewer/studioRendererPreparation";
 
 interface Props {
   locale: AppLocale;
@@ -30,6 +31,7 @@ interface Props {
 }
 
 export function RendererDiagnosticsPanel(props: Props) {
+  const preparation = useStudioRendererPreparation();
   return (
     <section className="renderer-diagnostics-panel" aria-label={tr(props.locale, "渲染引擎设置", "Rendering engine settings")}>
       <header>
@@ -76,6 +78,15 @@ export function RendererDiagnosticsPanel(props: Props) {
                   {props.current !== item.backend && props.desired === item.backend && <small>{tr(props.locale, "目标", "Target")}</small>}
                 </div>
                 <p>{trReadiness(props.locale, item)}</p>
+                {item.backend !== "webgl" && props.current !== item.backend && preparation[item.backend] && (
+                  <p data-scene-preparation={preparation[item.backend]?.phase}>
+                    {preparation[item.backend]?.phase === "ready"
+                      ? tr(props.locale, "场景已准备，可快速切换", "Scene prepared for quick switching")
+                      : preparation[item.backend]?.phase === "failed"
+                        ? tr(props.locale, "后台准备未完成，切换时重试", "Background preparation failed; switching retries")
+                        : tr(props.locale, "正在后台准备场景，当前视图可继续操作", "Preparing the scene; the current view remains interactive")}
+                  </p>
+                )}
                 <ul>
                   {item.details.map((detail) => (
                     <li key={detail}>{trDetail(props.locale, detail)}</li>
@@ -165,7 +176,7 @@ function DeepRuntimeSummary({ locale, frame, diagnostics }: {
         <Metric label={tr(locale, "驻留预算倍率", "Residency budget scale")} value={adaptive ? `${adaptive.knobs.residencyBudgetScale.toFixed(2)}×` : "—"} />
         <Metric label={tr(locale, "时域历史", "Temporal history")} value={frame.cameraCut ? tr(locale, "已重置", "Reset") : tr(locale, "保持", "Retained")} />
         {memory && <Metric label={tr(locale, "设备资源", "Device resources")} value={`${formatBytes(memory.estimatedBytes)} / ${memory.admission ? formatBytes(memory.admission.budgetBytes) : "—"}`} warning={Boolean(memory.admission && memory.admission.budgetBytes > 0 && memory.estimatedBytes / memory.admission.budgetBytes > .9)} />}
-        {transient && <Metric label={tr(locale, "瞬态纹理", "Transient textures")} value={`${transient.acquireCount} · ${formatBytes(transient.residentBytes)}`} />}
+        {transient && <Metric label={tr(locale, "瞬态纹理", "Transient textures")} value={`${transient.freeCount + transient.inFlightCount + transient.pendingReturnCount} · ${formatBytes(transient.residentBytes)}`} />}
         {probes && <Metric label={tr(locale, "DDGI Clipmap", "DDGI clipmap")} value={probes.active ? tr(locale, "运行中", "Active") : probes.requested ? tr(locale, "不可用", "Unavailable") : tr(locale, "未请求", "Not requested")} warning={Boolean(probes.failure || (probes.requested && !probes.active))} />}
       </div>
       {adaptive && <small className="renderer-deep-note">{adaptive.explanation}</small>}

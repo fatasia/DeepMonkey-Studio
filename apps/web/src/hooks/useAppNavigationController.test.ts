@@ -82,6 +82,18 @@ describe("documentation navigation preserves author work", () => {
     expect(apiMock.updateProject).not.toHaveBeenCalled();
   });
 
+  it("opens in-base docs with its section while retaining the existing author return path", () => {
+    vi.stubEnv("BASE_URL", "/DeepMonkey-Studio/");
+    try {
+      const { controller, state } = docsFixture();
+      controller.openDocs("sdk-examples", "scene state");
+      expect(window.history.pushState).toHaveBeenLastCalledWith(expect.any(Object), "", "/DeepMonkey-Studio/docs/sdk-examples#scene%20state");
+      controller.closeDocs();
+      expect(window.history.pushState).toHaveBeenLastCalledWith(expect.any(Object), "", "/DeepMonkey-Studio/studio/p/applications/a/pages/one");
+      expect(state.pendingBehaviorDraftRef.current).toBeUndefined();
+    } finally { vi.unstubAllEnvs(); }
+  });
+
   it("blocks unnamed drafts and store failures without opening docs or discarding data", () => {
     const unnamed = docsFixture(" ");
     unnamed.controller.openDocs("sdk-examples");

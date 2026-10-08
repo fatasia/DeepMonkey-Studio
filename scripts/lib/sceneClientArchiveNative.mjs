@@ -44,6 +44,13 @@ export function validateSceneClientArchiveNative(manifest, contents) {
   "内外运行包合同或 packageHash 不匹配");
   const compilation = json("native/compilation-evidence.json"), report = json("native/compatibility-report.json");
   const authorScene=structuredClone(scene);
+  for (const model of authorScene.models) for (const material of [model.material, ...Object.values(model.material?.slotOverrides ?? {})]) {
+    if (!material) continue;
+    for (const field of AUTHOR_TEXTURE_FIELDS) {
+      const sourceFile = manifest.files?.find(file => file.path === material[field]);
+      if (sourceFile?.sourceUrl) material[field] = sourceFile.sourceUrl;
+    }
+  }
   if (compilation.recipe==="deep-scene-static-compile-v11" && authorScene.environment) {
     const sourceFile=manifest.files?.find(file=>file.path===authorScene.environment.environmentMapUrl);
     if (sourceFile?.sourceUrl) authorScene.environment.environmentMapUrl=sourceFile.sourceUrl;
@@ -158,7 +165,37 @@ function validateSourceAssets(scene, project, compilation, manifest) {
     const file = files.get(path);
     check(file && file.bytes === asset.bytes && file.sha256 === asset.sha256, "源资源与归档索引不匹配");
   }
+  const expectedTextures = new Map();
+  for (const model of scene.models.filter(model => model.visible)) {
+    for (const material of [model.material, ...Object.values(model.material?.slotOverrides ?? {})]) {
+      if (!material) continue;
+      for (const field of AUTHOR_TEXTURE_FIELDS) {
+        const path = material[field];
+        if (typeof path !== "string" || !path.trim()) continue;
+        if (path.startsWith("data:")) {
+          const match = /^data:image\/(?:png|jpeg);base64,([A-Za-z0-9+/]+={0,2})$/.exec(path);
+          check(match, "内嵌贴图格式无效");
+          const bytes = Buffer.from(match[1], "base64");
+          expectedTextures.set(createHash("sha256").update(bytes).digest("hex"), bytes.length);
+          continue;
+        }
+        const file = files.get(path);
+        check(path.startsWith("assets/") && file && hash(file.sha256), "贴图源资源不是已校验包内路径");
+        expectedTextures.set(file.sha256, file.bytes);
+      }
+    }
+  }
+  const textures = compilation.sourceTextures ?? [];
+  check(Array.isArray(textures) && textures.length === expectedTextures.size, "贴图源资源证据数量不匹配");
+  const textureHashes = new Set();
+  for (const texture of textures) {
+    check(object(texture) && hash(texture.sha256) && Number.isSafeInteger(texture.bytes) && texture.bytes > 0
+      && !textureHashes.has(texture.sha256) && expectedTextures.get(texture.sha256) === texture.bytes, "贴图源资源与归档索引不匹配");
+    textureHashes.add(texture.sha256);
+  }
 }
+
+const AUTHOR_TEXTURE_FIELDS = ["baseColorMapUrl", "normalMapUrl", "ambientOcclusionMapUrl", "roughnessMapUrl", "metalnessMapUrl"];
 
 function uniqueIndex(values, key, message) {
   const index = new Map();
@@ -195,13 +232,15 @@ function validateLocalCompilation(scene, runtime, compilation) {
     near: Math.min(0.05, Math.max(1e-8, distance * 0.01)), far: Math.max(100000, distance * 100) };
   check(runtimeContentSha256(camera) === runtimeContentSha256(expectedCamera), "完整相机参数与编译规则不匹配");
   check(Number.isSafeInteger(compilation.maxSourceBytes) && compilation.maxSourceBytes > 0 && compilation.maxSourceBytes <= 256 * 1024 ** 2
-    && compilation.sourceAssets.reduce((sum, asset) => sum + asset.bytes, compilation.environmentSource?.bytes ?? 0) <= compilation.maxSourceBytes, "源资源预算无效或超限");
+    && compilation.sourceAssets.reduce((sum, asset) => sum + asset.bytes, (compilation.sourceTextures ?? []).reduce((sum, texture) => sum + texture.bytes, compilation.environmentSource?.bytes ?? 0)) <= compilation.maxSourceBytes, "源资源预算无效或超限");
+  check((compilation.sourceTextures ?? []).every((texture, index, textures) => index === 0 || textures[index - 1].sha256 < texture.sha256), "编译贴图源资源未排序");
   check(compilation.sourceAssets.every((asset, index) => index === 0 || compilation.sourceAssets[index - 1].assetId < asset.assetId), "编译源资源未排序");
   const cameraResource = runtime.resources.find(resource => resource.kind === "scene-camera" && resource.id === runtime.entrypoints.camera);
   const packetResource = runtime.resources.find(resource => resource.kind === "render-packet" && resource.id === runtime.entrypoints.renderPacket);
   check(cameraResource && packetResource, "编译图资源缺失");
   const expected = runtimeContentSha256({ recipe: compilation.recipe, sourceSemanticHash: compilation.sourceSemanticHash,
     sourceAssets: compilation.sourceAssets, packageId: runtime.packageId, packageVersion: runtime.packageVersion,
+    ...(compilation.sourceTextures?.length ? { sourceTextures: compilation.sourceTextures } : {}),
     maxSourceBytes: compilation.maxSourceBytes, localCoordinates: compilation.localCoordinates,
     ...(["deep-scene-static-compile-v6", "deep-scene-static-compile-v7", "deep-scene-static-compile-v8", "deep-scene-static-compile-v9", "deep-scene-static-compile-v10", "deep-scene-static-compile-v11", "deep-scene-static-compile-v12", "deep-scene-static-compile-v13"].includes(compilation.recipe) ? { environmentHash: runtimeContentSha256(runtime.payloads[runtime.entrypoints.environment]) } : {}),
     ...(compilation.recipe==="deep-scene-static-compile-v11" ? {environmentSource:compilation.environmentSource} : {}),

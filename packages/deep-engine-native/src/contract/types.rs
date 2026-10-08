@@ -69,6 +69,14 @@ pub struct PbrMaterial {
     #[serde(default, deserialize_with = "present")]
     pub emissive_texture: Option<TextureSlot>,
     #[serde(default, deserialize_with = "present")]
+    pub specular_factor: Option<f32>,
+    #[serde(default, deserialize_with = "present")]
+    pub specular_color_factor: Option<[f32; 3]>,
+    #[serde(default, deserialize_with = "present")]
+    pub specular_texture: Option<TextureSlot>,
+    #[serde(default, deserialize_with = "present")]
+    pub specular_color_texture: Option<TextureSlot>,
+    #[serde(default, deserialize_with = "present")]
     pub base_color_alpha: Option<f32>,
     #[serde(default, deserialize_with = "present")]
     pub alpha_mode: Option<AlphaMode>,
@@ -89,9 +97,9 @@ pub struct PbrMaterial {
     #[serde(default, deserialize_with = "present")]
     pub layered: Option<LayeredMaterial>,
     /// C9 stock 扩展参数(键值域与 TS `ExtendedMaterialParameters`/层 params 同构;
-    /// 复用 LayerMaterialParams 闭合结构)。native 求值子集只消费 ior+clearcoat,
-    /// anisotropy.strength/transmission.factor 非零由 validate fail-closed 拒绝
-    /// (native 光照核无该两 lobe,不得静默忽略)。缺省=扩展带全零=stock 逐位不变。
+    /// 复用 LayerMaterialParams 闭合结构)。native consumes IOR/clearcoat and
+    /// screen-space opaque transmission; nonzero anisotropy remains unsupported.
+    /// Absent fields preserve the stock response.
     #[serde(default, deserialize_with = "present")]
     pub extended_parameters: Option<LayerMaterialParams>,
     /// advancedMaterials 保守子集(native):只消费 sheen(直射 Charlie lobe +
@@ -113,6 +121,19 @@ pub struct StockAdvancedParameters {
     pub iridescence: Option<StockIridescenceParameters>,
     #[serde(default, deserialize_with = "present")]
     pub volume: Option<StockVolumeParameters>,
+}
+
+impl PbrMaterial {
+    pub fn transmission_factor(&self) -> f32 {
+        self.extended_parameters.as_ref()
+            .and_then(|parameters| parameters.transmission.as_ref())
+            .and_then(|transmission| transmission.factor).unwrap_or(0.0)
+    }
+
+    pub fn draw_alpha_mode(&self) -> AlphaMode {
+        if self.transmission_factor() > 0.0 { AlphaMode::Blend }
+        else { self.alpha_mode.unwrap_or(AlphaMode::Opaque) }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -371,6 +392,7 @@ pub struct TextureResource {
     pub semantic: TextureSemantic,
     pub width: u32,
     pub height: u32,
+    #[serde(deserialize_with = "super::texture_bytes::deserialize")]
     pub data: Vec<u8>,
     #[serde(default, deserialize_with = "present")]
     pub bytes_per_row: Option<u32>,
@@ -388,6 +410,8 @@ pub enum TextureSemantic {
     Normal,
     Occlusion,
     Emissive,
+    Specular,
+    SpecularColor,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -395,6 +419,7 @@ pub enum TextureSemantic {
 pub struct PixelLevel {
     pub width: u32,
     pub height: u32,
+    #[serde(deserialize_with = "super::texture_bytes::deserialize")]
     pub data: Vec<u8>,
     #[serde(default, deserialize_with = "present")]
     pub bytes_per_row: Option<u32>,

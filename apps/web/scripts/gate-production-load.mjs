@@ -72,7 +72,7 @@ try {
         const browsePath = `${origin}/api/${kind === "published" ? "public/" : ""}scenes/${sceneId}/browse`;
         const browseResponse = page.waitForResponse(response => response.url() === browsePath && response.status() === 200);
         await page.goto(url, { waitUntil: "commit" });
-        await page.locator(".viewport canvas").waitFor();
+        await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
         await page.locator(".renderer-loading").waitFor({ state: "hidden" });
         await page.locator(".published-load-state.ready").waitFor();
         const metrics = await page.evaluate(() => ({

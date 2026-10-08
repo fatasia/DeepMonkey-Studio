@@ -147,6 +147,18 @@ describe("OntologyGraphInspector（检查器）", () => {
     expect(html).toContain("受控执行走 Harness 审批链");
   });
 
+  it("行动预览使用真实身份选择和参数输入，没有生成类型身份或自动空参数请求", () => {
+    const pkg = fixturePackage();
+    pkg.objects[0]!.identityMappings = [{ objectKey: "Device", canonicalId: "DEVICE-42", sources: [] }];
+    const node = fixtureResult().nodes.find(item => item.kind === "action")!;
+    const html = renderToStaticMarkup(<OntologyGraphInspector pkg={pkg} projectId="p1" selection={{ kind: "node", id: node.id }} node={node} edge={undefined} locale="zh-CN" onFocusRoot={() => undefined} onCollapse={() => undefined} onReset={() => undefined} previewAction={async () => { throw new Error("SSR must not request"); }} />);
+    expect(html).toContain('aria-label="对象身份"');
+    expect(html).toContain('value="DEVICE-42"');
+    expect(html).toContain('aria-label="行动参数"');
+    expect(html).toContain("预览行动");
+    expect(html).not.toContain("ontology:pkg-1:Device");
+  });
+
   it("关系边：定义/方向/基数/键映射/来源理由/有效时间/证据全量展示", () => {
     const edge = fixtureResult().edges.find((item) => item.id === "rel:r1")!;
     const html = renderToStaticMarkup(<OntologyGraphInspector pkg={fixturePackage()} projectId="p1" selection={{ kind: "edge", id: "rel:r1" }} node={undefined} edge={edge} locale="zh-CN" onFocusRoot={() => undefined} onCollapse={() => undefined} onReset={() => undefined} />);

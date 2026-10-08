@@ -31,6 +31,8 @@ export function validateGeometryFeatures(
     textures.normal,
     textures.occlusion,
     textures.emissive,
+    textures.specular,
+    textures.specularColor,
     ...(textures.layered?.textures.flatMap(layer => [layer.baseColor, layer.metallicRoughness]) ?? []),
   ].filter((value): value is PreparedTextureSlot => value !== undefined) : [];
   for (const slot of slots) {

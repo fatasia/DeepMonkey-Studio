@@ -285,5 +285,6 @@ fn draw_stage(
     });
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, bindings, &[]);
+    deep_engine_native::benchmark_observer::note_draw();
     pass.draw(0..3, 0..1);
 }

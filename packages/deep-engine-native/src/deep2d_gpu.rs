@@ -418,10 +418,12 @@ impl Deep2dGpuPainter {
                     pass.set_pipeline(&dynamic.pipelines.clear);
                     pass.set_stencil_reference(0);
                     pass.set_vertex_buffer(0, path.vertex_buffer.slice(..));
+                    deep_engine_native::benchmark_observer::note_draw();
                     pass.draw(chunk.first_vertex..chunk.first_vertex + chunk.vertex_count, 0..1);
                     pass.set_pipeline(cover_pipeline);
                     pass.set_bind_group(0, &dynamic.edge_bind_group, &[]);
                     pass.set_vertex_buffer(0, dynamic.edge_buffer.slice(..));
+                    deep_engine_native::benchmark_observer::note_draw();
                     pass.draw(edge_first..edge_first + edge_count, 0..1);
                     pass.set_pipeline(fill_pipeline);
                     pass.set_bind_group(0, &path.bind_group, &[]);
@@ -432,6 +434,7 @@ impl Deep2dGpuPainter {
                         deep_engine_native::deep2d::FillRule::Evenodd => 1,
                     });
                     pass.set_vertex_buffer(0, path.vertex_buffer.slice(..));
+                    deep_engine_native::benchmark_observer::note_draw();
                     pass.draw(chunk.first_vertex..chunk.first_vertex + chunk.vertex_count, 0..1);
                     // 动态块自管绘制(clear/cover/fill),不走 match 后的尾随
                     // draw——否则 fill 会以当前管线再执行一次(实测二次混合)。
@@ -445,6 +448,7 @@ impl Deep2dGpuPainter {
                     return;
                 }
             }
+            deep_engine_native::benchmark_observer::note_draw();
             pass.draw(
                 chunk.first_vertex..chunk.first_vertex + chunk.vertex_count,
                 0..1,

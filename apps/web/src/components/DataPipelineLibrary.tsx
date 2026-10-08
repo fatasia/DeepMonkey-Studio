@@ -19,6 +19,7 @@ import { translate as tr } from "../i18n";
 import type { TransformNodeType } from "./DataPipelineStudioParts";
 
 const transformIcons: Record<TransformNodeType, ReactNode> = {
+  merge: <GitBranch size={14} />,
   filter: <Filter size={14} />,
   formula: <Calculator size={14} />,
   script: <Code2 size={14} />,
@@ -60,6 +61,7 @@ export function DataPipelineLibrary({
       : pipelines;
   }, [pipelines, query]);
   const transforms: Array<[TransformNodeType, string]> = [
+    ["merge", tr(locale, "合并", "Merge")],
     ["filter", tr(locale, "过滤", "Filter")],
     ["formula", tr(locale, "公式", "Formula")],
     ["select", tr(locale, "选字段", "Select")],

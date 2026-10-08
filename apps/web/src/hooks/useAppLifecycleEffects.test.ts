@@ -193,6 +193,14 @@ describe("asynchronous lifecycle cleanup", () => {
     expect(app.state.setCurrentUser).toHaveBeenCalledExactlyOnceWith(undefined);
   });
 
+  it("does not overwrite explicit URL renderer selection after the engine becomes ready", () => {
+    Object.assign(window, { location: { search: "?renderer=wasm" } });
+    vi.mocked(window.localStorage.getItem).mockReturnValue("webgpu");
+    const app = fixture({ rendererBackend: "wasm", engine: undefined });
+    app.render(); app.render({ engine: {} });
+    expect(app.changeRendererBackend).not.toHaveBeenCalled();
+  });
+
   it("cancels the scheduled session retry when authentication is invalidated", async () => {
     harness.getAuthToken.mockReturnValue("session"); harness.me.mockRejectedValue(new Error("offline"));
     harness.setAuthToken.mockImplementation(() => harness.getAuthToken.mockReturnValue(undefined));

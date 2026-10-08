@@ -17,6 +17,7 @@ import type { RenderGraphCompileResult } from "../renderGraph.js";
 import { validatePbrFrame } from "./validatePbrFrame.js";
 import type { FrameMetrics, RenderView } from "./pbrRendererTypes.js";
 import type { updatePbrFrameUniforms } from "./pbrFrameUniforms.js";
+import { pbrAuthorFrameFeatures } from "./pbrDirectDisplay.js";
 
 /** batch 球体 → 屏幕圆盘像素面积(静态代理):focal = height/2 / tan(fov/2),
  *  透视深取 clip w;w≤0 或 NDC z 出 [0,1](WebGPU 口径)显式 0 = 不产反馈。 */
@@ -65,7 +66,7 @@ function collectVirtualTextureFeedback(host: PbrRendererFrameHost, frameState: R
         frameState.depthViewProjection, frameState.projection.verticalFovRadians, size) * batch.source.count;
       if (!(screenPixels > 0)) continue;
       for (const slot of [textures.baseColor, textures.metallicRoughness, textures.normal,
-        textures.occlusion, textures.emissive]) {
+        textures.occlusion, textures.emissive, textures.specular, textures.specularColor]) {
         if (!slot) continue;
         const bounds = virtualTextureUvBounds(slot.uvTransform);
         entries.push({ textureId: slot.texture, ...bounds, screenPixels });
@@ -159,8 +160,7 @@ export function passTimingsMetrics(host: PbrRendererFrameHost, frameNumber: numb
 
 export function sampleAdaptiveQuality(host: PbrRendererFrameHost, metrics: FrameMetrics): void {
     if (!host.adaptiveQuality) return;
-    const snapshot = host.performanceTelemetry.snapshot();
-    const cpu = snapshot.stages["frame-encode"], gpu = snapshot.stages["gpu-frame"];
+    const cpu = host.performanceTelemetry.stageSummary("frame-encode"), gpu = host.performanceTelemetry.stageSummary("gpu-frame");
     if (!cpu) return;
     const samples = host.performanceTelemetry.samples("frame-encode");
     host.adaptiveQuality.sample({ frame: metrics.frame, sampleCount: cpu.samples, cpuP95Ms: cpu.p95Ms, cpuP99Ms: cpu.p99Ms,
@@ -170,19 +170,20 @@ export function sampleAdaptiveQuality(host: PbrRendererFrameHost, metrics: Frame
       memory: metrics.deviceResourceMemory ?? host.session.resourceMemory });
   }
 export function captureForFrame(host: PbrRendererFrameHost, size: { readonly width: number; readonly height: number }, transparency: boolean,
-    postProcess: ReturnType<typeof resolvePbrPostProcessOverrides>, directDisplay: boolean, depthResolved: boolean): {
+    postProcess: ReturnType<typeof resolvePbrPostProcessOverrides>, directDisplay: boolean, depthResolved: boolean, authorDirectDisplay = false): {
     readonly plan: ReturnType<typeof buildPbrFrameExecutionPlan>;
     readonly actual: ReturnType<typeof collectActualPbrFramePasses>;
   } {
     // AA-M1:MSAA 通路状态进计划键 —— 回执/对拍声明随主 pass 附件形态切换。
     const msaaMainPass = host.targets.msaaActive && !directDisplay;
+    const features = pbrAuthorFrameFeatures(host.features, authorDirectDisplay);
     const key = `${size.width}x${size.height}:${transparency ? "transparent" : "opaque"}`
       + `:ao=${postProcess.ambientOcclusion ? 1 : 0}:ssr=${postProcess.screenSpaceReflection ? 1 : 0}`
       + `:fog=${postProcess.volumetricFog ? 1 : 0}:god=${postProcess.volumetricFogProfile.godRaysStrength !== undefined ? 1 : 0}:bloom=${postProcess.bloom ? 1 : 0}:direct=${directDisplay ? 1 : 0}`
       + `:msaa=${msaaMainPass ? host.mainSampleCount : 1}`
-      + `:cs=${host.features.contactShadows ? 1 : 0}:up=${host.features.temporalUpscale ? 1 : 0}:hdr=${host.session.hdrCanvasActive ? 1 : 0}`;
+      + `:cs=${features.contactShadows ? 1 : 0}:up=${features.temporalUpscale ? 1 : 0}:author=${authorDirectDisplay ? 1 : 0}:hdr=${host.session.hdrCanvasActive ? 1 : 0}`;
     if (host.capturePlanKey !== key || !host.capturePlan || !host.captureActualPasses) {
-      const captureFeatures: PbrRendererFeatures = Object.freeze({ ...host.features,
+      const captureFeatures: PbrRendererFeatures = Object.freeze({ ...features,
         ambientOcclusion: postProcess.ambientOcclusion,
         screenSpaceReflection: postProcess.screenSpaceReflection,
         volumetricFog: postProcess.volumetricFog,
@@ -193,10 +194,10 @@ export function captureForFrame(host: PbrRendererFrameHost, size: { readonly wid
       const plan = buildPbrFrameExecutionPlan(size, { transparency, features: captureFeatures,
         godRays: postProcess.volumetricFogProfile.godRaysStrength !== undefined,
         directDisplay, writeGeometryBuffers: host.writeGeometryBuffers, hdrDisplay: host.session.hdrCanvasActive });
-      const presentInputResource = host.features.temporalUpscale && !directDisplay ? "upscale-hdr"
-        : host.features.contactShadows ? "contact-hdr"
+      const presentInputResource = features.temporalUpscale && !directDisplay ? "upscale-hdr"
+        : features.contactShadows ? "contact-hdr"
         : postProcess.bloom ? "bloom-hdr"
-        : host.features.temporalAa ? "temporal-hdr" : postProcess.screenSpaceReflection ? "ssr-hdr"
+        : features.temporalAa ? "temporal-hdr" : postProcess.screenSpaceReflection ? "ssr-hdr"
           : postProcess.volumetricFog ? "volumetric-fog-hdr"
           : transparency ? "composited-hdr" : opaqueColorResource;
       const actual = collectActualPbrFramePasses(captureFeatures, transparency,
@@ -212,11 +213,11 @@ export function captureForFrame(host: PbrRendererFrameHost, size: { readonly wid
     return { plan: host.capturePlan, actual: host.captureActualPasses };
   }
 export function allocationPlanFor(host: PbrRendererFrameHost, transparency: boolean,
-    postProcess: ReturnType<typeof resolvePbrPostProcessOverrides>, directDisplay: boolean): RenderGraphCompileResult {
+    postProcess: ReturnType<typeof resolvePbrPostProcessOverrides>, directDisplay: boolean, authorDirectDisplay = false): RenderGraphCompileResult {
     const key = `${transparency ? 1 : 0}:${postProcess.ambientOcclusion ? 1 : 0}:${postProcess.screenSpaceReflection ? 1 : 0}`
-      + `:${postProcess.volumetricFog ? 1 : 0}:${postProcess.volumetricFogProfile.godRaysStrength !== undefined ? 1 : 0}:${postProcess.bloom ? 1 : 0}:${directDisplay ? 1 : 0}`;
+      + `:${postProcess.volumetricFog ? 1 : 0}:${postProcess.volumetricFogProfile.godRaysStrength !== undefined ? 1 : 0}:${postProcess.bloom ? 1 : 0}:${directDisplay ? 1 : 0}:${authorDirectDisplay ? 1 : 0}`;
     if (host.allocationPlanKey !== key || !host.allocationPlan) {
-      host.allocationPlan = compilePbrFrameGraph({ transparency, features: { ...host.features,
+      host.allocationPlan = compilePbrFrameGraph({ transparency, features: { ...pbrAuthorFrameFeatures(host.features, authorDirectDisplay),
         ambientOcclusion: postProcess.ambientOcclusion, screenSpaceReflection: postProcess.screenSpaceReflection,
         volumetricFog: postProcess.volumetricFog, bloom: postProcess.bloom }, directDisplay,
         godRays: postProcess.volumetricFogProfile.godRaysStrength !== undefined,
@@ -227,14 +228,15 @@ export function allocationPlanFor(host: PbrRendererFrameHost, transparency: bool
     return host.allocationPlan;
   }
 export function executedCapturePassIds(host: PbrRendererFrameHost, directClear: boolean, postProcess: ReturnType<typeof resolvePbrPostProcessOverrides>,
-    transparency: boolean, upscaling: boolean): ReadonlySet<string> {
+    transparency: boolean, upscaling: boolean, authorDirectDisplay = false): ReadonlySet<string> {
     const ids = new Set<string>(["opaque"]);
     if (directClear) return ids;
     if (postProcess.ambientOcclusion) { ids.add("ambient-occlusion"); ids.add("apply-ambient-occlusion"); }
     if (postProcess.screenSpaceReflection) { ids.add("screen-space-reflection-trace"); ids.add("screen-space-reflection-composite"); }
     if (transparency) { ids.add("transparent-oit"); ids.add("composite-oit"); }
     if (postProcess.volumetricFog) { ids.add("volumetric-fog-march"); ids.add("volumetric-fog-composite"); }
-    if (host.features.temporalAa) ids.add("temporal-aa");
+    if (host.features.temporalAa && !authorDirectDisplay) ids.add("temporal-aa");
+    if (host.contactShadows && !authorDirectDisplay) { ids.add("contact-shadow"); ids.add("contact-apply"); }
     // F4:超分编码门 = 特性位 && 实际降档(encodeUpscale 调用点的同一 upscaling 谓词,
     // 单一真值来源)。执行集若只看特性位,coverage/回执会在"特性开但 scale=1"帧
     // 谎报 temporal-upscale 已执行;此时它如实落入 notExecutedMappedPassIds(合法跳过显式可见)。

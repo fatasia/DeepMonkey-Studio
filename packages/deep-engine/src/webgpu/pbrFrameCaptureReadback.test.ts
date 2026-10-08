@@ -121,8 +121,16 @@ describe("pbr frame readback plan", () => {
 });
 
 describe("pbr frame readback whitelist", () => {
+  it("copies the explicitly supplied OIT composite source without substituting opaque or presentation textures", async () => {
+    const f = fixture(), opaque = texture(), composite = texture({ format: "rgba16float" }), present = texture();
+    const plan = new PbrFrameReadbackPlan({ requests: [{ resourceId: "composited-hdr" }] });
+    plan.beginFrame("composite-1", f.device, f.encoder,
+      { "opaque-hdr": opaque, "composited-hdr": composite, "present-color": present });
+    expect(vi.mocked(f.encoder.copyTextureToBuffer).mock.calls[0]![0].texture).toBe(composite);
+    expect((await plan.collectAfterSubmit())[0]).toMatchObject({ resourceId: "composited-hdr", format: "rgba16float" });
+  });
   it("stays fixed to the shipped diagnostic resources", () => {
-    expect([...PBR_FRAME_READBACK_RESOURCES]).toEqual(["present-color", "opaque-hdr", "linear-depth"]);
+    expect([...PBR_FRAME_READBACK_RESOURCES]).toEqual(["present-color", "opaque-hdr", "linear-depth", "composited-hdr"]);
   });
 
   it("snapshots single-channel depth within the shared budget", async () => {

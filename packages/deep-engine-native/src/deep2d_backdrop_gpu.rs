@@ -181,6 +181,7 @@ impl Deep2dBackdropGpuResources {
             pass.set_pipeline(&chain.downsample);
             pass.set_bind_group(0, &bind, &[]);
             pass.set_vertex_buffer(0, chain.fullquad.slice(..));
+            deep_engine_native::benchmark_observer::note_draw();
             pass.draw(0..6, 0..1);
         }
         // `iterations` x (horizontal sweep -> ping, vertical sweep -> pong).
@@ -206,6 +207,7 @@ impl Deep2dBackdropGpuResources {
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, &bind, &[]);
                 pass.set_vertex_buffer(0, chain.fullquad.slice(..));
+                deep_engine_native::benchmark_observer::note_draw();
                 pass.draw(0..6, 0..1);
             }
         }
@@ -292,6 +294,7 @@ impl Deep2dBackdropGpuResources {
         });
         pass.set_bind_group(0, &base.bind_group, &[]);
         pass.set_vertex_buffer(0, base.vertex_buffer.slice(..));
+        deep_engine_native::benchmark_observer::note_draw();
         pass.draw(0..6, 0..1);
     }
 

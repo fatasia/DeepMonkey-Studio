@@ -1,4 +1,9 @@
-export type TextureSemantic = "baseColor" | "metallicRoughness" | "normal" | "occlusion" | "emissive";
+export type TextureSemantic = "baseColor" | "metallicRoughness" | "normal" | "occlusion" | "emissive" | "specular" | "specularColor";
+export const TEXTURE_SEMANTICS: readonly TextureSemantic[] = Object.freeze([
+  "baseColor", "metallicRoughness", "normal", "occlusion", "emissive", "specular", "specularColor",
+]);
+export const isSrgbTextureSemantic = (semantic: TextureSemantic): boolean =>
+  semantic === "baseColor" || semantic === "emissive" || semantic === "specularColor";
 export type TextureAddressMode = "clamp-to-edge" | "repeat" | "mirror-repeat";
 export type TextureFilter = "nearest" | "linear";
 export type TextureCompression = "bc1-rgba" | "bc7-rgba" | "etc2-rgba8" | "astc-4x4-rgba";
@@ -136,7 +141,7 @@ export function prepareTextures(input: readonly DecodedTexture[], limits: Textur
     if (!source || typeof source.id !== "string" || !source.id.trim() || source.id.length > 256 || ids.has(source.id)) throw new Error("Invalid or duplicate texture id.");
     ids.add(source.id);
     if (!Number.isSafeInteger(source.revision) || source.revision < 0) throw new Error("Invalid texture revision.");
-    if (!["baseColor", "metallicRoughness", "normal", "occlusion", "emissive"].includes(source.semantic)) throw new Error("Invalid texture semantic.");
+    if (!TEXTURE_SEMANTICS.includes(source.semantic)) throw new Error("Invalid texture semantic.");
     if (source.compression !== undefined && !(source.compression in COMPRESSION)) throw new Error("Invalid texture compression format.");
     const compression = source.compression === undefined ? undefined : COMPRESSION[source.compression];
     const plan = compression ? planCompressedTextureMips(source.width, source.height, source.compression!, maxDimension)
@@ -156,7 +161,7 @@ export function prepareTextures(input: readonly DecodedTexture[], limits: Textur
   });
   return checked.map(({ source, levels, sampler, compression }) => ({
     id: source.id, revision: source.revision, semantic: source.semantic,
-    format: source.semantic === "baseColor" || source.semantic === "emissive"
+    format: isSrgbTextureSemantic(source.semantic)
       ? (compression?.srgb ?? "rgba8unorm-srgb")
       : (compression?.linear ?? "rgba8unorm"),
     ...(compression ? { requiredFeature: compression.feature } : {}), sampler,

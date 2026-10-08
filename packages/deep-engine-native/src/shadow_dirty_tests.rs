@@ -120,3 +120,52 @@ fn authored_cast_switch_changes_cascade_keys_but_receive_and_unlit_do_not() {
         prepare(&packet).keys(&views, 0).unwrap()
     );
 }
+
+#[test]
+fn shared_resource_digests_preserve_mask_uv_and_same_revision_content_invalidation() {
+    let mut packet: RenderPacket =
+        serde_json::from_str(include_str!("../fixtures/render_packet_textured_v1.json")).unwrap();
+    let geometry_keys = |packet: &RenderPacket| {
+        let geometry = &packet.geometries[0];
+        let resources = HashMap::from([(geometry.id.as_str(), geometry)]);
+        let mut cache = HashMap::new();
+        let mut keys = Vec::new();
+        // Opaque and MASK may share one resource: their UV scopes stay separate.
+        for masked in [false, true, false, true] {
+            let mut key = HashWriter::new(b"test");
+            key.geometry(&geometry.id, &resources, masked, &mut cache)
+                .unwrap();
+            keys.push(key.finish());
+        }
+        assert_eq!(cache.len(), 1);
+        assert_eq!(keys[0], keys[2]);
+        assert_eq!(keys[1], keys[3]);
+        keys
+    };
+    let initial = geometry_keys(&packet);
+    packet.geometries[0].uv0.as_mut().unwrap()[0] += 0.25;
+    let uv_changed = geometry_keys(&packet);
+    assert_eq!(initial[0], uv_changed[0]);
+    assert_ne!(initial[1], uv_changed[1]);
+    packet.geometries[0].vertices[0] += 0.125;
+    let position_changed = geometry_keys(&packet);
+    assert_ne!(uv_changed[0], position_changed[0]);
+    assert_ne!(uv_changed[1], position_changed[1]);
+
+    let texture_key = |packet: &RenderPacket| {
+        let texture = &packet.textures[0];
+        let resources = HashMap::from([(texture.id.as_str(), texture)]);
+        let mut cache = HashMap::new();
+        let mut first = HashWriter::new(b"test");
+        first.texture(&texture.id, &resources, &mut cache).unwrap();
+        let mut second = HashWriter::new(b"test");
+        second.texture(&texture.id, &resources, &mut cache).unwrap();
+        let key = first.finish();
+        assert_eq!(key, second.finish());
+        assert_eq!(cache.len(), 1);
+        key
+    };
+    let initial = texture_key(&packet);
+    packet.textures[0].data[0] ^= 1;
+    assert_ne!(initial, texture_key(&packet));
+}

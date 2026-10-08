@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SceneSnapshot } from "@bim-studio/contracts";
 import { clearProbeGridBake, lookupProbeGridBake, probeGridBakeForPayload, probeGridBakeSourceHash,
   resetProbeGridBakeSessionForTest, storeProbeGridBake } from "./probeGridBakePublicationSession";
@@ -18,6 +18,13 @@ function entry(probeCount = 8, coveredCount = 8) {
 
 
 describe("probeGridBakePublicationSession（发布会话态承载）", () => {
+  it("returns an empty session without projecting or hashing the author scene", () => {
+    resetProbeGridBakeSessionForTest();
+    const read = vi.fn(() => { throw new Error("unexpected scene access"); });
+    const input = new Proxy(scene(), { get: read, ownKeys: read });
+    expect(probeGridBakeForPayload(input)).toBeUndefined();
+    expect(read).not.toHaveBeenCalled();
+  });
   it("同场景存取一致； updatedAt/publishedAt 变化不改变键（与编译器投影同一口径）", () => {
     resetProbeGridBakeSessionForTest();
     const input = scene();

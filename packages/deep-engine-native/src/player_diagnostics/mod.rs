@@ -301,6 +301,28 @@ impl PlayerDiagnostics {
         }
     }
 
+    /// megaLights GPU 执行腿生产链驻留(表面重建 + RIS 两趟 + 加性合成;
+    /// 真机门已过,首个 RIS 决策帧起帧内 dispatch)。
+    pub(crate) fn note_megalights_gpu_resident(&mut self) {
+        self.note_megalights("megalights_gpu_dispatch_resident");
+    }
+
+    /// megaLights GPU 执行腿挂载失败(fail-closed sticky;视觉恒簇光)。
+    pub(crate) fn note_megalights_gpu_degraded(&mut self, reason: &'static str) {
+        self.note_megalights(reason);
+    }
+
+    fn note_megalights(&mut self, reason: &'static str) {
+        if let Some(capability) = self
+            .capabilities
+            .iter_mut()
+            .find(|item| item.name == "clustered_lighting")
+        {
+            capability.status = "degraded";
+            capability.reason = Some(reason);
+        }
+    }
+
     /// CPU cluster planning is bounded and deterministic.
     pub(crate) fn note_native_cluster_plan(&mut self) {
         if let Some(capability) = self

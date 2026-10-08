@@ -135,6 +135,14 @@ export class ProbeSceneRadianceProducer {
   get overflowEvidenceBuffer(): GPUBuffer { return this.overflow; }
   /** Set when the latest packet cannot be captured (deformation snapshots, invalid references). */
   get sceneUnavailableReason(): string | undefined { return this.sceneError; }
+  /** Cheap admission check before a host expands thousands of probe candidates. */
+  get captureUnavailableReason(): string | undefined {
+    if (!this.sceneReady) return `Probe scene radiance capture is unavailable (${this.sceneError ?? "no opaque scene geometry"}); keep IBL.`;
+    if (!this.lighting || !hasRealRadianceSource(this.lighting)) {
+      return "Probe scene radiance capture requires a real radiance source; keep IBL instead of a dark volume.";
+    }
+    return undefined;
+  }
 
   /** Soft-fail path for hosts that must survive invalid packets (probe GI degrades, loop lives). */
   markSceneUnavailable(reason: string): void {
@@ -196,13 +204,9 @@ export class ProbeSceneRadianceProducer {
     const generation = context.context.generation;
     const updates = plan.updates;
     if (generation === this.lastGeneration || updates.length === 0) return;
-    if (!this.sceneReady) {
-      throw new Error(`Probe scene radiance capture is unavailable (${this.sceneError ?? "no opaque scene geometry"}); keep IBL.`);
-    }
-    const light = this.lighting;
-    if (!light || !hasRealRadianceSource(light)) {
-      throw new Error("Probe scene radiance capture requires a real radiance source; keep IBL instead of a dark volume.");
-    }
+    const unavailable = this.captureUnavailableReason;
+    if (unavailable !== undefined) throw new Error(unavailable);
+    const light = this.lighting!;
     const probeParams = this.ensureProbeParams(updates.length);
     const primary = light.primary;
     const direction = normalize3(primary?.surfaceToLightWorld ?? [0, 1, 0]);

@@ -13,6 +13,20 @@ pub(super) enum BlendSemantic {
     Premultiplied,
 }
 
+#[derive(Clone, Copy)]
+enum CaptureMode { None, Normal, MegaLights }
+impl CaptureMode {
+    fn enabled(self) -> bool { !matches!(self, Self::None) }
+}
+
+pub(super) fn create_megalights_material_pipelines(
+    device: &wgpu::Device, frame_layout: &wgpu::BindGroupLayout,
+    material_layout: &wgpu::BindGroupLayout, shader: &wgpu::ShaderModule,
+) -> MaterialPipelines {
+    material_pipelines_with_entries(device, frame_layout, material_layout, shader,
+        BlendSemantic::Solid, CaptureMode::MegaLights, false)
+}
+
 pub(super) fn create_material_pipelines(
     device: &wgpu::Device,
     frame_layout: &wgpu::BindGroupLayout,
@@ -27,7 +41,7 @@ pub(super) fn create_material_pipelines(
         material_layout,
         shader,
         semantic,
-        capture,
+        if capture { CaptureMode::Normal } else { CaptureMode::None },
         false,
     )
 }
@@ -48,7 +62,7 @@ pub(super) fn create_layered_material_pipelines(
         layered_material_layout,
         shader,
         semantic,
-        capture,
+        if capture { CaptureMode::Normal } else { CaptureMode::None },
         true,
     )
 }
@@ -59,7 +73,7 @@ fn material_pipelines_with_entries(
     material_layout: &wgpu::BindGroupLayout,
     shader: &wgpu::ShaderModule,
     semantic: BlendSemantic,
-    capture: bool,
+    capture: CaptureMode,
     layered_entries: bool,
 ) -> MaterialPipelines {
     MaterialPipelines {
@@ -94,7 +108,7 @@ fn create_raster_pipelines(
     shader: &wgpu::ShaderModule,
     semantic: BlendSemantic,
     normal_mapped: bool,
-    capture: bool,
+    capture: CaptureMode,
     layered_entries: bool,
 ) -> RasterPipelines {
     RasterPipelines {
@@ -143,7 +157,7 @@ fn create_mesh_pipeline(
     raster: RasterState,
     semantic: BlendSemantic,
     normal_mapped: bool,
-    capture: bool,
+    capture: CaptureMode,
     layered_entries: bool,
 ) -> wgpu::RenderPipeline {
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -158,7 +172,7 @@ fn create_mesh_pipeline(
             blend: blend_state(semantic),
             write_mask: wgpu::ColorWrites::ALL,
         }),
-        capture.then_some(wgpu::ColorTargetState {
+        capture.enabled().then_some(wgpu::ColorTargetState {
             format: crate::forward_targets::NORMAL_CAPTURE_FORMAT,
             blend: None,
             write_mask: wgpu::ColorWrites::ALL,
@@ -195,8 +209,8 @@ fn create_mesh_pipeline(
         // 深度写只属于 solid;两种透明语义(straight/premultiplied)都不写深度,与 Web weighted OIT 一致。
         depth_stencil: Some(wgpu::DepthStencilState {
             format: FORWARD_DEPTH_FORMAT,
-            depth_write_enabled: Some(matches!(semantic, BlendSemantic::Solid)),
-            depth_compare: Some(wgpu::CompareFunction::Less),
+            depth_write_enabled: Some(matches!(semantic, BlendSemantic::Solid) && !matches!(capture, CaptureMode::MegaLights)),
+            depth_compare: Some(if matches!(capture, CaptureMode::MegaLights) { wgpu::CompareFunction::Equal } else { wgpu::CompareFunction::Less }),
             stencil: Default::default(),
             bias: Default::default(),
         }),
@@ -207,13 +221,14 @@ fn create_mesh_pipeline(
         fragment: Some(wgpu::FragmentState {
             module: shader,
             entry_point: Some(match (capture, layered_entries) {
-                (true, true) => "fragment_normal_capture_layered",
-                (true, false) => "fragment_normal_capture",
-                (false, true) => "fragment_main_layered",
-                (false, false) => "fragment_main",
+                (CaptureMode::MegaLights, _) => "fragment_megalights_gbuffer",
+                (CaptureMode::Normal, true) => "fragment_normal_capture_layered",
+                (CaptureMode::Normal, false) => "fragment_normal_capture",
+                (CaptureMode::None, true) => "fragment_main_layered",
+                (CaptureMode::None, false) => "fragment_main",
             }),
             compilation_options: Default::default(),
-            targets: &targets[..if capture { 2 } else { 1 }],
+            targets: &targets[..if capture.enabled() { 2 } else { 1 }],
         }),
         multiview_mask: None,
         cache: None,

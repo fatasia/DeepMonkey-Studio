@@ -1,6 +1,8 @@
 import type * as monaco from "monaco-editor";
-import { describe, expect, it } from "vitest";
-import { apiDocumentationAt, contextualSuggestions, isWorkerBehaviorModel, stringLiteralAt } from "./professionalCodeIntelligence";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { apiDocumentationAt, contextualSuggestions, docsMarkdown, isWorkerBehaviorModel, stringLiteralAt } from "./professionalCodeIntelligence";
+
+afterEach(() => vi.unstubAllEnvs());
 
 const api = {
   Range: class {
@@ -18,6 +20,13 @@ const api = {
 } as unknown as typeof monaco;
 
 describe("professional code intelligence", () => {
+  it("keeps hover and completion documentation within the hosted editor base", () => {
+    vi.stubEnv("BASE_URL", "/DeepMonkey-Studio/");
+    expect(apiDocumentationAt(modelFor("studio.camera.setMode('orbit');"), { lineNumber: 1, column: 8 } as monaco.Position)?.href)
+      .toBe("/DeepMonkey-Studio/docs/studio-api");
+    expect(docsMarkdown("场景对象", "Scene object", "/docs/behavior-script").value)
+      .toContain("[打开关联文档](/DeepMonkey-Studio/docs/behavior-script)");
+  });
   it("根据调用位置只推荐匹配的稳定对象 ID", () => {
     const model = modelFor('studio.object("pump');
     const suggestions = contextualSuggestions(api, model, { lineNumber: 1, column: 20 } as monaco.Position, {

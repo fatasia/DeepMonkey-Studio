@@ -53,7 +53,7 @@ function consumerManifest(workspace, packed) {
     type: "module",
     description: "F6 第三方独立消费示例：离线安装 @bim-studio/deep-engine 并运行 Node/Browser 两例",
     dependencies: specs,
-    overrides: { "@webgpu/types": specs["@webgpu/types"] },
+    overrides: { "@webgpu/types": specs["@webgpu/types"], fflate: specs.fflate },
   };
 }
 

@@ -30,7 +30,7 @@ async function runCase(theme, width) {
     const dialog = await instanceDialog(page, row); await dialog.getByRole("button", { name: "新增副本", exact: true }).click(); await dialog.waitFor({ state: "detached" });
     const dualScene = await saveScene(page, appPath); const copy = dualScene.models.find(item => item.modelId !== model.id); assert.ok(copy);
     const copyRow = await ensureRows(page, copy.modelId); await copyRow.getByRole("button", { name: "隐藏", exact: true }).click(); await row.locator(".asset-main").click();
-    const panel = page.locator(".robot-connection-panel"), canvas = page.locator(".viewport canvas"); await panel.waitFor();
+    const panel = page.locator(".robot-connection-panel"), canvas = page.locator('.viewport canvas:not([aria-hidden="true"])'); await panel.waitFor();
     await page.getByRole("button", { name: "适应全部", exact: true }).click(); await page.waitForTimeout(1300);
     await saveScene(page, appPath); const before = await gate.json("GET", appPath);
     page.on("request", request => { if (request.method() === "PUT" && request.url().includes(appPath)) entry.writes.push(request.url()); });

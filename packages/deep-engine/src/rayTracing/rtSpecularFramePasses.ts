@@ -87,8 +87,10 @@ export class RtSpecularIndirectionPass {
     // r32float(只 textureLoad,不可过滤)——显式 unfilterable-float 才能绑定(同 SSR
     // traceLayout 惯例);storage 读/写纹理与 uniform 同布局逐槽显式。
     const secondBounceLayoutEntries: GPUBindGroupLayoutEntry[] = [
-      { binding: 8, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "read-only", format: "rgba32float" } },
-      { binding: 9, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "read-only", format: "rgba32float" } },
+      // Read with textureLoad; sampled inputs keep the two-bounce layout below
+      // the baseline four-storage-texture limit on portable WebGPU devices.
+      { binding: 8, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "unfilterable-float" } },
+      { binding: 9, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "unfilterable-float" } },
     ];
     this.layout = device.createBindGroupLayout({ label: "rt-specular-indirection-layout", entries: [
       { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "unfilterable-float" } },

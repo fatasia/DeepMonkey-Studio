@@ -87,7 +87,7 @@ async function main() {
     productName,
     iconPath,
     identifier,
-    version: options.version ?? "0.1.0",
+    version: options.version ?? JSON.parse(await readFile(path.join(desktopDirectory, "src-tauri", "tauri.conf.json"), "utf8")).version,
     frontendDist: `../.scene-viewer-build/${packageId}/frontend`,
   });
   await writeFile(configPath, `${JSON.stringify(overlay, null, 2)}\n`, "utf8");

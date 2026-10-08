@@ -35,6 +35,31 @@ it("binds output provenance to the exact module code and output pipeline", async
   expect(() => result.outputShaderProvenance!.refsFor(result.main)).toThrow("executed pipeline");
 });
 
+it("rejects insufficient advanced sampled texture limits before compiling shaders", async () => {
+  const f = fixture(); Object.assign(f.device, { limits: { maxSampledTexturesPerShaderStage: 15 } });
+  await expect(createPipelinesBuild(f.device, "bgra8unorm", {} as GPUBindGroupLayout, true, false, false,
+    { advancedMaterials: true })).rejects.toThrow("advanced-materials/texture-limit");
+  expect(f.device.createShaderModule).not.toHaveBeenCalled();
+});
+
+it("keeps the advanced static and deformation layouts within 16 textures and 16 samplers", async () => {
+  for (const deformation of [false, true]) {
+    const f = fixture(); Object.assign(f.device, { limits: { maxSampledTexturesPerShaderStage: 16 } });
+    const result = await createPipelines(f.device, "bgra8unorm", {} as GPUBindGroupLayout, true, false, false,
+      { advancedMaterials: true, deformation });
+    expect(result.compactReflectionBindings).toBe(true);
+    const frame = f.layouts.find(layout => [...layout.entries].some(entry => entry.binding === 16 && entry.buffer?.minBindingSize === 48))!;
+    expect([...frame.entries].filter(entry => entry.texture)).toHaveLength(4);
+    expect([...frame.entries].find(entry => entry.binding === 3)?.texture?.viewDimension).toBe("cube-array");
+    for (const layout of f.pipelineLayouts) {
+      const entries = [...layout.bindGroupLayouts].flatMap(group =>
+        group && "entries" in group ? [...(group as unknown as GPUBindGroupLayoutDescriptor).entries] : []);
+      expect(entries.filter(entry => entry.texture && (entry.visibility & 2)).length).toBeLessThanOrEqual(16);
+      expect(entries.filter(entry => entry.sampler && (entry.visibility & 2)).length).toBeLessThanOrEqual(16);
+    }
+  }
+});
+
 it("shares the device-local HDR output pipeline across static and deformation variants", async () => {
   const f = fixture(), lighting = {} as GPUBindGroupLayout;
   const [staticSet, deformationSet] = await Promise.all([
@@ -272,8 +297,8 @@ describe("first-frame critical pipeline subset", () => {
     // AA-M2:MSAA4 档 depth ×a2c → 27 条 main。
     expect(build.pipelines.mainPipelines.size).toBe(27);
     expect(build.pipelines.mainPipelines.get("material/blend/ccw")).toBeDefined();
-    // release 后非虚拟档页管线(clear+solid×3)补齐。
-    expect(build.pipelines.pageShadowPipelines.size).toBe(4);
+      // Cascaded subsets never execute virtual pages; release must not compile them.
+      expect(build.pipelines.pageShadowPipelines.size).toBe(0);
   });
 
   it("keeps the full critical path when no subset is requested", async () => {

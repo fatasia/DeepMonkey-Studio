@@ -8,7 +8,7 @@ import { sceneShader } from "./pbrShader.js";
 import { readFileSync } from "node:fs";
 
 afterEach(() => vi.unstubAllGlobals());
-function fixture(mode: "cascaded" | "virtual" = "cascaded") {
+function fixture(mode: "cascaded" | "virtual" | "transmission" = "cascaded") {
   vi.stubGlobal("GPUBufferUsage", { UNIFORM: 1, COPY_DST: 2 });
   vi.stubGlobal("GPUTextureUsage", { TEXTURE_BINDING: 16 });
   const buffer = {} as GPUBuffer, writeBuffer = vi.fn(), createBindGroup = vi.fn(() => ({} as GPUBindGroup));
@@ -18,7 +18,8 @@ function fixture(mode: "cascaded" | "virtual" = "cascaded") {
   // 2026-10-06 分档:级联档 frame 布局剥离 12..14(旧 Chromium per-stage 基线 16/8),
   // 装配端同步跳过占位;虚拟档保留 15 槽并懒建占位资源。
   const pipelines = { main: { getBindGroupLayout: () => ({}) },
-    ...(mode === "virtual" ? { virtualFrameBindings: true } : {}) } as unknown as Pipelines;
+    ...(mode === "virtual" ? { virtualFrameBindings: true } : {}),
+    ...(mode === "transmission" ? { sceneTransmissionBinding: true } : {}) } as unknown as Pipelines;
   const environment = { specular: {}, diffuse: {}, brdf: {}, sampler: {} } as StudioEnvironment;
   const create = () => new PbrMainBindings(session, pipelines, {} as GPUBuffer, {} as CascadedShadowResources, environment);
   return { buffer, createBuffer, writeBuffer, createBindGroup, release, environment, create };
@@ -27,6 +28,20 @@ const lights = { ambient: [{ color: [1, 0.5, 0.25] as const, intensity: 2 }] };
 const probeBox = { center: [0, 2, 0] as const, halfExtents: [3, 2, 3] as const, blendDistance: 1, influenceRadius: 2 };
 
 describe("PBR bounded reflection bindings", () => {
+  it("binds the completed scene only for transparency and invalidates derived bindings on environment change", () => {
+    const f = fixture("transmission"), bindings = f.create(), opaque = bindings.binding;
+    const source = {} as GPUTextureView;
+    expect(Array.from((f.createBindGroup.mock.calls[0]![0] as GPUBindGroupDescriptor).entries).find(entry => entry.binding === 15)?.resource).toBe(f.environment.brdf);
+    const transparent = bindings.forTransparency(source);
+    expect(transparent).not.toBe(opaque); expect(bindings.binding).toBe(opaque);
+    expect(Array.from((f.createBindGroup.mock.calls.at(-1)![0] as GPUBindGroupDescriptor).entries).find(entry => entry.binding === 15)?.resource).toBe(source);
+    expect(bindings.forTransparency(source)).toBe(transparent);
+    const before = f.createBindGroup.mock.calls.length;
+    bindings.setEnvironment(f.environment);
+    expect(bindings.forTransparency(source)).not.toBe(transparent);
+    expect(f.createBindGroup.mock.calls.length).toBe(before + 2);
+    const stock = fixture().create(); expect(stock.forTransparency(source)).toBe(stock.binding);
+  });
   it("atomically replaces mip offsets and restores them with a previous environment", () => {
     const f = fixture(), bindings = f.create(); f.writeBuffer.mockClear();
     bindings.setEnvironment({ ...f.environment, specularMipSelection: { rawMips: 8, keptMips: 4, droppedMips: 4 } });
@@ -87,6 +102,21 @@ describe("PBR bounded reflection bindings", () => {
 });
 
 describe("PBR authored diffuse binding", () => {
+  it.each([0, 0.5, 2])("uploads GI gain %s only in the reserved diffuse lane consumed by the production shader", gain => {
+    const f = fixture(), bindings = f.create(); f.writeBuffer.mockClear();
+    expect(bindings.update(lights, undefined, false, gain)).toBe(true);
+    const data = f.writeBuffer.mock.calls[0]![2] as Float32Array;
+    expect(data.byteLength).toBe(64);
+    expect(Array.from(data)).toEqual([2, 1, 0.5, gain - 1, ...Array(12).fill(0)]);
+    const shaderGain = /mix\(environmentIrradiance, gi\.rgb \* max\(1\.0 \+ deepDiffuse\.constant\.w, 0\.0\), gi\.a\)/;
+    expect(sceneShader).toMatch(shaderGain);
+    expect(1 + data[3]!).toBe(gain);
+    expect(bindings.update(lights, undefined, false, gain)).toBe(false);
+    expect(f.writeBuffer).toHaveBeenCalledOnce();
+    // Reset to the omitted SDK gain: the original zero padding and authored RGB return.
+    bindings.update(lights);
+    expect((f.writeBuffer.mock.calls.at(-1)![2] as Float32Array)[3]).toBe(0);
+  });
   it("binds replacement shadows against the latest environment and preserves active state on failure", () => {
     const f = fixture(), bindings = f.create();
     const shadows = { legacyView: {}, sampler: {} } as CascadedShadowResources;
@@ -145,7 +175,7 @@ describe("PBR authored diffuse binding", () => {
     const frames = readFileSync(new URL("./pbrRendererFrames.ts", import.meta.url), "utf8");
     expect(frames).toContain("if (host.environment.beginFrame(candidate => host.mainBindings.setEnvironment(candidate))) host.historyDirty = true;");
     expect(source).toContain("this.environment.runFrame(() => this.renderPreparedFrame(view), previous => this.mainBindings.setEnvironment(previous))");
-    expect(frames).toContain("if (host.mainBindings.update(view.lights, view.fog)) host.historyDirty = true;");
+    expect(frames).toContain("if (host.mainBindings.update(view.lights, view.fog, view.authorDirectDisplay, view.globalIlluminationIntensity)) host.historyDirty = true;");
   });
 
   it("does not publish replacement shadow resources before the zero-size frame guard", () => {

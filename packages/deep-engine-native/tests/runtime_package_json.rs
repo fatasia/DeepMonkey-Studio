@@ -40,3 +40,30 @@ fn enforces_depth_while_decoding_the_json_tree() {
         "{error}"
     );
 }
+
+#[test]
+fn moving_unique_json_into_the_schema_keeps_header_and_hash_checks() {
+    for invalid in [
+        GOLDEN.replacen(
+            "\"schema\":\"deep-engine.runtime-package\",\"schemaVersion\":1",
+            "\"schema\":\"deep-engine.runtime-package\",\"schemaVersion\":1.0",
+            1,
+        ),
+        GOLDEN.replacen("\"packageId\":", "\"unknownHeader\":true,\"packageId\":", 1),
+        GOLDEN.replacen(
+            "\"packageHash\":",
+            "\"packageHash\":null,\"packageHash\":",
+            1,
+        ),
+    ] {
+        assert_ne!(invalid, GOLDEN, "mutation must affect the actual golden");
+        assert!(parse_and_validate_runtime_package(invalid.as_bytes()).is_err());
+    }
+    let first = parse_and_validate_runtime_package(GOLDEN.as_bytes()).unwrap();
+    let second = parse_and_validate_runtime_package(GOLDEN.as_bytes()).unwrap();
+    assert_eq!(first.package_hash, second.package_hash);
+    assert_eq!(
+        first.render_packet.geometries[0].vertices,
+        second.render_packet.geometries[0].vertices
+    );
+}

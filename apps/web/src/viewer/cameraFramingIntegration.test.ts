@@ -22,6 +22,24 @@ function fixture() {
 }
 
 describe("camera framing engine integration", () => {
+  it("fits current skin vertices through fitAll, selection and standard views instead of bind-pose geometry", () => {
+    const { engine, orbit, models } = fixture();
+    const geometry = new THREE.BoxGeometry(2, 2, 2).translate(-50, 0, 0), count = geometry.getAttribute("position").count;
+    geometry.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(new Uint16Array(count * 4), 4));
+    const weights = new Float32Array(count * 4); for (let i = 0; i < count; i++) weights[i * 4] = 1;
+    geometry.setAttribute("skinWeight", new THREE.Float32BufferAttribute(weights, 4));
+    const mesh = new THREE.SkinnedMesh(geometry), bone = new THREE.Bone(); mesh.add(bone); mesh.bind(new THREE.Skeleton([bone]));
+    mesh.computeBoundingBox(); mesh.computeBoundingSphere(); bone.position.x = 50;
+    models.clear(); models.set("skin", { object: mesh, visible: true });
+    engine.fitAll(); expect(orbit.target.x).toBeCloseTo(0);
+    bone.position.x = 60;
+    expect(engine.focusModel("skin")).toBe(true); expect(orbit.target.x).toBeCloseTo(10);
+    Object.assign(engine, { inspectedObject: mesh });
+    bone.position.x = 70; engine.setStandardView("front"); expect(orbit.target.x).toBeCloseTo(20);
+    Object.assign(engine, { inspectedObject: undefined });
+    bone.position.x = 80; engine.setStandardView("top"); expect(orbit.target.x).toBeCloseTo(30);
+  });
+
   it("publishes camera changes to a view-local subscriber without replacing the inspector callback", () => {
     const { engine } = fixture();
     const local = vi.fn(), inspector = vi.fn();

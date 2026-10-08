@@ -72,7 +72,7 @@ try {
       await gate.json("PUT", `${appPath}/workspace`, { application, scene });
       const rendererQuery = entry.initialRenderer === "preferences" ? "" : "?renderer=webgl";
       await page.goto(`${gate.origin}/studio/${project.id}/applications/${application.metadata.id}/scenes/${scene.id}${rendererQuery}`);
-      await page.locator(".viewport canvas").waitFor();
+      await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
       const autoSave = page.getByLabel("自动保存"); if (await autoSave.isChecked()) await autoSave.uncheck();
       await enter.waitFor({ state: "visible" });
       await page.waitForFunction(() => !document.querySelector('[aria-label="进入播放模式"]')?.disabled);
@@ -81,7 +81,7 @@ try {
       assert.equal(await page.evaluate(() => performance.getEntriesByName("deep-studio:play-restore").length), 0);
       await enter.click(); await exit.waitFor(); await shot("playing");
       assert.ok(await page.getByRole("button", { name: "保存项目", exact: true }).isDisabled());
-      const canvas = page.locator(".viewport canvas");
+      const canvas = page.locator('.viewport canvas:not([aria-hidden="true"])');
       const canvasHash = async () => createHash("sha256").update(await canvas.screenshot()).digest("hex");
       const initialView = await canvasHash();
       const canvasBounds = await canvas.boundingBox(); assert.ok(canvasBounds);

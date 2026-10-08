@@ -40,6 +40,7 @@ export class DeepWebGpuProbeClipmapSession {
   private requested = false;
   private failureValue: unknown;
   private rejectedFallback = false;
+  private captureBlocked = false;
   private updateBudget = 64;
   /** Last submitted view snapshot, reused verbatim by `captureTick` (no per-tick allocation). */
   private lastView: RenderView | undefined;
@@ -60,7 +61,8 @@ export class DeepWebGpuProbeClipmapSession {
       frame: number; updateCount: number; committedBatchCount: number; committedUpdateCount: number } } } } | undefined)
       ?.runtime?.current?.captureStats;
     return Object.freeze({ requested: this.requested, active: this.active,
-      radianceSource: this.createController === undefined || this.rejectedFallback ? "unavailable" : "scene",
+      radianceSource: this.createController === undefined || this.rejectedFallback
+        || this.controller?.captureUnavailableReason !== undefined ? "unavailable" : "scene",
       pending: this.pending !== undefined, packetRevision: this.packetRevision,
       sceneInstanceCount: this.packet?.instances.length ?? 0,
       ...(captureStats ? { capture: Object.freeze({ frame: captureStats.frame,
@@ -149,7 +151,7 @@ export class DeepWebGpuProbeClipmapSession {
   }
 
   beginFrame(view: RenderView): void {
-    if (this.disposed || !this.controller || !this.packet) return;
+    if (this.disposed || !this.controller || !this.packet || !this.captureReady()) return;
     const snapshot = snapshotView(view);
     if (this.pending) { this.queuedView = snapshot; return; }
     this.submit(snapshot);
@@ -164,7 +166,7 @@ export class DeepWebGpuProbeClipmapSession {
    * the existing scheduler; it never dispatches extra GPU work beyond one budgeted batch.
    */
   captureTick(): ProbeCaptureTickResult {
-    if (this.disposed || !this.controller) return "unavailable";
+    if (this.disposed || !this.controller || !this.captureReady()) return "unavailable";
     // A latched failure is persistent for this packet (no radiance source, unavailable
     // scene): stop pumping here. Rendered frames re-arm once per frame via beginFrame,
     // which retries — bounded, never an idle RAF loop.
@@ -178,7 +180,7 @@ export class DeepWebGpuProbeClipmapSession {
 
   /** True while the clipmap still owes capture work (initial fill, deferred probes, dirty surfaces). */
   hasPendingWork(): boolean {
-    if (this.disposed || !this.controller) return false;
+    if (this.disposed || !this.controller || this.controller.captureUnavailableReason !== undefined) return false;
     if (this.controller.surfaceCache.pendingCount > 0) return true;
     const snapshot = this.controller.current;
     // No committed frame yet (initial fill), or the last plan deferred candidates.
@@ -219,13 +221,14 @@ export class DeepWebGpuProbeClipmapSession {
     this.pending = undefined;
     this.queuedView = undefined;
     this.lastView = undefined;
+    this.captureBlocked = false;
     this.controller?.dispose();
     this.controller = undefined;
   }
 
   private submit(view: RenderView): void {
     const controller = this.controller;
-    if (!controller) return;
+    if (!controller || !this.captureReady()) return;
     this.lastView = view;
     const pending = new AbortController();
     this.pending = pending;
@@ -246,6 +249,20 @@ export class DeepWebGpuProbeClipmapSession {
       this.queuedView = undefined;
       if (queued && !this.disposed && this.controller === controller) this.submit(queued);
     });
+  }
+
+  private captureReady(): boolean {
+    const reason = this.controller?.captureUnavailableReason;
+    if (reason !== undefined) {
+      if (!this.captureBlocked) {
+        this.controller?.suspendUnavailableCapture?.();
+        this.pending?.abort(); this.pending = undefined; this.queuedView = undefined;
+      }
+      if (!this.captureBlocked || errorMessage(this.failureValue) !== reason) this.failureValue = new Error(reason);
+      this.captureBlocked = true; return false;
+    }
+    if (this.captureBlocked) { this.captureBlocked = false; this.failureValue = undefined; }
+    return true;
   }
 }
 

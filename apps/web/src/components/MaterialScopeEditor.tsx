@@ -9,21 +9,21 @@ interface Props {
   disabled: boolean;
   material: SceneMaterialState;
   slots: readonly SelectionMaterialSlot[];
-  onChange: (patch: SceneMaterialState) => void;
-  children: (material: SceneMaterialState, onChange: (patch: SceneMaterialState) => void, slotId: string | undefined) => ReactNode;
+  onChange: (patch: SceneMaterialState, previewOnly?: boolean) => void;
+  children: (material: SceneMaterialState, onChange: (patch: SceneMaterialState, previewOnly?: boolean) => void, slotId: string | undefined) => ReactNode;
 }
 /** Scope stays local to the Inspector; persisted overrides use stable source material identities. */
 export function MaterialScopeEditor({ locale, disabled, material, slots, onChange, children }: Props) {
   const [selectedId, select] = useState("");
   const slot = slots.find(item => item.id === selectedId);
   const effective = slot ? { ...slot.material, ...material.slotOverrides?.[slot.id] } : material;
-  const change = (patch: SceneMaterialState) => {
-    if (!slot) { onChange(patch); return; }
+  const change = (patch: SceneMaterialState, previewOnly?: boolean) => {
+    if (!slot) { onChange(patch, previewOnly); return; }
     const { slotOverrides: _nested, ...values } = patch;
     if (["color", "hue", "saturation", "brightness", "contrast"].some(key => key in values)) values.sourceColor = false;
     if (values.emissive !== undefined) values.sourceEmissive = false;
     onChange({ slotOverrides: { ...material.slotOverrides,
-      [slot.id]: { ...material.slotOverrides?.[slot.id], ...values } } });
+      [slot.id]: { ...material.slotOverrides?.[slot.id], ...values } } }, previewOnly);
   };
   const sourceSlots = slot ? [slot] : slots;
   const restorable = sourceSlots.length > 0 && sourceSlots.every(item => item.sourceMaterial);

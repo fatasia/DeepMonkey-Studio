@@ -14,6 +14,14 @@
 
 export type PipelineWarmupPriority = "first-frame" | "background" | "idle";
 
+const deviceQueues = new WeakMap<object, PipelineWarmupQueue>();
+/** Static and deformed variants share the device's background compilation budget. */
+export function pipelineWarmupQueueForDevice(device: object): PipelineWarmupQueue {
+  let queue = deviceQueues.get(device);
+  if (!queue) { queue = new PipelineWarmupQueue({ concurrency: 2 }); deviceQueues.set(device, queue); }
+  return queue;
+}
+
 const PRIORITY_ORDER: readonly PipelineWarmupPriority[] = ["first-frame", "background", "idle"];
 
 export interface WarmupTask<T> {
@@ -58,6 +66,7 @@ export class PipelineWarmupQueue {
   private readonly idleScheduling: boolean;
   private readonly scheduler: WarmupScheduler;
   private inFlight = 0;
+  private readonly drainWaiters = new Set<() => void>();
   private paused = true;
   private idleWindowPending = false;
   private idleCancel: (() => void) | undefined;
@@ -94,6 +103,10 @@ export class PipelineWarmupQueue {
           }).finally(() => {
             this.inFlight -= 1;
             this.pump();
+            if (this.inFlight === 0) {
+              for (const complete of this.drainWaiters) complete();
+              this.drainWaiters.clear();
+            }
           });
         },
       };
@@ -117,7 +130,7 @@ export class PipelineWarmupQueue {
 
   /** 等待全部在飞任务结算(不启动新任务;失败不抛)。 */
   async drainInFlight(): Promise<void> {
-    while (this.inFlight > 0) await Promise.resolve();
+    if (this.inFlight > 0) await new Promise<void>(resolve => { this.drainWaiters.add(resolve); });
   }
 
   private pump(): void {

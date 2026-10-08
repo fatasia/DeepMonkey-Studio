@@ -207,7 +207,15 @@ async function preparePackageDelivery(options: SceneClientPackageOptions, purpos
       return new Uint8Array(bytes);
     }, signal,
     // F3：显式透传优先，否则按场景语义哈希查会话态（场景编辑后哈希失配自然不带）。
-    resolveProbeGridPayloadInput(options.scene, options.irradianceProbes)) : undefined;
+    { ...resolveProbeGridPayloadInput(options.scene, options.irradianceProbes),
+      async loadTexture(url, loadSignal) {
+        loadSignal.throwIfAborted();
+        const bytes = url.startsWith("data:image/")
+          ? await loadViewerAssetBuffer(url, "内嵌贴图", { signal: loadSignal, timeoutMs: 120_000 })
+          : sourceBuffers.get(url);
+        if (!bytes) throw new Error("Native 编译缺少已校验贴图资源，请重新检查项目贴图引用。");
+        return new Uint8Array(bytes);
+      } }) : undefined;
   signal.throwIfAborted();
   if (native && purpose === "delivery") assertScenePublicationDeliverable(native.report, { allowNativeDegraded: true });
   validateSceneClientArchivePaths([...files.map(file => file.path), ...(native?.files.map(file => file.path) ?? []),
@@ -257,7 +265,9 @@ async function preparePackageDelivery(options: SceneClientPackageOptions, purpos
     const { default: JSZip } = await import("jszip");
     signal.throwIfAborted();
     const zip = new JSZip();
-    for (const file of payloads) zip.file(file.path, file.content, { date: generatedAt, createFolders: false });
+    for (const file of payloads) zip.file(file.path, file.content, { date: generatedAt, createFolders: false,
+      // Decoded RGBA arrays compress well; encoded assets keep their original bytes and cheap STORE path.
+      ...(file.path === "native/runtime-package.json" ? { compression: "DEFLATE", compressionOptions: { level: 3 } } : {}) });
     zip.file("manifest.json", JSON.stringify(manifest, null, 2), { date: generatedAt, createFolders: false });
     progress("正在生成客户端包");
     signal.throwIfAborted();

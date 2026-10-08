@@ -23,6 +23,7 @@ export class StudioDeepShadowSession {
   constructor(private readonly options: StudioDeepShadowSessionOptions) {
     this.activeMapSize = options.initialMapSize;
   }
+  get mapSize(): number { return this.activeMapSize; }
 
   lights(source: Lights): Lights {
     const primary = source.directional?.[0];

@@ -12,10 +12,9 @@ export class StudioDeepGridSession {
       || !(grid.material instanceof THREE.MeshBasicMaterial)) throw new Error("Deep 仅支持项目固定地面网格。");
     const material = grid.material, map = material.map;
     if (!material.visible || material.opacity === 0) return;
-    if (!composerActive) throw new Error("Deep 地面网格需要作者后处理管线；请保持 WebGL 或启用后处理。");
     if (!(map instanceof THREE.CanvasTexture) || map.colorSpace !== THREE.SRGBColorSpace || !map.flipY || map.premultiplyAlpha
       || map.wrapS !== THREE.ClampToEdgeWrapping || map.wrapT !== THREE.ClampToEdgeWrapping || map.channel !== 0
-      || !map.generateMipmaps || map.minFilter !== THREE.LinearMipmapLinearFilter || map.magFilter !== THREE.NearestFilter
+      || !map.generateMipmaps || map.minFilter !== THREE.LinearMipmapLinearFilter || map.magFilter !== THREE.LinearFilter
       || map.offset.x !== 0 || map.offset.y !== 0 || map.repeat.x !== 1 || map.repeat.y !== 1 || map.rotation !== 0
       || !map.matrixAutoUpdate || material.toneMapped || !material.transparent || !material.depthTest || material.depthWrite
       || material.vertexColors || material.alphaTest !== 0 || material.alphaMap || material.wireframe
@@ -49,14 +48,11 @@ export class StudioDeepGridSession {
       // A tainted canvas throws here; candidate/runtime failure restores WebGL.
       const data = new Uint8Array(context.getImageData(0, 0, width, height).data);
       const source = Object.freeze({ id: map.uuid, revision: map.version, semantic: "baseColor" as const, width, height, data,
-        // WebGPU requires all sampler filters to be linear when anisotropy is enabled.
-        // Preserve nearest magnification (the close-up clarity contract) and use the
-        // generated mip chain for oblique/minified views instead of publishing an
-        // invalid anisotropic sampler.
-        sampler: { minFilter: "linear" as const, magFilter: "nearest" as const, mipmapFilter: "linear" as const, maxAnisotropy: 1 } });
+        sampler: { minFilter: "linear" as const, magFilter: "linear" as const, mipmapFilter: "linear" as const, maxAnisotropy: map.anisotropy } });
       this.cached = { texture: map, image, version: map.version, width, height, anisotropy: map.anisotropy, source };
     }
-    return Object.freeze({ texture: this.cached.source, model: Object.freeze([...model.elements]), color, fog: material.fog ? fog : null });
+    return Object.freeze({ texture: this.cached.source, model: Object.freeze([...model.elements]), color,
+      fog: material.fog ? fog : null, ...(!composerActive ? { authorDirectDisplay: true } : {}) });
   }
   dispose(): void { this.cached = undefined; }
 }

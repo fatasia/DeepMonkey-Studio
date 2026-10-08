@@ -3,8 +3,9 @@ import type { FrameMetrics } from "./pbrRendererTypes.js";
 
 /** 刀 C 首帧归因:validateFrame 段级 mark(渲染编码 / 校验作用域 / 队列排空)。 */
 function markValidate(name: string): void {
-  if (typeof performance !== "undefined" && typeof performance.mark === "function") {
-    performance.mark(`deep-webgpu:validate-${name}`);
+  const clock = (globalThis as unknown as { performance?: { mark(name: string): unknown } }).performance;
+  if (typeof clock?.mark === "function") {
+    clock.mark(`deep-webgpu:validate-${name}`);
   }
 }
 

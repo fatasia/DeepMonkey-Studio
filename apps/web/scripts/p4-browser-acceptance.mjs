@@ -141,7 +141,7 @@ try {
   }, on);
   const canvasClick = async (x, y) => {
     await setPanelControlsPassthrough(true);
-    try { await page.locator(".viewport canvas").click({ position: { x, y } }); }
+    try { await page.locator('.viewport canvas:not([aria-hidden="true"])').click({ position: { x, y } }); }
     finally { await setPanelControlsPassthrough(false); }
   };
   const setRange = async (locator, value) => {
@@ -195,7 +195,7 @@ try {
   };
   const reloadEditor = async () => {
     await page.reload({ waitUntil: "domcontentloaded", timeout: 90_000 });
-    await page.locator(".viewport canvas").waitFor({ timeout: 90_000 });
+    await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ timeout: 90_000 });
     await page.waitForTimeout(1500);
     await ensureFlatList();
   };
@@ -221,7 +221,7 @@ try {
   const sceneCreatedAt = scene.updatedAt ?? scene.createdAt;
   const sceneEditorUrl = `${gate.origin}/studio/${encodeURIComponent(project.id)}/applications/${encodeURIComponent(application.metadata.id)}/scenes/${encodeURIComponent(scene.id)}`;
   await page.goto(sceneEditorUrl, { waitUntil: "networkidle", timeout: 90_000 });
-  await page.locator(".viewport canvas").waitFor();
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
   const theme = await page.evaluate(() => document.documentElement.getAttribute("data-theme"));
   check("dark-theme", theme !== "light", { theme });
   await shot(page, "00-scene-editor-empty");
@@ -470,7 +470,7 @@ try {
   const application2 = await (await created).json();
   const scene2 = application2.scenes?.[0];
   check("c2-scene-created", Boolean(scene2?.id), { sceneId: scene2?.id });
-  await page.locator(".viewport canvas").waitFor();
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
   await ensureFlatList();
   const primitive = page.locator(".asset-row").filter({ hasText: "立方体" });
   const selectPrimitive = async () => {
@@ -508,7 +508,7 @@ try {
   const actions = [
     ["create", async () => { await page.getByRole("button", { name: "创建", exact: true }).click();
       await page.getByRole("menuitem", { name: "立方体", exact: true }).click();
-      await page.locator(".viewport canvas").click({ position: { x: 700, y: 420 } }); await primitive.first().waitFor(); }],
+      await page.locator('.viewport canvas:not([aria-hidden="true"])').click({ position: { x: 700, y: 420 } }); await primitive.first().waitFor(); }],
     ["position-x", () => fillTransform("位置", "X", 2)],
     ["position-y", () => fillTransform("位置", "Y", 3)],
     ["position-z", () => fillTransform("位置", "Z", -1)],
@@ -566,7 +566,7 @@ try {
       && material.brightness === 0.35 && material.contrast === -0.3, { material, neutralColor: states[8].renderedColor });
     await shot(page, "b2-before-reload");
     await page.reload({ waitUntil: "networkidle" });
-    await page.locator(".viewport canvas").waitFor(); await ensureFlatList();
+    await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor(); await ensureFlatList();
     const reloaded = await readState();
     check("b2-reloaded-color-and-controls-identical", JSON.stringify(reloaded) === JSON.stringify(authored), { expected: authored, actual: reloaded });
     await shot(page, "b2-after-reload");

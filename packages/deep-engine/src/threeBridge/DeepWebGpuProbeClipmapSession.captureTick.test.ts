@@ -31,6 +31,38 @@ async function settle(): Promise<void> {
 }
 
 describe("DeepWebGpuProbeClipmapSession capture pump (F5-L4)", () => {
+  it("skips all capture planning while the live producer is unavailable and resumes with restored lighting", async () => {
+    const { session, controller } = fixture();
+    let reason: string | undefined = "deformation requires an undeformed geometry snapshot";
+    Object.defineProperty(controller, "captureUnavailableReason", { get: () => reason });
+    for (let frame = 0; frame < 1000; frame++) session.beginFrame({ ...VIEW, eye: [frame, 0, 4] });
+    expect(controller.beginFrame).not.toHaveBeenCalled();
+    expect(session.hasPendingWork()).toBe(false);
+    expect(session.captureTick()).toBe("unavailable");
+    expect(session.diagnostics).toMatchObject({ radianceSource: "unavailable", pending: false });
+    reason = undefined;
+    session.beginFrame(VIEW);
+    await settle();
+    expect(controller.beginFrame).toHaveBeenCalledOnce();
+    expect(session.failure).toBeUndefined();
+    expect(session.diagnostics.radianceSource).toBe("scene");
+  });
+
+  it("cancels a capture and discards its queued view when radiance becomes unavailable", async () => {
+    const { session, controller } = fixture();
+    let reason: string | undefined;
+    Object.defineProperty(controller, "captureUnavailableReason", { get: () => reason });
+    let release!: (value: { status: string }) => void;
+    controller.beginFrame.mockImplementationOnce(() => new Promise(done => { release = done; }));
+    session.beginFrame(VIEW); session.beginFrame({ ...VIEW, eye: [1, 0, 4] });
+    const signal = controller.beginFrame.mock.calls[0]![1] as AbortSignal;
+    reason = "real radiance source is unavailable";
+    session.beginFrame(VIEW);
+    expect(signal.aborted).toBe(true);
+    release({ status: "committed" }); await settle();
+    expect(controller.beginFrame).toHaveBeenCalledOnce();
+    expect(session.diagnostics.pending).toBe(false);
+  });
   it("reports unavailable without an active controller and never reports work", () => {
     const idle = new DeepWebGpuProbeClipmapSession({} as never);
     expect(idle.captureTick()).toBe("unavailable");

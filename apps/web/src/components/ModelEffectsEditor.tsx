@@ -12,6 +12,7 @@ import {
 } from "../viewer/modelVfxParticles";
 import { VFX_TEMPLATES, VFX_TEMPLATE_MAP } from "../viewer/vfxTemplates";
 import { ParticleCurveEditor } from "./ParticleCurveEditor";
+import { DraftRange } from "./DraftRange";
 
 const FIRE_CURVE_CHANNELS: readonly { channel: FireCurveChannel; label: [string, string] }[] = [
   { channel: "size", label: ["尺寸", "Size"] },
@@ -40,7 +41,7 @@ interface ModelEffectsEditorProps {
   disabled: boolean;
   effects: SceneModelEffectsState;
   /** 接受 fire/vfx 嵌套 patch;显式 vfx:undefined 卸载图层。 */
-  onChange: (patch: ModelEffectsPatch) => void;
+  onChange: (patch: ModelEffectsPatch, previewOnly?: boolean) => void;
   /** 场景火焰粒子预算报告与当前对象 id；缺省时不显示预算读数。 */
   particleBudget?: FireBudgetReport | undefined;
   particleEmitterId?: string | undefined;
@@ -50,7 +51,7 @@ interface ModelEffectsEditorProps {
 
 export function ModelEffectsEditor({ locale, rendererBackend, disabled, effects, onChange, particleBudget, particleEmitterId, vfxBudget }: ModelEffectsEditorProps) {
   const fire = effects.fire ?? DEFAULT_FIRE_EFFECT;
-  const updateFire = (patch: Partial<typeof fire>) => onChange({ fire: { ...fire, ...patch } });
+  const updateFire = (patch: Partial<typeof fire>, previewOnly?: boolean) => onChange({ fire: { ...fire, ...patch } }, previewOnly);
   const updateCurve = (channel: FireCurveChannel, keys: SceneFireCurveKey[] | undefined) => {
     const { [channel]: _removed, ...rest } = fire.curves ?? {};
     const curves = keys ? { ...rest, [channel]: keys } : rest;
@@ -79,8 +80,8 @@ export function ModelEffectsEditor({ locale, rendererBackend, disabled, effects,
           </button>
         ))}
       </div>
-      <EffectRange locale={locale} label={["强度", "Intensity"]} value={effects.intensity} min={0.1} max={4} step={0.1} disabled={disabled} onChange={(intensity) => onChange({ intensity })} />
-      <EffectRange locale={locale} label={["溶解", "Dissolve"]} value={effects.dissolve} min={0} max={0.95} step={0.01} disabled={disabled} format={(value) => `${Math.round(value * 100)}%`} onChange={(dissolve) => onChange({ dissolve })} />
+      <EffectRange locale={locale} label={["强度", "Intensity"]} value={effects.intensity} min={0.1} max={4} step={0.1} disabled={disabled} onChange={(intensity, previewOnly) => onChange({ intensity }, previewOnly)} />
+      <EffectRange locale={locale} label={["溶解", "Dissolve"]} value={effects.dissolve} min={0} max={0.95} step={0.01} disabled={disabled} format={(value) => `${Math.round(value * 100)}%`} onChange={(dissolve, previewOnly) => onChange({ dissolve }, previewOnly)} />
       <label>
         <span>{tr(locale, "特效颜色", "Effect color")}</span>
         <input disabled={disabled} type="color" value={effects.color} onChange={(event) => onChange({ color: event.target.value })} />
@@ -104,10 +105,10 @@ export function ModelEffectsEditor({ locale, rendererBackend, disabled, effects,
               <span>{tr(locale, "颜色", "Color")}</span>
               <input disabled={disabled} type="color" value={fire.color} onChange={(event) => updateFire({ color: event.target.value })} />
             </label>
-            <EffectRange locale={locale} label={["强度", "Intensity"]} value={fire.intensity} min={0.1} max={5} step={0.1} disabled={disabled} onChange={(intensity) => updateFire({ intensity })} />
-            <EffectRange locale={locale} label={["高度", "Height"]} value={fire.height} min={0.1} max={50} step={0.1} disabled={disabled} format={(value) => `${value.toFixed(1)} m`} onChange={(height) => updateFire({ height })} />
-            <EffectRange locale={locale} label={["密度", "Density"]} value={fire.density} min={0.25} max={2} step={0.05} disabled={disabled} format={(value) => `${value.toFixed(2)}×`} onChange={(density) => updateFire({ density })} />
-            <EffectRange locale={locale} label={["粒子上限", "Max particles"]} value={fire.maxParticles ?? FIRE_DEFAULT_MAX_PARTICLES} min={FIRE_MAX_PARTICLES_RANGE.min} max={FIRE_MAX_PARTICLES_RANGE.max} step={8} disabled={disabled} format={(value) => `${Math.round(value)}`} onChange={(maxParticles) => updateFire({ maxParticles })} />
+            <EffectRange locale={locale} label={["强度", "Intensity"]} value={fire.intensity} min={0.1} max={5} step={0.1} disabled={disabled} onChange={(intensity, previewOnly) => updateFire({ intensity }, previewOnly)} />
+            <EffectRange locale={locale} label={["高度", "Height"]} value={fire.height} min={0.1} max={50} step={0.1} disabled={disabled} format={(value) => `${value.toFixed(1)} m`} onChange={(height, previewOnly) => updateFire({ height }, previewOnly)} />
+            <EffectRange locale={locale} label={["密度", "Density"]} value={fire.density} min={0.25} max={2} step={0.05} disabled={disabled} format={(value) => `${value.toFixed(2)}×`} onChange={(density, previewOnly) => updateFire({ density }, previewOnly)} />
+            <EffectRange locale={locale} label={["粒子上限", "Max particles"]} value={fire.maxParticles ?? FIRE_DEFAULT_MAX_PARTICLES} min={FIRE_MAX_PARTICLES_RANGE.min} max={FIRE_MAX_PARTICLES_RANGE.max} step={8} disabled={disabled} format={(value) => `${Math.round(value)}`} onChange={(maxParticles, previewOnly) => updateFire({ maxParticles }, previewOnly)} />
             <BlendSegment locale={locale} disabled={disabled} value={blend} onChange={(blend) => updateFire({ blend })} />
             {particleBudget && (
               <BudgetReadout
@@ -145,11 +146,11 @@ function VfxEditor({ locale, disabled, vfx, vfxBudget, emitterId, onChange }: {
   vfx: SceneVfxEffectState | undefined;
   vfxBudget: VfxBudgetReport | undefined;
   emitterId: string | undefined;
-  onChange: (patch: ModelEffectsPatch) => void;
+  onChange: (patch: ModelEffectsPatch, previewOnly?: boolean) => void;
 }) {
-  const updateVfx = (patch: VfxEffectPatch) => {
+  const updateVfx = (patch: VfxEffectPatch, previewOnly?: boolean) => {
     if (!vfx) return;
-    onChange({ vfx: { ...vfx, ...patch } });
+    onChange({ vfx: { ...vfx, ...patch } }, previewOnly);
   };
   const attach = (templateId: SceneVfxEffectState["template"]) => {
     // 挂载/切换模板都写入该模板的完整默认参数,参数面板立即有合理基线。
@@ -203,9 +204,9 @@ function VfxEditor({ locale, disabled, vfx, vfxBudget, emitterId, onChange }: {
             step={0.1}
             disabled={disabled}
             dataQa="vfx-intensity"
-            onChange={(intensity) => updateVfx({ intensity })}
+            onChange={(intensity, previewOnly) => updateVfx({ intensity }, previewOnly)}
           />
-          <EffectRange locale={locale} label={["速率", "Rate"]} value={vfx.rate} min={0.25} max={2} step={0.05} disabled={disabled} format={(value) => `${value.toFixed(2)}×`} dataQa="vfx-rate" onChange={(rate) => updateVfx({ rate })} />
+          <EffectRange locale={locale} label={["速率", "Rate"]} value={vfx.rate} min={0.25} max={2} step={0.05} disabled={disabled} format={(value) => `${value.toFixed(2)}×`} dataQa="vfx-rate" onChange={(rate, previewOnly) => updateVfx({ rate }, previewOnly)} />
           <EffectRange
             locale={locale}
             label={VFX_TEMPLATE_MAP[vfx.template]?.rangeLabel ?? ["范围", "Range"]}
@@ -215,10 +216,10 @@ function VfxEditor({ locale, disabled, vfx, vfxBudget, emitterId, onChange }: {
             step={0.1}
             disabled={disabled}
             format={(value) => `${value.toFixed(1)} m`}
-            onChange={(range) => updateVfx({ range })}
+            onChange={(range, previewOnly) => updateVfx({ range }, previewOnly)}
           />
-          <EffectRange locale={locale} label={["生命周期", "Lifetime"]} value={vfx.lifetime} min={0.2} max={8} step={0.1} disabled={disabled} format={(value) => `${value.toFixed(1)} s`} onChange={(lifetime) => updateVfx({ lifetime })} />
-          <EffectRange locale={locale} label={["粒子上限", "Max particles"]} value={vfx.maxParticles ?? VFX_DEFAULT_MAX_PARTICLES} min={VFX_MAX_PARTICLES_RANGE.min} max={VFX_MAX_PARTICLES_RANGE.max} step={8} disabled={disabled} format={(value) => `${Math.round(value)}`} onChange={(maxParticles) => updateVfx({ maxParticles })} />
+          <EffectRange locale={locale} label={["生命周期", "Lifetime"]} value={vfx.lifetime} min={0.2} max={8} step={0.1} disabled={disabled} format={(value) => `${value.toFixed(1)} s`} onChange={(lifetime, previewOnly) => updateVfx({ lifetime }, previewOnly)} />
+          <EffectRange locale={locale} label={["粒子上限", "Max particles"]} value={vfx.maxParticles ?? VFX_DEFAULT_MAX_PARTICLES} min={VFX_MAX_PARTICLES_RANGE.min} max={VFX_MAX_PARTICLES_RANGE.max} step={8} disabled={disabled} format={(value) => `${Math.round(value)}`} onChange={(maxParticles, previewOnly) => updateVfx({ maxParticles }, previewOnly)} />
           <label>
             <span>{tr(locale, "颜色", "Color")}</span>
             <input disabled={disabled} type="color" value={vfx.color} onChange={(event) => updateVfx({ color: event.target.value })} />
@@ -328,13 +329,13 @@ function EffectRange({ locale, label, value, min, max, step, disabled, format, d
   format?: (value: number) => string;
   /** 浏览器验收钩子;省略时不输出。 */
   dataQa?: string | undefined;
-  onChange: (value: number) => void;
+  onChange: (value: number, previewOnly?: boolean) => void;
 }) {
   return (
     <label {...(dataQa ? { "data-qa": dataQa } : {})}>
       <span>{tr(locale, ...label)}</span>
-      <input disabled={disabled} type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
-      <output>{format ? format(value) : value.toFixed(1)}</output>
+      <DraftRange label={tr(locale, ...label)} disabled={disabled} min={min} max={max} step={step} value={value}
+        format={format ?? (next => next.toFixed(1))} onChange={next => onChange(next)} onPreview={next => onChange(next, true)} />
     </label>
   );
 }

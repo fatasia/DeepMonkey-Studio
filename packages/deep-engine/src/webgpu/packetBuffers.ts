@@ -4,6 +4,8 @@ import { prepareRenderPacket, type InstanceUpdate, type PreparedBatch, type Prep
   type RenderPacket } from "../renderPacket.js";
 import type { DeviceSession } from "./deviceSession.js";
 import type { Pipelines } from "./pipelines.js";
+import { preparePacketMainPipelines } from "./packetPipelinePreparation.js";
+import { abortableGpu } from "./gpuAbort.js";
 import { DeformationStaticSources } from "./deformationStaticSources.js";
 import { MaterialBindingPool, type MaterialLayouts } from "./materialBindings.js";
 import { TextureResources } from "./textureResources.js";
@@ -16,6 +18,7 @@ import { PacketShadowLodResources } from "./packetShadowLodResources.js";
 import { PacketLodResources } from "./packetLodResources.js";
 import type { PacketLodFrameStats, PacketLodView } from "./packetLodTypes.js";
 import { drawPacketBatches } from "./packetDraw.js";
+import { PacketClusterLodResources } from "./packetClusterLodResources.js";
 import { discardPacketBufferStage, stagePacketBuffers, type PacketBufferStagingContext,
   type StagedPacketBuffers } from "./packetBufferStaging.js";
 import { commitPacketInstanceFrame, PacketInstanceRollbackError,
@@ -27,10 +30,13 @@ import { ResidentPacketBufferState } from "./residentPacketBufferState.js";
 import type { ResidentPacketBufferStagingContext } from "./residentPacketBufferStaging.js";
 import type { PacketTextureLookup } from "./packetTextureLookup.js";
 import { packetGeometryBounds, retirePacketBuffers } from "./packetBufferRetirement.js";
-import { gpuValidatedStage } from "./gpuValidatedStage.js";
+import { buildPacketPreparationWork } from "../packetPreparationWork.js";
+import { packetPreparationIsLarge, prepareGpuPacketWork } from "../packetPreparationAsync.js";
+import { stagePacketBufferCandidate } from "./packetBufferCandidate.js";
 import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.js";
 import { PacketDeformationState } from "./packetDeformationState.js";
 import { PacketValidatedPublication } from "./packetValidatedPublication.js";
+import { gpuValidatedStage } from "./gpuValidatedStage.js";
 import { compileMaterialEffectLedger, type MaterialEffectLedgerSnapshot } from "./materialEffectLedger.js";
 import { drawOutlineMask, hasOutlinedInstances } from "./packetOutline.js";
 import { PacketTextureArrayConsumer, type PacketTextureArrayStage } from "./packetTextureArrayConsumer.js";
@@ -56,17 +62,23 @@ export class PacketBuffers {
   private textureLookup: PacketTextureLookup;
   private readonly materials: MaterialBindingPool;
   private lod: PacketLodResources | undefined;
+  private clusterLod: PacketClusterLodResources | undefined;
+  private clusterLodEnabled = false;
   private readonly lodInputs: PacketLodSceneCache;
   private shadowLod: PacketShadowLodResources | undefined;
   private readonly resident = new ResidentPacketBufferState();
   private materialEffects: MaterialEffectLedgerSnapshot | undefined;
   private readonly textureArrays: PacketTextureArrayConsumer | undefined;
-  constructor(private readonly session: DeviceSession, materialLayout?: MaterialLayouts,
-    deformationPipelines?: Pipelines | Promise<Pipelines>,
+  constructor(private readonly session: DeviceSession, private readonly materialLayout?: MaterialLayouts,
+    deformationPipelines?: Pipelines | Promise<Pipelines> | (() => Promise<Pipelines>),
     private readonly meshletsEnabled = false, private readonly meshletVisibility = false,
-    textureArrayLayout?: GPUBindGroupLayout, private readonly vertexStreamingGeometry?: string) {
+    textureArrayLayout?: GPUBindGroupLayout, private readonly vertexStreamingGeometry?: string,
+    private readonly staticPipelines?: Pipelines) {
     // 延迟变形变体以 promise 注入：状态机先以“未启用”运行，就绪后原地附着。
-    if (deformationPipelines instanceof Promise) {
+    if (typeof deformationPipelines === "function") {
+      this.deformationFactory = deformationPipelines;
+      this.deformation = new PacketDeformationState(session);
+    } else if (deformationPipelines instanceof Promise) {
       this.deformationReadiness = deformationPipelines.then(value => {
         this.deformation.attachPipelines(value);
       });
@@ -87,6 +99,26 @@ export class PacketBuffers {
   // A2-刀1:非只读 —— settled promise 会把 resolved 值(变形 Pipelines 图)钉在堆上,
   // dispose 时显式置空断开该引用链(证据见 dispose 内注释)。
   private deformationReadiness: Promise<void> | undefined;
+  private deformationFactory: (() => Promise<Pipelines>) | undefined;
+  private preparationController: AbortController | undefined;
+  private validatedPreparation: { raw: RenderPacket; prepared: PreparedPacket } | undefined;
+
+  /** Internal handoff of privately owned snapshots from the successful GPU commit. */
+  preparedPacketFor(raw: RenderPacket): PreparedPacket | undefined {
+    return !this.disposed && this.session.state === "ready" && this.validatedPreparation?.raw === raw
+      ? this.validatedPreparation.prepared : undefined;
+  }
+
+  private prepareDeformation(): Promise<void> | undefined {
+    if (this.disposed) throw cancelled();
+    const create = this.deformationFactory;
+    if (create) {
+      this.deformationFactory = undefined;
+      this.deformationReadiness = Promise.resolve().then(create).then(value => this.deformation.attachPipelines(value));
+      void this.deformationReadiness.catch(() => { /* The publishing gate reports the same rejection. */ });
+    }
+    return this.deformationReadiness;
+  }
 
   /** Monotonic revision of successfully published visibility-affecting author state. */
   get visibilityRevision(): number { return this.sceneRevision; }
@@ -110,16 +142,23 @@ export class PacketBuffers {
 
   async stageResidentProjectionValidated(projection: ResidentPacketProjection,
     signal?: AbortSignal): Promise<boolean> {
-    if (projection.batches.some(batch => batch.source.pose !== undefined) && this.deformationReadiness) {
-      await this.deformationReadiness;
-      if (!this.deformation.enabled) throw new Error("Packet deformation pipelines are not available.");
+    if (signal?.aborted) throw cancelled();
+    const generation = this.beginMutation();
+    if (projection.batches.some(batch => batch.source.pose !== undefined)) {
+      const ready = this.prepareDeformation();
+      if (ready) { await ready; if (!this.deformation.enabled) throw new Error("Packet deformation pipelines are not available."); }
     }
+    const pipelines = this.prepareMainPipelines(projection.batches.map(batch => batch.source));
+    if (pipelines) await abortableGpu(pipelines, signal, "Packet pipeline preparation cancelled.");
+    if (generation !== this.generation || this.disposed || signal?.aborted) throw cancelled();
     return this.resident.stageValidated(this.residentContext(), projection,
-      this.beginMutation(), signal);
+      generation, signal);
   }
 
   /** Invalidates a prepared packet candidate while preserving the active drawable packet. */
   cancelPendingPacketStage(): void {
+    this.validatedPreparation = undefined;
+    this.preparationController?.abort(cancelled()); this.preparationController = undefined;
     if (this.disposed) return; this.generation++;
     runResourceCleanup("Pending packet cancellation failed.", [() => this.validation.cancel(),
       () => this.resident.cancel(this.residentContext())]);
@@ -140,6 +179,7 @@ export class PacketBuffers {
     this.pruneCullingResources(); this.pruneLodInputs();
     this.motionHistory = new Map();
     if (current.changed) this.sceneRevision++;
+    if (this.clusterLodEnabled && current.changed) this.stageClusterLodProduction();
     retirePacketBuffers(this.residentContext(), oldGeometries, oldBatches,
       current.geometries, current.batches, { ownMeshes: previous === undefined,
         ...(previous ? { projection: previous.projection } : {}), clearTextures: this.textures });
@@ -208,18 +248,38 @@ export class PacketBuffers {
   async setValidated(packet: RenderPacket, signal?: AbortSignal): Promise<boolean> {
     assertVertexPacketMembership(this.vertexStreamingGeometry,packet);
     if (signal?.aborted) throw cancelled();
-    // 仅当候选确含变形且变形变体为延迟注入时才等待；静态候选零开销、零时序变化。
-    if ((packet.deformation !== undefined || packet.instances.some(instance => instance.pose !== undefined))
-      && this.deformationReadiness) {
-      await this.deformationReadiness;
-      if (!this.deformation.enabled) throw new Error("Packet deformation pipelines are not available.");
+    const generation = this.beginMutation(), controller = new AbortController();
+    this.preparationController = controller;
+    const abort = () => controller.abort(signal?.reason ?? cancelled());
+    signal?.addEventListener("abort", abort, { once: true });
+    try {
+      const large = packetPreparationIsLarge(packet);
+      const pending = large ? prepareGpuPacketWork(packet, STOCK_MATERIAL_INSTANCE_OPTIONS, controller.signal, true) : undefined;
+      void pending?.catch(() => {});
+      if (packet.deformation !== undefined || packet.instances.some(instance => instance.pose !== undefined)) {
+        const ready = this.prepareDeformation();
+        if (ready) { await ready; if (!this.deformation.enabled) throw new Error("Packet deformation pipelines are not available."); }
+      }
+      const work = pending ? await pending : buildPacketPreparationWork(packet, STOCK_MATERIAL_INSTANCE_OPTIONS, true); controller.signal.throwIfAborted();
+      const pipelines = this.prepareMainPipelines(work.prepared.batches);
+      if (pipelines) await abortableGpu(pipelines, controller.signal, "Packet pipeline preparation cancelled.");
+      controller.signal.throwIfAborted();
+      const ledger = compileMaterialEffectLedger(packet, work.prepared.batches);
+      const { staged, checked } = large
+        ? await stagePacketBufferCandidate(this.stagingContext(), work, controller.signal, this.textureArrays, this.textures)
+        : (() => {
+          const result = gpuValidatedStage(this.session.device, () => this.stage(work.prepared), "GPU packet preparation failed");
+          return { staged: result.value, checked: result.checked };
+        })();
+      return await this.validation.run(checked, controller.signal, () => {
+        const changed = this.commit(staged, generation, true, ledger);
+        this.validatedPreparation = { raw: packet, prepared: work.prepared }; return changed;
+      }, () => this.rollback(staged), () => generation === this.generation && !this.disposed, cancelled);
+    } finally {
+      controller.abort(cancelled());
+      signal?.removeEventListener("abort", abort);
+      if (this.preparationController === controller) this.preparationController = undefined;
     }
-    const generation = this.beginMutation();
-    const prepared = prepareRenderPacket(packet, STOCK_MATERIAL_INSTANCE_OPTIONS);
-    const ledger = compileMaterialEffectLedger(packet, prepared.batches);
-    const { staged, checked } = this.stageValidated(prepared);
-    return this.validation.run(checked, signal, () => this.commit(staged, generation, true, ledger),
-      () => this.rollback(staged), () => generation === this.generation && !this.disposed, cancelled);
   }
   private beginMutation(): number {
     if (this.disposed || this.session.state !== "ready") throw new Error("Packet resources are not ready.");
@@ -227,11 +287,10 @@ export class PacketBuffers {
     this.cancelPendingPacketStage();
     return this.generation;
   }
-
-  private stageValidated(prepared: PreparedPacket): { staged: TextureArrayPacketStage; checked: Promise<void> } {
-    const result = gpuValidatedStage(this.session.device, () => this.stage(prepared),
-      "GPU packet preparation failed");
-    return { staged: result.value, checked: result.checked };
+  private prepareMainPipelines(batches: readonly PreparedBatch[]): Promise<void> | undefined {
+    const pending = [preparePacketMainPipelines(this.staticPipelines, batches.filter(batch => batch.pose === undefined)),
+      this.deformation.prepareMainPipelines(batches)].filter((value): value is Promise<void> => value !== undefined);
+    return pending.length ? Promise.all(pending).then(() => undefined) : undefined;
   }
 
   private stage(prepared: PreparedPacket): TextureArrayPacketStage {
@@ -268,7 +327,7 @@ export class PacketBuffers {
     if (staged.settled || generation !== this.generation || this.disposed || this.session.state !== "ready") {
       this.rollback(staged); throw cancelled();
     }
-    const bounds = packetGeometryBounds(staged.geometries);
+    const bounds = staged.geometryBounds ?? packetGeometryBounds(staged.geometries);
     this.textures.publishPrepared(staged.textures);
     if (staged.arrayStage) this.textureArrays!.publish(staged.arrayStage);
     this.deformation.publish(staged.deformation, staged.deformationSnapshot, staged.deformationBoundsProfiles);
@@ -294,7 +353,7 @@ export class PacketBuffers {
     readonly hasDeformation: boolean; readonly hasAlphaToCoverage: boolean } {
     let hasTransparent = false, hasMaterialTextures = false, hasAlphaToCoverage = false;
     for (const { source } of this.batches.values()) {
-      hasTransparent ||= source.alphaMode === "BLEND"; hasMaterialTextures ||= source.textures !== undefined;
+      hasTransparent ||= source.alphaMode === "BLEND" || (this.materialLayout?.advancedMaterials === true && (source.textures?.extendedParameters?.transmission.factor ?? 0) > 0); hasMaterialTextures ||= source.textures !== undefined;
       // A2C-P1:批次级 a2c 请求(材质旗标 → /a2c 管线变体)是有效性探针的触发前提;
       // 与 alphaMode 正交 —— MASK/OPAQUE 材质都可携带 a2c。
       hasAlphaToCoverage ||= source.alphaToCoverage === true;
@@ -321,6 +380,17 @@ export class PacketBuffers {
   }
 
   encodeDeformation(encoder: GPUCommandEncoder): void { this.deformation.encode(encoder, this.batches, this.geometries); }
+  stageClusterLodProduction(): void {
+    this.clusterLodEnabled = true;
+    const replacement = new PacketClusterLodResources(this.session, this.batches, this.geometries);
+    const previous = this.clusterLod; this.clusterLod = replacement; previous?.dispose();
+  }
+  encodeClusterLod(encoder: GPUCommandEncoder, eye: readonly [number, number, number],
+    target: readonly [number, number, number], height: number, fov: number): void {
+    this.clusterLod?.encode(encoder, eye, target, height, fov);
+  }
+  clusterLodAfterSubmit(): void { this.clusterLod?.afterSubmit(); }
+  clusterLodMetrics() { return this.clusterLod?.metrics(); }
   cancelDeformationFrame(): void { this.deformation.cancelFrame(); }
 
   /** Encode GPU culling before the corresponding render pass. The output is consumed by draw(). */
@@ -363,16 +433,17 @@ export class PacketBuffers {
   commitLodFrame(): void { this.lod?.commitFrame(); this.shadowLod?.commitFrame(); }
 
   /** Cancels LOD work when its command encoder is known not to have been submitted. */
-  cancelLodFrame(): void { this.lod?.cancelFrame(); this.shadowLod?.cancelFrame(); }
+  cancelLodFrame(): void { this.lod?.cancelFrame(); this.shadowLod?.cancelFrame(); this.clusterLod?.cancelFrame(); }
 
   /** Fails closed after an uncertain submit and resets LOD history for the retry. */
-  failLodFrame(): void { this.lod?.failFrame(); this.shadowLod?.failFrame(); }
+  failLodFrame(): void { this.lod?.failFrame(); this.shadowLod?.failFrame(); this.clusterLod?.cancelFrame(); }
 
   draw(pass: GPURenderPassEncoder, pipelines: Pipelines, phase: "shadow" | "opaque" | "transparent" | "display",
     view?: { readonly eye: readonly [number, number, number]; readonly target: readonly [number, number, number] }, useIndirect = false, shadowCascade = 0, directionalOnly = false, authorShadow = false, lodOverride?: PacketLodResources | null): { drawCalls: number; triangles: number } {
     if (this.disposed) throw new Error("Packet resources are disposed.");
     return drawPacketBatches(pass, pipelines, phase, this.batches, this.geometries, this.culling, lodOverride !== undefined ? lodOverride ?? undefined : phase === "shadow" ? this.shadowLod?.cascade(shadowCascade) : this.lod, view, useIndirect, shadowCascade, directionalOnly, authorShadow,
-      this.deformation.drawContext(this.batches, this.culling));
+      this.deformation.drawContext(this.batches, this.culling),
+      this.clusterLod ? (pass, batch, previous) => this.clusterLod?.draw(pass, batch, previous) : undefined);
   }
 
   /** True when any resident instance carries the object-level outline flag (no allocation, no GPU work). */
@@ -385,14 +456,17 @@ export class PacketBuffers {
   }
 
   dispose(): void {
+    this.preparationController?.abort(cancelled()); this.preparationController = undefined;
+    this.validatedPreparation = undefined;
     if (this.disposed) return;
     this.disposed = true; this.generation++;
+    const clusterLod = this.clusterLod; this.clusterLod = undefined;
     this.publishedScene = false;
     const context = this.residentContext();
     const geometries = [...this.geometries.values()], batches = [...this.batches.values()];
     const lod = this.lod, shadowLod = this.shadowLod; this.lod = undefined; this.shadowLod = undefined;
     let activeResident: ReturnType<ResidentPacketBufferState["detachActive"]>;
-    runResourceCleanup("Packet buffer disposal failed.", [() => this.validation.cancel(), () => this.deformation.dispose(),
+    runResourceCleanup("Packet buffer disposal failed.", [() => clusterLod?.dispose(), () => this.validation.cancel(), () => this.deformation.dispose(),
       () => this.resident.cancel(context), () => { activeResident = this.resident.detachActive();
         this.geometries = new Map(); this.geometryBounds = new Map(); this.batches = new Map();
         this.motionHistory = new Map(); this.textureLookup = this.textures; this.materialEffects = undefined;
@@ -400,7 +474,7 @@ export class PacketBuffers {
         // 管线对象+布局)在 promise 可达期间被 V8 持有;packets 实例 dispose 后仍挂在
         // renderer 上,不清空则整张变形管线图陪葬。dispose 后所有入口先经 beginMutation
         // 的 disposed 检查抛错,不会再 await 该 promise,断开无行为影响。
-        this.deformationReadiness = undefined; },
+        this.deformationReadiness = undefined; this.deformationFactory = undefined; },
       ...geometries.map(value => () => { if (!activeResident) value.mesh.dispose(); }),
       ...batches.flatMap(value => [() => this.session.release(value.buffer),
         () => this.session.release(value.previousBuffer), () => this.materials.release(value.material)]),

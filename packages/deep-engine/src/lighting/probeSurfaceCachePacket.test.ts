@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as renderPacket from "../renderPacket.js";
+import { STOCK_MATERIAL_INSTANCE_OPTIONS } from "../materialInstanceAbi.js";
 import type { RenderPacket } from "../renderPacket.js";
 import { ProbeSurfaceCache } from "./probeSurfaceCache.js";
 import { compilePacketSurfaceCacheEntries, ProbeSurfaceCachePacketConsumer } from "./probeSurfaceCachePacket.js";
@@ -24,6 +26,31 @@ function packet(x = 0, includeInstance = true): RenderPacket {
 }
 
 describe("render packet surface-cache consumption", () => {
+  it("reuses renderer-owned validated geometry without preparing or reading mutable author vertices again", () => {
+    const source = packet(10), prepared = renderPacket.prepareRenderPacket(source, STOCK_MATERIAL_INSTANCE_OPTIONS);
+    const expected = compilePacketSurfaceCacheEntries({ packet: source, revision: 3 });
+    (source.geometries[0]!.vertices as Float32Array)[0] = Number.NaN;
+    const prepare = vi.spyOn(renderPacket, "prepareRenderPacket");
+    try {
+      const cache = new ProbeSurfaceCache(), consumer = new ProbeSurfaceCachePacketConsumer(cache);
+      expect(consumer.sync({ packet: source, revision: 3 }, prepared)).toBe(true);
+      expect(consumer.sceneBounds).toEqual(expected[0]!.bounds);
+      expect(prepare).not.toHaveBeenCalled();
+      expect(() => compilePacketSurfaceCacheEntries({ packet: source, revision: 3 })).toThrow();
+      expect(prepare).toHaveBeenCalledOnce();
+    } finally { prepare.mockRestore(); }
+  });
+
+  it("still checks invalid transforms and dynamic references before changing a prepared cache", () => {
+    const source = packet(), prepared = renderPacket.prepareRenderPacket(source, STOCK_MATERIAL_INSTANCE_OPTIONS);
+    const cache = new ProbeSurfaceCache(), consumer = new ProbeSurfaceCachePacketConsumer(cache);
+    expect(() => consumer.sync({ packet: source, revision: 1,
+      dynamicInstanceIds: new Set(["missing"]) }, prepared)).toThrow(/does not exist/);
+    (source.instances[0]!.transform as Float32Array)[12] = Number.NaN;
+    expect(() => consumer.sync({ packet: source, revision: 1 }, prepared)).toThrow(/finite/);
+    expect(cache.size).toBe(0);
+  });
+
   it("compiles validated geometry and transforms into world-space dynamic coverage", () => {
     expect(compilePacketSurfaceCacheEntries({ packet: packet(10), revision: 3,
       dynamicInstanceIds: new Set(["robot"]) })).toEqual([{

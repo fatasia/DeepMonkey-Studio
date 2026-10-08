@@ -8,6 +8,8 @@ import { PbrBackgroundPass } from "./pbrBackgroundPass.js";
 import type { PbrFrameUniformView } from "./pbrFrameUniforms.js";
 import { packPbrFog, type PbrFog } from "./pbrFog.js";
 import { packPbrEnvironmentReflections, pbrReflectionProbeViews } from "./pbrReflectionProbes.js";
+import { packPbrGlobalIlluminationIntensity } from "./pbrGlobalIlluminationIntensity.js";
+import { PbrReflectionArray } from "./pbrReflectionArray.js";
 
 /** 帧全局阴影绑定源(级联/虚拟两档同形;B1 Brief-VSM 双档切换共用此结构)。 */
 export interface PbrShadowBindingSource {
@@ -33,6 +35,8 @@ export class PbrMainBindings {
   private reflectionBufferIndex = 0;
   binding: GPUBindGroup;
   private backgroundPass: PbrBackgroundPass | undefined;
+  private transmissionBindings = new WeakMap<GPUTextureView, { base: GPUBindGroup; binding: GPUBindGroup }>();
+  private reflectionArray: PbrReflectionArray | undefined;
 
   constructor(private readonly session: DeviceSession, private readonly pipelines: Pipelines,
     private readonly frameBuffer: GPUBuffer, private shadows: PbrShadowBindingSource,
@@ -60,8 +64,9 @@ export class PbrMainBindings {
     }
   }
 
-  update(lights?: WorldClusteredLights, fog?: PbrFog | null): boolean {
-    const next = packDiffuseIrradiance(lights), nextFog = packPbrFog(fog);
+  update(lights?: WorldClusteredLights, fog?: PbrFog | null, authorDirectDisplay = false, globalIlluminationIntensity?: number): boolean {
+    const next = packDiffuseIrradiance(lights), nextFog = packPbrFog(fog, authorDirectDisplay);
+    packPbrGlobalIlluminationIntensity(next, globalIlluminationIntensity);
     const diffuseChanged = !next.every((value, index) => value === this.diffuseData[index]);
     const fogChanged = !nextFog.every((value, index) => value === this.fogData[index]);
     if (diffuseChanged) this.session.device.queue.writeBuffer(this.diffuseBuffer, 0, next);
@@ -83,6 +88,15 @@ export class PbrMainBindings {
     this.environmentRef = environment;
     const binding = this.createBinding(environment, shadows);
     this.shadows = shadows; this.binding = binding;
+  }
+
+  /** Only OIT samples the completed opaque source; opaque draws retain the placeholder. */
+  forTransparency(source: GPUTextureView): GPUBindGroup {
+    if (!this.pipelines.sceneTransmissionBinding) return this.binding;
+    const cached = this.transmissionBindings.get(source);
+    if (cached?.base === this.binding) return cached.binding;
+    const binding = this.createBinding(this.environmentRef!, this.shadows, undefined, source);
+    this.transmissionBindings.set(source, { base: this.binding, binding }); return binding;
   }
 
   /** B1 Brief-VSM:切换虚拟档页表/atlas 进组 0(以最近一次 environment 重建组 0 绑定)。 */
@@ -129,8 +143,10 @@ export class PbrMainBindings {
   private placeholderBinding: PbrVirtualFrameBinding | undefined;
 
   private createBinding(environment: StudioEnvironment, shadows = this.shadows,
-    reflectionBuffer = this.reflectionBuffers[this.reflectionBufferIndex]!): GPUBindGroup {
+    reflectionBuffer = this.reflectionBuffers[this.reflectionBufferIndex]!, sceneColor?: GPUTextureView): GPUBindGroup {
     const [primary, secondary] = pbrReflectionProbeViews(environment);
+    const compact = this.pipelines.compactReflectionBindings
+      ? (this.reflectionArray ??= new PbrReflectionArray(this.session)).get(environment) : undefined;
     // 级联档 frame 布局剥离 12..14(2026-10-06 真机修复:旧 Chromium per-stage 基线
     // 16 sampled / 8 storage,恒挂 15 槽使主片元 17 sampled / 10 storage 超限,
     // CreatePipelineLayout 验证失败 → Deep WebGPU 切换被阻断);虚拟档保留页表/atlas
@@ -138,18 +154,21 @@ export class PbrMainBindings {
     const virtual = this.pipelines.virtualFrameBindings === true
       ? (this.virtualBinding ?? this.ensurePlaceholderBinding()) : undefined;
     return this.session.device.createBindGroup({ layout: this.pipelines.main.getBindGroupLayout(0), entries: [
-      { binding: 0, resource: { buffer: this.frameBuffer } }, { binding: 1, resource: shadows.legacyView },
-      { binding: 2, resource: shadows.sampler }, { binding: 3, resource: environment.specular },
+      { binding: 0, resource: { buffer: this.frameBuffer } },
+      ...(!compact ? [{ binding: 1, resource: shadows.legacyView }, { binding: 2, resource: shadows.sampler }] : []),
+      { binding: 3, resource: compact?.view ?? environment.specular },
       { binding: 4, resource: environment.diffuse }, { binding: 5, resource: environment.brdf },
       { binding: 6, resource: environment.sampler }, { binding: 7, resource: { buffer: this.diffuseBuffer } },
       { binding: 8, resource: { buffer: this.fogBuffer } },
-      { binding: 9, resource: primary }, { binding: 10, resource: secondary },
+      ...(!compact ? [{ binding: 9, resource: primary }, { binding: 10, resource: secondary }] : []),
       { binding: 11, resource: { buffer: reflectionBuffer } },
       ...(virtual ? [
         { binding: 12, resource: { buffer: virtual.metaBuffer } },
         { binding: 13, resource: { buffer: virtual.layersBuffer } },
         { binding: 14, resource: virtual.atlasView },
       ] : []),
+      ...(this.pipelines.sceneTransmissionBinding ? [{ binding: 15, resource: sceneColor ?? environment.brdf }] : []),
+      ...(compact ? [{ binding: 16, resource: { buffer: compact.metadata } }] : []),
     ] });
   }
 

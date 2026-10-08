@@ -1,8 +1,6 @@
 //! Browser editor triangles. The author owns projection; the player only draws
 //! the validated clip-space stream after tone mapping, without depth testing.
 
-use wgpu::util::DeviceExt;
-
 pub(super) const MAX_VERTICES: usize = 196_608;
 
 pub(super) fn validate(vertices: &[f32]) -> Result<(), String> {
@@ -109,6 +107,7 @@ struct Vertex {{ @builtin(position) position: vec4f, @location(0) color: vec4f }
     pub(super) fn update(
         &mut self,
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         vertices: &[f32],
         revision: u64,
     ) -> Result<(), String> {
@@ -116,13 +115,24 @@ struct Vertex {{ @builtin(position) position: vec4f, @location(0) color: vec4f }
         if self.revision.is_some_and(|previous| revision < previous) {
             return Err("WASM editor overlay revision went backwards".into());
         }
-        self.buffer = (!vertices.is_empty()).then(|| {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Deep WASM editor overlay vertices"),
-                contents: bytemuck::cast_slice(vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            })
-        });
+        let bytes: &[u8] = bytemuck::cast_slice(vertices);
+        if bytes.is_empty() {
+            self.buffer = None;
+        } else {
+            if self
+                .buffer
+                .as_ref()
+                .is_none_or(|buffer| buffer.size() < bytes.len() as u64)
+            {
+                self.buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("Deep WASM editor overlay vertices"),
+                    size: (bytes.len() as u64).next_power_of_two(),
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }));
+            }
+            queue.write_buffer(self.buffer.as_ref().expect("overlay buffer"), 0, bytes);
+        }
         self.vertex_count = (vertices.len() / 8) as u32;
         self.revision = Some(revision);
         Ok(())
@@ -150,6 +160,7 @@ struct Vertex {{ @builtin(position) position: vec4f, @location(0) color: vec4f }
         });
         pass.set_pipeline(&self.pipeline);
         pass.set_vertex_buffer(0, buffer.slice(..));
+        deep_engine_native::benchmark_observer::note_draw();
         pass.draw(0..self.vertex_count, 0..1);
     }
 }

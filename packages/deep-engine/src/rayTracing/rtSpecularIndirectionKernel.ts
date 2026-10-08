@@ -17,7 +17,7 @@
  * - 替换权重 fraction = SSR 同一 split-sum DFG(brdfLut 采样,与 SSR trace 的
  *   ssrSpecularFraction 同式):N·V 取 GBuffer 视法线 + 线性视深度重建(SSR
  *   reconstruct 合同同式),roughness 取视法线 alpha —— 与被替换的 IBL 高光回退同权。
- * - 二反弹不做(任务边界,如实登记);环境项不遮蔽(无 AO 项,保守侧如实登记)。
+ * - secondBounce 档增加一个保守镜面跳步；环境项不遮蔽(无 AO 项)。
  *
  * == 布局合同 ==
  * binding 0 = linearDepth(r32float texture_2d,SSR 同源目标);1 = viewNormal
@@ -47,8 +47,8 @@ export const RT_SPECULAR_INDIRECTION_BINDINGS = Object.freeze([
 /** 二反弹档 binding 合同(基线 8 槽 + 第二命中/遮蔽记录只读;顺序同执行器 entries)。 */
 export const RT_SPECULAR_INDIRECTION_SECOND_BOUNCE_BINDINGS = Object.freeze([
   ...RT_SPECULAR_INDIRECTION_BINDINGS,
-  { binding: 8, name: "rtHitRecord2", type: "read-only-storage-texture" },
-  { binding: 9, name: "bounceShading2", type: "read-only-storage-texture" },
+  { binding: 8, name: "rtHitRecord2", type: "texture" },
+  { binding: 9, name: "bounceShading2", type: "texture" },
 ] as const);
 
 /** params uniform 字节数:vec4u + 5×vec4f = 96。 */
@@ -110,8 +110,8 @@ export function emitRtSpecularIndirectionKernelWgsl(options: { secondBounce?: bo
   const secondBounce = options.secondBounce === true;
   const secondBounceBindings = secondBounce
     ? `
-@group(0) @binding(8) var rtHitRecord2: texture_storage_2d<rgba32float, read>;
-@group(0) @binding(9) var bounceShading2: texture_storage_2d<rgba32float, read>;`
+@group(0) @binding(8) var rtHitRecord2: texture_2d<f32>;
+@group(0) @binding(9) var bounceShading2: texture_2d<f32>;`
     : "";
   const secondBounceBody = secondBounce
     ? `
@@ -119,9 +119,9 @@ export function emitRtSpecularIndirectionKernelWgsl(options: { secondBounce?: bo
   // × 第一命中点反照率(Lambert 中继;能量有界 albedo≤1,无 Russian roulette,
   // 不做完整路径追踪 —— 任务边界如实)。记录 2 miss = 不进分支,输出与一次反弹
   // 档逐位一致。
-  let record2 = textureLoad(rtHitRecord2, vec2<i32>(px));
+  let record2 = textureLoad(rtHitRecord2, vec2<i32>(px), 0);
   if (record2.x > 0.0) {
-    let shading2 = textureLoad(bounceShading2, vec2<i32>(px));
+    let shading2 = textureLoad(bounceShading2, vec2<i32>(px), 0);
     let albedo2 = clamp(shading2.rgb, vec3f(0.0), vec3f(1.0));
     let ndotl2 = clamp(dot(record2.yzw, indirectionParams.lightDirection.xyz), 0.0, 1.0);
     let direct2 = ndotl2 * indirectionParams.lightColorIntensity.rgb

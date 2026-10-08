@@ -1,0 +1,41 @@
+# Overlay on docker-compose.yml; all three services share its persistent stores.
+services:
+  studio:
+    image: deep-monkey-studio:${STUDIO_VERSION:-0.2.0}
+    build:
+      context: .
+      args:
+        VERSION: ${STUDIO_VERSION:-0.2.0}
+        REVISION: ${STUDIO_REVISION:-unknown}
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+    ports:
+      - "${STUDIO_PORT:-4100}:4100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      WEB_ORIGIN: ${STUDIO_PUBLIC_ORIGIN:-http://localhost:4100}
+      METADATA_STORE: postgres
+      OBJECT_STORE: minio
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DATABASE: ${POSTGRES_DATABASE:-bim_studio}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?MINIO_ROOT_USER required}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD required}
+      MINIO_BUCKET: ${MINIO_BUCKET:-bim-studio}
+      BIM_STUDIO_ADMIN_PASSWORD: ${BIM_STUDIO_ADMIN_PASSWORD:?BIM_STUDIO_ADMIN_PASSWORD required}
+      BIM_STUDIO_SESSION_SECRET: ${BIM_STUDIO_SESSION_SECRET:?BIM_STUDIO_SESSION_SECRET required}
+    volumes:
+      - studio-data:/var/lib/studio
+volumes:
+  studio-data:
+    name: ${BIM_STUDIO_DATA_VOLUME:-bim_studio_application_data}

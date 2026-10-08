@@ -275,18 +275,24 @@ impl Default for SdfSceneBakeOptions {
 
 /// 探针 lattice 采样域:SDF 网格边界内缩半格(贴面探针 SDF=0 → 全向假遮蔽)。
 pub fn probe_lattice_bounds(grid: &SdfSceneGrid) -> ([f64; 3], [f64; 3]) {
-    let inset = (grid.cell_size * 0.5).max(1e-3);
+    probe_lattice_bounds_for(grid.origin, grid.cell_size, grid.dimensions)
+}
+
+/// [`probe_lattice_bounds`] 的显式字段形(GPU 烘焙链只持格几何不持 CPU 距离场;
+/// 与网格形共用同一 inset 公式,单一实现点)。
+pub fn probe_lattice_bounds_for(
+    origin: [f64; 3],
+    cell_size: f64,
+    dimensions: [usize; 3],
+) -> ([f64; 3], [f64; 3]) {
+    let inset = (cell_size * 0.5).max(1e-3);
     let max = [
-        grid.origin[0] + (grid.dimensions[0] as f64 - 1.0) * grid.cell_size,
-        grid.origin[1] + (grid.dimensions[1] as f64 - 1.0) * grid.cell_size,
-        grid.origin[2] + (grid.dimensions[2] as f64 - 1.0) * grid.cell_size,
+        origin[0] + (dimensions[0] as f64 - 1.0) * cell_size,
+        origin[1] + (dimensions[1] as f64 - 1.0) * cell_size,
+        origin[2] + (dimensions[2] as f64 - 1.0) * cell_size,
     ];
     (
-        [
-            grid.origin[0] + inset,
-            grid.origin[1] + inset,
-            grid.origin[2] + inset,
-        ],
+        [origin[0] + inset, origin[1] + inset, origin[2] + inset],
         [max[0] - inset, max[1] - inset, max[2] - inset],
     )
 }

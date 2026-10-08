@@ -3,6 +3,16 @@ import { EnginePerformanceTelemetry } from "./performanceTelemetry.js";
 import { PBR_TIMED_PASS_IDS, pbrPassTimingStage } from "./pbrTimedPassIds.js";
 
 describe("EnginePerformanceTelemetry", () => {
+  it("single-stage decisions exactly match full diagnostics after late GPU values, eviction and reset", () => {
+    const telemetry = new EnginePerformanceTelemetry(16, true);
+    for (let frame = 1; frame <= 20; frame++) telemetry.recordStage(frame, "frame-encode", frame / 3);
+    telemetry.recordStage(8, "gpu-frame", 4);
+    telemetry.recordStage(19, "gpu-frame", 8);
+    for (const stage of ["frame-encode", "gpu-frame", "gpu-output"] as const)
+      expect(telemetry.stageSummary(stage)).toEqual(telemetry.snapshot().stages[stage]);
+    telemetry.reset();
+    expect(telemetry.stageSummary("frame-encode")).toBeUndefined();
+  });
   it("retains optional coarse GPU spans beside whole-frame time", () => {
     const telemetry = new EnginePerformanceTelemetry(16, true);
     telemetry.record({ frame: 1, timings: {

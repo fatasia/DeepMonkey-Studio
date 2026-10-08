@@ -24,7 +24,7 @@ fn verify(label: &str, source: &str) {
             .filter_map(|(handle, global)| {
                 let binding = global.binding.as_ref()?;
                 (binding.group == 1
-                    && binding.binding >= 11
+                    && (11..=19).contains(&binding.binding)
                     && !info.get_entry_point(index)[handle].is_empty())
                 .then_some(binding.binding)
             })

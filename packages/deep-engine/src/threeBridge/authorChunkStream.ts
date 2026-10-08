@@ -17,8 +17,9 @@ export interface AuthorChunkStreamRuntime extends PbrResidencyFrameTarget { read
 
 /** 刀 C 首帧归因:chunk 上传段级 mark(CPU 编译 / catalog / 驻留上传 / 帧装配)。 */
 function markChunkPhase(name: string): void {
-  if (typeof performance !== "undefined" && typeof performance.mark === "function") {
-    performance.mark(`deep-webgpu:packet-${name}`);
+  const clock = (globalThis as unknown as { performance?: { mark(name: string): unknown } }).performance;
+  if (typeof clock?.mark === "function") {
+    clock.mark(`deep-webgpu:packet-${name}`);
   }
 }
 export interface AuthorChunkStreamDiagnostics {

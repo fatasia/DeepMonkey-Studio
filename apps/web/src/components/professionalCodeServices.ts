@@ -1,4 +1,5 @@
 import "./monacoWorkerEnvironment";
+import { applicationPath } from "../adapters/browserRuntimeConfig";
 import { loader, type BeforeMount } from "@monaco-editor/react";
 import type * as monaco from "monaco-editor";
 import type { SceneScriptIntelligenceContext } from "../studio/sceneScriptContext";
@@ -154,7 +155,7 @@ function createHoverProvider(): monaco.languages.HoverProvider {
           return {
             range: literal.range,
             contents: [
-              { value: `**${referenceLabel(reference.kind)}** · ${reference.name}\n\n${reference.context} · \`${reference.id}\`\n\n[打开场景脚本文档](/docs/studio-api)` },
+              { value: `**${referenceLabel(reference.kind)}** · ${reference.name}\n\n${reference.context} · \`${reference.id}\`\n\n[打开场景脚本文档](${applicationPath("/docs/studio-api")})` },
             ],
           };
       }

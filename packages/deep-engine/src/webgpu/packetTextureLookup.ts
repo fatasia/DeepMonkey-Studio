@@ -15,7 +15,7 @@ export interface PacketTextureLookup {
 }
 
 const ROLES = Object.freeze([
-  "baseColor", "metallicRoughness", "normal", "occlusion", "emissive",
+  "baseColor", "metallicRoughness", "normal", "occlusion", "emissive", "specular", "specularColor",
 ] as const satisfies readonly ResidentPacketTextureRole[]);
 
 const ROLE_SEMANTICS = Object.freeze({
@@ -24,6 +24,8 @@ const ROLE_SEMANTICS = Object.freeze({
   normal: "normal",
   occlusion: "occlusion",
   emissive: "emissive",
+  specular: "specular",
+  specularColor: "specularColor",
 } as const satisfies Record<ResidentPacketTextureRole, PreparedTexture["semantic"]>);
 
 /**

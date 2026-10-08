@@ -5,6 +5,7 @@ import { createUpsertScriptModuleCommand } from "@bim-studio/studio-core";
 import { flushPendingBehaviorDraft } from "../behavior/behaviorDraftNavigation";
 import { lockedBehaviorScriptChange } from "../behavior/behaviorScriptLockPolicy";
 import { docsPath } from "../docs/docsRoute";
+import { applicationPath } from "../adapters/browserRuntimeConfig";
 import { REVIT_VERSION_STORAGE_KEY } from "../appDefaults";
 import { readRoute, routeHistoryState, routePath, type AppRoute } from "../appRoute";
 import type { RendererBackend } from "../viewer/ViewerEngine";
@@ -71,9 +72,13 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
     showError,
   } = state;
   const activeProjectId = useRef(project?.id);
+  const currentProject = useRef(project);
+  const projectRefreshRequest = useRef(0);
   const projectSubmitting = useRef(false);
   const docsReturnRoute = useRef<AppRoute | undefined>(undefined);
+  if (activeProjectId.current !== project?.id) projectRefreshRequest.current++;
   activeProjectId.current = project?.id;
+  currentProject.current = project;
 
   useEffect(() => {
     if (authReady && currentUser && route.view === "branding" && currentUser.role !== "admin") navigate({ view: "manager" }, true);
@@ -137,7 +142,7 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
     }
     setError(undefined);
     const next: AppRoute = { view: "docs", ...(documentId ? { documentId } : {}) };
-    window.history.pushState(routeHistoryState(next), "", docsPath(documentId, sectionId));
+    window.history.pushState(routeHistoryState(next), "", applicationPath(docsPath(documentId, sectionId)));
     setRoute(next);
   }
 
@@ -265,8 +270,14 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
 
   const refreshProject = useCallback(async () => {
     if (!project) return;
+    const request = ++projectRefreshRequest.current;
     const next = await api.getProject(project.id);
-    if (activeProjectId.current !== project.id) return;
+    if (activeProjectId.current !== project.id || projectRefreshRequest.current !== request) return;
+    // API polling returns new objects even when nothing changed. Preserve the
+    // committed identity so project-dependent effects and the editor stay idle.
+    // Include progress/resource fields; updatedAt alone cannot identify changes.
+    if (JSON.stringify(currentProject.current) === JSON.stringify(next)) return;
+    currentProject.current = next;
     setProject(next);
     setProjects((items) => items.map((item) => (item.id === next.id ? next : item)));
   }, [project?.id]);

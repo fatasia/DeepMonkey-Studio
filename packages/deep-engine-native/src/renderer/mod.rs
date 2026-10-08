@@ -207,7 +207,7 @@ impl Renderer {
         vertices: &[f32],
         revision: u64,
     ) -> Result<(), String> {
-        self.editor_overlay.update(&self.device, vertices, revision)
+        self.editor_overlay.update(&self.device, &self.queue, vertices, revision)
     }
     fn sync_outline_resources(&mut self) {
         self.forward_targets

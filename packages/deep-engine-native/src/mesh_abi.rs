@@ -56,11 +56,11 @@ pub const MATERIAL_UNIFORM_FLOATS: usize = 46;
 /// 与 Web MATERIAL_PARAMETER_ADVANCED_FLOATS=60 布局同构)。native 保守子集只消费
 /// advanced0 = sheen.rgb + sheen.roughness;iridescence/volume 槽(52..60)由合同
 /// 保持零。扩展/advanced 带全零 → WGSL 走原 stock 分支,旧包逐位不变。
-pub const MATERIAL_UNIFORM_ROW_FLOATS: usize = 60;
+pub const MATERIAL_UNIFORM_ROW_FLOATS: usize = 80;
 pub const MATERIAL_EXTENDED_BAND_FLOAT_OFFSET: usize = 40;
 pub const MATERIAL_ADVANCED_BAND_FLOAT_OFFSET: usize = 48;
 pub const MATERIAL_ADVANCED_BAND_FLOATS: usize = 12;
-/// GPU 绑定最小字节数:240B(15×vec4f,与 WGSL MaterialTextures 结构同尺寸)。
+/// GPU minimum:320B (20 vec4 rows), preserving the old 240B prefix.
 pub const MATERIAL_UNIFORM_BYTES: u64 = (MATERIAL_UNIFORM_ROW_FLOATS * size_of::<f32>()) as u64;
 /// 材质 uniform 行类型(PreparedMaterial/GPU 上传/增量更新共用)。
 pub type MaterialUniformRow = [f32; MATERIAL_UNIFORM_ROW_FLOATS];
@@ -259,24 +259,23 @@ mod tests {
     }
 
     /// C9/native 扩展带 ABI 钉版:核心块 40 float 语义不变,40..46 = Web 扩展带,
-    /// 行总量 240B(15×vec4f)且 advanced 带从 48 起——与 Web
-    /// MATERIAL_PARAMETER_ADVANCED_FLOATS=60 布局同构。
+    /// The 320B row keeps the first 60 floats and appends two UV transforms and F0/F90 values.
     #[test]
     fn material_uniform_extension_band_abi_is_frozen() {
         use super::*;
         assert_eq!(MATERIAL_UNIFORM_FLOATS, 46);
         assert_eq!(MATERIAL_EXTENDED_BAND_FLOAT_OFFSET, 40);
-        assert_eq!(MATERIAL_UNIFORM_ROW_FLOATS, 60);
+        assert_eq!(MATERIAL_UNIFORM_ROW_FLOATS, 80);
         assert_eq!(MATERIAL_ADVANCED_BAND_FLOAT_OFFSET, 48);
         assert_eq!(MATERIAL_ADVANCED_BAND_FLOATS, 12);
-        assert_eq!(MATERIAL_UNIFORM_BYTES, 240);
-        // 16B 对齐:WGSL MaterialTextures = 15×vec4f,缓冲与绑定最小尺寸一致。
+        assert_eq!(MATERIAL_UNIFORM_BYTES, 320);
+        // WGSL MaterialTextures is 20 aligned vec4 rows.
         assert_eq!(MATERIAL_UNIFORM_BYTES % 16, 0);
         // 扩展带与 advanced 带不重叠,advanced 带不越行界。
         assert!(MATERIAL_ADVANCED_BAND_FLOAT_OFFSET >= MATERIAL_UNIFORM_FLOATS);
         assert_eq!(
             MATERIAL_ADVANCED_BAND_FLOAT_OFFSET + MATERIAL_ADVANCED_BAND_FLOATS,
-            MATERIAL_UNIFORM_ROW_FLOATS
+            60
         );
     }
 

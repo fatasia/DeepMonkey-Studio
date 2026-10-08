@@ -24,16 +24,28 @@ describe("advancedMaterials shader composition", () => {
     expect(sceneShader).not.toContain("deepAdv");
     expect(deformedSceneShader).not.toContain("deepAdv");
   });
+  it("routes direct, clustered, area and indirect specular through the same F0/F90", () => {
+    const shader = composeAdvancedMaterialSceneShader(sceneShader);
+    expect(shader).toContain("deepAdvMaterialF0(baseColor, metallic, dielectric)");
+    expect(shader).toContain("deepAdvMaterialF0(max(baseColor, vec3f(0.0)), metallic, dielectric)");
+    expect(shader).toContain("f0 * dfgView.x + deepAdvCurrentSpecularF90() * dfgView.y");
+    expect(shader).toContain("f0 * dfg.x + deepAdvCurrentSpecularF90() * dfg.y");
+    expect(shader).toContain("textureSample(deepSpecularMap, deepSpecularSampler, uv).a");
+    expect(shader).toContain("textureSample(deepSpecularColorMap, deepSpecularColorSampler, uv).rgb");
+    expect(shader).not.toContain("if (deepAdvSpecularActive ||");
+  });
 
-  it("packs a 240B uniform only for the advanced layout and leaves the stock 192B block untouched", () => {
+  it("packs a 320B uniform only for the advanced layout and leaves the stock 192B block untouched", () => {
     const textures = { emissiveStrength: 1, advanced: normalizeAdvancedMaterialParameters({
       sheen: { color: [0.5, 0.25, 1], roughness: 0.4 }, iridescence: { factor: 1, ior: 1.3, thickness: 400 },
       volume: { thickness: 2, attenuationColor: [0.5, 0.5, 1], attenuationDistance: 3 } }) } as PreparedMaterialTextures;
     expect(packMaterialParameters(textures)).toHaveLength(48);
     const advanced = packMaterialParameters(textures, true);
     expect(advanced).toHaveLength(MATERIAL_PARAMETER_ADVANCED_FLOATS);
-    expect([...advanced.slice(MATERIAL_PARAMETER_ADVANCED_BAND_FLOAT_OFFSET)]).toEqual(
+    expect([...advanced.slice(MATERIAL_PARAMETER_ADVANCED_BAND_FLOAT_OFFSET, 60)]).toEqual(
       [0.5, 0.25, 1, 0.4000000059604645, 1, 1.2999999523162842, 400, 2, 0.5, 0.5, 1, 3]);
     expect([...advanced.slice(0, 48)]).toEqual([...packMaterialParameters(textures)]);
+    expect([...advanced.slice(60, 64)]).toEqual([1, 1, 1, 1]);
+    expect(advanced.byteLength).toBe(320);
   });
 });

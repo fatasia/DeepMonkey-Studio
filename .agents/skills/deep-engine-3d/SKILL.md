@@ -28,7 +28,7 @@ description: 用 Deep Engine Web SDK(@bim-studio/deep-engine)从需求生成可�
 
 ```json
 { "dependencies": {
-  "@bim-studio/deep-engine": "0.1.0",
+  "@bim-studio/deep-engine": "0.2.0",
   "@webgpu/types": "0.1.72" } }
 ```
 

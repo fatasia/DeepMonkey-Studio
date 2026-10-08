@@ -115,6 +115,9 @@ export async function sceneViewerDeliveryFetch(input: RequestInfo | URL, init?: 
 function enforceSceneViewerRoute(): void {
   const route = sceneViewerDeliveryRoute();
   if (!route) return;
+  // Static hosts have no /published rewrite handler. Retain the publisher's
+  // index URL so refreshes work under a repository subdirectory too.
+  if (document.querySelector<HTMLMetaElement>('meta[name="scene-viewer-route"]')?.content === "static") return;
   const expected = `/published/${encodeURIComponent(route.sceneId)}`;
   if (window.location.pathname !== expected || window.location.search || window.location.hash) {
     window.history.replaceState({}, "", expected);

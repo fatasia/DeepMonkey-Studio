@@ -68,23 +68,17 @@ fn validate_material_slots(packet: &RenderPacket) -> Result<(), String> {
         .map(|texture| (&texture.id, &texture.semantic))
         .collect();
     for material in &packet.materials {
-        if let Some(slot) = &material.base_color_texture {
-            validate_slot(slot, &material.id)?;
-            require_semantic(
-                &semantics,
-                &slot.texture,
-                &material.id,
-                TextureSemantic::BaseColor,
-            )?;
-        }
-        if let Some(slot) = &material.metallic_roughness_texture {
-            validate_slot(slot, &material.id)?;
-            require_semantic(
-                &semantics,
-                &slot.texture,
-                &material.id,
-                TextureSemantic::MetallicRoughness,
-            )?;
+        for (slot, semantic) in [
+            (material.base_color_texture.as_ref(), TextureSemantic::BaseColor),
+            (material.metallic_roughness_texture.as_ref(), TextureSemantic::MetallicRoughness),
+            (material.emissive_texture.as_ref(), TextureSemantic::Emissive),
+            (material.specular_texture.as_ref(), TextureSemantic::Specular),
+            (material.specular_color_texture.as_ref(), TextureSemantic::SpecularColor),
+        ] {
+            if let Some(slot) = slot {
+                validate_slot(slot, &material.id)?;
+                require_semantic(&semantics, &slot.texture, &material.id, semantic)?;
+            }
         }
         if let Some(slot) = &material.normal_texture {
             validate_normal_slot(slot, &material.id)?;
@@ -102,15 +96,6 @@ fn validate_material_slots(packet: &RenderPacket) -> Result<(), String> {
                 &slot.texture,
                 &material.id,
                 TextureSemantic::Occlusion,
-            )?;
-        }
-        if let Some(slot) = &material.emissive_texture {
-            validate_slot(slot, &material.id)?;
-            require_semantic(
-                &semantics,
-                &slot.texture,
-                &material.id,
-                TextureSemantic::Emissive,
             )?;
         }
         // I-C23:分层材质的按层纹理槽走同一 UV/变换/语义合同。

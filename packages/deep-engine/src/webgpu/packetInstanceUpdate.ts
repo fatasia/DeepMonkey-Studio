@@ -1,7 +1,6 @@
 import { STOCK_MATERIAL_INSTANCE_OPTIONS } from "../materialInstanceAbi.js";
 import {
   assertPacketDeformationSupported,
-  geometryCenter,
   prepareInstanceUpdate,
   type InstanceUpdate,
 } from "../renderPacket.js";
@@ -68,7 +67,7 @@ export function updatePacketInstances(
     tangents: value.source.tangents !== undefined,
     colors: value.source.colors !== undefined,
     triangles: value.source.indices.length / 3,
-    center: geometryCenter(value.source),
+    center: value.center,
   }]));
   const raw = prepareInstanceUpdate(features, update, context.textures.semanticMap(), context.deformation, STOCK_MATERIAL_INSTANCE_OPTIONS);
   const prepared = context.decorateBatches?.(raw) ?? raw;

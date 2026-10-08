@@ -33,6 +33,10 @@ export interface GltfNormalTextureSlot extends GltfTextureSlot { readonly normal
 export interface GltfOcclusionTextureSlot extends GltfTextureSlot { readonly strength: number }
 
 export interface GltfTexturedMaterial {
+  readonly specularFactor?: number;
+  readonly specularColorFactor?: readonly [number, number, number];
+  readonly specularTexture?: GltfTextureSlot;
+  readonly specularColorTexture?: GltfTextureSlot;
   readonly id: string;
   readonly materialIndex: number;
   readonly baseColorTexture?: GltfTextureSlot;

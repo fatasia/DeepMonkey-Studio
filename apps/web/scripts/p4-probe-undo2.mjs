@@ -27,7 +27,7 @@ try {
   })();
   const scene = application.scenes?.[0];
   await page.goto(`${gate.origin}/studio/${encodeURIComponent(project.id)}/applications/${encodeURIComponent(application.metadata.id)}/scenes/${encodeURIComponent(scene.id)}`, { waitUntil: "networkidle", timeout: 90_000 });
-  await page.locator(".viewport canvas").waitFor();
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
 
   const undoButton = page.locator(".scene-history-controls button").nth(0);
   const redoButton = page.locator(".scene-history-controls button").nth(1);
@@ -41,7 +41,7 @@ try {
     await page.getByRole("button", { name: "创建", exact: true }).click();
     await page.getByRole("menuitem", { name: "立方体", exact: true }).click();
     await page.waitForTimeout(400);
-    await page.locator(".viewport canvas").click({ position: { x: 800, y: 420 } });
+    await page.locator('.viewport canvas:not([aria-hidden="true"])').click({ position: { x: 800, y: 420 } });
     await page.waitForTimeout(900);
   };
   const showRows = async () => {
@@ -56,7 +56,7 @@ try {
     await page.getByRole("button", { name: "创建", exact: true }).click();
     await page.getByRole("menuitem", { name: "立方体", exact: true }).click();
     await page.waitForTimeout(400);
-    await page.locator(".viewport canvas").click({ position: { x: 560, y: 620 } });
+    await page.locator('.viewport canvas:not([aria-hidden="true"])').click({ position: { x: 560, y: 620 } });
     await page.waitForTimeout(900);
   };
 

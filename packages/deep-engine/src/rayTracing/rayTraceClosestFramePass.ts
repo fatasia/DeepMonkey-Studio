@@ -84,6 +84,8 @@ export class RayTraceClosestFramePass {
   packed: TlasPackedScene;
   private readonly pipeline: GPUComputePipeline;
   private readonly validated: Promise<void>;
+  private validationComplete = false;
+  private validationError: Error | undefined;
   private readonly sceneBuffers: GPUBuffer[];
   private readonly stackOverflows: GPUBuffer;
   private readonly uniform: GPUBuffer;
@@ -113,7 +115,11 @@ export class RayTraceClosestFramePass {
           secondBounce: this.secondBounce }) }),
         entryPoint: RAY_TRACE_CLOSEST_FRAME_ENTRY_POINT } });
     this.validated = device.popErrorScope().then((error) => {
-      if (error) throw new Error(`Reflection closest-hit frame WGSL validation failed: ${error.message}`);
+      if (error) this.validationError = new Error(`Reflection closest-hit frame WGSL validation failed: ${error.message}`);
+      this.validationComplete = true;
+    }, (error: unknown) => {
+      this.validationError = error instanceof Error ? error : new Error(String(error));
+      this.validationComplete = true;
     });
     const storage = USAGE_STORAGE | USAGE_COPY_DST;
     const make = (label: string, size: number, extraUsage = 0): GPUBuffer =>
@@ -160,6 +166,16 @@ export class RayTraceClosestFramePass {
    */
   async encode(encoder: GPUCommandEncoder, input: RayTraceClosestFrameInput): Promise<RayTraceClosestFrameDispatch> {
     await this.validated;
+    return this.encodeValidated(encoder, input);
+  }
+
+  /** Frame loops stay synchronous: skip pending validation and encode before encoder.finish(). */
+  get ready(): boolean { return this.validationComplete && this.validationError === undefined; }
+  get validationFailure(): Error | undefined { return this.validationError; }
+
+  encodeValidated(encoder: GPUCommandEncoder, input: RayTraceClosestFrameInput): RayTraceClosestFrameDispatch {
+    if (this.validationError) throw this.validationError;
+    if (!this.validationComplete) throw new Error("Reflection closest-hit frame pipeline validation is pending.");
     if (!Number.isInteger(input.width) || !Number.isInteger(input.height) || input.width <= 0 || input.height <= 0) {
       throw new Error("RayTraceClosestFramePass requires positive integer hit-record dimensions.");
     }

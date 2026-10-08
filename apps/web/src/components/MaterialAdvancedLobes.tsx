@@ -5,6 +5,7 @@ import type { RendererBackend } from "../viewer/viewerTypes";
 import { PHYSICAL_LOBE_COLOR_NEUTRAL, PHYSICAL_LOBE_SCALARS, physicalLobeField, stateActivatesPhysicalLobes,
   type PhysicalLobeColorKey, type PhysicalLobeScalarKey } from "../viewer/materialPhysicalLobeFields";
 import { DeferredNumberInput } from "./AppFormControls";
+import { DraftRange } from "./DraftRange";
 import "./MaterialAdvancedLobes.css";
 
 interface Props {
@@ -12,7 +13,7 @@ interface Props {
   rendererBackend: RendererBackend;
   disabled: boolean;
   material: SceneMaterialState;
-  onChange: (patch: SceneMaterialState) => void;
+  onChange: (patch: SceneMaterialState, previewOnly?: boolean) => void;
 }
 
 const scalar = (material: SceneMaterialState, key: PhysicalLobeScalarKey): number => material[key] ?? physicalLobeField(key).neutral;
@@ -47,12 +48,10 @@ export function MaterialAdvancedLobes({ locale, rendererBackend, disabled, mater
     return (
       <label className="material-lobe-row" key={key} title={title} data-disabled={off || undefined}>
         <span>{label}{field.unit ? <small>{field.unit}</small> : null}</span>
-        <input type="range" disabled={off} min={field.min} max={field.max} step={field.step} aria-label={label}
-          value={Math.min(Math.max(value, field.min), field.max)}
-          onChange={event => onChange(patchFor(key, Number(event.target.value)))} />
-        <DeferredNumberInput className="material-lobe-value" ariaLabel={`${label} ${tr(locale, "数值", "value")}`}
-          min={field.limit[0]} max={field.limit[1]} step={field.step} disabled={off}
-          value={Number(value.toFixed(field.decimals))} onCommit={next => onChange(patchFor(key, next))} />
+        <DraftRange disabled={off} min={field.min} max={field.max} step={field.step} label={label}
+          value={Number(value.toFixed(field.decimals))} numeric numericClassName="material-lobe-value"
+          numericLabel={`${label} ${tr(locale, "数值", "value")}`} numericMin={field.limit[0]} numericMax={field.limit[1]}
+          onPreview={next => onChange(patchFor(key, next), true)} onChange={next => onChange(patchFor(key, next))} />
       </label>
     );
   };

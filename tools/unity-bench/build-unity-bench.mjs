@@ -49,8 +49,10 @@ function build() {
       "-executeMethod", "BenchBuild.BuildAndQuit",
       "-logFile", log,
     ], { stdio: "inherit" });
-    const player = findPlayer();
-    if (player && existsSync(player)) { console.log(`[unity-bench] player ready: ${player} (unity exit=${result.status})`); return; }
+    if (result.status === 0) {
+      const player = findPlayer();
+      if (player && existsSync(player)) { console.log(`[unity-bench] player ready: ${player} (unity exit=0)`); return; }
+    }
     console.warn(`[unity-bench] attempt ${attempt} exit=${result.status}`);
   }
   throw new Error(`Unity 构建失败,见 ${log}`);
@@ -61,7 +63,7 @@ function percentile(sorted, ratio) {
 }
 
 function summarize(label, file) {
-  const { frameMs, workload, objectCount } = JSON.parse(readFileSync(file, "utf8"));
+  const { frameMs, workload, objectCount, firstFrameMs, gpuP50Ms, rebuildP50Ms, rebuildHeapWorstMiB } = JSON.parse(readFileSync(file, "utf8"));
   const sorted = [...frameMs].sort((a, b) => a - b);
   const n = sorted.length;
   const worst = sorted.slice(Math.max(0, n - Math.max(1, Math.round(n * 0.01))));
@@ -69,6 +71,7 @@ function summarize(label, file) {
   const median = sorted[Math.floor(n / 2)] ?? 0;
   const row = {
     label, workload, objectCount, samples: n,
+    firstFrameMs, gpuP50Ms, rebuildP50Ms, rebuildHeapWorstMiB,
     p50Ms: percentile(sorted, 0.5), p95Ms: percentile(sorted, 0.95), p99Ms: percentile(sorted, 0.99),
     maxMs: sorted.at(-1) ?? 0,
     low1Fps: 1000 / avg(sorted.slice(Math.max(0, n - Math.max(1, Math.round(n * 0.01))))),

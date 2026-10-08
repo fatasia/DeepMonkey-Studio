@@ -49,57 +49,30 @@ License designation: **MIT License + Ethical Restrictions** (source-available).
 
 ## Highlights
 
-- **AI that reads and writes engineering objects:** the assistant works with stable-ID scenes, components, datasets, and semantic objects — not screenshot Q&A. Edits show a diff first, run after confirmation, roll back on failure, and stay audited end to end.
-- **Our own WebGPU engine:** a TypeScript kernel plus a Rust/`wgpu` native executor and WASM on one contract. GPU culling, indirect draws, LOD streaming, instancing, and resource residency keep frame cost observable; a pixel-comparison gate shares one display contract with the Three.js baseline.
-- **Industrial formats, imported locally and offline:** IFC, STEP, IGES, JT, X_T, DWG, OpenUSD, URDF, glTF, and more convert in the browser and the local queue — no cloud services, no CAD install. RVT goes through our own Revit conversion chain.
-- **One project for the whole industrial stack:** 32 data connection types, 2D dashboards, 3D scenes, device topologies, semantic ontology, and vision AI events share a contract with line simulation, virtual commissioning, robotics workcells, and PPR process planning.
-- **Create once, deliver everywhere:** one publication contract outputs Web, a read-only Viewer, Windows, WASM, and Android packages, with automatic capability, resource, and compatibility checks before delivery.
+- **AI and ontology for engineering tasks:** ontologies describe engineering objects, relationships, and available actions. The assistant uses scenes, components, data, and runtime state to answer questions and perform authorized edits, queries, and analyses. Edits can be previewed; task runs can be cancelled and traced.
+- **Models, data, and simulation in one project:** combine 2D dashboards, 3D scenes, device topologies, live data, and alerts with production-line simulation, robotics workcells, and virtual commissioning.
+- **Industrial model import and optimization:** import IFC, STEP, IGES, DWG, glTF, URDF, and other models, with component queries, property-based selection, mesh simplification, and texture compression. See [format support](docs/converter-plugin-and-format-support.md) for supported profiles.
+- **An engine you can integrate and extend:** WebGPU, Rust native, and WASM runtimes share scene packages. Build your own applications with the engine SDK, Scene/Server SDKs, scripting APIs, plugins, and MCP.
+- **Create once, deliver across platforms:** publish to Web, a read-only Viewer, Windows, WASM, or Android, with automatic checks for target capabilities, resource dependencies, and compatibility.
 
 ## Measured performance
 
-### Same-scene engine benchmark (four engines, one round, 2026-10-07)
+The same layout, geometry and camera pose, six engines, median of multiple runs using each engine's sampling window (2026-10-07, RTX 4060 Laptop). Timings are in ms. *Unity and Deep Native are Windows native runtimes (Unity: Mono; Deep Native: Rust/wgpu), not directly comparable with the four browser columns, reference only; "—" means not collected or not calibrated.
 
-Bare-engine fixture: identical deterministic layout, 6 shapes / 6 PBR colors, same 48° FOV camera; per-case triangle guard (1% tolerance — this round all engines report 73,842 / 614,294 with zero difference); median of 3 cold-start runs; frame-time percentiles follow the PresentMon/CapFrameX school. RTX 4060 Laptop, Chrome + WebGPU, all values in ms.
+| Metric | three.js WebGL | three.js WebGPU | Babylon.js WebGPU | Deep WebGPU | Unity 2022.3 native* | Deep Native* |
+| --- | --- | --- | --- | --- | --- | --- |
+| Idle P50 (120 / 1000 objects) | 6.9 / 6.9 | 6.9 / 6.9 | 6.9 / 10.2 | 6.9 / 6.9 | 6.94 / 6.94 | 6.94 / 6.94 |
+| Idle P95 (120 / 1000 objects) | 7.1 / 7.1 | 7.1 / 7.1 | 7.4 / 15.0 | 7.1 / 7.1 | 7.27 / 7.12 | 7.55 / 7.40 |
+| Dynamic P95 (1000 objects) | 7.1 | 7.1 | 13.7 | 14.0 | 7.26 | 12.82 |
+| Idle max frame (120 objects) | 27.7 | 159.6 | 240.2 | **7.2** | 8.29 | 9.90 |
+| First frame (1000 objects) | **72.7** | 283.2 | 876.0 | 1,623.3 | 2,575.7 | 1,459.8 |
+| GPU frame time P50 (1000 objects) | 0.9 | **0.7** | 1.3 | 2.9 | — | 0.51 |
+| 20 rebuild cycles (1000 objects) | **3.2** | 3.6 | 410.2 | **3.2** | 45.3 | 8.27 |
+| Draw calls (1000 objects) | 1,055 | 1,056 | 2,001 | **7** | — | 9 |
+| Rebuild heap growth worst (1000 objects, MiB) | **0.1** | 90.9 | 21.6 | **0.6** | 121.2 | 0.34 |
 
-| Metric | three.js WebGL | three.js WebGPU | Babylon.js WebGPU | Deep WebGPU |
-| --- | --- | --- | --- | --- |
-| Idle P95 (120 / 1000 objects) | 7.1 / 7.1 | 7.1 / 7.1 | 7.3 / 17.2 | 7.1 / 7.1 |
-| Dynamic P95 (1000 objects) | 7.1 | 7.1 | 18.2 | 14.0 |
-| Idle max-frame median (120 objects) | 34.7 | 194.5 | 283.3 | **7.2** |
-| First frame (1000 objects) | **77.9** | 284.6 | 868.2 | 5,638.8 (cold pipeline compile, being optimized) |
-| GPU frame time P50 (1000 objects) | 1.0 | **0.6** | 0.7 | 2.8 |
-| 20 rebuild cycles (1000 objects) | **3.3** | 4.5 | 467.9 | 6.6 |
-| Draw calls (1000 objects) | 1,055 | 1,056 | 2,001 | **7** (GPU culling + indirect draws + batching) |
-| Rebuild heap growth worst (1000 objects, MiB) | **0.1** | 90.9 | 21.6 | **0.6** |
+See the [benchmark program](docs/specs/render-benchmark-program-20261007.md) for reproduction, measurement scope and evidence, and [engine comparison](docs/engine-comparison.md) for capabilities.
 
-Reproduce: `BIM_STUDIO_RENDER_BENCHMARK_ENGINES=three-webgl,three-webgpu,babylon-webgpu,deep-webgpu pnpm --filter @bim-studio/web benchmark:render-engines`; the full 23-column evidence lives in `test-output/render-engine-comparison/report.md`. The full metric set, the native reference-table protocol, and the per-round interception log are in the [benchmark program](docs/specs/render-benchmark-program-20261007.md).
-
-### Native reference (Unity 2022.3, Windows x64)
-
-> Native runtime (Mono backend — IL2CPP module not installed, stated as-is; Win64 window + vsync), **not directly comparable with the browser table above, reference only**. Same fixture layout contract, 600 frame-tail-sampled frames, same RTX 4060 Laptop; metric definitions match the browser table.
-
-| Metric | Unity 2022.3 (Mono) |
-| --- | --- |
-| Idle P50 / P95 (120 / 1000 objects) | 6.94 / 7.12 ms |
-| Dynamic P95 (1000 objects) | 7.26 ms |
-| Idle max frame (120 objects) | 8.29 ms |
-| 1% Low FPS (1000 objects, idle) | 137.9 |
-| Jank frames (>16.7ms / >20ms) | 0 / 0 |
-
-The Deep Native column joins this table once benchmark-program P3.1 (small native frame-timing change, ~1.5 days) lands; full samples in `test-output/unity-native-bench/summary.json`.
-
-### Product-scene fair comparison (Deep vs three WebGL)
-
-Same scene, same camera pose, 120 idle frames (RTX 4060, 2026-10-05):
-
-| Metric | Deep WebGPU | three.js WebGL |
-| --- | --- | --- |
-| Frame time P99 (idle) | **7.1 ms** | 27.7 ms |
-| Frame time max (idle) | **13.8 ms** | 104.1 ms |
-| Self-determinism SSIM | 1.0 | 1.0 |
-| Black frames | 0 | 0 |
-
-Input latency and first-frame time are still being optimized and are not listed until they pass their targets. 1% Low FPS, jank rate, INP/LCP alignment, and the native reference table (Deep Native vs Unity) are added in phases per the [benchmark program](docs/specs/render-benchmark-program-20261007.md); the qualitative engine comparison lives at [Engine comparison](docs/engine-comparison.md).
 ## Complete feature list
 
 Grouped by product subsystem. Format targets, experimental modules, and capabilities that have a contract but no product entry point are not counted as available features.
@@ -512,7 +485,4 @@ Thanks to the maintainers and contributors of every project we depend on, especi
 ## Contact me
 
 Email 15184552744@163.com or open an Issue — I check in now and then.
-
-
-
 

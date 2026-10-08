@@ -5,6 +5,14 @@ import { isAlphaToCoverageRejection, isDeepAdvancedMaterialsRejection, packetUse
 
 const meshOf = (material: THREE.Material | THREE.Material[]): THREE.Mesh => new THREE.Mesh(new THREE.BoxGeometry(), material);
 
+it("selects advanced packet materials for independent specular factors and textures", () => {
+  expect(packetUsesDeepAdvancedMaterials({ materials: [{ specularFactor: 1, specularColorFactor: [1, 1, 1] }] })).toBe(false);
+  for (const material of [{ specularFactor: .5 }, { specularColorFactor: [1, .5, 1] },
+    { specularTexture: {} }, { specularColorTexture: {} }]) {
+    expect(packetUsesDeepAdvancedMaterials({ materials: [material] })).toBe(true);
+  }
+});
+
 describe("sceneUsesDeepAdvancedMaterials", () => {
   it("is false for standard and neutral physical materials", () => {
     const root = new THREE.Group();

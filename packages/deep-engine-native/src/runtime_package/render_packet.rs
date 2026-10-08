@@ -7,16 +7,24 @@ pub(super) fn decode(
     id: &str,
     payload: &Value,
 ) -> Result<(RenderPacket, crate::contract::ContractSummary), RuntimePackageError> {
-    let mut value = payload.clone();
+    decode_owned(id, payload.clone(), None)
+}
+
+pub(super) fn decode_owned(
+    id: &str,
+    mut value: Value,
+    textures: Option<Vec<crate::contract::TextureResource>>,
+) -> Result<(RenderPacket, crate::contract::ContractSummary), RuntimePackageError> {
     let root = value.as_object_mut().ok_or_else(|| {
         RuntimePackageError(format!("resource {id} RenderPacket must be an object"))
     })?;
     normalize_identity(root, id)?;
     normalize_arrays(root, id)?;
     normalize_emissive(root, id)?;
-    let packet: RenderPacket = serde_json::from_value(value).map_err(|error| {
+    let mut packet: RenderPacket = serde_json::from_value(value).map_err(|error| {
         RuntimePackageError(format!("resource {id} is not a RenderPacket: {error}"))
     })?;
+    if let Some(textures) = textures { packet.textures = textures; }
     let summary = validate_packet(&packet)
         .map_err(|error| RuntimePackageError(format!("resource {id}: {error}")))?;
     Ok((packet, summary))

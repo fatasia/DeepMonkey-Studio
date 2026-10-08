@@ -6,8 +6,16 @@ on:
     paths:
       - "docs/video.html"
       - "docs/poster.png"
+      - "scripts/prepare-full-editor-pages.mjs"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release containing the complete editor, browser example and videos"
+        default: "v0.2.0"
+        required: true
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -20,6 +28,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.event_name != 'release' || github.event.release.tag_name == 'v0.2.0'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -28,10 +37,48 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
       - name: Prepare site
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag || 'v0.2.0' }}
         run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           mkdir -p _site
           cp docs/video.html docs/poster.png _site/
-          curl -L --fail --retry 3 "https://github.com/fatasia/DeepMonkey-Studio/releases/download/v0.1.0/deepmonkey-studio-intro.mp4" -o _site/deepmonkey-studio-intro.mp4
+          cp docs/video.html _site/index.html
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir _site \
+            --pattern 'deepmonkey-studio-intro.mp4' --pattern 'deepmonkey-studio-features.mp4' \
+            --pattern 'deepmonkey-studio-intro.zh-CN.vtt' --pattern 'deepmonkey-studio-features.zh-CN.vtt' \
+            --pattern 'deepmonkey-studio-browser.zip' --pattern 'deepmonkey-studio-editor.zip' --pattern 'SHA256SUMS.txt'
+          cd _site
+          for file in deepmonkey-studio-intro.mp4 deepmonkey-studio-features.mp4 deepmonkey-studio-intro.zh-CN.vtt deepmonkey-studio-features.zh-CN.vtt deepmonkey-studio-browser.zip deepmonkey-studio-editor.zip; do
+            grep -F "  $file" SHA256SUMS.txt | sha256sum --check --strict
+          done
+          python - <<'PY'
+          import pathlib, zipfile
+          root = pathlib.Path('browse').resolve()
+          with zipfile.ZipFile('deepmonkey-studio-browser.zip') as archive:
+              if sum(item.file_size for item in archive.infolist()) > 150_000_000:
+                  raise ValueError('Browser example exceeds size budget')
+              for item in archive.infolist():
+                  if not (root / item.filename).resolve().is_relative_to(root):
+                      raise ValueError('Unsafe browser archive path')
+              archive.extractall(root)
+          if not (root / 'index.html').is_file():
+              raise ValueError('Browser example has no index')
+          root = pathlib.Path('.').resolve()
+          with zipfile.ZipFile('deepmonkey-studio-editor.zip') as archive:
+              if sum(item.file_size for item in archive.infolist()) > 800_000_000:
+                  raise ValueError('Editor exceeds Pages size budget')
+              for item in archive.infolist():
+                  if not (root / item.filename).resolve().is_relative_to(root):
+                      raise ValueError('Unsafe editor archive path')
+              archive.extractall(root)
+          if not (root / 'editor-hosting.json').is_file():
+              raise ValueError('Complete editor has no hosting manifest')
+          if sum(p.stat().st_size for p in root.rglob('*') if p.is_file()) > 1_000_000_000:
+              raise ValueError('Pages site exceeds total size budget')
+          PY
+          rm deepmonkey-studio-browser.zip deepmonkey-studio-editor.zip
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

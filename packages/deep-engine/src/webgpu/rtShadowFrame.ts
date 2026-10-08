@@ -8,7 +8,8 @@
  *   resize 时销毁重建,view 经 maskView 供给 CascadedShadowResources 第 4 条绑定;
  * - ShadowRayFramePass:场景缓冲构造期一次上传;场景替换走 updateTlasRegion 增量
  *   (BLAS 段计数变化即整体重建 pass);f16 档缺 shader-f16 构造即抛(fail-closed);
- * - encodeFrame(encoder, context):主帧 depth(depth32float,depth-only 2d 视图)重建
+ * - encodeFrameValidated(context):生产同步编码，必须早于 encoder.finish；encodeFrame
+ *   保留探针等待 validation 的异步入口。主帧 depth(depth32float,depth-only 2d 视图)重建
  *   着色点,沿光源方向发射两级遮挡射线写 mask——必须在直接光 pass 之前、同一 encoder
  *   上调用(帧接线钩子合同见 docs/handoffs/rt-frame-hook-handoff.md;深度为上一已提交
  *   帧内容,mask 恒一帧延迟,与 TAA 抖动序列同构);
@@ -118,6 +119,7 @@ export class RtShadowFrameController {
 
   get maskView(): GPUTextureView { return this.maskView_!; }
   get sceneStaged(): boolean { return this.sceneCommitted; }
+  get ready(): boolean { return this.pass?.ready === true; }
   /** mask 视图代次(ensureMask 重建即 +1;帧宿主按差分把新视图换装进 shadowState)。 */
   maskViewEpoch = 0;
   /** 当前已staging的 TLAS 打包场景(RT 反射通道场景复用;未 staging 为 undefined)。 */
@@ -158,8 +160,16 @@ export class RtShadowFrameController {
    * 返回 undefined = 本帧未产生 GPU 工作(pass 未就绪/已降级,调用方按开关位回退级联)。
    */
   async encodeFrame(context: RtShadowFrameEncodeContext): Promise<RtShadowFrameDispatchResult | undefined> {
+    await this.pass?.waitUntilReady();
+    return this.encodeFrameValidated(context);
+  }
+
+  /** Frame owner must call this synchronously before encoder.finish(). */
+  encodeFrameValidated(context: RtShadowFrameEncodeContext): RtShadowFrameDispatchResult | undefined {
     const pass = this.pass;
     if (this.disabled || !pass || !this.sceneCommitted) return undefined;
+    if (pass.validationFailure) { this.disabled = { disabled: true, reason: pass.validationFailure.message }; return undefined; }
+    if (!pass.ready) return undefined;
     if (this.width !== context.width || this.height !== context.height) return undefined;
     if (context.depthTexture !== this.depthViewFor) {
       this.depthView = context.depthTexture.createView({ dimension: "2d", aspect: "depth-only" });
@@ -167,7 +177,7 @@ export class RtShadowFrameController {
     }
     const tMax = this.options.tMax ?? context.extent * 8;
     const inv = invertColumnMajor4x4(context.viewProjection);
-    return pass.encode(context.encoder, {
+    return pass.encodeValidated(context.encoder, {
       depthView: this.depthView!, maskView: this.maskView!, width: context.width, height: context.height,
       invViewProjection: [inv[0]!, inv[1]!, inv[2]!, inv[3]!, inv[4]!, inv[5]!, inv[6]!, inv[7]!,
         inv[8]!, inv[9]!, inv[10]!, inv[11]!, inv[12]!, inv[13]!, inv[14]!, inv[15]!],

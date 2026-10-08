@@ -61,6 +61,11 @@ export class ShadowRayFramePass {
   packed: TlasPackedScene;
   private readonly pipeline: GPUComputePipeline;
   private readonly validated: Promise<void>;
+  private validationComplete = false;
+  private validationError: Error | undefined;
+  get ready(): boolean { return this.validationComplete && !this.validationError; }
+  get validationFailure(): Error | undefined { return this.validationError; }
+  waitUntilReady(): Promise<void> { return this.validated; }
   private readonly sceneBuffers: GPUBuffer[];
   private readonly stackOverflows: GPUBuffer;
   private readonly uniform: GPUBuffer;
@@ -79,7 +84,11 @@ export class ShadowRayFramePass {
       compute: { module: device.createShaderModule({ label: "shadow-ray-mask-frame",
         code: emitShadowRayFrameKernelWgsl({ f16: options.f16 === true }) }), entryPoint: SHADOW_RAY_FRAME_ENTRY_POINT } });
     this.validated = device.popErrorScope().then((error) => {
-      if (error) throw new Error(`Shadow ray frame WGSL validation failed: ${error.message}`);
+      if (error) this.validationError = new Error(`Shadow ray frame WGSL validation failed: ${error.message}`);
+      this.validationComplete = true;
+    }, (error: unknown) => {
+      this.validationError = error instanceof Error ? error : new Error(String(error));
+      this.validationComplete = true;
     });
     const storage = USAGE_STORAGE | USAGE_COPY_DST;
     const make = (label: string, size: number, extraUsage = 0): GPUBuffer =>
@@ -121,6 +130,13 @@ export class ShadowRayFramePass {
    */
   async encode(encoder: GPUCommandEncoder, input: ShadowRayFrameInput): Promise<ShadowRayFrameDispatch> {
     await this.validated;
+    return this.encodeValidated(encoder, input);
+  }
+
+  /** Production callers encode synchronously before the shared encoder finishes. */
+  encodeValidated(encoder: GPUCommandEncoder, input: ShadowRayFrameInput): ShadowRayFrameDispatch {
+    if (this.validationError) throw this.validationError;
+    if (!this.ready) throw new Error("Shadow ray frame pipeline validation is pending.");
     if (!Number.isInteger(input.width) || !Number.isInteger(input.height) || input.width <= 0 || input.height <= 0) {
       throw new Error("ShadowRayFramePass requires positive integer mask dimensions.");
     }

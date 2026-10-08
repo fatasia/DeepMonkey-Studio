@@ -1,4 +1,5 @@
 import { parseGlb, type GltfDecodedImage, type GltfImageDecoder } from "@bim-studio/deep-engine/gltf";
+import type { CappedImageDecoder } from "./imageWorkerDecoder";
 
 const LADDER = [8192, 4096, 2048, 1024, 512, 256] as const;
 
@@ -58,6 +59,8 @@ export function textureDimensionCap(imageDimensions: readonly (readonly [number,
 export function capImageDimension(decoder: GltfImageDecoder, cap: number): GltfImageDecoder {
   return {
     async decode(image, signal) {
+      const capped = (decoder as CappedImageDecoder).decodeCapped;
+      if (capped) return capped.call(decoder, image, cap, signal);
       let decoded = await decoder.decode(image, signal);
       while (Math.max(decoded.width, decoded.height) > cap && Math.max(decoded.width, decoded.height) > 1) {
         signal?.throwIfAborted();

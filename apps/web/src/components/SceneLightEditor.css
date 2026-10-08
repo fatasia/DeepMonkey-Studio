@@ -11,3 +11,5 @@
 .light-editor .light-advanced > summary { padding: 9px 0; cursor: pointer; color: var(--text-muted); font-size: 11px; }
 .light-editor .light-advanced-fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .light-editor .light-advanced-fields > small { color: var(--text-muted); font-size: 11px; }
+.light-editor .light-intensity { grid-template-columns: 44px minmax(0, 1fr) 56px; }
+.light-editor .light-intensity .material-scalar-value { width: 100%; min-width: 0; padding: 4px; font-variant-numeric: tabular-nums; }

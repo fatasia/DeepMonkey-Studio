@@ -1,5 +1,13 @@
 import type { SkinningPalette } from "../webgpu/gpuSkinningTypes.js";
 
+interface GenericPaletteState {
+  readonly source: unknown;
+  readonly inputs: readonly number[];
+  readonly matrices: Float32Array;
+  readonly normalMatrices: Float32Array;
+}
+const genericPaletteStates = new WeakMap<SkinningPalette, GenericPaletteState>();
+
 export interface AuthorSkinPose {
   readonly revision: number;
   readonly jointCount: number;
@@ -34,29 +42,7 @@ export function captureAuthorSkinPose(source: unknown, revision: number): Author
     if (bone.isBone !== true) fail(`bones[${joint}].isBone`);
     const world = matrix(bone.matrixWorld, `bones[${joint}].matrixWorld`);
     const inverse = matrix(inverses[joint], `boneInverses[${joint}]`);
-    // Identity inverse bind is common in procedurally placed rigs; the mesh-local
-    // pose is already the validated world matrix, so skip the matrix product.
-    const directWorld = identityBind && isIdentity(inverse);
-    if (!directWorld) multiplyInto(worldInverse, world, inverse);
-    if (!identityBind) {
-      multiplyInto(bound, worldInverse, bind);
-      multiplyInto(local, bindInverse, bound);
-    }
-    const poseMatrix = directWorld ? world : identityBind ? worldInverse : local;
-    const positionStart = joint * 16, normalStart = joint * 12;
-    for (let component = 0; component < 16; component++) {
-      const result = Math.fround(poseMatrix[component]!);
-      if (!Number.isFinite(result)) fail(`joint ${joint} float32 range`);
-      positions[positionStart + component] = result;
-    }
-    // 与 Three skinnormal_vertex 相同：bindInverse * weightedBoneMatrix * bind。
-    for (let row = 0; row < 3; row++) {
-      const normalStartRow = normalStart + row * 4;
-      normals[normalStartRow] = positions[positionStart + row]!;
-      normals[normalStartRow + 1] = positions[positionStart + row + 4]!;
-      normals[normalStartRow + 2] = positions[positionStart + row + 8]!;
-      normals[normalStartRow + 3] = 0;
-    }
+    writeJointPose(world, inverse, bind, bindInverse, identityBind, joint, positions, normals, worldInverse, bound, local);
   }
   const matrices = Object.freeze(positions), normalMatrices = Object.freeze(normals);
   return Object.freeze({ revision, jointCount: bones.length, matrices, normalMatrices,
@@ -75,17 +61,16 @@ export function captureAuthorSkinPalette(source: unknown, revision: number, prev
   if (!Array.isArray(bones) || !Array.isArray(inverses) || bones.length < 1
     || bones.length > 65_535 || bones.length !== inverses.length) fail("bone/inverse count");
   const bind = matrix(mesh.bindMatrix, "bindMatrix"), bindInverse = matrix(mesh.bindMatrixInverse, "bindMatrixInverse");
-  if (!isIdentity(bind) || !isIdentity(bindInverse)) return captureAuthorSkinPose(source, revision).copyPalette();
+  if (!isIdentity(bind) || !isIdentity(bindInverse)) return captureGenericSkinPalette(source, revision, previous);
   // The accepted palette belongs to this mesh's poseId; no cross-mesh reuse.
   const old = previous?.matrices.length === bones.length * 16 && previous.normalMatrices?.length === bones.length * 12 ? previous : undefined;
   let matrices: Float32Array<ArrayBuffer> | undefined, normalMatrices: Float32Array<ArrayBuffer> | undefined;
-  let requiresGeneric = false;
   for (let joint = 0; joint < bones.length; joint++) {
     const bone = record(bones[joint], `bones[${joint}]`);
     if (bone.isBone !== true) fail(`bones[${joint}].isBone`);
     const world = matrix(bone.matrixWorld, `bones[${joint}].matrixWorld`);
     const inverse = matrix(inverses[joint], `boneInverses[${joint}]`);
-    if (requiresGeneric || !isIdentity(inverse)) { requiresGeneric = true; continue; }
+    if (!isIdentity(inverse)) return captureGenericSkinPalette(source, revision, previous);
     const start = joint * 16;
     let changed = !old;
     for (let index = 0; index < 16; index++) {
@@ -105,8 +90,74 @@ export function captureAuthorSkinPalette(source: unknown, revision: number, prev
       normalMatrices![offset + 3] = 0;
     }
   }
-  if (requiresGeneric) return captureAuthorSkinPose(source, revision).copyPalette();
   return matrices ? { revision, matrices, normalMatrices: normalMatrices! } : old!;
+}
+
+/** Reuse only this mesh's unchanged validated source and an unmodified owned result. */
+function captureGenericSkinPalette(source: unknown, revision: number, previous: SkinningPalette | undefined): SkinningPalette {
+  const mesh = record(source, "mesh"), skeleton = record(mesh.skeleton, "skeleton");
+  const bones = skeleton.bones as unknown[], inverses = skeleton.boneInverses as unknown[];
+  const cached = previous && genericPaletteStates.get(previous);
+  let same = cached?.source === source, offset = 0;
+  const inputMatrices: ArrayLike<number>[] = [];
+  const observe = (values: ArrayLike<number>): void => {
+    inputMatrices.push(values);
+    for (let index = 0; index < values.length; index++) {
+      const value = values[index]!;
+      if (cached?.inputs[offset++] !== value) same = false;
+    }
+  };
+  observe(matrix(mesh.bindMatrix, "bindMatrix")); observe(matrix(mesh.bindMatrixInverse, "bindMatrixInverse"));
+  for (let joint = 0; joint < bones.length; joint++) {
+    const bone = record(bones[joint], `bones[${joint}]`);
+    if (bone.isBone !== true) fail(`bones[${joint}].isBone`);
+    observe(matrix(bone.matrixWorld, `bones[${joint}].matrixWorld`));
+    observe(matrix(inverses[joint], `boneInverses[${joint}]`));
+  }
+  if (same && cached && cached.inputs.length === offset
+    && samePaletteValues(previous!.matrices, cached.matrices)
+    && samePaletteValues(previous!.normalMatrices, cached.normalMatrices)) return previous!;
+  const matrices = new Float32Array(bones.length * 16), normalMatrices = new Float32Array(bones.length * 12);
+  const bind = inputMatrices[0]!, bindInverse = inputMatrices[1]!;
+  const identityBind = isIdentity(bind) && isIdentity(bindInverse);
+  const worldInverse = new Float64Array(16), bound = new Float64Array(16), local = new Float64Array(16);
+  for (let joint = 0; joint < bones.length; joint++) writeJointPose(inputMatrices[2 + joint * 2]!,
+    inputMatrices[3 + joint * 2]!, bind, bindInverse, identityBind, joint, matrices, normalMatrices, worldInverse, bound, local);
+  const palette = Object.freeze({ revision, matrices, normalMatrices });
+  genericPaletteStates.set(palette, { source, inputs: inputMatrices.flatMap(values => Array.from(values)),
+    matrices: palette.matrices.slice(), normalMatrices: palette.normalMatrices!.slice() });
+  return palette;
+}
+
+/** The public immutable snapshot and dynamic typed snapshot share exactly the same bone math. */
+function writeJointPose(world: ArrayLike<number>, inverse: ArrayLike<number>, bind: ArrayLike<number>,
+  bindInverse: ArrayLike<number>, identityBind: boolean, joint: number,
+  positions: number[] | Float32Array, normals: number[] | Float32Array,
+  worldInverse: Float64Array, bound: Float64Array, local: Float64Array): void {
+  const directWorld = identityBind && isIdentity(inverse);
+  if (!directWorld) multiplyInto(worldInverse, world, inverse);
+  if (!identityBind) { multiplyInto(bound, worldInverse, bind); multiplyInto(local, bindInverse, bound); }
+  const poseMatrix = directWorld ? world : identityBind ? worldInverse : local;
+  const positionStart = joint * 16, normalStart = joint * 12;
+  for (let component = 0; component < 16; component++) {
+    const result = Math.fround(poseMatrix[component]!);
+    if (!Number.isFinite(result)) fail(`joint ${joint} float32 range`);
+    positions[positionStart + component] = result;
+  }
+  // Match Three's linear normal transform, including legal zero-scale bones.
+  for (let row = 0; row < 3; row++) {
+    const offset = normalStart + row * 4;
+    normals[offset] = positions[positionStart + row]!;
+    normals[offset + 1] = positions[positionStart + row + 4]!;
+    normals[offset + 2] = positions[positionStart + row + 8]!;
+    normals[offset + 3] = 0;
+  }
+}
+
+function samePaletteValues(a: Float32Array | undefined, b: Float32Array): boolean {
+  if (!a || a.length !== b.length) return false;
+  for (let index = 0; index < b.length; index++) if (a[index] !== b[index]) return false;
+  return true;
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {

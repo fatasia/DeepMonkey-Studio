@@ -147,7 +147,7 @@ export async function verifyAiOperationsFlow({ page, productOrigin, project, rep
   await page.getByRole("button", { name: "机器人与控制验证", exact: true }).click();
   await commissioning.waitFor({ state: "visible" });
   await commissioning.locator(".commissioning-signal-grid button").first().click();
-  await page.locator(".viewport canvas").waitFor({ state: "visible", timeout: 30_000 });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ state: "visible", timeout: 30_000 });
   await showFlatSceneObjects(page);
   await page.locator(".scene-object-row").filter({ hasText: "设备 001" }).first().waitFor({ state: "visible" });
   recordStep(report, "virtual-commissioning-evidence-and-focus", commissioningEvidence);

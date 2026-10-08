@@ -42,7 +42,7 @@ export class PbrOutputBindings {
   private hdrGeneration = 0;
   private hdrReady: Promise<void> | undefined;
   get ready(): Promise<void> | undefined { return this.hdrReady; }
-  get spatialAaActive(): boolean { return this.spatialAaEnabled && this.hdrState !== "active"; }
+  get spatialAaActive(): boolean { return this.spatialAaEnabled && this.hdrState !== "active" && this.data[3]! >= -0.5; }
 
   constructor(private readonly session: DeviceSession, private readonly pipelines: Pipelines, private readonly now: () => number,
     private readonly spatialAaEnabled = true, hdrDisplay?: HdrDisplayPolicy) {
@@ -135,18 +135,19 @@ export class PbrOutputBindings {
   private encodeSdr(encoder: GPUCommandEncoder, source: GPUTexture, present: GPUTextureView,
     queries?: GPUQuerySet, detailedTiming = false): void {
     const binding = this.binding(source);
-    if (this.spatialAaEnabled) this.spatialAa ??= new SpatialAaPresent(this.session);
-    const displayTarget = this.spatialAa?.prepare(source.width, source.height) ?? present;
+    if (this.spatialAaActive) this.spatialAa ??= new SpatialAaPresent(this.session);
+    const spatialAa = this.spatialAaActive ? this.spatialAa : undefined;
+    const displayTarget = spatialAa?.prepare(source.width, source.height) ?? present;
     const pass = encoder.beginRenderPass({ label: "Deep display output",
       ...(queries ? { timestampWrites: { querySet: queries,
         ...(detailedTiming ? { beginningOfPassWriteIndex: 3 } : {}),
-        ...(!this.spatialAa ? { endOfPassWriteIndex: 1 } : {}) } } : {}),
+        ...(!spatialAa ? { endOfPassWriteIndex: 1 } : {}) } } : {}),
       colorAttachments: [{ view: displayTarget, loadOp: "clear", storeOp: "store" }] });
     try {
       pass.setPipeline(this.pipelines.output); pass.setBindGroup(0, binding);
       pass.setBindGroup(1, this.author.binding); pass.draw(3);
     } finally { pass.end(); }
-    this.spatialAa?.encode(encoder, present, queries);
+    spatialAa?.encode(encoder, present, queries);
   }
 
   /**
@@ -181,7 +182,7 @@ export class PbrOutputBindings {
     if (captureSource && this.hdrState === "active" && this.hdrRuntime) {
       return { ...surface, sourceMapRefs: this.hdrRuntime.provenance.refsFor(this.hdrRuntime.pipeline) };
     }
-    if (captureSource && !this.spatialAaEnabled) {
+    if (captureSource && !this.spatialAaActive) {
       const provenance = this.pipelines.outputShaderProvenance;
       if (!provenance) throw new Error("PBR output pipeline has no executable shader provenance.");
       return { ...surface, sourceMapRefs: provenance.refsFor(this.pipelines.output) };

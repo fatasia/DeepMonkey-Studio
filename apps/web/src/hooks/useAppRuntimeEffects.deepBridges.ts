@@ -6,17 +6,20 @@ import type { HlodClusterStreamBinding } from "@bim-studio/deep-engine/three-bri
 import type { RenderPacket } from "@bim-studio/deep-engine";
 import { b4HlodClusterEnabled, StudioDeepWebGpuBridge } from "../viewer/StudioDeepWebGpuBridge";
 import { StudioDeepWasmBridge } from "../viewer/StudioDeepWasmBridge";
+import { StudioSceneCompilationCache } from "../viewer/StudioSceneCompilationCache";
+import { clearStudioRendererPreparation, publishStudioRendererPreparation, readStudioRendererPreparation,
+  startStudioRendererPrewarm } from "../viewer/studioRendererPreparation";
 import { compileStudioWasmRuntimePackage, normalizeStudioWasmModel } from "../viewer/studioWasmRuntimePackage";
 import { STUDIO_WASM_COMPILATION_LABELS } from "../viewer/studioWasmCompilationClient";
 import { compileSceneRenderPacket } from "../delivery/compileSceneRenderPacket";
 import { browserAuthorModelDecoder } from "../delivery/browserAuthorModelDecoder";
+import { authorModelTransferBuffers } from "../delivery/authorModelTransfer";
 import { describeDeepCompileNotice } from "../delivery/deepCompileNotice";
 import { loadWebHlodPackage, type WebHlodPackage } from "../delivery/webHlodPackage";
 import { browserImageDecoder } from "../delivery/browserImageDecoder";
 import { loadViewerAssetBuffer } from "../viewer/viewerAssetTransport";
 import { collectDeepOverlayPrimitives } from "../viewer/deepOverlayPrimitiveSource";
-import { mergeDeepOverlayVertices } from "../viewer/deepOverlayPrimitives";
-import { projectStudioEditorOverlay } from "../viewer/studioDeepEditorOverlay";
+import { StudioDeepEditorOverlaySession } from "../viewer/StudioDeepEditorOverlaySession";
 import { commitRendererPreference } from "../viewer/rendererBackendPreference";
 import { isSceneAppearanceUnsupportedError } from "../delivery/sceneNeutralAppearance";
 import type { AppRuntimeEffectsContext, RendererRecoveryContext } from "./useAppRuntimeEffects.context";
@@ -82,7 +85,7 @@ export function useDeepBridgesSetup(context: AppRuntimeEffectsContext, refs: Dee
     // 跨编译资产解码缓存(P0-2 同族):几何/变形解码按资产内容哈希在切换间复用,
     // 作者只改材质/变换时整段 GLB 解码跳过。decoded.packet 消费合同为只读
     // (prepareRenderPacket 校验后只读消费),跨编译共享安全;容量 4 个资产。
-    const decodedAssetCache = new Map<string, { decodedBytes: Uint8Array; decoded: Awaited<ReturnType<typeof import("@bim-studio/deep-engine/gltf").decodeDeformablePacketGlb>> }>();
+    const decodedAssetCache = new Map<string, { retainedBytes: number; decodedBytes: Uint8Array; decoded: Awaited<ReturnType<typeof import("@bim-studio/deep-engine/gltf").decodeDeformablePacketGlb>> }>();
     const decodedAssetCacheView = {
       get: (key: string) => {
         const hit = decodedAssetCache.get(key);
@@ -91,14 +94,21 @@ export function useDeepBridgesSetup(context: AppRuntimeEffectsContext, refs: Dee
       },
       set: (key: string, entry: { decodedBytes: Uint8Array; decoded: Awaited<ReturnType<typeof import("@bim-studio/deep-engine/gltf").decodeDeformablePacketGlb>> }) => {
         decodedAssetCache.delete(key);
-        decodedAssetCache.set(key, entry);
-        const oldest = decodedAssetCache.keys().next().value;
-        if (decodedAssetCache.size > 4 && oldest !== undefined) decodedAssetCache.delete(oldest);
+        const retainedBytes = authorModelTransferBuffers(entry).reduce((total, buffer) => total + buffer.byteLength, 0);
+        if (retainedBytes > 192 * 1024 * 1024) return;
+        decodedAssetCache.set(key, { ...entry, retainedBytes });
+        let totalBytes = [...decodedAssetCache.values()].reduce((total, cached) => total + cached.retainedBytes, 0);
+        while (decodedAssetCache.size > 4 || totalBytes > 192 * 1024 * 1024) {
+          const oldest = decodedAssetCache.keys().next().value!;
+          totalBytes -= decodedAssetCache.get(oldest)!.retainedBytes;
+          decodedAssetCache.delete(oldest);
+        }
       },
     };
     let cachedPacket: { key: string; packet: RenderPacket | undefined; clusters?: readonly HlodClusterStreamBinding[] } | undefined;
+    const authorCompilation = new StudioSceneCompilationCache<NonNullable<typeof cachedPacket> | undefined>();
     let appearanceNoticeKey: string | undefined;
-    const compileAuthorScene = async (signal: AbortSignal) => {
+    const compileAuthorSceneUncached = async (signal: AbortSignal) => {
       const latest = rendererRecoveryContextRef.current;
       const scene = latest.captureSceneSnapshot() ?? latest.activeScene;
       const project = latest.project;
@@ -158,6 +168,12 @@ export function useDeepBridgesSetup(context: AppRuntimeEffectsContext, refs: Dee
         return cachedPacket;
       }
     };
+    const compileAuthorScene = (signal: AbortSignal) => {
+      const latest = rendererRecoveryContextRef.current;
+      const scene = latest.captureSceneSnapshot() ?? latest.activeScene;
+      if (!scene || !latest.project) return Promise.resolve(undefined);
+      return authorCompilation.get(studioAuthorRenderPacketKey(scene, latest.project.models), signal, compileAuthorSceneUncached);
+    };
     const bridge = new StudioDeepWebGpuBridge(engine, viewportRef.current, {
       authorPacketKey: () => {
         const latest = rendererRecoveryContextRef.current;
@@ -179,39 +195,38 @@ export function useDeepBridgesSetup(context: AppRuntimeEffectsContext, refs: Dee
         setMessage("Deep WebGPU 运行失败，已回到 WebGL");
       },
     });
-    let wasmOverlayRevision = 0;
+    const wasmOverlay = new StudioDeepEditorOverlaySession();
     // 编译前短路:作者指纹未变时直接复用上次 Worker 编译产物,不再重跑
     // 15 秒级编译(切换桥内的字节缓存随后 matches 命中,连 set 都跳过)。
-    let wasmCompiled: { key: string; compiled: Awaited<ReturnType<typeof compileStudioWasmRuntimePackage>> } | undefined;
-    let wasmPreviousOverlay: Float32Array | undefined;
+    const wasmCompilation = new StudioSceneCompilationCache<Awaited<ReturnType<typeof compileStudioWasmRuntimePackage>>>();
+    const wasmPackageKey = () => {
+      const latest = rendererRecoveryContextRef.current;
+      const scene = latest.captureSceneSnapshot() ?? latest.activeScene;
+      return scene && latest.project ? `${latest.project.id}:${studioAuthorRenderPacketKey(scene, latest.project.models)}` : undefined;
+    };
+    const compileWasmScene = (signal: AbortSignal) => {
+      const latest = rendererRecoveryContextRef.current;
+      const scene = latest.captureSceneSnapshot() ?? latest.activeScene;
+      if (!scene || !latest.project) throw new Error("当前工作区没有可编译的场景或项目资源");
+      const key = `${latest.project.id}:${studioAuthorRenderPacketKey(scene, latest.project.models)}`;
+      return wasmCompilation.get(key, signal, compileSignal => compileStudioWasmRuntimePackage(scene, latest.project!, compileSignal, { onProgress: progress => {
+        if (compileSignal.aborted || rendererSwitchOwnerRef.current === undefined || callbacks.current.rendererBackend !== "wasm") return;
+        callbacks.current.setRendererSwitchMessage(STUDIO_WASM_COMPILATION_LABELS[progress.stage]);
+      } })).then(result => {
+        signal.throwIfAborted();
+        return result;
+      });
+    };
     const wasmBridge = new StudioDeepWasmBridge(engine, viewportRef.current, {
       readEditorOverlay: (width, height, pixelRatio) => {
-        const vertices = mergeDeepOverlayVertices(
-          projectStudioEditorOverlay(engine.getDeepEditorOverlayRoots(), engine.camera, width * pixelRatio, height * pixelRatio, pixelRatio),
+        return wasmOverlay.read(engine.getDeepEditorOverlayRoots(), engine.camera, width, height, pixelRatio,
           collectDeepOverlayPrimitives(engine, width, height, pixelRatio));
-        if (wasmPreviousOverlay && wasmPreviousOverlay.length === vertices.length
-          && wasmPreviousOverlay.every((value, index) => value === vertices[index])) {
-          return { revision: wasmOverlayRevision, vertices: wasmPreviousOverlay };
-        }
-        wasmPreviousOverlay = vertices;
-        return { revision: ++wasmOverlayRevision, vertices };
       },
-      compilePackage: (signal) => {
-        const latest = rendererRecoveryContextRef.current;
-        const scene = latest.captureSceneSnapshot() ?? latest.activeScene;
-        if (!scene || !latest.project) throw new Error("当前工作区没有可编译的场景或项目资源");
-        const owner = rendererSwitchOwnerRef.current;
-        const key = `${latest.project.id}:${studioAuthorRenderPacketKey(scene, latest.project.models)}`;
-        if (wasmCompiled?.key === key) { wasmCompiledAuthorKeyRef.current = key; return Promise.resolve(wasmCompiled.compiled); }
-        return compileStudioWasmRuntimePackage(scene, latest.project, signal, { onProgress: progress => {
-          if (signal.aborted || !owner || rendererSwitchOwnerRef.current !== owner) return;
-          callbacks.current.setRendererSwitchMessage(STUDIO_WASM_COMPILATION_LABELS[progress.stage]);
-        } }).then(result => {
-          signal.throwIfAborted();
-          wasmCompiledAuthorKeyRef.current = key;
-          wasmCompiled = { key, compiled: result };
-          return result;
-        });
+      compilePackage: compileWasmScene,
+      packageKey: wasmPackageKey,
+      onPackageAccepted: (compiled, key) => {
+        wasmCompiledAuthorKeyRef.current = key;
+        wasmCompilation.release(compiled);
       },
       onRuntimeFailure: (reason) => {
         rendererSwitchOwnerRef.current = undefined;
@@ -228,24 +243,48 @@ export function useDeepBridgesSetup(context: AppRuntimeEffectsContext, refs: Dee
     });
     deepBridgeRef.current = bridge;
     wasmBridgeRef.current = wasmBridge;
-    // 作者包空闲预热:场景打开后后台预编译(包缓存 P0-2 + 资产解码缓存随即变热),
-    // 用户首次切 Deep WebGPU 时编译段≈0,只剩 GPU 管线预热。编译为分片异步
-    // (无长任务),且场景指纹变化时缓存键自然失效,预热结果不会串场景。
-    const prewarmController = new AbortController();
-    const prewarm = async () => {
-      for (let waited = 0; waited < 30_000; waited += 500) {
-        if (prewarmController.signal.aborted) return;
-        const ctx = rendererRecoveryContextRef.current;
-        const scene = ctx?.captureSceneSnapshot?.() ?? ctx?.activeScene;
-        if (scene && (scene.models.length > 0 || scene.primitives.length > 0)) break;
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-      if (prewarmController.signal.aborted) return;
-      await compileAuthorScene(prewarmController.signal).catch(() => { /* 预热失败静默,切换路径自行重试 */ });
-    };
-    void prewarm();
+    clearStudioRendererPreparation();
+    const preparationProbe = () => readStudioRendererPreparation();
+    const memoryProbe = () => ({ webgpuBytes: bridge.retainedGpuBytes, wasmBytes: wasmBridge.memoryBytes,
+      decodedCacheBytes: [...decodedAssetCache.values()].reduce((sum, entry) => sum + entry.retainedBytes, 0) });
+    const probeHost = window as unknown as { __studioRendererPreparationProbe?: typeof preparationProbe;
+      __studioRendererMemoryProbe?: typeof memoryProbe };
+    probeHost.__studioRendererPreparationProbe = preparationProbe;
+    probeHost.__studioRendererMemoryProbe = memoryProbe;
+    const stopPrewarm = startStudioRendererPrewarm(() => {
+      const latest = rendererRecoveryContextRef.current;
+      const scene = latest.captureSceneSnapshot() ?? latest.activeScene;
+      return scene && latest.project && (scene.models.length || scene.primitives.length)
+        ? `${latest.project.id}:${studioAuthorRenderPacketKey(scene, latest.project.models)}` : undefined;
+    }, async (key, signal) => {
+      const startedAt = performance.now();
+      const prepare = async (backend: "webgpu" | "wasm") => {
+        publishStudioRendererPreparation(backend, { phase: "preparing", key, startedAt });
+        let result;
+        try { result = await (backend === "webgpu" ? bridge : wasmBridge).prewarm(signal); }
+        catch (reason) {
+          if (signal.aborted) return false;
+          publishStudioRendererPreparation(backend, { phase: "failed", key, startedAt, finishedAt: performance.now(),
+            error: reason instanceof Error ? reason.message : String(reason) });
+          return true;
+        }
+        if (signal.aborted) return false;
+        if (result.status === "cancelled") return false;
+        publishStudioRendererPreparation(backend, { key, startedAt, finishedAt: performance.now(),
+          phase: result.status === "failed" ? "failed" : "ready", ...(result.error ? { error: result.error } : {}) });
+        return true;
+      };
+      const results = await Promise.allSettled([prepare("webgpu"), prepare("wasm")]);
+      return results.every(result => result.status === "fulfilled" && result.value);
+    });
     return () => {
-      prewarmController.abort();
+      stopPrewarm();
+      if (probeHost.__studioRendererPreparationProbe === preparationProbe) delete probeHost.__studioRendererPreparationProbe;
+      if (probeHost.__studioRendererMemoryProbe === memoryProbe) delete probeHost.__studioRendererMemoryProbe;
+      clearStudioRendererPreparation();
+      authorCompilation.clear();
+      wasmCompilation.clear();
+      wasmOverlay.dispose();
       if (deepBridgeRef.current === bridge) deepBridgeRef.current = undefined;
       if (wasmBridgeRef.current === wasmBridge) wasmBridgeRef.current = undefined;
       wasmBridge.dispose();

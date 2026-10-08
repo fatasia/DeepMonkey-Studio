@@ -18,7 +18,9 @@ export function sceneUsesDeepAdvancedMaterials(root: THREE.Object3D): boolean {
     for (const entry of Array.isArray(material) ? material : [material]) {
       const physical = entry as THREE.MeshPhysicalMaterial;
       if (physical.isMeshPhysicalMaterial === true
-        && (physical.clearcoat > 0 || physical.sheen > 0 || physical.iridescence > 0 || physical.transmission > 0)) { used = true; return; }
+        && (physical.clearcoat > 0 || physical.sheen > 0 || physical.iridescence > 0 || physical.transmission > 0
+          || physical.specularIntensity !== 1 || physical.specularColor.r !== 1 || physical.specularColor.g !== 1
+          || physical.specularColor.b !== 1 || physical.specularIntensityMap !== null || physical.specularColorMap !== null)) { used = true; return; }
     }
   });
   return used;
@@ -26,9 +28,15 @@ export function sceneUsesDeepAdvancedMaterials(root: THREE.Object3D): boolean {
 /** 独立作者包(SceneSnapshot 编译产物)是否携带需要 advancedMaterials 变体的 lobe。 */
 export function packetUsesDeepAdvancedMaterials(packet: { readonly materials: ReadonlyArray<{
   readonly advancedParameters?: unknown;
+  readonly specularFactor?: number;
+  readonly specularColorFactor?: readonly number[];
+  readonly specularTexture?: unknown;
+  readonly specularColorTexture?: unknown;
   readonly extendedParameters?: { readonly clearcoat?: { readonly factor?: number }; readonly transmission?: { readonly factor?: number } };
 }> }): boolean {
   return packet.materials.some(material => material.advancedParameters !== undefined
+    || material.specularTexture !== undefined || material.specularColorTexture !== undefined
+    || (material.specularFactor ?? 1) !== 1 || material.specularColorFactor?.some(value => value !== 1)
     || (material.extendedParameters?.clearcoat?.factor ?? 0) > 0 || (material.extendedParameters?.transmission?.factor ?? 0) > 0);
 }
 

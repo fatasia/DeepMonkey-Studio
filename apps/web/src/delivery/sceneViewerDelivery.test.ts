@@ -9,9 +9,11 @@ import {
 } from "./sceneViewerDelivery";
 
 let markerContent: string | undefined;
+let staticRoute = false;
 
 beforeEach(() => {
   markerContent = undefined;
+  staticRoute = false;
   const location = { href: "https://viewer.test/", pathname: "/", search: "", hash: "" };
   vi.stubGlobal("window", {
     location,
@@ -25,7 +27,9 @@ beforeEach(() => {
     removeEventListener: vi.fn(),
   });
   vi.stubGlobal("document", {
-    querySelector: () => markerContent ? { content: markerContent } : null,
+    querySelector: (selector: string) => selector.includes('"scene-viewer-route"')
+      ? staticRoute ? { content: "static" } : null
+      : markerContent ? { content: markerContent } : null,
     documentElement: { dataset: {} },
   });
 });
@@ -54,6 +58,17 @@ describe("scene viewer delivery runtime", () => {
   it("does not activate without the publisher marker", async () => {
     expect(await initializeSceneViewerDelivery(async () => manifest())).toBeUndefined();
     expect(sceneViewerDeliveryRoute()).toBeUndefined();
+  });
+
+  it("keeps the publisher's static index URL and readonly API on a repository subpath", async () => {
+    markerContent = "./delivery/scene-viewer.json";
+    staticRoute = true;
+    Object.assign(window.location, { href: "https://viewer.test/DeepMonkey-Studio/browse/", pathname: "/DeepMonkey-Studio/browse/" });
+    let requested: URL | undefined;
+    await initializeSceneViewerDelivery(async url => { requested = url; return manifest(); });
+    expect(requested?.pathname).toBe("/DeepMonkey-Studio/browse/delivery/scene-viewer.json");
+    expect(window.location.pathname).toBe("/DeepMonkey-Studio/browse/");
+    expect((await sceneViewerDeliveryFetch("/api/projects/project-1", { method: "PATCH" })).status).toBe(405);
   });
 });
 

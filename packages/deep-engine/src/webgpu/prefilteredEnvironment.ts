@@ -27,7 +27,7 @@ export async function createPrefilteredEnvironment(session: DeviceSession, input
   }
   const create = (label: string, size: number, layers: number, mipLevelCount: number) => {
     const texture = createAdmittedTexture(session, { label, size: [size, size, layers], mipLevelCount,
-      format: "rgba16float", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+      format: "rgba16float", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC });
     owned.push(texture); return texture;
   };
   const upload = (texture: GPUTexture, mip: RuntimeIblMip, mipLevel: number, layers: number) => {
@@ -51,7 +51,7 @@ export async function createPrefilteredEnvironment(session: DeviceSession, input
       specularMips.forEach((mip, level) => upload(specular, mip, level, 6));
       upload(diffuse, source.diffuse.mips[0]!, 0, 6);
       upload(brdf, { size: source.brdfLut.width, dataBase64: source.brdfLut.dataBase64 }, 0, 1);
-      return Object.freeze({ specular: specular.createView({ dimension: "cube" }), diffuse: diffuse.createView({ dimension: "cube" }),
+      return Object.freeze({ specular: specular.createView({ dimension: "cube" }), specularTexture: specular, diffuse: diffuse.createView({ dimension: "cube" }),
         brdf: brdf.createView(), specularMipSelection: selection,
         sampler: device.createSampler({ minFilter: "linear", magFilter: "linear", mipmapFilter: "linear" }), dispose });
     }, "Prefiltered IBL GPU validation failed");

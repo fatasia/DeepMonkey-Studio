@@ -36,7 +36,7 @@ try {
   scene.postProcessing = { ...scene.postProcessing, enabled: true, volumetricFog: true, volumetricFogDensity: .03, volumetricFogHeight: 24 };
   Object.assign(documentScene, { primitives: scene.primitives, camera: scene.camera });
   await gate.json("PUT", `${appPath}/workspace`, { application, scene });
-  await page.goto(`${scenePath}?renderer=webgpu`); await page.locator(".viewport canvas").first().waitFor();
+  await page.goto(`${scenePath}?renderer=webgpu`); await page.locator('.viewport canvas:not([aria-hidden="true"])').first().waitFor();
   const ready = () => page.waitForFunction(() => !document.querySelector('[aria-label="进入播放模式"]')?.disabled);
   const discard = page.getByRole("button", { name: "丢弃副本", exact: true });
   if (await discard.isVisible({ timeout: 4000 }).catch(() => false)) await discard.click();
@@ -66,7 +66,7 @@ try {
   const one = await saveScene(page, appPath); assert.equal(one.postProcessing.volumetricFogAlbedo, 1); await capture("albedo-1");
   report.changedBytesRatio = [...buffers["albedo-0"]].reduce((n, byte, i) => n + (byte === buffers["albedo-1"][i] ? 0 : 1), 0) / buffers["albedo-0"].length;
   assert.notEqual(hashes["albedo-0"], hashes["albedo-1"], "albedo 0 与 1 的画面必须不同(未被 Deep 渲染消费)");
-  await page.reload(); await page.locator(".viewport canvas").first().waitFor(); await ready(); await open();
+  await page.reload(); await page.locator('.viewport canvas:not([aria-hidden="true"])').first().waitFor(); await ready(); await open();
   assert.equal(await page.locator(".post-processing-control").getByRole("slider", { name: /^散射反照率/ }).inputValue(), "1");
   report.hashes = hashes; report.persisted = one.postProcessing; report.errors = errors;
   assert.deepEqual(errors, []); report.passed = true;

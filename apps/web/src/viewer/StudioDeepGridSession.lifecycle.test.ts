@@ -19,7 +19,7 @@ function fixture() {
   const pixels = new Uint8ClampedArray(16).fill(128), getImageData = vi.fn(() => ({ data: pixels }));
   const image = { width: 2, height: 2, getContext: () => ({ getImageData }) } as unknown as HTMLCanvasElement;
   const texture = new THREE.CanvasTexture(image); texture.colorSpace = THREE.SRGBColorSpace;
-  texture.magFilter = THREE.NearestFilter; texture.anisotropy = 1;
+  texture.magFilter = THREE.LinearFilter; texture.anisotropy = 1;
   const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
   const geometry = new THREE.PlaneGeometry(200, 200), grid = new THREE.Mesh(geometry, material);
   grid.name = "helper:grid"; grid.renderOrder = -10;
@@ -51,10 +51,9 @@ function fixture() {
 }
 
 describe("author grid failures through the real Studio bridge lifecycle (no GPU)", () => {
-  it.each(["composer", "taint"])("keeps author presentation when initial %s preparation fails", async reason => {
+  it("keeps author presentation when initial tainted texture preparation fails", async () => {
     const f = fixture();
-    if (reason === "composer") f.composer.mockReturnValue(false);
-    else f.getImageData.mockImplementation(() => { throw new Error("tainted author canvas"); });
+    f.getImageData.mockImplementation(() => { throw new Error("tainted author canvas"); });
     expect(await f.activate()).toMatchObject({ status: "failed", activeBackend: "webgl" });
     expect(f.authorCanvas.style.opacity).toBe("1"); expect(f.create).not.toHaveBeenCalled();
     expect(f.canvases[0]!.remove).toHaveBeenCalledOnce(); expect(f.failure).not.toHaveBeenCalled();
@@ -82,11 +81,10 @@ describe("author grid failures through the real Studio bridge lifecycle (no GPU)
     expect(f.material.map).toBe(f.texture); expect(f.material.opacity).toBe(1); expect(f.texture.image).toBeDefined();
     f.authorDisposal.forEach(dispose => expect(dispose).not.toHaveBeenCalled());
   });
-  it.each(["composer", "taint"])("restores author synchronously after active %s failure and permits a clean switch retry", async reason => {
+  it("restores author synchronously after active texture failure and permits a clean switch retry", async () => {
     const f = fixture(); expect(await f.activate()).toMatchObject({ status: "switched" });
     expect(f.authorCanvas.style.opacity).toBe("0");
-    if (reason === "composer") f.composer.mockReturnValue(false);
-    else { f.texture.needsUpdate = true; f.getImageData.mockImplementation(() => { throw new Error("tainted update"); }); }
+    f.texture.needsUpdate = true; f.getImageData.mockImplementation(() => { throw new Error("tainted update"); });
     for (const frame of [...f.frames]) frame();
     expect(f.bridge.activeBackend).toBe("webgl"); expect(f.authorCanvas.style.opacity).toBe("1");
     expect(f.first.dispose).toHaveBeenCalledOnce(); expect(f.canvases[0]!.remove).toHaveBeenCalledOnce();
@@ -97,6 +95,16 @@ describe("author grid failures through the real Studio bridge lifecycle (no GPU)
     expect(await f.activate()).toMatchObject({ status: "switched", activeBackend: "webgpu" });
     expect(f.second.prepareScene.mock.calls[0]![1].authorGrid.texture.data[0]).toBe(64);
     f.bridge.dispose(); expect(f.second.dispose).toHaveBeenCalledOnce(); expect(f.authorCanvas.style.opacity).toBe("1");
+    f.authorDisposal.forEach(dispose => expect(dispose).not.toHaveBeenCalled());
+  });
+  it("prepares a direct-display grid without Composer and keeps the author resources owned", async () => {
+    const f = fixture(); f.composer.mockReturnValue(false);
+    expect(await f.activate()).toMatchObject({ status: "switched", activeBackend: "webgpu" });
+    expect(f.first.prepareScene).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      authorDirectDisplay: true, authorGrid: expect.objectContaining({ authorDirectDisplay: true }) }),
+      expect.any(Number), expect.any(AbortSignal));
+    expect(f.authorCanvas.style.opacity).toBe("0");
+    expect(f.grid.material).toBe(f.material); expect(f.material.toneMapped).toBe(false);
     f.authorDisposal.forEach(dispose => expect(dispose).not.toHaveBeenCalled());
   });
 });

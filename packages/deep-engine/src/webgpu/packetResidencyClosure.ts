@@ -85,7 +85,7 @@ function partialRequiredIdentities(packet: PreparedPacket): Set<string> {
 function batchTextureIds(textures: PreparedPacket["batches"][number]["textures"]): readonly string[] {
   if (!textures) return [];
   return [textures.baseColor, textures.metallicRoughness, textures.normal,
-    textures.occlusion, textures.emissive].flatMap(slot => slot ? [slot.texture] : []);
+    textures.occlusion, textures.emissive, textures.specular, textures.specularColor].flatMap(slot => slot ? [slot.texture] : []);
 }
 
 function residentMatches(

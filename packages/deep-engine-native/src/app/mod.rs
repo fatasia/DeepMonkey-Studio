@@ -20,6 +20,7 @@ mod accessibility;
 mod annotation_ime_area;
 mod annotation_input;
 mod annotations;
+pub(crate) mod benchmark;
 mod camera_views;
 mod chart;
 mod chart_keyboard_smoke;
@@ -118,6 +119,8 @@ struct NativeApp {
     #[cfg(target_arch = "wasm32")]
     renderer_initializing: bool,
     #[cfg(target_arch = "wasm32")]
+    presentation_paused_at: Option<web_time::Instant>,
+    #[cfg(target_arch = "wasm32")]
     physics_stage_pending: bool,
     #[cfg(target_arch = "wasm32")]
     physics_present_pending: bool,
@@ -143,6 +146,7 @@ struct NativeApp {
     telemetry_sample_frames_remaining: u16,
     /// R6-2 细分采样:遥测采样窗内每帧一次真实 packet 更新。
     telemetry_prepare_replay: Option<TelemetryPrepareReplay>,
+    benchmark: Option<benchmark::Benchmark>,
     state: PlayerState,
     occlusion_probe: Option<u8>,
     selection_probe: Option<u8>,
@@ -341,6 +345,11 @@ fn lod_target_id(packet: &deep_engine_native::contract::RenderPacket, index: usi
 impl NativeApp {
     fn new(content: PlayerContent, proxy: EventLoopProxy<GpuEvent>, setup: NativeAppSetup) -> Self {
         let view = content.initial_view();
+        let benchmark = if setup.telemetry_report {
+            benchmark::Benchmark::from_env(&content)
+        } else {
+            None
+        };
         let camera_controls = content.camera_controls();
         let product_dynamic_playback = if !setup.smoke_frame
             && setup.dynamic_playback.is_none()
@@ -401,6 +410,8 @@ impl NativeApp {
             #[cfg(target_arch = "wasm32")]
             renderer_initializing: false,
             #[cfg(target_arch = "wasm32")]
+            presentation_paused_at: None,
+            #[cfg(target_arch = "wasm32")]
             physics_stage_pending: false,
             #[cfg(target_arch = "wasm32")]
             physics_present_pending: false,
@@ -435,6 +446,7 @@ impl NativeApp {
                 0
             },
             telemetry_prepare_replay,
+            benchmark,
             state: PlayerState {
                 view,
                 camera_controls,

@@ -18,8 +18,12 @@ export interface PbrFrameUniformView {
   readonly colorGrading?: PbrColorGradingOptions;
   readonly authorColorEffects?: PbrAuthorColorEffects;
   readonly postProcess?: PbrPostProcessOverrides;
+  /** Three without a Composer: shade/fog/blend in display sRGB, then present unchanged. */
+  readonly authorDirectDisplay?: boolean;
   /** IBL-only radiance multiplier, 0..64; default 1. Does not scale GI or direct lights. */
   readonly environmentIntensity?: number;
+  /** Probe-only irradiance gain, 0..16; omission preserves legacy gain 1. */
+  readonly globalIlluminationIntensity?: number;
   readonly panoramaBackground?: PanoramaBackground;
   /** Undefined keeps legacy preview fog; null disables it. Authored fog requires HDR composition. */
   readonly fog?: PbrFog | null;
@@ -67,7 +71,7 @@ export function updatePbrFrameUniforms(queue: GPUQueue, cameraHistory: CameraFra
     : lookAtRelative(view.eye, view.target, view.up ?? [0, 1, 0], origin);
   const stableViewProjection = multiply(perspective(projection.verticalFovRadians, width / height,
     projection.near, projection.far), worldToView);
-  const currentJitter = features.temporalAa ? temporalAaJitter(cameraHistory.revision) : [0, 0] as const;
+  const currentJitter = features.temporalAa && !view.authorDirectDisplay ? temporalAaJitter(cameraHistory.revision) : [0, 0] as const;
   const depthViewProjection = jitterViewProjection(stableViewProjection, currentJitter, width, height);
   const history = cameraHistory.beginFrame({ eye: view.eye, target: view.target, extent, width, height,
     viewProjection: depthViewProjection, jitter: currentJitter, forceCut });
@@ -95,8 +99,8 @@ export function updatePbrFrameUniforms(queue: GPUQueue, cameraHistory: CameraFra
   // 的 Frame.output.bloom),不直写 frameData —— 那会被 output 段拷贝覆写。
   resources.outputData[1] = features.rayTracedShadows && rayTracedShadowRoute?.channel !== "cascade" ? 1 : 0;
   resources.outputData[0] = view.exposure;
-  resources.outputData[2] = features.vignette ? 0.25 : 0;
-  resources.outputData[3] = features.toneMapping === "three-aces-r185" ? 1 : 0;
+  resources.outputData[2] = view.authorDirectDisplay ? 0 : features.vignette ? 0.25 : 0;
+  resources.outputData[3] = view.authorDirectDisplay ? -1 : features.toneMapping === "three-aces-r185" ? 1 : 0;
   const grading = resolvePbrColorGrading(view.colorGrading);
   resources.outputData.set([grading.temperature, grading.tint, grading.contrast, grading.saturation], 4);
   resources.frameData.set(resources.outputData, 88);

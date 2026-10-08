@@ -31,6 +31,15 @@ const bc7 = (data = new Uint8Array(16).fill(7)): Ktx2TranscodeResult => ({
 });
 
 describe("KTX2 transcode boundary", () => {
+  it.each(["specular", "specularColor"] as const)("preserves the %s channel color space", async semantic => {
+    const texture = await transcodeKtx2Texture(source({ semantic }), {
+      transcode: async (_data, request) => {
+        expect(request.colorSpace).toBe(semantic === "specularColor" ? "srgb" : "linear");
+        return bc7();
+      },
+    }, { supportedFeatures: ["texture-compression-bc"] });
+    expect(prepareTextures([texture])[0]!.format).toBe(semantic === "specularColor" ? "bc7-rgba-unorm-srgb" : "bc7-rgba-unorm");
+  });
   it("inspects bounded 2D container metadata and Basis source profile", () => {
     expect(inspectKtx2Container(ktx2("uastc", 8, 12))).toEqual({ width: 8, height: 12, levelCount: 1, sourceProfile: "uastc", hasAlpha: true });
     expect(inspectKtx2Container(ktx2("etc1s"))).toMatchObject({ sourceProfile: "etc1s", hasAlpha: true });

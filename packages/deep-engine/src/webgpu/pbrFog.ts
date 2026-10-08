@@ -41,10 +41,12 @@ export function snapshotPbrFog(fog: PbrFog | null): PbrFog | null {
 }
 
 /** Two vec4s: linear RGB + mode (0 off/1 linear/2 exp2/4 bounded volumetric), near/far/density/reserved. */
-export function packPbrFog(fog: PbrFog | null | undefined): Float32Array<ArrayBuffer> {
-  if (fog === undefined) return new Float32Array([0, 0, 0, 3, 0, 0, 0, 0]);
+export function packPbrFog(fog: PbrFog | null | undefined, authorDirectDisplay = false): Float32Array<ArrayBuffer> {
+  if (typeof authorDirectDisplay !== "boolean") throw new TypeError("Author direct display must be boolean.");
+  if (fog === undefined) return new Float32Array([0, 0, 0, 3, 0, 0, 0, authorDirectDisplay ? 1 : 0]);
   validatePbrFog(fog);
   const data = new Float32Array(8);
+  data[7] = authorDirectDisplay ? 1 : 0;
   if (fog === null) return data;
   data.set(fog.color);
   if (fog.kind === "linear") data.set([1, fog.near, fog.far, 0], 3);

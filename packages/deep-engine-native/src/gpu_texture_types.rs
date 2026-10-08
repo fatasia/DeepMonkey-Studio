@@ -1,7 +1,7 @@
 use deep_engine_native::contract::TextureSemantic;
 use deep_engine_native::pbr_texture::{PreparedAddressMode, PreparedFilter, TextureEncoding};
 
-pub const FALLBACK_TEXTURE_SPECS: [(TextureSemantic, TextureEncoding, [u8; 4]); 5] = [
+pub const FALLBACK_TEXTURE_SPECS: [(TextureSemantic, TextureEncoding, [u8; 4]); 7] = [
     (
         TextureSemantic::BaseColor,
         TextureEncoding::Srgb,
@@ -27,6 +27,8 @@ pub const FALLBACK_TEXTURE_SPECS: [(TextureSemantic, TextureEncoding, [u8; 4]); 
         TextureEncoding::Srgb,
         [255, 255, 255, 255],
     ),
+    (TextureSemantic::Specular,TextureEncoding::Linear,[255,255,255,255]),
+    (TextureSemantic::SpecularColor,TextureEncoding::Srgb,[255,255,255,255]),
 ];
 
 pub fn texture_format(encoding: TextureEncoding) -> wgpu::TextureFormat {

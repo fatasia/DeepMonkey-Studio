@@ -11,7 +11,7 @@ export interface MaterialEffectValues {
   readonly emissiveStrength: number;
   readonly pipeline: Readonly<{ alphaMode: "OPAQUE" | "MASK" | "BLEND"; doubleSided: boolean;
     premultipliedAlpha: boolean; alphaToCoverage: boolean; alphaCutoff?: number; castShadow: boolean }>;
-  readonly textures: Readonly<Partial<Record<"baseColor" | "metallicRoughness" | "normal" | "occlusion" | "emissive", string>>>;
+  readonly textures: Readonly<Partial<Record<"baseColor" | "metallicRoughness" | "normal" | "occlusion" | "emissive" | "specular" | "specularColor", string>>>;
 }
 
 export interface MaterialEffectLedgerEntry {
@@ -125,6 +125,8 @@ function authorTextures(material: PbrMaterial): MaterialEffectValues["textures"]
     ...(material.normalTexture ? { normal: material.normalTexture.texture } : {}),
     ...(material.occlusionTexture ? { occlusion: material.occlusionTexture.texture } : {}),
     ...(material.emissiveTexture ? { emissive: material.emissiveTexture.texture } : {}),
+    ...(material.specularTexture ? { specular: material.specularTexture.texture } : {}),
+    ...(material.specularColorTexture ? { specularColor: material.specularColorTexture.texture } : {}),
   });
 }
 
@@ -135,6 +137,8 @@ function consumedTextures(batch: PreparedBatch): MaterialEffectValues["textures"
     ...(batch.textures?.normal ? { normal: batch.textures.normal.texture } : {}),
     ...(batch.textures?.occlusion ? { occlusion: batch.textures.occlusion.texture } : {}),
     ...(batch.textures?.emissive ? { emissive: batch.textures.emissive.texture } : {}),
+    ...(batch.textures?.specular ? { specular: batch.textures.specular.texture } : {}),
+    ...(batch.textures?.specularColor ? { specularColor: batch.textures.specularColor.texture } : {}),
   });
 }
 

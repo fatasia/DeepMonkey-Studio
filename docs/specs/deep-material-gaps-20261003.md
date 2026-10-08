@@ -3,6 +3,10 @@
 对标 Unity HDRP / UE / Babylon PBR,使 three r185 `MeshPhysicalMaterial` 与 Deep(WebGPU)在 sheen、iridescence、透射厚度/衰减、clearcoat 上一致。
 来源:`omission-audit-20261004.md` §2 C(T08/T09 scope-lock 余项,"aniso/transmission IBL 核已有,补 IBL 分支+双端对拍")与 `handoff-remaining-tasks-20261004.md` 第 5 项。
 
+## 2026-10-07 后续修复
+
+本文记录10月3日的实现基线。后续已补生产不透明场景颜色透射，以及 KHR_materials_specular 两种因子/贴图的导入、Three桥、Browser packet和GPU消费；高级材质uniform现在为320B，关闭能力仍为192B。静态与真实morph姿态的高光遮罩、UV1、强度0和金属分支8项真实GPU探针通过。Native运行包与RT path-tracing尚未支持该specular合同，仍明确拒绝非中性输入。最新源码、图片和逐文件证据见 [SMT高光贴图核查](studio-source-specular-audit-20261007.md)；整场画质一致性由SMT同相机回归继续验收。
+
 ## 1. 现状核查(动手前)
 
 ### 已有(不重建)

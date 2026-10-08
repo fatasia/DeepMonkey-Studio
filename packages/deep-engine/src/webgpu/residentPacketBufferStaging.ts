@@ -126,12 +126,12 @@ export function discardResidentPacketBufferStage(
 }
 
 const TEXTURE_ROLES = Object.freeze([
-  "baseColor", "metallicRoughness", "normal", "occlusion", "emissive",
+  "baseColor", "metallicRoughness", "normal", "occlusion", "emissive", "specular", "specularColor",
 ] as const satisfies readonly ResidentPacketTextureRole[]);
 
 const ROLE_SEMANTICS = Object.freeze({
   baseColor: "baseColor", metallicRoughness: "metallicRoughness", normal: "normal",
-  occlusion: "occlusion", emissive: "emissive",
+  occlusion: "occlusion", emissive: "emissive", specular: "specular", specularColor: "specularColor",
 } as const);
 
 function validateTextureClosure(

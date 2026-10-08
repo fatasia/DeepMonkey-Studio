@@ -4,6 +4,11 @@ import { DeformationPoseValidator } from "./deformation/poseValidation.js";
 // Source-array identity survives pose-only snapshots, so hot updates share their cold validator.
 const validators = new WeakMap<readonly DeformationSource[], DeformationPoseValidator>();
 
+/** Internal handoff from the resource candidate that already validated these owned sources. */
+export function retainDeformationPoseValidator(snapshot: DeformationSnapshot, validator: DeformationPoseValidator): void {
+  validators.set(snapshot.sources, validator);
+}
+
 /** Prepared source ownership is stable; hot updates validate/copy only changing pose arrays. */
 export function snapshotDeformationPoseUpdate(retained: DeformationSnapshot, poses: readonly DeformationPose[]): DeformationSnapshot {
   let validator = validators.get(retained.sources);

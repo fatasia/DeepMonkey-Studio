@@ -103,6 +103,10 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
   const metallicRoughness = basic ? undefined : textures.projectMetallicRoughness(m.metalnessMap, m.roughnessMap);
   const normal = basic ? undefined : projectNormal(m, textures), occlusion = basic ? undefined : projectOcclusion(m, textures);
   const emissiveMap = basic || m.emissiveMap == null ? undefined : textures.projectEmissive(m.emissiveMap);
+  const specular = physical && advancedMaterials && m.specularIntensityMap != null ? textures.projectSpecular(m.specularIntensityMap) : undefined;
+  const specularColor = physical && advancedMaterials && m.specularColorMap != null ? textures.projectSpecularColor(m.specularColorMap) : undefined;
+  const specularFactor = physical && advancedMaterials ? unit(m.specularIntensity, "material.specularIntensity") : 1;
+  const specularColorFactor = physical && advancedMaterials ? reflectanceColor3(m.specularColor) : [1, 1, 1] as const;
   // THREE.Color 和 emissive 已经处于线性工作色彩空间；不能再次执行 sRGB 解码。
   if (physical && (typeof m.ior !== "number" || m.ior < 1 || !Number.isFinite(Math.fround(m.ior)))) invalid("material.ior");
   // A2C-P1 降级投影(见上门注释):OPAQUE+a2c → MASK@A2C_MASK_FALLBACK_ALPHA_CUTOFF;
@@ -112,6 +116,10 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
   const projectedAlphaMode: AlphaMode = maskFallbackActive && alphaMode === "OPAQUE" ? "MASK" : alphaMode;
   const projectedCutoff = maskFallbackActive && alphaMode === "OPAQUE" ? A2C_MASK_FALLBACK_ALPHA_CUTOFF : alphaTest;
   const material: PbrMaterial = { id, baseColor: color, metallic, roughness,
+    ...(specularFactor !== 1 ? { specularFactor } : {}),
+    ...(specularColorFactor.some(value => value !== 1) ? { specularColorFactor } : {}),
+    ...(specular ? { specularTexture: specular.slot } : {}),
+    ...(specularColor ? { specularColorTexture: specularColor.slot } : {}),
     ...(physical ? { ior: m.ior as number } : {}),
     ...(lobes?.extended ? { extendedParameters: { ...lobes.extended, ior: m.ior as number } } : {}),
     ...(lobes?.advanced ? { advancedParameters: lobes.advanced } : {}),
@@ -128,7 +136,7 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
     ...(alphaToCoverage && !maskFallbackActive ? { alphaToCoverage: true } : {}),
     ...(m.premultipliedAlpha === true ? { premultipliedAlpha: true } : {}),
     ...(side === THREE.doubleSide ? { doubleSided: true } : {}) };
-  return { material, textures: [base, metallicRoughness, normal?.texture, occlusion?.texture, emissiveMap]
+  return { material, textures: [base, metallicRoughness, normal?.texture, occlusion?.texture, emissiveMap, specular, specularColor]
     .filter((texture): texture is ProjectedTexture => texture !== undefined).map(texture => texture.resource),
     vertexColors: m.vertexColors === true, flatShading: m.flatShading === true,
     side: side === THREE.doubleSide ? "double" : "front", depthWrite: alphaMode !== "BLEND" };
@@ -164,9 +172,8 @@ function validateDefines(m: Record<string, unknown>, physical: boolean, basic: b
 function validatePhysicalLobes(m: Record<string, unknown>, advancedMaterials: boolean):
   { readonly extended?: ExtendedMaterialParameters; readonly advanced?: AdvancedMaterialParameters } | undefined {
   if (!advancedMaterials) { validateNeutralPhysical(m); return undefined; }
-  for (const key of physicalTextureFields) if (m[key] != null) unsupported(`material.${key}`);
-  if (m.anisotropy !== 0 || m.anisotropyRotation !== 0 || m.dispersion !== 0 || m.specularIntensity !== 1
-    || !same(color3(m.specularColor, "material.specularColor"), [1, 1, 1])
+  for (const key of physicalTextureFields) if (m[key] != null && key !== "specularColorMap" && key !== "specularIntensityMap") unsupported(`material.${key}`);
+  if (m.anisotropy !== 0 || m.anisotropyRotation !== 0 || m.dispersion !== 0
     || !same(vector2(m.clearcoatNormalScale, "material.clearcoatNormalScale"), [1, 1])) {
     unsupported("MeshPhysicalMaterial non-neutral extensions");
   }
@@ -215,6 +222,11 @@ function color3(value: unknown, feature: string): [number, number, number] {
   const c = record(value, feature), result = [c.r, c.g, c.b];
   if (!result.every(component => typeof component === "number" && Number.isFinite(component)
     && component >= 0 && component <= 1 && Number.isFinite(Math.fround(component)))) invalid(feature);
+  return result as [number, number, number];
+}
+function reflectanceColor3(value: unknown): [number, number, number] {
+  const source = record(value, "material.specularColor"), result = [source.r, source.g, source.b];
+  if (!result.every(component => typeof component === "number" && component >= 0 && Number.isFinite(Math.fround(component)))) invalid("material.specularColor");
   return result as [number, number, number];
 }
 function vector2(value: unknown, feature: string): [number, number] {

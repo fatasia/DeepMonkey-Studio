@@ -77,7 +77,7 @@ try {
   const scene = application.scenes?.[0];
   const studioUrl = `${gate.origin}/studio/${encodeURIComponent(project.id)}/applications/${encodeURIComponent(application.metadata.id)}/scenes/${encodeURIComponent(scene.id)}`;
   await page.goto(studioUrl, { waitUntil: "domcontentloaded", timeout: 90_000 });
-  await page.locator(".viewport canvas").waitFor({ timeout: 90_000 });
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor({ timeout: 90_000 });
   await page.waitForTimeout(1500);
   const theme = await page.evaluate(() => document.documentElement.getAttribute("data-theme"));
   check("dark-theme", theme !== "light", { theme });

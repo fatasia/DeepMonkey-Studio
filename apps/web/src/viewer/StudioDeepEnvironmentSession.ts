@@ -47,6 +47,8 @@ export class StudioDeepEnvironmentSession {
     return this.lastView;
   }
 
+  prepared(): PreparedStudioDeepEnvironment { return this.active; }
+
   dispose(): void {
     this.closed = true;
     this.pending?.abort();

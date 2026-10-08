@@ -95,6 +95,7 @@ export function publishDeepPresentation(host: StudioDeepBridgePresentationHost, 
       throw error;
     }
     canvas.style.visibility = "visible";
+    delete canvas.dataset.rendererPreparing;
     canvas.style.opacity = "1";
     host.authorCanvas.style.opacity = "0";
     host.deepCanvas = canvas;
@@ -157,15 +158,15 @@ export function publishDeepPresentation(host: StudioDeepBridgePresentationHost, 
     };
   }
 
-export function publishWebGlPresentation(host: StudioDeepBridgePresentationHost): void {
+export function publishWebGlPresentation(host: StudioDeepBridgePresentationHost, retainBackend = false): void {
     host.generation++;
     host.authorCanvas.style.opacity = "1";
     host.activeBackendValue = "webgl";
     host.viewer.setPresentationRendererBackend("webgl");
-    releaseDeepPresentation(host);
+    releaseDeepPresentation(host, retainBackend);
   }
 
-export function releaseDeepPresentation(host: StudioDeepBridgePresentationHost): void {
+export function releaseDeepPresentation(host: StudioDeepBridgePresentationHost, retainBackend = false): void {
     host.viewer.setDeepPointerPick?.(undefined);
     host.projectionBridge = undefined;
     host.deformationSync = undefined;
@@ -206,7 +207,7 @@ export function releaseDeepPresentation(host: StudioDeepBridgePresentationHost):
     host.qualityProfile = null;
     host.cancelCameraSettle();
     const errors: unknown[] = [];
-    for (const clean of [unsubscribe, () => backend?.dispose(), () => canvas?.remove()]) {
+    for (const clean of [unsubscribe, () => { if (!retainBackend) backend?.dispose(); }, () => { if (!retainBackend) canvas?.remove(); }]) {
       try { clean?.(); } catch (error) { errors.push(error); }
     }
     if (errors.length) throw new AggregateError(errors, "Deep renderer cleanup failed.");
@@ -254,7 +255,10 @@ export function takeoverGesturePresentation(host: StudioDeepBridgePresentationHo
     host.gestureActive = true;
     host.deepCanvas.style.pointerEvents = "auto";
     host.authorCanvas.style.pointerEvents = "none";
-    host.inputSession ??= new DeepCameraInputSession(host.deepCanvas, controller, () => host.applyGesturePose(), {
+    host.inputSession ??= new DeepCameraInputSession(host.deepCanvas, controller, () => {
+      if (host.viewer.setContinuousRender) host.viewer.setContinuousRender("deep-camera", true);
+      else host.applyGesturePose();
+    }, {
       forwardTo: host.authorCanvas,
       suppressGesture: () => host.viewer.isViewportGestureSuppressed?.() === true,
       handleGizmoPointer: (phase, event) => {
@@ -270,6 +274,7 @@ export function takeoverGesturePresentation(host: StudioDeepBridgePresentationHo
 export function releaseGesturePresentation(host: StudioDeepBridgePresentationHost): void {
     if (!host.gestureActive) return;
     host.gestureActive = false;
+    host.viewer.setContinuousRender?.("deep-camera", false);
     host.lastGestureTickAt = undefined;
     host.inputSession?.detach();
     if (host.deepCanvas) host.deepCanvas.style.pointerEvents = "none";

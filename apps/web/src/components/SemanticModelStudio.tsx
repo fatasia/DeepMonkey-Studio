@@ -27,7 +27,7 @@ export default function SemanticModelStudio({
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   return (
     <section
-      className="semantic-studio"
+      className={`semantic-studio ${subTab === "graph" ? "has-graph" : ""}`}
       aria-label={tr(locale, "语义模型", "Semantic models")}
     >
       <div className="semantic-subtabs" role="tablist" aria-label={tr(locale, "语义模型子工作区", "Semantic sub workspaces")}>

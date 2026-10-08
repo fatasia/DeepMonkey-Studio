@@ -45,7 +45,7 @@ try {
       documentScene.primitives = scene.primitives; documentScene.camera = scene.camera;
       await gate.json("PUT", `${appPath}/workspace`, { application, scene });
       const url = `${gate.origin}/studio/${project.id}/applications/${application.metadata.id}/scenes/${scene.id}?renderer=webgl`;
-      await page.goto(url); await page.locator(".viewport canvas").waitFor();
+      await page.goto(url); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
       await page.waitForFunction(() => !document.querySelector('[aria-label="进入播放模式"]')?.disabled);
       const autoSave = page.getByLabel("自动保存"); if (await autoSave.isChecked()) await autoSave.uncheck();
       const open = async () => {
@@ -67,7 +67,7 @@ try {
       const [first, second] = valid.environment.reflectionProbes;
       assert.equal(first.center.x, -3.5); assert.equal(first.halfExtents.x, 2.5); assert.equal(first.blendDistance, .8);
       assert.equal(first.influenceRadius, 1.5); assert.equal(second.enabled, false);
-      await page.reload(); await page.locator(".viewport canvas").waitFor();
+      await page.reload(); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
       await page.waitForFunction(() => !document.querySelector('[aria-label="进入播放模式"]')?.disabled);
       await open(); assert.equal(await page.getByLabel("探针 1 中心 X (m)", { exact: true }).inputValue(), "-3.5");
       assert.equal(await editor.getByRole("checkbox", { name: "探针 2", exact: true }).isChecked(), false);

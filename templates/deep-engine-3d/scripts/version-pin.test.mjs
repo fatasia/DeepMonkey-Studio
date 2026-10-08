@@ -20,6 +20,7 @@ test("sdk-versions.json pins match the workspace manifests", async () => {
     `deep-engine 已升级到 ${engine.version}。动作: ${pins.upgradeDetection.onDrift}`);
   assert.equal(pins.engines["@webgpu/types"], declared["@webgpu/types"],
     `@webgpu/types 已变为 ${declared["@webgpu/types"]}。动作: ${pins.upgradeDetection.onDrift}`);
+  assert.equal(pins.engines.fflate, engine.dependencies.fflate, "DGC compression must be a pinned runtime dependency");
   assert.equal(pins.pinPolicy.includes("exact"), true, "pin 策略必须是 exact");
 });
 

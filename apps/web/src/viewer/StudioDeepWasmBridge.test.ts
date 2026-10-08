@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StudioDeepWasmBridge, type DeepWasmRuntimeModule } from "./StudioDeepWasmBridge";
+import type { StudioWasmCompiledPackage } from "./studioWasmCompilationClient";
 
 describe("StudioDeepWasmBridge", () => {
   const owned: StudioDeepWasmBridge[] = [];
@@ -36,6 +37,21 @@ describe("StudioDeepWasmBridge", () => {
 
     frame();
     expect(runtime.camera).toHaveBeenCalledWith(7, 2, 3, 4, 0, 0, 0, expect.any(Number), 0.1, 900);
+  });
+
+  it("prewarms a hidden session without taking author input, then switches without rebuilding", async () => {
+    const runtime = fakeRuntime();
+    runtime.module.set_scene_viewer_paused = vi.fn();
+    const { bridge, author, presentation } = fixture(runtime.module);
+    expect((await bridge.prewarm(new AbortController().signal)).status).toBe("switched");
+    expect(bridge.activeBackend).toBe("webgl"); expect(presentation).not.toHaveBeenCalled();
+    expect(author.style.opacity).toBe("1"); expect(createdCanvases[0]?.style.opacity).toBe("0");
+    expect(runtime.module.set_scene_viewer_paused).toHaveBeenLastCalledWith(7, true);
+    expect((await bridge.switchTo("wasm")).status).toBe("switched");
+    expect(runtime.start).toHaveBeenCalledOnce(); expect(runtime.update).not.toHaveBeenCalled();
+    expect(runtime.module.set_scene_viewer_paused).toHaveBeenLastCalledWith(7, false);
+    await bridge.switchTo("webgl");
+    expect(runtime.module.set_scene_viewer_paused).toHaveBeenLastCalledWith(7, true);
   });
 
   it("reuses the live session for scene revisions and restores WebGL on failure", async () => {
@@ -118,13 +134,97 @@ describe("StudioDeepWasmBridge", () => {
     await expect(bridge.physicsPose("other-instance")).rejects.toThrow(/invalid/);
   });
 
-  function fixture(module: DeepWasmRuntimeModule) {
+  it("prepares cooperatively, consumes the owned candidate once and skips unchanged packages", async () => {
+    const runtime = fakeRuntime();
+    runtime.module.prepare_scene_package = vi.fn(async () => 41);
+    runtime.module.discard_prepared_scene_package = vi.fn();
+    runtime.module.start_prepared_scene_viewer = vi.fn(() => runtime.start());
+    runtime.module.update_prepared_scene_viewer = vi.fn(() => runtime.update());
+    const { bridge, compilePackage } = fixture(runtime.module);
+    expect((await bridge.switchTo("wasm")).status).toBe("switched");
+    expect(runtime.setPackage).not.toHaveBeenCalled();
+    expect(runtime.module.prepare_scene_package).toHaveBeenCalledWith(new Uint8Array([1,2,3]), undefined, expect.any(AbortSignal));
+    expect(runtime.module.start_prepared_scene_viewer).toHaveBeenCalledWith(41, expect.any(Object));
+    await bridge.switchTo("webgl");await bridge.switchTo("wasm");
+    expect(runtime.module.prepare_scene_package).toHaveBeenCalledOnce();
+    compilePackage.mockResolvedValue({bytes:new Uint8Array([1,2,4])});
+    expect((await bridge.refresh()).status).toBe("switched");
+    expect(runtime.module.update_prepared_scene_viewer).toHaveBeenCalledWith(7,41);
+    expect(runtime.update).toHaveBeenCalledOnce();
+    expect(runtime.module.discard_prepared_scene_package).not.toHaveBeenCalled();
+  });
+
+  it("discards a cancelled preparation without publishing or stealing another candidate", async () => {
+    const runtime = fakeRuntime();
+    runtime.module.prepare_scene_package = vi.fn(async () => { bridge.cancelPendingSwitch(); return 42; });
+    runtime.module.discard_prepared_scene_package = vi.fn();
+    runtime.module.start_prepared_scene_viewer = vi.fn();
+    runtime.module.update_prepared_scene_viewer = vi.fn();
+    const { bridge, author } = fixture(runtime.module);
+    expect((await bridge.switchTo("wasm")).status).toBe("cancelled");
+    expect(runtime.module.discard_prepared_scene_package).toHaveBeenCalledWith(42);
+    expect(runtime.module.start_prepared_scene_viewer).not.toHaveBeenCalled();
+    expect(author.style.opacity).toBe("1");
+  });
+
+  it("uses the expected hash when updating a changed parked legacy runtime", async () => {
+    const runtime = fakeRuntime();
+    runtime.module.update_scene_viewer_with_expected_hash = vi.fn(() => runtime.update());
+    const { bridge, compilePackage } = fixture(runtime.module);
+    await bridge.switchTo("wasm");await bridge.switchTo("webgl");
+    const hash = "a".repeat(64);
+    compilePackage.mockResolvedValue({bytes:new Uint8Array([1,2,4]),canonicalHash:hash});
+    expect((await bridge.switchTo("wasm")).status).toBe("switched");
+    expect(runtime.module.update_scene_viewer_with_expected_hash).toHaveBeenCalledWith(7,new Uint8Array([1,2,4]),hash);
+  });
+
+  it("uses a native scene receipt without retaining or recompiling its transport", async () => {
+    const runtime = fakeRuntime(); let key = "scene-1";
+    const accepted = vi.fn();
+    const { bridge, compilePackage } = fixture(runtime.module, { packageKey: () => key, onPackageAccepted: accepted });
+    await bridge.prewarm(new AbortController().signal);
+    await bridge.switchTo("wasm");
+    await bridge.switchTo("webgl"); await bridge.switchTo("wasm");
+    expect((await bridge.refresh()).status).toBe("unchanged");
+    expect(compilePackage).toHaveBeenCalledOnce(); expect(accepted).toHaveBeenCalledOnce();
+    key = "scene-2"; compilePackage.mockResolvedValue({ bytes: new Uint8Array([1, 2, 4]) });
+    expect((await bridge.refresh()).status).toBe("switched");
+    expect(compilePackage).toHaveBeenCalledTimes(2); expect(runtime.update).toHaveBeenCalledOnce();
+    expect(accepted).toHaveBeenLastCalledWith(expect.any(Object), "scene-2");
+  });
+
+  it("does not revive a cancelled foreground switch that was joining background preparation", async () => {
+    let finish!: (value: StudioWasmCompiledPackage) => void;
+    const runtime = fakeRuntime();
+    const { bridge } = fixture(runtime.module, { compilePackage: () => new Promise(resolve => { finish = resolve; }) });
+    const background = bridge.prewarm(new AbortController().signal);
+    await Promise.resolve(); await Promise.resolve();
+    const foreground = bridge.switchTo("wasm"); bridge.cancelPendingSwitch();
+    finish({ bytes: new Uint8Array([1]) });
+    expect((await background).status).toBe("cancelled");
+    expect((await foreground).status).toBe("cancelled");
+    expect(runtime.start).not.toHaveBeenCalled(); expect(bridge.activeBackend).toBe("webgl");
+  });
+
+  it("retires a scene receipt when a native update starts, even if the update is then cancelled", async () => {
+    const runtime = fakeRuntime(); let key = "old";
+    const { bridge, compilePackage } = fixture(runtime.module, { packageKey: () => key });
+    await bridge.switchTo("wasm"); await bridge.switchTo("webgl");
+    key = "new"; compilePackage.mockResolvedValue({ bytes: new Uint8Array([4]) });
+    runtime.update.mockImplementationOnce(() => { bridge.cancelPendingSwitch(); });
+    expect((await bridge.switchTo("wasm")).status).toBe("cancelled");
+    key = "old"; compilePackage.mockResolvedValue({ bytes: new Uint8Array([1, 2, 3]) });
+    expect((await bridge.switchTo("wasm")).status).toBe("switched");
+    expect(compilePackage).toHaveBeenCalledTimes(3); expect(runtime.update).toHaveBeenCalledTimes(2);
+  });
+
+  function fixture(module: DeepWasmRuntimeModule, options: Partial<import("./StudioDeepWasmBridge").StudioDeepWasmBridgeOptions> = {}) {
     const author = canvas();
     const appended: ReturnType<typeof canvas>[] = [];
     const container = { append: (value: ReturnType<typeof canvas>) => appended.push(value) };
     let callback: () => void = () => undefined;
     const presentation = vi.fn();
-    const compilePackage = vi.fn(async () => ({ bytes: new Uint8Array([1, 2, 3]) }));
+    const compilePackage = vi.fn(async (): Promise<StudioWasmCompiledPackage> => ({ bytes: new Uint8Array([1, 2, 3]) }));
     const viewer = {
       renderer: { domElement: author },
       getCameraState: () => ({ position: { x: 2, y: 3, z: 4 }, target: { x: 0, y: 0, z: 0 }, mode: "orbit" }),
@@ -136,6 +236,7 @@ describe("StudioDeepWasmBridge", () => {
       loadModule: async () => module,
       compilePackage,
       preparationTimeoutMs: 100,
+      ...options,
     });
     owned.push(bridge);
     return { bridge, author, presentation, compilePackage, frame: () => callback(), appended };

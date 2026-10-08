@@ -262,7 +262,9 @@ pub fn run_package_telemetry(path: PathBuf) -> Result<(), String> {
         "telemetry runtime package loaded: {} geometries, {} instances, {} triangles",
         summary.geometries, summary.instances, summary.triangles
     );
-    app::run_package_telemetry_smoke(package.into_content())
+    let content = package.into_content();
+    app::benchmark::validate(&content)?;
+    app::run_package_telemetry_smoke(content)
 }
 
 /// `--smoke-telemetry-prepare`:telemetry smoke + 采样窗内每帧一次真实

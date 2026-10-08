@@ -31,7 +31,10 @@ export function useRendererDiagnostics(
 
   useEffect(() => {
     setStudioFrameCaptureRequested(open);
-    if (!open) setFrameCapture(readStudioFrameCaptureSnapshot());
+    if (!open) {
+      setFrameCapture(readStudioFrameCaptureSnapshot());
+      setFrameReadbacks(readStudioFrameReadbacks());
+    }
     return () => setStudioFrameCaptureRequested(false);
   }, [open]);
 

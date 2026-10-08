@@ -7,9 +7,19 @@ import { b4HlodClusterEnabled, g1ClusterLodEnabled, StudioDeepWebGpuBridge } fro
 import type { PresentationPerformanceSource } from "./viewerPresentationPerformance";
 import { DEFAULT_POST_PROCESSING } from "../appDefaults";
 import { readStudioFrameCaptureSnapshot, setStudioFrameCaptureRequested } from "./studioFrameCaptureDiagnostics";
+import { renderViewFingerprint } from "./studioDeepWebGpuBridgeSceneHelpers";
+import { resolvePbrMsaaSampleCount } from "../../../../packages/deep-engine/src/webgpu/renderTargets";
+import { DeepCameraController } from "./deepCameraController";
 
 type BridgeModule = typeof import("@bim-studio/deep-engine/three-bridge");
 type Deferred<T> = { promise: Promise<T>; resolve(value: T): void; reject(reason: unknown): void };
+
+it("invalidates a static camera frame when the author display domain changes", () => {
+  type View = Parameters<typeof renderViewFingerprint>[0];
+  const view: View = { eye: [1, 2, 3], target: [0, 0, 0], width: 800, height: 600, pixelRatio: 1,
+    extent: 10, background: [0.1, 0.2, 0.3], floor: [0.2, 0.2, 0.2], exposure: 1, roughness: 0.5 };
+  expect(renderViewFingerprint(view)).not.toBe(renderViewFingerprint({ ...view, authorDirectDisplay: true }));
+});
 
 function deferred<T>(): Deferred<T> {
   let resolve!: Deferred<T>["resolve"];
@@ -134,7 +144,7 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     await microtasks();
   }
 
-  function setup(load?: () => Promise<BridgeModule>, authorRenderPacket?: () => Promise<RenderPacket>) {
+  function setup(load?: () => Promise<BridgeModule>, authorRenderPacket?: () => Promise<RenderPacket>, authorPacketKey?: () => string) {
     const first = makeBackend();
     const second = makeBackend();
     const create = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
@@ -176,6 +186,7 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     const bridge = new StudioDeepWebGpuBridge(viewer, container as unknown as HTMLElement, {
       loadModule: load ?? (() => Promise.resolve(module)), onRuntimeFailure: failure,
       ...(authorRenderPacket ? { authorRenderPacket: () => authorRenderPacket() } : {}),
+      ...(authorPacketKey ? { authorPacketKey } : {}),
     });
     bridges.push(bridge);
     return { bridge, first, second, create, module, authorCanvas, container, presentation, failure, subscribe, unsubscribe, scene, camera, viewer, projectionOptions };
@@ -188,6 +199,121 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     expect(await operation).toMatchObject({ status: "switched", activeBackend: "webgpu" });
     for (let settle = 0; settle < 17; settle++) await frame(false);
   }
+
+  it("reuses one parked packet renderer after a fresh GPU frame admission", async () => {
+    const packet = { geometries: [], materials: [], instances: [] } as RenderPacket;
+    const f = setup(undefined, async () => packet), validate = vi.fn().mockResolvedValue({ frame: 1 });
+    Object.assign(f.first, { usesIndependentPacket: true, prepareView: validate });
+    Object.assign(f.first.runtime.session, { resourceMemory: { estimatedBytes: 1024, unknownResources: 0 } });
+    Object.assign(f.viewer, { getRenderDemandDiagnostics: () => ({ invalidationRevision: 1 }) });
+    const released = deferred<void>(), trim = vi.fn();
+    Object.assign(f.first.runtime, { gpuTimer: { releaseIdleResources: () => released.promise }, releaseIdleResources: trim });
+    await activate(f.bridge);
+    const park = f.bridge.switchTo("webgl"); await frame();
+    expect(trim).not.toHaveBeenCalled(); released.resolve(); await park;
+    expect(trim).toHaveBeenCalledOnce();
+    expect(f.first.dispose).not.toHaveBeenCalled(); expect(f.authorCanvas.style.opacity).toBe("1");
+    const resume = f.bridge.switchTo("webgpu"); await microtasks(); await frame();
+    expect(await resume).toMatchObject({ status: "switched", activeBackend: "webgpu" });
+    expect(f.create).toHaveBeenCalledOnce();
+    expect(validate.mock.calls.at(-1)?.[2]).toBe(true);
+    f.bridge.dispose(); expect(f.first.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("applies immediate pan on an author frame even when spherical damping has settled", async () => {
+    const f = setup(); await activate(f.bridge);
+    f.camera.position.set(7, 2, 3); f.viewer.orbit.target.set(4, 0, 0);
+    const controller = new DeepCameraController(); controller.setPose([7, 2, 3], [4, 0, 0]);
+    Object.assign(f.bridge, { controller, gestureActive: true, lastAppliedPose: controller.getPose() });
+    f.viewer.getCameraState = () => ({ position: f.camera.position, target: f.viewer.orbit.target, mode: "orbit" }) as never;
+    f.viewer.applyViewportCameraPose = pose => {
+      f.camera.position.fromArray(pose.eye); f.viewer.orbit.target.fromArray(pose.target);
+    };
+    controller.pan(20, 10, 480); await frame();
+    expect(f.camera.position.toArray()).not.toEqual([7, 2, 3]);
+    expect(f.viewer.orbit.target.toArray()).not.toEqual([4, 0, 0]);
+  });
+
+  it("prewarms a hidden candidate without changing the author, then admits it without GPU creation", async () => {
+    const packet = { geometries: [], materials: [], instances: [] } as RenderPacket;
+    const f = setup(undefined, async () => packet, () => "scene");
+    Object.assign(f.first, { usesIndependentPacket: true, prepareView: vi.fn().mockResolvedValue({ frame: 1 }) });
+    const memory = { estimatedBytes: 1024, unknownResources: 1 };
+    const drain = vi.fn(async () => { memory.unknownResources = 0; });
+    Object.assign(f.first.runtime.session, { resourceMemory: memory });
+    Object.assign(f.first.runtime, { gpuTimer: { releaseIdleResources: drain } });
+    Object.assign(f.viewer, { getRenderDemandDiagnostics: () => ({ invalidationRevision: 1 }) });
+    const warm = f.bridge.prewarm(new AbortController().signal); await microtasks(); await frame();
+    expect(await warm).toMatchObject({ status: "switched", activeBackend: "webgl" });
+    expect(f.presentation).not.toHaveBeenCalled();
+    expect(f.viewer.setAuthorPacketIndependent).not.toHaveBeenCalledWith(true);
+    expect(f.first.dispose).not.toHaveBeenCalled();
+    expect(drain).toHaveBeenCalledOnce();
+    await activate(f.bridge); expect(f.create).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [312_465_992, 0, true], [384 * 1024 * 1024, 0, true],
+    [384 * 1024 * 1024 + 1, 0, false], [312_465_992, 1, false],
+  ])("uses the bounded parking contract for %s bytes / %s unknown resources", async (bytes, unknownResources, retained) => {
+    const packet = { geometries: [], materials: [], instances: [] } as RenderPacket;
+    const f = setup(undefined, async () => packet);
+    Object.assign(f.first, { usesIndependentPacket: true, prepareView: vi.fn().mockResolvedValue({ frame: 1 }) });
+    Object.assign(f.first.runtime.session, { resourceMemory: { estimatedBytes: bytes, unknownResources } });
+    Object.assign(f.viewer, { getRenderDemandDiagnostics: () => ({ invalidationRevision: 1 }) });
+    await activate(f.bridge); const park = f.bridge.switchTo("webgl"); await frame(); await park;
+    expect(f.first.dispose).toHaveBeenCalledTimes(retained ? 0 : 1);
+    await activate(f.bridge);
+    expect(f.create).toHaveBeenCalledTimes(retained ? 1 : 2);
+    f.bridge.dispose(); expect(f.first.dispose).toHaveBeenCalledOnce();
+  });
+
+  it.each(["scene", "loss"])("retires the parked GPU owner on %s before a new switch", async cause => {
+    const packet = { geometries: [], materials: [], instances: [] } as RenderPacket;
+    const f = setup(undefined, async () => packet); let revision = 1;
+    Object.assign(f.first, { usesIndependentPacket: true, prepareView: vi.fn().mockResolvedValue({ frame: 1 }) });
+    Object.assign(f.first.runtime.session, { resourceMemory: { estimatedBytes: 1024, unknownResources: 0 } });
+    Object.assign(f.viewer, { getRenderDemandDiagnostics: () => ({ invalidationRevision: revision }) });
+    await activate(f.bridge); const park = f.bridge.switchTo("webgl"); await frame(); await park;
+    if (cause === "scene") { revision++; await frame(); }
+    else { f.first.deviceLoss.resolve({ reason: "unknown", message: "lost" }); await microtasks(); }
+    expect(f.first.dispose).toHaveBeenCalledOnce();
+    await activate(f.bridge); expect(f.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("still retires the current parked owner on loss after previous parking subscriptions were transferred", async () => {
+    const packet = { geometries: [], materials: [], instances: [] } as RenderPacket;
+    const f = setup(undefined, async () => packet);
+    Object.assign(f.first, { usesIndependentPacket: true, prepareView: vi.fn().mockResolvedValue({ frame: 1 }) });
+    Object.assign(f.first.runtime.session, { resourceMemory: { estimatedBytes: 1024, unknownResources: 0 } });
+    Object.assign(f.viewer, { getRenderDemandDiagnostics: () => ({ invalidationRevision: 1 }) });
+    await activate(f.bridge);
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const park = f.bridge.switchTo("webgl"); await frame(); await park;
+      await activate(f.bridge);
+      expect(f.first.dispose).not.toHaveBeenCalled();
+    }
+    expect(f.create).toHaveBeenCalledOnce();
+    const finalPark = f.bridge.switchTo("webgl"); await frame(); await finalPark;
+    f.first.deviceLoss.resolve({ reason: "unknown", message: "device lost after warm transfers" });
+    await microtasks();
+    expect(f.first.dispose).toHaveBeenCalledOnce();
+    await activate(f.bridge);
+    expect(f.create).toHaveBeenCalledTimes(2);
+    expect(f.second.dispose).not.toHaveBeenCalled();
+  });
+
+  it("keeps a parked device for chrome render requests and retires it for semantic author changes", async () => {
+    const packet = { geometries: [], materials: [], instances: [] } as RenderPacket;
+    let key = "author-v1", revision = 1;
+    const f = setup(undefined, async () => packet, () => key);
+    Object.assign(f.first, { usesIndependentPacket: true, prepareView: vi.fn().mockResolvedValue({ frame: 1 }) });
+    Object.assign(f.first.runtime.session, { resourceMemory: { estimatedBytes: 1024, unknownResources: 0 } });
+    Object.assign(f.viewer, { getRenderDemandDiagnostics: () => ({ invalidationRevision: revision }) });
+    await activate(f.bridge); const park = f.bridge.switchTo("webgl"); await frame(); await park;
+    revision++; await frame(); expect(f.first.dispose).not.toHaveBeenCalled();
+    key = "author-v2"; revision++; await frame(); expect(f.first.dispose).toHaveBeenCalledOnce();
+  });
 
   function recoverySetup() {
     const fixture = setup();
@@ -269,11 +395,38 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     expect(create).toHaveBeenCalledOnce(); expect(failure).toHaveBeenCalledOnce(); expect(bridge.activeBackend).toBe("webgl");
   });
 
-  it("keeps a2c fields out of the creation contract for a stock scene", async () => {
+  it("resolves the opaque author's creation request to existing MSAA4 without enabling a2c", async () => {
     const f = setup();
+    const solid = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
+    f.scene.add(solid);
     await activate(f.bridge);
     expect(f.create.mock.calls[0]![0].renderer.msaaSampleCount).toBeUndefined();
+    expect(resolvePbrMsaaSampleCount(f.create.mock.calls[0]![0].renderer.msaaSampleCount)).toBe(4);
     expect(f.projectionOptions[0]?.capabilities?.alphaToCoverage).toBeUndefined();
+    solid.geometry.dispose(); (solid.material as THREE.Material).dispose();
+  });
+
+  it.each([false, true])("preserves the Studio no-TAA contract in the actual candidate with composer %s", async enabled => {
+    const f = setup();
+    vi.mocked(f.viewer.getPostProcessing).mockReturnValue({ ...DEFAULT_POST_PROCESSING, enabled,
+      smaa: true, gtao: true, bloom: true });
+    await activate(f.bridge);
+    const request = f.create.mock.calls[0]![0];
+    expect(request.renderer.features.temporalAa).toBe(false);
+    expect(request.renderer.features.contactShadows).toBe(false);
+    expect(resolvePbrMsaaSampleCount(request.renderer.msaaSampleCount)).toBe(4);
+    expect(request.view.postProcess.bloom).toBe(enabled);
+    expect(request.view.postProcess.ambientOcclusion).toBe(enabled);
+  });
+
+  it("keeps MSAA4 in direct author display for an opaque independent packet", async () => {
+    const packet = { geometries: [], materials: [{ id: "solid", alphaMode: "OPAQUE" }], instances: [] } as unknown as RenderPacket;
+    const f = setup(undefined, async () => packet);
+    Object.assign(f.viewer, { usesAuthorPostProcessing: () => false });
+    await activate(f.bridge);
+    expect(f.create.mock.calls[0]![0].view).toMatchObject({ authorDirectDisplay: true });
+    expect(resolvePbrMsaaSampleCount(f.create.mock.calls[0]![0].renderer.msaaSampleCount)).toBe(4);
+    expect(f.projectionOptions).toHaveLength(0);
   });
 
   it("declares the a2c capability gate and pins MSAA4 when the scene requests alpha-to-coverage", async () => {
@@ -428,6 +581,25 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     expect(source.snapshot().fps).toBeLessThanOrEqual(62.5);
   });
 
+  it("allows temporal convergence to finish across unchanged author notifications", async () => {
+    const packet = { geometries: [], materials: [], instances: [] } as RenderPacket;
+    const f = setup(undefined, async () => packet);
+    let revision = 1;
+    f.viewer.getRenderDemandDiagnostics = () => ({ invalidationRevision: revision, intrinsicActive: false }) as ReturnType<ViewerEngine["getRenderDemandDiagnostics"]>;
+    await activate(f.bridge);
+    (f.first as unknown as { projection?: unknown }).projection = undefined;
+    f.first.render.mockClear();
+    f.scene.background = new THREE.Color("#234567");
+    revision++;
+    for (const notify of authorFrames) notify();
+    await microtasks();
+    for (let index = 0; index < 20; index++) await frame();
+    expect(f.first.render.mock.calls.length).toBeGreaterThan(10);
+    const completed = f.first.render.mock.calls.length;
+    for (let index = 0; index < 4; index++) await frame();
+    expect(f.first.render).toHaveBeenCalledTimes(completed);
+  });
+
   it("enables author chunk staging and renders its captured demand camera without advancing author state", async () => {
     const f = setup(); await activate(f.bridge);
     expect(f.create.mock.calls[0]![0].authorChunks).toBe(true);
@@ -439,6 +611,20 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     expect(f.first.render.mock.calls[0]![0]).toBe(args[3]);
     expect(f.first.render.mock.calls.at(-1)![0]).toBe(args[3]);
     expect(f.bridge.activeBackend).toBe("webgpu");
+  });
+
+  it("refreshes authored lighting during a continuous camera gesture when scene revision changes", async () => {
+    const f = setup(); let revision = 1;
+    Object.assign(f.viewer, { getRenderDemandDiagnostics: () => ({ invalidationRevision: revision }) });
+    const light = new THREE.AmbientLight(0xffffff, 1); light.name = "authored-ambient"; f.scene.add(light);
+    await activate(f.bridge); f.first.render.mockClear();
+    f.camera.position.x = 1; for (const notify of authorFrames) notify(); await microtasks();
+    const firstView = f.first.render.mock.calls.at(-1)![0] as Parameters<typeof renderViewFingerprint>[0];
+    expect(firstView.lights?.ambient?.[0]?.intensity).toBe(1);
+    light.intensity = 3; revision++; f.camera.position.x = 2;
+    for (const notify of authorFrames) notify(); await microtasks();
+    const latest = f.first.render.mock.calls.at(-1)![0] as Parameters<typeof renderViewFingerprint>[0];
+    expect(latest.eye[0]).toBe(2); expect(latest.lights?.ambient?.[0]?.intensity).toBe(3);
   });
 
   it("renders camera-only frames without scene sync and performs one trailing correctness sync", async () => {
@@ -491,23 +677,42 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     expect(frames.size).toBe(0);
   });
 
-  it("submits the latest camera on every author frame, releasing the in-flight slot on submit", async () => {
+  it("bounds a thousand camera inputs while GPU completion is pending and replays the newest pose", async () => {
     const f = setup(); await activate(f.bridge);
-    // GPU 完成回调挂起:相机帧的呈现节奏必须跟随作者帧,而不是 vsync 级的
-    // queue.onSubmittedWorkDone(Chrome 实测滞后 2-3 帧,会让提交限流到每 2 帧
-    // 一次)。提交即释放名额,每个作者帧都呈现当时最新的相机。
     const fence = deferred<void>();
     f.first.queueDone.mockReset().mockReturnValue(fence.promise);
     f.first.render.mockClear();
-    for (let x = 1; x <= 5; x++) {
+    for (let x = 1; x <= 1000; x++) {
       f.camera.position.x = x;
       for (const notify of authorFrames) notify();
       await microtasks();
     }
-    expect(f.first.render).toHaveBeenCalledTimes(5);
-    expect(f.first.render.mock.calls.at(-1)![0]).toMatchObject({ eye: [5, 0, 0] });
-    expect(f.bridge.diagnostics?.cameraFlow).toMatchObject({ inFlight: 0, maxInFlight: 1,
-      submitted: 5, coalesced: 0, pendingLatest: false, limit: 2 });
+    expect(f.first.render).toHaveBeenCalledTimes(2);
+    expect(f.bridge.diagnostics?.cameraFlow).toMatchObject({ inFlight: 2, maxInFlight: 2,
+      coalesced: 998, pendingLatest: true, limit: 2 });
+    fence.resolve(); await microtasks();
+    expect(f.first.render).toHaveBeenCalledTimes(3);
+    expect(f.first.render.mock.calls.at(-1)![0]).toMatchObject({ eye: [1000, 0, 0] });
+    expect(f.bridge.diagnostics?.cameraFlow).toMatchObject({ inFlight: 0, pendingLatest: false });
+  });
+
+  it("discards a pending camera view when its backend is switched away", async () => {
+    const f = setup(); await activate(f.bridge);
+    const completion = deferred<void>(); f.first.queueDone.mockReturnValue(completion.promise);
+    f.first.render.mockClear();
+    for (let x = 1; x <= 3; x++) { f.camera.position.x = x; for (const notify of authorFrames) notify(); await microtasks(); }
+    expect(f.first.render).toHaveBeenCalledTimes(2);
+    const switching = f.bridge.switchTo("webgl"); await frame(); await switching;
+    completion.resolve(); await microtasks();
+    expect(f.first.render).toHaveBeenCalledTimes(2); expect(f.bridge.activeBackend).toBe("webgl");
+  });
+
+  it("returns to the author renderer once when pending camera completion rejects", async () => {
+    const f = setup(); await activate(f.bridge);
+    const completion = deferred<void>(); f.first.queueDone.mockReturnValue(completion.promise);
+    for (let x = 1; x <= 3; x++) { f.camera.position.x = x; for (const notify of authorFrames) notify(); await microtasks(); }
+    completion.reject(new Error("GPU queue lost")); await microtasks();
+    expect(f.failure).toHaveBeenCalledOnce(); expect(f.bridge.activeBackend).toBe("webgl");
   });
 
   it("tracks the authored GI switch through the published Deep backend lifecycle", async () => {

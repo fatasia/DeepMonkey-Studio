@@ -1,6 +1,7 @@
 import type { PbrFrameUniformView } from "./pbrFrameUniforms.js";
 import { resolvePbrCameraProjection } from "./pbrFrameUniforms.js";
 import { lookAt } from "./cameraMath.js";
+import { PBR_DISPLAY_COLOR_WGSL } from "./pbrDisplayColorWgsl.js";
 
 export interface PanoramaBackground {
   readonly intensity?: number;
@@ -37,12 +38,16 @@ export function packPanoramaBackground(view: PbrFrameUniformView, settings: Pano
     camera[1]!, camera[5]!, camera[9]!, tanY,
     -camera[2]!, -camera[6]!, -camera[10]!, settings.intensity ?? 1]);
   for (let column = 0; column < 3; column++) data.set(r.slice(column * 3, column * 3 + 3), 12 + column * 4);
+  if (view.authorDirectDisplay) {
+    // Reuse the mat3 alignment padding; retain the original 96-byte ABI.
+    data[15] = view.exposure; data[19] = 1; data[23] = settings.toneMapped === false ? 0 : 1;
+  }
   if (!data.every(Number.isFinite)) throw new RangeError("Panorama parameters exceed Float32.");
   return data;
 }
 
-export const PBR_PANORAMA_WGSL = /* wgsl */ `
-struct Background { right: vec4f, up: vec4f, forward: vec4f, rotation: mat3x3f };
+export const PBR_PANORAMA_WGSL = PBR_DISPLAY_COLOR_WGSL + /* wgsl */ `
+struct Background { right: vec4f, up: vec4f, forward: vec4f, rotation0: vec4f, rotation1: vec4f, rotation2: vec4f };
 @group(0) @binding(0) var<uniform> settings: Background;
 @group(0) @binding(1) var panorama: texture_2d<f32>;
 @group(0) @binding(2) var panoramaSampler: sampler;
@@ -54,10 +59,14 @@ struct Vertex { @builtin(position) position: vec4f, @location(0) ndc: vec2f };
 fn panoramaColor(ndc: vec2f) -> vec4f {
   let ray = normalize(settings.forward.xyz + settings.right.xyz * ndc.x * settings.right.w
     + settings.up.xyz * ndc.y * settings.up.w);
-  let direction = normalize(settings.rotation * ray);
+  let direction = normalize(mat3x3f(settings.rotation0.xyz, settings.rotation1.xyz, settings.rotation2.xyz) * ray);
   let uv = vec2f(atan2(direction.z, direction.x) / 6.283185307179586 + 0.5,
     acos(clamp(direction.y, -1.0, 1.0)) / 3.141592653589793);
-  return vec4f(textureSampleLevel(panorama, panoramaSampler, uv, 0.0).rgb * settings.forward.w, 1.0);
+  let color = textureSampleLevel(panorama, panoramaSampler, uv, 0.0).rgb * settings.forward.w;
+  if (settings.rotation1.w > 0.5 && settings.rotation2.w > 0.5) {
+    return vec4f(deepLinearToSrgb(deepThreeAcesFit(color, settings.rotation0.w)), 1.0);
+  }
+  return vec4f(color, 1.0);
 }
 @fragment fn color(v: Vertex) -> @location(0) vec4f { return panoramaColor(v.ndc); }
 fn linearToSrgb(value: vec3f) -> vec3f {

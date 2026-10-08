@@ -145,6 +145,7 @@ describe("probe scene radiance producer", () => {
     const deformed = { ...planePacket(), deformation: { revision: 1 } } as unknown as RenderPacket;
     expect(() => producer.syncScene(deformed)).toThrow(/deform/i);
     expect(producer.sceneUnavailableReason).toMatch(/deform/i);
+    expect(producer.captureUnavailableReason).toMatch(/undeformed geometry snapshot/);
     producer.syncLighting(sunlit);
     expect(() => producer.encodeSourceRadiance(
       captureContext(f.device, 2, updates) as never)).toThrow(/undeformed geometry snapshot/);
@@ -162,6 +163,7 @@ describe("probe scene radiance producer", () => {
     expect(() => producer.encodeSourceRadiance(
       captureContext(f.device, 2, updates) as never)).toThrow(/real radiance source/);
     producer.syncLighting({ ambient: [0.2, 0.2, 0.2] });
+    expect(producer.captureUnavailableReason).toBeUndefined();
     producer.encodeSourceRadiance(captureContext(f.device, 3, updates) as never);
     expect(f.encoders.at(-1)![0]!.dispatch).toEqual([[1]]);
   });

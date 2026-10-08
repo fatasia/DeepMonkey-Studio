@@ -59,7 +59,7 @@ export async function createPbrPipelineSet(session: DeviceSession, lightingLayou
     options.advancedMaterials === true ? 1 : 0, mainSampleCount, features.rayTracedShadows ? 1 : 0,
     // B1 Brief-VSM 变体化(2026-10-05):shadowMode 进集合身份 —— 主 shader 保留虚拟
     // 采样库(sceneShaderVirtualShadows 家族)与否是模块文本/管线指纹的分野,两档不得共享。
-    options.shadowMode === "virtual" ? 1 : 0].join("/");
+    options.shadowMode === "virtual" ? 1 : 0, options.pipelines?.firstFrameMainKeys === undefined ? 0 : 1].join("/");
   const virtualShadowPages = options.shadowMode === "virtual";
   const existing = byVariant.get(key);
   if (existing) return existing;
@@ -76,6 +76,8 @@ async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBi
   textureArrays: boolean, layeredMaterials: boolean, advancedMaterials = false,
   mainSampleCount: 1 | 4 = 1, rayTracedShadowFeature = false, virtualShadowPages = false) {
   const firstFrameMainKeys = options.pipelines?.firstFrameMainKeys;
+  const deformationFirstFrameMainKeys = options.pipelines?.deformationFirstFrameMainKeys ?? firstFrameMainKeys;
+  const deformationSubset = deformationFirstFrameMainKeys === undefined ? {} : { firstFrameMainKeys: deformationFirstFrameMainKeys, onDemandMain: true };
   // AA-M1:mainSampleCount 必须无条件下发 —— pipelines.ts 对 undefined 的默认已从 1
   // 改为请求常量 4,省略会把 1x 回退渲染器静默升回 4x 管线(与 1x 目标失配)。
   // M2 光追阴影:RT 是管线集合身份的一部分(主 shader 变体 + group(2) 第 4 条 layout);
@@ -86,19 +88,32 @@ async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBi
   const virtualShadowOption = virtualShadowPages ? { virtualShadowPages: true } : {};
   const buildOptions = (firstFrameMainKeys === undefined && !layeredMaterials && !advancedMaterials)
     ? { mainSampleCount, ...virtualShadowOption, ...(rayTracedShadows ? { rayTracedShadows: true } : {}) }
-    : { ...(firstFrameMainKeys === undefined ? {} : { firstFrameMainKeys }),
+    : { ...(firstFrameMainKeys === undefined ? {} : { firstFrameMainKeys, onDemandMain: true }),
       ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}),
       ...virtualShadowOption,
       ...(rayTracedShadows ? { rayTracedShadows: true } : {}),
       mainSampleCount };
   const wantsDeformation = options.deformation === true;
   const deferDeformation = wantsDeformation && options.pipelines?.deferDeformation === true;
-  const [fallbackBuild, arrayBuild] = await Promise.all([
+  const buildDeformation = () => Promise.all([
+    createPipelinesBuild(session.device, session.format, lightingLayout, true, false, oneCascade,
+      { deformation: true, ...(layeredMaterials ? { layeredMaterials: true } : {}),
+        ...(advancedMaterials ? { advancedMaterials: true } : {}), ...deformationSubset, ...virtualShadowOption,
+        ...(rayTracedShadows ? { rayTracedShadows: true } : {}), mainSampleCount }),
+    textureArrays ? createPipelinesBuild(session.device, session.format, lightingLayout, true, false, oneCascade,
+      { deformation: true, textureArrays: true, ...deformationSubset, ...virtualShadowOption,
+        ...(rayTracedShadows ? { rayTracedShadows: true } : {}), mainSampleCount }) : undefined,
+  ]);
+  const staticBuilds = Promise.all([
     createPipelinesBuild(session.device, session.format, lightingLayout, writeGeometry, directDisplay, oneCascade, buildOptions),
     textureArrays ? createPipelinesBuild(session.device, session.format, lightingLayout, writeGeometry,
-      directDisplay, oneCascade, { ...(firstFrameMainKeys === undefined ? {} : { firstFrameMainKeys }), textureArrays: true,
+      directDisplay, oneCascade, { ...(firstFrameMainKeys === undefined ? {} : { firstFrameMainKeys, onDemandMain: true }), textureArrays: true,
       ...(rayTracedShadows ? { rayTracedShadows: true } : {}), mainSampleCount }) : undefined,
   ]);
+  // 两个 shader module 也同时开始编译；bootstrap scope 覆盖全部关键错误。
+  const eagerDeformation = wantsDeformation && !deferDeformation ? buildDeformation() : undefined;
+  void eagerDeformation?.catch(() => { /* 主 bootstrap 等待方处理拒绝。 */ });
+  const [fallbackBuild, arrayBuild] = await staticBuilds;
   const criticalReady = Promise.all([fallbackBuild.criticalReady, ...(arrayBuild ? [arrayBuild.criticalReady] : [])])
     .then(() => undefined);
   const ready = Promise.all([fallbackBuild.ready, ...(arrayBuild ? [arrayBuild.ready] : [])])
@@ -112,9 +127,10 @@ async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBi
   };
   const pipelines = mergeSelected(arrayBuild, fallbackBuild);
   const deformationPipelines = (selected: PipelinesBuild | undefined,
-    fallback: PipelinesBuild | undefined): Promise<Pipelines> | undefined => {
+    fallback: PipelinesBuild | undefined, critical = false): Promise<Pipelines> | undefined => {
     if (!selected && !fallback) return undefined;
-    const merged = Promise.all([selected?.ready, fallback?.ready].filter((value): value is Promise<void> => value !== undefined))
+    const merged = Promise.all([critical ? selected?.criticalReady : selected?.ready,
+      critical ? fallback?.criticalReady : fallback?.ready].filter((value): value is Promise<void> => value !== undefined))
       .then(() => mergeSelected(selected, (fallback ?? selected)!));
     void merged.catch(() => { /* 由等待方（packet 门禁或 bootstrap）处置 */ });
     return merged;
@@ -127,55 +143,48 @@ async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBi
   });
   // 非延迟模式：变形变体与其他变体同时开始创建（旧语义），set.ready 覆盖它们。
   if (!deferDeformation && wantsDeformation) {
-    const [deformationFallbackBuild, deformationArrayBuild] = await Promise.all([
-      createPipelinesBuild(session.device, session.format, lightingLayout, true, false, oneCascade,
-        { deformation: true, ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}),
-          ...virtualShadowOption,
-          ...(rayTracedShadows ? { rayTracedShadows: true } : {}), mainSampleCount }),
-      wantsDeformation && textureArrays ? createPipelinesBuild(session.device, session.format, lightingLayout,
-        true, false, oneCascade, { deformation: true, textureArrays: true,
-        ...virtualShadowOption,
-        ...(rayTracedShadows ? { rayTracedShadows: true } : {}), mainSampleCount }) : undefined,
-    ]);
-    const deformation = deformationPipelines(deformationArrayBuild, deformationFallbackBuild)!;
+    const [deformationFallbackBuild, deformationArrayBuild] = await eagerDeformation!;
+    const deformation = deformationPipelines(deformationArrayBuild, deformationFallbackBuild, deformationFirstFrameMainKeys !== undefined)!;
     return {
       ...buildSet(fallbackBuild),
+      criticalReady: Promise.all([criticalReady, deformation]).then(() => undefined),
+      criticalFingerprints: Object.freeze([fallbackBuild, arrayBuild, deformationFallbackBuild, deformationArrayBuild]
+        .flatMap(build => build?.criticalFingerprints ?? [])),
       ready: Promise.all([fallbackBuild.ready, ...(arrayBuild ? [arrayBuild.ready] : []),
         deformationFallbackBuild.ready, ...(deformationArrayBuild ? [deformationArrayBuild.ready] : [])]).then(() => undefined),
-      release: () => { fallbackBuild.releaseDeferredQueues(); deformationFallbackBuild.releaseDeferredQueues(); },
+      release: () => { fallbackBuild.releaseDeferredQueues(); arrayBuild?.releaseDeferredQueues();
+        deformationFallbackBuild.releaseDeferredQueues(); deformationArrayBuild?.releaseDeferredQueues(); },
       deformation,
     };
   }
-  // 延迟模式：变形变体与背景 main 变体共用同一放行门（宿主在首帧验证后调用
-  // release）。startDeformation 立即返回就绪 promise，首次 release 后才开始创建，
-  // 并在独立校验作用域内拦截变形编译错误。
+  // 延迟模式：实际变形先等关键材质子集；背景变体保留首帧后的放行门。
+  // 未提供首帧键的 SDK 保留全量等待合同，独立作用域检查关键编译错误。
   if (deferDeformation) {
     let releaseDeferredQueues: (() => void) | undefined;
     const releaseGate = new Promise<void>(resolve => { releaseDeferredQueues = resolve; });
+    let backgroundReleased = false;
+    const deformationBuilds: PipelinesBuild[] = [];
     let started: Promise<Pipelines> | undefined;
     return {
       ...buildSet(fallbackBuild),
-      release: () => { fallbackBuild.releaseDeferredQueues(); releaseDeferredQueues?.(); },
+      release: () => { backgroundReleased = true; fallbackBuild.releaseDeferredQueues();
+        arrayBuild?.releaseDeferredQueues(); releaseDeferredQueues?.();
+        for (const build of deformationBuilds) build.releaseDeferredQueues(); },
       startDeformation: () => started ??= (async () => {
-        await releaseGate;
+        if (firstFrameMainKeys === undefined) await releaseGate;
         session.device.pushErrorScope("validation");
+        let validationOpen = true;
         try {
-          const [deformationFallbackBuild, deformationArrayBuild] = await Promise.all([
-            createPipelinesBuild(session.device, session.format, lightingLayout, true, false, oneCascade,
-              { deformation: true, ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}),
-                ...virtualShadowOption,
-                ...(rayTracedShadows ? { rayTracedShadows: true } : {}), mainSampleCount }),
-            textureArrays ? createPipelinesBuild(session.device, session.format, lightingLayout,
-              true, false, oneCascade, { deformation: true, textureArrays: true,
-              ...virtualShadowOption,
-              ...(rayTracedShadows ? { rayTracedShadows: true } : {}), mainSampleCount }) : undefined,
-          ]);
-          const merged = await deformationPipelines(deformationArrayBuild, deformationFallbackBuild)!;
+          const [deformationFallbackBuild, deformationArrayBuild] = await buildDeformation();
+          deformationBuilds.push(deformationFallbackBuild, ...(deformationArrayBuild ? [deformationArrayBuild] : []));
+          const merged = await deformationPipelines(deformationArrayBuild, deformationFallbackBuild, deformationFirstFrameMainKeys !== undefined)!;
           const deferredError = await session.device.popErrorScope();
+          validationOpen = false;
           if (deferredError) throw new Error(`Deferred deformation pipelines failed validation: ${deferredError.message}`);
+          if (backgroundReleased) for (const build of deformationBuilds) build.releaseDeferredQueues();
           return merged;
         } catch (error) {
-          try { await session.device.popErrorScope(); } catch { /* device loss owns diagnostics */ }
+          if (validationOpen) try { await session.device.popErrorScope(); } catch { /* device loss owns diagnostics */ }
           throw error;
         }
       })(),

@@ -10,7 +10,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function fixture() {
+function fixture(staticPipelines?: Pipelines) {
   const owned = new Set<GPUBuffer>(), allocated: GPUBuffer[] = [], events: string[] = [];
   const checks: ReturnType<typeof deferred<GPUError | null>>[] = [];
   const device = { limits: { maxBufferSize: 256 * 1024 * 1024 },
@@ -20,7 +20,7 @@ function fixture() {
     queue: { writeBuffer: vi.fn(() => { events.push("write"); }) } };
   const session = { state: "ready", device, own(buffer: GPUBuffer) { owned.add(buffer); return buffer; },
     release(buffer: GPUBuffer) { if (owned.delete(buffer)) buffer.destroy(); } };
-  const cache = new PacketBuffers(session as unknown as DeviceSession);
+  const cache = new PacketBuffers(session as unknown as DeviceSession, undefined, undefined, false, false, undefined, undefined, staticPipelines);
   const pass = { setPipeline: vi.fn(), setVertexBuffer: vi.fn(), setIndexBuffer: vi.fn(), drawIndexed: vi.fn() };
   const pipelines = { main: "main", shadow: "shadow",
     mainPipelines: new Map([
@@ -46,6 +46,33 @@ beforeEach(() => vi.stubGlobal("GPUBufferUsage", { VERTEX: 32, INDEX: 16, COPY_D
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("validated GPU packet publication", () => {
+  it("awaits the exact prepared material key before GPU staging and preserves the active packet on abort", async () => {
+    const ready = deferred<void>(), prepareMainKeys = vi.fn(() => ready.promise);
+    const f = fixture({ prepareMainKeys } as unknown as Pipelines), controller = new AbortController();
+    f.cache.set(packet()); const before = f.allocated.length;
+    const result = f.cache.setValidated(packet(1), controller.signal);
+    expect(prepareMainKeys).toHaveBeenCalledWith(["plain/depth/ccw"]);
+    expect(f.allocated).toHaveLength(before); expect(f.checks).toHaveLength(0);
+    expect(f.draw().triangles).toBe(1);
+    const rejected = expect(result).rejects.toMatchObject({ name: "AbortError" }); controller.abort(); await rejected;
+    ready.resolve(); await Promise.resolve(); expect(f.allocated).toHaveLength(before);
+    expect(f.draw().triangles).toBe(1);
+  });
+  it("reports a required material pipeline rejection without staging or replacing valid geometry", async () => {
+    const ready = deferred<void>(), prepareMainKeys = vi.fn(() => ready.promise);
+    const f = fixture({ prepareMainKeys } as unknown as Pipelines); f.cache.set(packet());
+    const result = f.cache.setValidated(packet(1)); const rejected = expect(result).rejects.toThrow("PSO compile failed");
+    ready.reject(new Error("PSO compile failed")); await rejected;
+    expect(f.checks).toHaveLength(0); expect(f.owned.size).toBe(4); expect(f.draw().triangles).toBe(1);
+  });
+  it("publishes a later material only after its real pipeline and GPU upload validation settle", async () => {
+    const ready = deferred<void>(), prepareMainKeys = vi.fn(() => ready.promise);
+    const f = fixture({ prepareMainKeys } as unknown as Pipelines); f.cache.set(packet());
+    const result = f.cache.setValidated(packet(1)); ready.resolve();
+    for (let index = 0; index < 12; index++) await Promise.resolve();
+    expect(f.checks).toHaveLength(3); expect(f.draw().triangles).toBe(1);
+    f.settle(); await result; expect(f.draw().triangles).toBe(2);
+  });
   it("closes all three scopes synchronously and publishes only after every result succeeds", async () => {
     const f = fixture(); f.cache.set(packet()); f.events.length = 0;
     const result = f.cache.setValidated(packet(1)); let settled = false;

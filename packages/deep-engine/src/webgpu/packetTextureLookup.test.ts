@@ -67,6 +67,17 @@ function lookupFor(texture = source(), level = 0): {
 }
 
 describe("createResidentPacketTextureLookup", () => {
+  it.each(["specular", "specularColor"] as const)("retains a resident %s dependency in the material closure", role => {
+    const texture = source(role, role), resident = handle(texture), previous = batch("specular-batch", resident);
+    const slot = { texture: texture.id, texCoord: 0 as const, uvTransform: [1, 0, 0, 0, 1, 0] as const };
+    const value = projection([{ ...previous, source: { ...previous.source,
+      textures: { emissiveStrength: 1, specularFactor: 1, [role]: slot } },
+      textures: [{ role, slot, texture: resident }] }],
+      new Map([[texture.id, texture]]), new Map([[texture.id, resident]]));
+    const lookup = createResidentPacketTextureLookup(value);
+    expect(lookup.get(texture.id)).toBe(resident);
+    expect(lookup.semanticMap().get(texture.id)).toBe(role);
+  });
   it("creates an empty structurally compatible lookup", () => {
     const lookup: PacketTextureLookup = createResidentPacketTextureLookup(
       projection([], new Map(), new Map()),

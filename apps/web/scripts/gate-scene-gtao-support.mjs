@@ -11,7 +11,7 @@ export async function prepareDeterministicSimulationCapture({ page, timeline, sh
     assert.equal(Number(await range.inputValue()), minute);
   };
   await seek(3);
-  const canvas = await page.locator(".viewport canvas").first().boundingBox();
+  const canvas = await page.locator('.viewport canvas:not([aria-hidden="true"])').first().boundingBox();
   const track = await timeline.boundingBox();
   const clip = { x: canvas.x, y: canvas.y + 190, width: canvas.width, height: track.y - canvas.y - 198 };
   assert.ok(clip.height > 100);
@@ -107,7 +107,7 @@ export async function inspectSimulationGtaoStability({ page, timeline, pixelDiff
     await page.getByRole("button", { name: "查看与分析", exact: true }).click();
     await page.getByRole("menuitem", { name: "环境与灯光", exact: true }).click();
     await panel.waitFor({ state: "hidden" });
-    const canvas = await page.locator(".viewport canvas").first().boundingBox();
+    const canvas = await page.locator('.viewport canvas:not([aria-hidden="true"])').first().boundingBox();
     const track = await timeline.boundingBox();
     const clip = { x: canvas.x, y: canvas.y + 190, width: canvas.width, height: track.y - canvas.y - 198 };
     assert.ok(clip.height > 100);
@@ -125,7 +125,7 @@ export async function inspectSimulationGtaoStability({ page, timeline, pixelDiff
         frames.push(difference);
       }
       if (index < 2) await writeFile(resolve(output, `gtao-${result.length}-${enabled}-frame-${index}.png`), png);
-      previous = pixels; boxes.push(await page.locator(".viewport canvas").first().boundingBox());
+      previous = pixels; boxes.push(await page.locator('.viewport canvas:not([aria-hidden="true"])').first().boundingBox());
     }
     await shot(`gtao-${result.length}-${enabled}-spatial`);
     result.push({ enabled, initial, postDisabled, clip, frames, boxes });

@@ -1,6 +1,7 @@
 import type { TextureSampler, TextureSemantic } from "../textures/decodedTexture.js";
 import { TextureDataReader } from "./textureDataReader.js";
 import { decodeImageDataUri } from "./textureDataUri.js";
+import { KHR_MATERIALS_SPECULAR, readGltfSpecular, withoutSpecular } from "./materialSpecular.js";
 import {
   DOCUMENT_SUPPORTED_EXTENSIONS, KHR_MATERIALS_EMISSIVE_STRENGTH, readEmissiveStrength, validateExtensionSets,
 } from "./materialExtensions.js";
@@ -13,6 +14,7 @@ const defaultSampler: Required<TextureSampler> = { addressModeU: "repeat", addre
   magFilter: "linear", minFilter: "linear", mipmapFilter: "linear", maxAnisotropy: 1 };
 
 export interface GltfTextureManifestOptions {
+  readonly specularMaterials?: boolean;
   readonly resourcePrefix?: string;
   readonly signal?: AbortSignal;
   /** 此 manifest 最多保留的编码图像总字节数。 */
@@ -125,7 +127,9 @@ export function extractGltfTextureManifest(json: unknown, buffers: readonly Uint
   noExtensions(document, "$"); noExtensions(asset, "asset");
   if (asset.version !== "2.0") unsupported("asset.version", "glTF versions other than 2.0");
   if (asset.minVersion !== undefined && asset.minVersion !== "2.0") unsupported("asset.minVersion", "newer minimum glTF versions");
-  const { used, required } = validateExtensionSets(document, DOCUMENT_SUPPORTED_EXTENSIONS);
+  const supported = options.specularMaterials === true
+    ? new Set([...DOCUMENT_SUPPORTED_EXTENSIONS, KHR_MATERIALS_SPECULAR]) : DOCUMENT_SUPPORTED_EXTENSIONS;
+  const { used, required } = validateExtensionSets(document, supported);
   const prefix = options.resourcePrefix === undefined ? "gltf" : options.resourcePrefix;
   if (typeof prefix !== "string" || !prefix.length || prefix.length > 256) invalid("options.resourcePrefix", "Expected a nonempty prefix of at most 256 characters.");
   const maxImageBytes = options.maxImageBytes ?? MAX_BYTES;
@@ -175,7 +179,8 @@ export function extractGltfTextureManifest(json: unknown, buffers: readonly Uint
   };
   const materials = list(document.materials, "materials", 16_383).map((value, materialIndex) => {
     const path = `materials[${materialIndex}]`, material = object(value, path);
-    const emissiveStrength = readEmissiveStrength(material, path, used);
+    const specular = options.specularMaterials === true ? readGltfSpecular(material, path, used) : undefined;
+    const emissiveStrength = readEmissiveStrength(specular ? withoutSpecular(material, path) : material, path, used);
     const pbr = object(material.pbrMetallicRoughness === undefined ? {} : material.pbrMetallicRoughness, `${path}.pbrMetallicRoughness`);
     noExtensions(pbr, `${path}.pbrMetallicRoughness`);
     const baseColorTexture = pbr.baseColorTexture === undefined ? undefined : textureSlot(pbr.baseColorTexture, `${path}.pbrMetallicRoughness.baseColorTexture`, "baseColor");
@@ -199,7 +204,14 @@ export function extractGltfTextureManifest(json: unknown, buffers: readonly Uint
     }
     const emissiveTexture = material.emissiveTexture === undefined ? undefined
       : textureSlot(material.emissiveTexture, `${path}.emissiveTexture`, "emissive");
+    const specularTexture = specular?.source.specularTexture === undefined ? undefined
+      : textureSlot(specular.source.specularTexture, `${specular.path}.specularTexture`, "specular");
+    const specularColorTexture = specular?.source.specularColorTexture === undefined ? undefined
+      : textureSlot(specular.source.specularColorTexture, `${specular.path}.specularColorTexture`, "specularColor");
     return { id: `${prefix}/material/${materialIndex}`, materialIndex, ...(baseColorTexture ? { baseColorTexture } : {}),
+      ...(specular && specular.factor !== 1 ? { specularFactor: specular.factor } : {}),
+      ...(specular && specular.color.some(value => value !== 1) ? { specularColorFactor: specular.color } : {}),
+      ...(specularTexture ? { specularTexture } : {}), ...(specularColorTexture ? { specularColorTexture } : {}),
       ...(metallicRoughnessTexture ? { metallicRoughnessTexture } : {}), ...(normalTexture ? { normalTexture } : {}),
       ...(occlusionTexture ? { occlusionTexture } : {}), ...(emissiveTexture ? { emissiveTexture } : {}),
       ...(emissiveStrength !== undefined ? { emissiveStrength } : {}) };
@@ -212,7 +224,8 @@ export function extractGltfTextureManifest(json: unknown, buffers: readonly Uint
       if (primitive.material === undefined) return [];
       const materialIndex = reference(materials, primitive.material, `${location}.material`), material = materials[materialIndex]!;
       const slots = [material.baseColorTexture, material.metallicRoughnessTexture, material.normalTexture,
-        material.occlusionTexture, material.emissiveTexture].filter((slot): slot is GltfTextureSlot => slot !== undefined);
+        material.occlusionTexture, material.emissiveTexture, material.specularTexture, material.specularColorTexture]
+        .filter((slot): slot is GltfTextureSlot => slot !== undefined);
       const attributes = object(primitive.attributes, `${location}.attributes`);
       let coordinateSets: (0 | 1)[];
       if (slots.length) {

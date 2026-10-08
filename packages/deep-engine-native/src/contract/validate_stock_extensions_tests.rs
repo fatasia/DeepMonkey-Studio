@@ -22,6 +22,8 @@ fn base_material() -> PbrMaterial {
         occlusion_texture: None,
         emissive_factor: None,
         emissive_texture: None,
+            specular_factor: None, specular_color_factor: None,
+            specular_texture: None, specular_color_texture: None,
         base_color_alpha: None,
         alpha_mode: None,
         alpha_cutoff: None,
@@ -67,7 +69,7 @@ fn stock_clearcoat_within_subset_passes() {
 }
 
 #[test]
-fn nonzero_anisotropy_and_transmission_are_rejected() {
+fn nonzero_anisotropy_is_rejected_and_screen_transmission_is_accepted() {
     let mut material = base_material();
     let mut params = extended(None, 0.0, 0.0);
     params.anisotropy = Some(LayerAnisotropyParams { strength: Some(0.4), rotation: Some(0.0) });
@@ -79,8 +81,8 @@ fn nonzero_anisotropy_and_transmission_are_rejected() {
     let mut params = extended(None, 0.0, 0.0);
     params.transmission = Some(LayerTransmissionParams { factor: Some(0.6) });
     material.extended_parameters = Some(params);
-    let error = validate_packet(&packet_of(material)).unwrap_err();
-    assert!(error.contains("transmission.factor"), "unexpected error: {error}");
+    assert_eq!(material.draw_alpha_mode(), super::AlphaMode::Blend);
+    validate_packet(&packet_of(material)).expect("screen transmission is consumed");
 }
 
 #[test]
@@ -221,5 +223,5 @@ fn wire_subset_roundtrip_packs_expected_bands() {
         uniform[MATERIAL_ADVANCED_BAND_FLOAT_OFFSET..MATERIAL_ADVANCED_BAND_FLOAT_OFFSET + 4],
         [0.35f32, 0.3, 0.25, 0.6]
     );
-    assert!(uniform[MATERIAL_ADVANCED_BAND_FLOAT_OFFSET + 4..].iter().all(|value| *value == 0.0));
+    assert!(uniform[MATERIAL_ADVANCED_BAND_FLOAT_OFFSET + 4..60].iter().all(|value| *value == 0.0));
 }

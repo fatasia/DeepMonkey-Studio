@@ -51,9 +51,9 @@ export function b4HlodClusterEnabled(): boolean {
 
 /**
  * G1 簇级微多边形槽位开关：默认关闭（作者链路帧时收益未过真机对照，不冒充默认
- * 体验）；`g1-cluster-lod=1` 显式开启后，宿主把作者包合并静态几何 bake 成簇级
- * DAG 随 create 下发，backend 在静态包发布成功后注入渲染器槽位（像素阈值选层 +
- * indirect RenderBundle 进默认 opaque pass）。注入失败仅记诊断，不打断渲染链。
+ * 体验）；`g1-cluster-lod=1` 显式开启后，渲染器逐 packet section 建立 DAG，
+ * 在原 PBR 材质管线内替换几何 indirect 绘制。属性丰富的面保留精确拓扑，
+ * 不支持的 section 保留普通绘制并披露原因。
  */
 export function g1ClusterLodEnabled(): boolean {
   const params = typeof location !== "undefined" && location.search

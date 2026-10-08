@@ -68,7 +68,7 @@ const step = (id, detail) => { report.steps.push({ id, detail }); console.log(` 
 
   const sceneEditorUrl = `${gate.origin}/studio/${encodeURIComponent(project.id)}/applications/${encodeURIComponent(application.metadata.id)}/scenes/${encodeURIComponent(scene.id)}`;
   await page.goto(sceneEditorUrl, { waitUntil: "networkidle", timeout: 90_000 });
-  await page.locator(".viewport canvas").waitFor();
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
   const uploadResponse = page.waitForResponse((candidate) => candidate.url().includes(`/api/projects/${project.id}/models?`) && candidate.request().method() === "POST");
   await page.locator('input[type="file"][accept*=".glb"]').setInputFiles(modelFixturePath);
   const uploadedModel = await uploadResponse.then((entry) => entry.json());

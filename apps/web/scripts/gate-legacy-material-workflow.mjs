@@ -14,7 +14,7 @@ const glbJson = bytes => JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(1
 const legacy = "KHR_materials_pbrSpecularGlossiness";
 const localSource = process.argv.includes("--local-source");
 async function restored(page) {
-  await page.locator(".viewport canvas").waitFor();
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
   await page.waitForFunction(() => !document.querySelector(".loading-overlay") && [...document.querySelectorAll(".viewport-status")].some(item => item.textContent.includes("已恢复")));
   await page.waitForTimeout(250);
 }
@@ -76,7 +76,7 @@ try {
       const created = await creating; assert.equal(created.status(), 201); const app = await created.json();
       const appPath = `/api/projects/${project.id}/applications/${app.metadata.id}`;
       await page.goto(`${gate.origin}/studio/${project.id}/applications/${app.metadata.id}/scenes/${app.scenes[0].id}`);
-      await page.locator(".viewport canvas").waitFor(); const autoSave = page.getByLabel("自动保存"); if (await autoSave.isChecked()) await autoSave.uncheck();
+      await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor(); const autoSave = page.getByLabel("自动保存"); if (await autoSave.isChecked()) await autoSave.uncheck();
       if (!await page.locator(".asset-row").count()) await page.getByRole("button", { name: "场景图层与编组", exact: true }).click();
       const row = page.locator(".asset-row").filter({ hasText: "兼容材质派生模型" });
       await row.locator(".asset-main").click(); await row.locator(".mini-button").first().waitFor(); await row.locator(".asset-main").dblclick();

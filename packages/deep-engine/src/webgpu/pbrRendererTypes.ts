@@ -49,6 +49,8 @@ export interface PbrPipelineBootstrapOptions {
   readonly firstFrameSubset?: boolean;
   /** 后端推导出的首帧 main 管线键（由 threeBridge 填充；plain/ccw 恒含）。 */
   readonly firstFrameMainKeys?: readonly string[];
+  /** 已知作者包的变形 main 键；缺省沿用 firstFrameMainKeys。 */
+  readonly deformationFirstFrameMainKeys?: readonly string[];
   /** 变形变体在 bootstrap 校验作用域关闭后才开始创建；含变形的包在 packet 边界
    * 等待其就绪，首个静态首帧不再为变形编译买单。 */
   readonly deferDeformation?: boolean;
@@ -68,10 +70,10 @@ export interface PbrRendererOptions {
   readonly resolutionScalePolicy?: import("../postprocess/resolutionScaler.js").ResolutionScalePolicy;
   readonly meshlets?: boolean;
   /**
-   * G1-S1 簇级微多边形绘制槽位（opt-in，缺省 false = 零行为变化）：开启后可经
-   * stageClusterLodScene 注入 bake DAG，默认帧 opaque pass 以 RenderBundle +
-   * drawIndexedIndirect 执行 GPU 屏幕误差选层前沿（1px 感知阈值）。仅 plain HDR
-   * 帧签名可执行；MRT/directDisplay 帧记录 sticky fallback 原因（不静默降级）。
+   * Cluster PBR replacement (opt-in): packet sections retain their material,
+   * texture, instance and motion streams. Unsupported sections draw normally.
+   * Attribute-rich topology stays exact; constant-normal plain surfaces simplify.
+   * stageClusterLodScene remains a separate position-only diagnostic interface.
    */
   readonly clusterLod?: boolean;
   /** Explicitly allocates GPU pose-stream pipelines; author support is negotiated separately. */
@@ -207,6 +209,7 @@ export interface FrameMetrics {
    * fallbackReason = fail-closed 原因（sticky，重 stage 恢复）。
    */
   readonly clusterLod?: import("./clusterLodRenderSlot.js").ClusterLodSlotMetrics;
+  readonly clusterLodProduction?: ReturnType<import("./packetClusterLodResources.js").PacketClusterLodResources["metrics"]>;
   /**
    * B3 RT 阴影自动选路遥测(features.rayTracedShadows + 场景已供给的帧出现):
    * channel = 本帧实际生效通道;cascade 帧附 reason(controller:* / 自适应档 / 滞回)。

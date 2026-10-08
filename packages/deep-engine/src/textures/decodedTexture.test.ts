@@ -39,9 +39,9 @@ describe("decoded RGBA8 texture contract", () => {
   it("accepts last-row padding while excluding it from owned data", () => {
     expect(prepareTextures([source({ bytesPerRow: 12, data: new Uint8Array(24) })])[0]!.byteLength).toBe(16);
   });
-  it.each(["baseColor", "metallicRoughness", "normal", "occlusion", "emissive"] as const)("assigns %s color space without changing encoded bytes", semantic => {
+  it.each(["baseColor", "metallicRoughness", "normal", "occlusion", "emissive", "specular", "specularColor"] as const)("assigns %s color space without changing encoded bytes", semantic => {
     const prepared = prepareTextures([source({ semantic })])[0]!;
-    expect(prepared.format).toBe(semantic === "baseColor" || semantic === "emissive" ? "rgba8unorm-srgb" : "rgba8unorm");
+    expect(prepared.format).toBe(semantic === "baseColor" || semantic === "emissive" || semantic === "specularColor" ? "rgba8unorm-srgb" : "rgba8unorm");
     expect(prepared.levels[0]!.data).toEqual(source().data);
   });
   it("preserves owned GPU block data and selects semantic-aware compressed formats", () => {

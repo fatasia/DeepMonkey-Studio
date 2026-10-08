@@ -6,7 +6,7 @@ function fixture() {
   const pixels = new Uint8ClampedArray(16).fill(128), getImageData = vi.fn(() => ({ data: pixels }));
   const canvas = { width: 2, height: 2, getContext: () => ({ getImageData }) };
   const texture = new THREE.CanvasTexture(canvas as unknown as HTMLCanvasElement); texture.colorSpace = THREE.SRGBColorSpace;
-  texture.magFilter = THREE.NearestFilter; texture.anisotropy = 1;
+  texture.magFilter = THREE.LinearFilter; texture.anisotropy = 1;
   const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
   const grid = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), material); grid.name = "helper:grid"; grid.renderOrder = -10;
   grid.rotation.x = -Math.PI / 2; grid.updateMatrixWorld(true);
@@ -23,6 +23,7 @@ describe("Studio fixed author grid projection", () => {
   it("invalidates same-version image/sampler changes and rejects unsupported dimensions or edited geometry", () => {
     const f = fixture(), first = f.read()!;
     f.texture.anisotropy = 4; expect(f.read()!.texture).not.toBe(first.texture);
+    expect(f.read()!.texture.sampler).toMatchObject({ minFilter: "linear", magFilter: "linear", mipmapFilter: "linear", maxAnisotropy: 4 });
     const second = f.read()!.texture;
     f.texture.image = { ...f.canvas } as unknown as HTMLCanvasElement; expect(f.read()!.texture).not.toBe(second);
     f.texture.image.width = 3; expect(() => f.read()).toThrow("尺寸"); f.texture.image.width = 2;
@@ -36,9 +37,11 @@ describe("Studio fixed author grid projection", () => {
     expect(f.grid.parent).toBe(parent);
   });
   it("rejects unsupported color paths, bad transforms, material drift and tainted pixels", () => {
-    const f = fixture(); expect(() => f.read(false)).toThrow("WebGL");
+    const f = fixture(); expect(f.read(false)?.authorDirectDisplay).toBe(true);
+    expect(f.read(true)?.authorDirectDisplay).toBeUndefined();
     f.grid.matrixWorld.elements[0] = NaN; expect(() => f.read()).toThrow("矩阵"); f.grid.updateMatrixWorld(true);
     f.material.depthWrite = true; expect(() => f.read()).toThrow("合同"); f.material.depthWrite = false;
+    f.texture.needsUpdate = true;
     f.getImageData.mockImplementationOnce(() => { throw new Error("tainted"); }); expect(() => f.read()).toThrow("tainted");
     expect(f.read()).toBeDefined();
   });

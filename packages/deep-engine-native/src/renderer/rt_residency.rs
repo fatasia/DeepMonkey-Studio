@@ -409,7 +409,7 @@ impl Renderer {
     }
 
     /// frame RT 槽绑定:仅在驻留与 RT 扩展 layout 同时就绪时存在。
-    fn rt_frame_bind_group_resource(
+    pub(super) fn rt_frame_bind_group_resource(
         &self,
         residency: &RtSceneResidency,
     ) -> Option<wgpu::BindGroup> {

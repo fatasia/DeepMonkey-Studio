@@ -34,7 +34,7 @@ try {
       const application = await (await created).json(); const scene = application.scenes[0];
       const appPath = `/api/projects/${project.id}/applications/${application.metadata.id}`;
       const scenePath = `${gate.origin}/studio/${project.id}/applications/${application.metadata.id}/scenes/${scene.id}`;
-      await page.goto(scenePath); await page.locator(".viewport canvas").waitFor();
+      await page.goto(scenePath); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
       const auto = page.getByLabel("自动保存"); if (await auto.isChecked()) await auto.uncheck();
       if (!await page.locator(".model-tree-item").count()) await page.getByRole("button", { name: "场景图层与编组", exact: true }).click();
       const tree = id => page.locator(`.app-shell:not(.app-shell-hidden) .model-tree-item[data-model-id="${id}"]`);

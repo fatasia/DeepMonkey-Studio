@@ -86,6 +86,12 @@
 }
 
 /* 目标输入：复用对话页 ai-composer-box 外框，执行方式/模型/运行收进框内工具栏。 */
+.industrial-agent-objective .ai-composer-tools {
+  flex-wrap: wrap;
+  overflow: visible;
+  row-gap: 6px;
+}
+
 .industrial-agent-objective textarea {
   min-height: 64px;
   max-height: 180px;

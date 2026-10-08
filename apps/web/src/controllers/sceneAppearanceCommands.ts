@@ -87,10 +87,10 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     setMessage(`天气已切换为${mode === "sunny" ? "晴天" : mode === "rain" ? "下雨" : "下雪"}`);
   }
 
-  function changeLighting(next: GlobalLightingState) {
-    setLighting(next);
+  function changeLighting(next: GlobalLightingState, previewOnly = false) {
+    if (!previewOnly) setLighting(next);
     dispatchEngineEditCommand(engine, globalLightingCommand(locale, next));
-    recordSceneEdit("更新场景灯光");
+    if (!previewOnly) recordSceneEdit("更新场景灯光");
   }
 
   function changeSceneEnvironment(next: SceneEnvironmentState) {
@@ -99,10 +99,10 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     recordSceneEdit("更新场景环境");
   }
 
-  function changePostProcessing(next: ScenePostProcessingState) {
-    setPostProcessing(next);
+  function changePostProcessing(next: ScenePostProcessingState, previewOnly = false) {
+    if (!previewOnly) setPostProcessing(next);
     engine?.setPostProcessing(next);
-    recordSceneEdit("更新后处理效果");
+    if (!previewOnly) recordSceneEdit("更新后处理效果");
   }
 
   function changePhysics(next: ScenePhysicsState) {
@@ -145,8 +145,12 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     }
   }
 
-  function updateLight(id: string, patch: Partial<SceneLightState>) {
-    changeLighting({ ...lighting, lights: (lighting.lights ?? []).map((light) => (light.id === id ? { ...light, ...patch } : light)) });
+  function updateLight(id: string, patch: Partial<SceneLightState>, previewOnly = false) {
+    const current = engine?.getGlobalLighting() ?? lighting;
+    if (!current.lights?.some(light => light.id === id)) return;
+    const next = { ...current, lights: current.lights.map(light => light.id === id ? { ...light, ...patch } : light) };
+    if (previewOnly) engine?.setGlobalLighting(next);
+    else changeLighting(next);
   }
 
   function addLight(type: SceneLightState["type"]) {
@@ -171,7 +175,7 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     setSelectedLightId(lighting.lights?.find((light) => light.id !== id)?.id ?? "");
   }
 
-  function updateSelectionMaterial(patch: SceneMaterialState) {
+  function updateSelectionMaterial(patch: SceneMaterialState, previewOnly = false) {
     if (!engine) return;
     const groupedIds = groupedObjectIds();
     if (groupedIds.length > 1) {
@@ -179,17 +183,17 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     } else {
       dispatchEngineEditCommand(engine, selectionMaterialCommand(locale, { modelId: selected?.id ?? "" }, patch));
     }
-    setRevision((value) => value + 1);
+    if (!previewOnly) setRevision((value) => value + 1);
   }
 
-  function updateSelectedEffects(patch: ModelEffectsPatch) {
+  function updateSelectedEffects(patch: ModelEffectsPatch, previewOnly = false) {
     if (!engine || !selected || !selectedEffects) return;
     const groupedIds = groupedObjectIds(true);
     for (const id of groupedIds) {
       dispatchEngineEditCommand(engine, modelEffectsCommand(locale, id,
         mergeModelEffectsPatch(engine.getModelEffects(id), patch)));
     }
-    setRevision((value) => value + 1);
+    if (!previewOnly) setRevision((value) => value + 1);
   }
 
   function updateSelectionColor(color: string) {

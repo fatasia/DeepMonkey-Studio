@@ -53,7 +53,7 @@ describe("F5 rejected brightness heuristic: arithmetic is not physical visibilit
   });
 
   it("keeps diffuse GI and the split-sum energy allocation; the directional gate is the only specular multiplier", () => {
-    expect(sceneShader).toContain("let irradiance = mix(environmentIrradiance, gi.rgb, gi.a);");
+    expect(sceneShader).toContain("let irradiance = mix(environmentIrradiance, gi.rgb * max(1.0 + deepDiffuse.constant.w, 0.0), gi.a);");
     expect(sceneShader).toContain("(1.0 - specularFraction) * (1.0 - metal) * base * irradiance * occlusion");
     expect(sceneShader).toContain("clamp(f0 * dfg.x + dfg.y, vec3f(0.0), vec3f(1.0)) * energyCompensation");
     // 被撤销的全域标量乘子/函数不得回归：

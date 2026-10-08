@@ -14,7 +14,7 @@ import { textureArrayMaterialTableLayoutEntries } from "./textureArrayMaterialTa
 import { sharedOutputPipeline } from "./pbrOutputPipelineCache.js";
 import { pipelineCompileCacheForDevice, renderPipelineFingerprint } from "./pipelineCache.js";
 import type { PipelineCompileRecord } from "./pipelineCache.js";
-import { PipelineWarmupQueue } from "./pipelineWarmup.js";
+import { pipelineWarmupQueueForDevice } from "./pipelineWarmup.js";
 import { browserLocalStorage, loadPipelineWarmupPlan, orderDeferredByWarmupPlan,
   persistPipelineWarmupPlanToBrowser, pipelineWarmupEntriesFromLedger } from "./pipelineCachePersistence.js";
 import { composeLayeredMaterialSceneShader } from "./pbrLayeredMaterialShader.js";
@@ -44,6 +44,8 @@ export interface Pipelines {
   /** solid/opaque/ccw 阴影管线。 */
   readonly shadow: GPURenderPipeline;
   readonly mainPipelines: ReadonlyMap<string, GPURenderPipeline>;
+  /** Internal packet admission for subset builds; returns only actual missing work. */
+  readonly prepareMainKeys?: (keys: readonly string[]) => Promise<void> | undefined;
   /** Opaque pipelines that tone-map directly into the presentation surface. */
   readonly displayPipelines: ReadonlyMap<string, GPURenderPipeline>;
   readonly displayDirectionalPipelines: ReadonlyMap<string, GPURenderPipeline>;
@@ -62,6 +64,8 @@ export interface Pipelines {
    *  16 sampled / 8 storage,恒挂会把主片元推到 17/10 超限)→ 虚拟档为 true,
    *  mainBindings 据此决定是否装配页表/atlas(真资源或占位)。缺省 = 级联档。 */
   readonly virtualFrameBindings?: boolean;
+  readonly sceneTransmissionBinding?: boolean;
+  readonly compactReflectionBindings?: boolean;
   readonly deformationPlainLayout?: GPUBindGroupLayout;
   /** Conventional D2 variant used by materials that cannot enter an array. */
   readonly textureArrayFallback?: Pipelines;
@@ -135,6 +139,8 @@ export interface PipelinesBuildOptions {
    * can settle without waiting for the full variant matrix. Shadow, display,
    * directional and output pipelines always stay in the critical scope. */
   readonly firstFrameMainKeys?: readonly string[];
+  /** Keep unused main variants uncompiled; validated packet admission requests later keys. */
+  readonly onDemandMain?: boolean;
 }
 
 export interface PipelinesBuild {
@@ -179,6 +185,8 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   // AA-M1:主 pass 采样数在构建期定死(渲染器构造期已按设备能力解析),undefined = 请求常量。
   const mainSampleCount = resolvePbrMsaaSampleCount(options.mainSampleCount);
   if (advancedMaterials && (layeredMaterials || textureArrays)) throw new Error("Advanced materials cannot combine with layered or texture-array pipelines.");
+  if (advancedMaterials && device.limits.maxSampledTexturesPerShaderStage < 16 + Number(rayTracedShadows) + Number(virtualShadowPages))
+    throw new Error("PBR capability advanced-materials/texture-limit: adapter cannot bind the selected specular and shadow profile.");
   if (layeredMaterials && textureArrays) throw new Error("Layered materials use the D2 material pipeline; array batches retain their existing profile.");
   if (layeredMaterials && device.limits.maxSampledTexturesPerShaderStage < LAYERED_MATERIAL_REQUIRED_TEXTURES)
     throw new Error("PBR capability layered-materials/texture-limit: requires 19 sampled textures.");
@@ -194,7 +202,7 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
    * while background variants are still compiling. */
   const track = (map: Map<string, GPURenderPipeline>, key: string,
     promise: Promise<GPURenderPipeline>): Promise<GPURenderPipeline> => {
-    void promise.then(pipeline => { map.set(key, pipeline); });
+    void promise.then(pipeline => { map.set(key, pipeline); }, () => { /* The admission/ready owner reports the original rejection. */ });
     return promise;
   };
   const poseEntries: GPUBindGroupLayoutEntry[] = deformation ? [11, 12].map(binding => ({
@@ -244,16 +252,21 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   markPipeline("shaders-validated");  const frameLayout = device.createBindGroupLayout({ entries: [
     { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
       buffer: { type: "uniform", minBindingSize: PBR_FRAME_UNIFORM_BYTES } },
-    { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "depth" } },
-    { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "comparison" } },
-    ...[3, 4].map(binding => ({ binding, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "cube" as const } })),
+    ...(!advancedMaterials ? [
+      { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "depth" as const } },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "comparison" as const } },
+    ] : []),
+    { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: advancedMaterials ? "cube-array" : "cube" } },
+    { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "cube" } },
     { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: {} },
     { binding: 6, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
     { binding: 7, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 64 } },
     { binding: 8, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 32 } },
-    ...[9, 10].map(binding => ({ binding, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "cube" as const } })),
+    ...(!advancedMaterials ? [9, 10].map(binding => ({ binding, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "cube" as const } })) : []),
     { binding: 11, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 128 } },
     ...virtualFrameEntries,
+    ...(advancedMaterials ? [{ binding: 15, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+      { binding: 16, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" as const, minBindingSize: 48 } }] : []),
   ] });
   const material = device.createBindGroupLayout({ entries: textureArrays
     ? [...textureArrayMaterialTableLayoutEntries(), ...poseEntries]
@@ -269,6 +282,12 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     { binding: 8, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
     { binding: 9, visibility: GPUShaderStage.FRAGMENT, texture: {} },
     { binding: 10, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+      ...(advancedMaterials ? [
+        { binding: 16, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 17, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        { binding: 18, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 19, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+      ] : []),
       ...poseEntries,
       ...(layeredMaterials ? layeredMaterialLayoutEntries() : []),
     ] });
@@ -436,7 +455,8 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   // 否则无人放水死锁(deferredMainReady 等 releaseGate,release 只由 backend 成功后调)。
   const pageShadowDeferred = !virtualShadowPages && firstFrameKeys !== undefined;
   const enqueuePageShadow = (key: string, create: () => Promise<GPURenderPipeline>) => {
-    if (pageShadowDeferred) { deferredPageShadowFactories.push({ key, create }); return; }
+    // A cascaded subset has no page executor; never prewarm its unreachable VSM pipelines.
+    if (pageShadowDeferred) return;
     pendingPageShadow.push(track(pageShadowPipelines, key, create()));
   };
   // 页矩形清屏管线(虚拟阴影专用;loadOp load 下每页重绘前把页矩形归位 far=1.0;
@@ -479,7 +499,29 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   // 否则 popErrorScope 会再次等待它们，首帧关键路径的收益归零。
   // C26:放行后背景变体经预热队列(并发上限 2)让路,不再无界并发压设备——
   // 单个变体失败不阻断其余变体,拒绝经由各自 promise 传入 ready。
-  const backgroundQueue = new PipelineWarmupQueue({ concurrency: 2 });
+  const backgroundQueue = pipelineWarmupQueueForDevice(device);
+  const mainRequests = new Map<string, Promise<GPURenderPipeline>>();
+  const prepareMainKeys = (keys: readonly string[]): Promise<void> | undefined => {
+    const pending: Promise<GPURenderPipeline>[] = [];
+    for (const key of new Set(keys)) {
+      if (mainPipelines.has(key)) continue;
+      const factory = mainFactories.find(candidate => candidate.key === key);
+      if (!factory) throw new Error(`Missing main pipeline variant: ${key}.`);
+      let work = mainRequests.get(key);
+      if (!work) {
+        work = track(mainPipelines, key, backgroundQueue.enqueue({
+          fingerprint: renderPipelineFingerprint([moduleCode], factory.descriptor),
+          label: factory.descriptor.label ?? key, priority: "first-frame", create: factory.create,
+        }));
+        mainRequests.set(key, work);
+        void work.catch(() => { if (mainRequests.get(key) === work) mainRequests.delete(key); });
+      }
+      pending.push(work);
+    }
+    if (!pending.length) return;
+    backgroundQueue.resume();
+    return Promise.all(pending).then(() => undefined);
+  };
   let releaseDeferredQueues: (() => void) | undefined;
   const releaseGate = new Promise<void>(resolve => { releaseDeferredQueues = resolve; });
   const deferredMainReady = criticalMainReady.then(async () => {
@@ -489,21 +531,25 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     // 最长编译最早起步);无计划/指纹未命中保持原序(fail-open,不抛)。
     const warmupStorage = browserLocalStorage();
     const warmupPlan = warmupStorage ? loadPipelineWarmupPlan(warmupStorage) : undefined;
-    const orderedDeferredMains = orderDeferredByWarmupPlan(deferredMains, warmupPlan,
+    const orderedDeferredMains = orderDeferredByWarmupPlan(options.onDemandMain ? [] : deferredMains, warmupPlan,
       ({ descriptor }) => renderPipelineFingerprint([moduleCode], descriptor));
     const pending = orderedDeferredMains.map(({ key, descriptor, create }) =>
       track(mainPipelines, key, backgroundQueue.enqueue({
         fingerprint: renderPipelineFingerprint([moduleCode], descriptor),
         label: descriptor.label ?? key, priority: "background", create,
       })));
-    backgroundQueue.resume();
     // 分级重上前置②:非虚拟档页管线(release 前零启动)在此补齐——不走预热队列
     // (仅 4 条,无排序需求),release 后并发创建即可。
     const pendingPages = deferredPageShadowFactories.map(({ key, create }) =>
-      track(pageShadowPipelines, key, create()));
+      track(pageShadowPipelines, key, backgroundQueue.enqueue({
+        fingerprint: `page/${key}`, label: `Deep virtual shadow page ${key}`, priority: "background", create,
+      })));
     // 分级重上:mask/authored shadow 15 变体同流补齐(就绪前 mask batch 走 solid 回退)。
     const pendingShadowVariants = deferredShadowFactories.map(({ key, create }) =>
-      track(shadowPipelines, key, create()));
+      track(shadowPipelines, key, backgroundQueue.enqueue({
+        fingerprint: `shadow/${key}`, label: `Deep shadow ${key}`, priority: "background", create,
+      })));
+    backgroundQueue.resume();
     const value = (await Promise.all(pending)).length;
     await Promise.all([...pendingPages, ...pendingShadowVariants]);
     markPipeline("main-ready");
@@ -530,11 +576,13 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     get main() { return mainPipelines.get(passMainKey)!; },
     get shadow() { return shadowPipelines.get(shadowPipelineKey("solid", "ccw"))!; },
     mainPipelines, displayPipelines, displayDirectionalPipelines, shadowPipelines, pageShadowPipelines,
+    ...(options.onDemandMain ? { prepareMainKeys } : {}),
     get output() { return outputPipeline!; },
     get outputShaderProvenance() { return outputProvenance; },
     materialLayout: { material, ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}) }, cascadedShadowLayout,
     rayTracedShadowMaskBinding: rayTracedShadows,
     ...(virtualShadowPages ? { virtualFrameBindings: true } : {}),
+    ...(advancedMaterials ? { sceneTransmissionBinding: true, compactReflectionBindings: true } : {}),
     ...(deformation ? { deformationPlainLayout: emptyMaterialLayout } : {}),
   };
   // 对象展开会立即求值访问器，条件可选字段必须用 defineProperty 挂 getter，

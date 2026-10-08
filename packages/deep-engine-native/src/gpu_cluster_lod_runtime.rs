@@ -443,6 +443,7 @@ impl ClusterLodGpuRuntime {
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         for slot in 0..plan.draw_count {
+            crate::benchmark_observer::note_draw();
             pass.draw_indexed_indirect(
                 &self.indirect_buffer,
                 slot as u64 * CLUSTER_LOD_INDIRECT_COMMAND_STRIDE_BYTES as u64,

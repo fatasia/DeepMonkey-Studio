@@ -20,13 +20,13 @@ import type { TlasPackedScene } from "./tlasLayout.js";
 
 const sha = (value: string): string => createHash("sha256").update(value).digest("hex");
 
-// 二反弹档 sha256 钉值(2026-10-06 切片落点;防未来静默漂移)。
+// 二反弹档 sha256 钉值(2026-10-07:二跳遮蔽从真实偏移后命中点发射)。
 const RAY_TRACE_CLOSEST_FRAME_SECOND_BOUNCE_F32_SHA256 =
-  "1c72015f95571340aa9b5297ddb1baceef4c1de367e4346b778446e1dd299e94";
+  "f6b8098258bbafa66d93b8ebb65ab54e3ddac891a4cb6bab436aade84fdfd025";
 const RAY_TRACE_CLOSEST_FRAME_SECOND_BOUNCE_F16_SHA256 =
-  "5d601742ae23d49cde4129963ebbee359789ca1bd4237f1ed46eaab6797809ad";
+  "6e66ce09bb3b45d64300bb5c84114801f8db76dc2fa0390dee60088c5174638b";
 const RT_SPECULAR_INDIRECTION_SECOND_BOUNCE_SHA256 =
-  "d0b4db318fe3f5b35b5edc56d077fe358e41bde18af36f1c124b20c4fb73c688";
+  "7e5c9d04c4c150b0ae149297e0efdd98c1280e4b4bdbf3520e96c7ea006ea98d";
 
 const baseParams: RtSpecularIndirectionCpuParams = {
   tanHalfFov: 0.6, aspect: 1.5, surfaceToLightWorld: [0.2, 0.8, 0.55],
@@ -57,6 +57,8 @@ describe("closest frame kernel second-bounce variant(二反弹档,保守单跳)"
       // 镜面反射方向(手动式,与首腿同式);第二跳 origin = 首命中点 + 反射方向×bias。
       expect(wgsl).toContain("let reflectDir2 = reflectDir - 2.0 * dot(reflectDir, hit.normal) * hit.normal;");
       expect(wgsl).toContain("let origin2 = hitPosition1 + reflectDir2 * params.biasAndPad.x;");
+      // t2 is measured from the biased ray origin; visibility must use that same hit position.
+      expect(wgsl).toContain("let hitPosition2 = origin2 + reflectDir2 * hit2.t;");
       // 第二遮蔽腿与首腿同式;miss/溢出 fail-closed 零能量。
       expect(wgsl).toContain("let found2 = traceTwoLevelClosest(origin2, reflectDir2, inv2, params.eyeAndMax.w,");
       expect(wgsl).toContain("visibility2 = select(1.0, 0.0, occluded2 || shadowOverflow2 != 0u);");
@@ -75,11 +77,11 @@ describe("indirection kernel second-bounce variant(二反弹累积)", () => {
     expect(emitRtSpecularIndirectionKernelWgsl()).toBe(emitRtSpecularIndirectionKernelWgsl({ secondBounce: false }));
     expect(RT_SPECULAR_INDIRECTION_SECOND_BOUNCE_BINDINGS).toHaveLength(10);
     expect(RT_SPECULAR_INDIRECTION_SECOND_BOUNCE_BINDINGS[8]).toEqual(
-      { binding: 8, name: "rtHitRecord2", type: "read-only-storage-texture" });
+      { binding: 8, name: "rtHitRecord2", type: "texture" });
     expect(RT_SPECULAR_INDIRECTION_SECOND_BOUNCE_BINDINGS[9]).toEqual(
-      { binding: 9, name: "bounceShading2", type: "read-only-storage-texture" });
-    expect(indirectionWgsl).toContain("@group(0) @binding(8) var rtHitRecord2: texture_storage_2d<rgba32float, read>;");
-    expect(indirectionWgsl).toContain("@group(0) @binding(9) var bounceShading2: texture_storage_2d<rgba32float, read>;");
+      { binding: 9, name: "bounceShading2", type: "texture" });
+    expect(indirectionWgsl).toContain("@group(0) @binding(8) var rtHitRecord2: texture_2d<f32>;");
+    expect(indirectionWgsl).toContain("@group(0) @binding(9) var bounceShading2: texture_2d<f32>;");
     // 累加式与 CPU 镜像同序:oneBounce += bounceAlbedo * ((direct2 + env) * albedo2)。
     expect(indirectionWgsl).toContain(
       "oneBounce = oneBounce + bounceAlbedo * ((direct2 + indirectionParams.envRadiance.rgb) * albedo2);");
@@ -157,7 +159,13 @@ describe("executor contracts(执行器 fail-fast)", () => {
       createBuffer: vi.fn((descriptor: { size: number; usage: number }) => (
         { size: descriptor.size, usage: descriptor.usage, destroy: vi.fn() })),
       createShaderModule: vi.fn(() => ({})),
-      createBindGroupLayout: vi.fn(() => ({})),
+      createBindGroupLayout: vi.fn((descriptor: { entries: GPUBindGroupLayoutEntry[] }) => {
+        // A device requested without raised limits permits four storage textures.
+        if (descriptor.entries.filter(entry => entry.storageTexture).length > 4) {
+          throw new Error("baseline storage texture limit exceeded");
+        }
+        return {};
+      }),
       createPipelineLayout: vi.fn(() => ({})),
       createComputePipeline: vi.fn(() => ({ getBindGroupLayout: () => ({}) })),
       createSampler: vi.fn(() => ({})),

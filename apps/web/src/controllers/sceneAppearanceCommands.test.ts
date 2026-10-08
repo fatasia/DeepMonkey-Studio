@@ -3,6 +3,49 @@ import { applyGroupedOrSelected } from "./sceneAppearanceDispatch";
 import { createSceneAppearanceCommands, mergeScenePhysicsBodyPatch } from "./sceneAppearanceCommands";
 import type { SceneEditorControllerContext } from "./sceneEditorControllerContext";
 
+describe("连续数值预览", () => {
+  it("merges light previews into live engine state and updates React only at commit", () => {
+    let lighting = { enabled: true, intensity: 1, lights: [
+      { id: "sun", type: "directional", name: "Sun", intensity: 1, color: "#fff", enabled: true },
+      { id: "fill", type: "point", name: "Fill", intensity: 2, color: "#fff", enabled: true },
+    ] };
+    const setLighting = vi.fn();
+    const recordSceneEdit = vi.fn();
+    const setGlobalLighting = vi.fn(next => { lighting = next; });
+    const context = { engine: { getGlobalLighting: () => lighting, setGlobalLighting }, lighting,
+      setLighting, recordSceneEdit, locale: "zh-CN" } as unknown as SceneEditorControllerContext;
+    const commands = createSceneAppearanceCommands(context, vi.fn());
+    commands.updateLight("sun", { intensity: 8 }, true);
+    commands.updateLight("fill", { intensity: 9 }, true);
+    commands.updateLight("sun", { intensity: 10 }, true);
+    expect(setLighting).not.toHaveBeenCalled();
+    expect(recordSceneEdit).not.toHaveBeenCalled();
+    commands.updateLight("sun", { intensity: 10 });
+    expect(setLighting).toHaveBeenCalledOnce();
+    expect(setLighting.mock.calls[0]![0].lights.map((light: { intensity: number }) => light.intensity)).toEqual([10, 9]);
+    expect(recordSceneEdit).toHaveBeenCalledOnce();
+    commands.updateLight("removed", { intensity: 5 });
+    expect(setLighting).toHaveBeenCalledOnce();
+  });
+
+  it("applies every effects preview without triggering global derived queries, then commits once", () => {
+    let effects = { intensity: 1, dissolve: 0, color: "#fff", outline: false, glow: false, xray: false,
+      scanline: false, heatmap: false, edgeLight: false };
+    const setModelEffects = vi.fn((_id, next) => { effects = next; });
+    const setRevision = vi.fn();
+    const context = { engine: { getModelEffects: () => effects, setModelEffects }, selected: { id: "equipment" },
+      selectedEffects: effects, sceneOrganizationSelection: new Set(["equipment"]), setRevision,
+      locale: "zh-CN" } as unknown as SceneEditorControllerContext;
+    const commands = createSceneAppearanceCommands(context, vi.fn());
+    for (let i = 0; i < 121; i++) commands.updateSelectedEffects({ intensity: i / 10 }, true);
+    expect(setModelEffects).toHaveBeenCalledTimes(121);
+    expect(setRevision).not.toHaveBeenCalled();
+    expect(effects.intensity).toBe(12);
+    commands.updateSelectedEffects({ intensity: 12 });
+    expect(setRevision).toHaveBeenCalledOnce();
+  });
+});
+
 describe("场景外观命令分派", () => {
   it("uses the current selection for a single object", () => {
     const applyObject = vi.fn();

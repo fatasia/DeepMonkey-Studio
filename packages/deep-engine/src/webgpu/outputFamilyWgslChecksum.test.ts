@@ -24,7 +24,8 @@ describe("J2-B2 output family single source", () => {
     // The original byte-preserving migration is recorded in 0a0b26fa.
     // B1 Brief-VSM(2026-10-03):deepPrimaryShadow 增 params2 虚拟档分支(级联档行为逐字节保持),
     // diff 见 docs/specs/ue-class-b1-vsm-implementation-20261003.md。
-    expect(hash(outputShader)).toBe("ea713797ed4d06b8c3b70b128dfe1a7f8f993015885b5e977f3cf5a713686366");
+    // Explicit author direct-display frames pass through; the default branch is unchanged.
+    expect(hash(outputShader)).toBe("daea7b30a1985934cb78a0fb873a06e42327cbda6355d9a2696288e7668fafd8");
     expect(hash(PBR_DIRECT_DISPLAY_WGSL)).toBe("0e3c468cf96ddd174dcdd25e953848b77a60f08db63997fbf33d2ed70d19a335");
   });
   it("keeps the default composition byte-identical when the M2 RT shadow branch is stripped", () => {

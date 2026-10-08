@@ -145,6 +145,36 @@ describe("StudioDeepWasmBridge viewport gesture takeover", () => {
     await bridge.switchTo("webgl");
   });
 
+  it.each([0, 2])("coalesces button %s samples into one native update, including immediate pan", async button => {
+    const runtime = fakeRuntime();
+    let state = { position: { x: 7, y: 2, z: 3 }, target: { x: 4, y: 0, z: 0 }, mode: "orbit" as const };
+    const continuous = vi.fn(); let now = 0;
+    vi.stubGlobal("performance", { now: () => now, mark: vi.fn() });
+    const { hostObject: hostStub, frame } = host({ setContinuousRender: continuous,
+      getCameraState: () => state, applyViewportCameraPose: pose => {
+        state = { ...state, position: { x: pose.eye[0], y: pose.eye[1], z: pose.eye[2] },
+          target: { x: pose.target[0], y: pose.target[1], z: pose.target[2] } };
+      } });
+    const bridge = new StudioDeepWasmBridge(hostStub, container(), { loadModule: async () => runtime.module,
+      compilePackage: async () => ({ bytes: new Uint8Array([1]) }), preparationTimeoutMs: 100 });
+    owned.push(bridge); await bridge.switchTo("wasm"); runtime.camera.mockClear();
+    const listeners = new Map<string, EventListener>(vi.mocked(createdCanvases[0]!.addEventListener).mock.calls.map(call => [call[0], call[1]]));
+    const down = { pointerId: 1, button, buttons: button === 2 ? 2 : 1, clientX: 100, clientY: 100, shiftKey: false,
+      pointerType: "mouse", preventDefault: () => undefined } as unknown as PointerEvent;
+    listeners.get("pointerdown")!(down);
+    for (let x = 101; x < 130; x++) listeners.get("pointermove")!({ ...down, clientX: x } as PointerEvent);
+    expect(runtime.camera).not.toHaveBeenCalled();
+    now += 16; frame(); expect(runtime.camera).toHaveBeenCalledOnce();
+    expect(state.position).not.toEqual({ x: 7, y: 2, z: 3 });
+    if (button === 2) expect(state.target).not.toEqual({ x: 4, y: 0, z: 0 });
+    listeners.get("pointerup")!(down);
+    for (let i = 0; i < 150; i++) { now += 16; frame(); }
+    if (button === 0) expect(runtime.camera.mock.calls.length).toBeGreaterThan(2);
+    else expect(runtime.camera).toHaveBeenCalledOnce();
+    expect(continuous).toHaveBeenLastCalledWith("deep-camera", false);
+    await bridge.switchTo("webgl"); expect(continuous).toHaveBeenLastCalledWith("deep-camera", false);
+  });
+
   it("degrades gracefully when the host declines the takeover", async () => {
     const runtime = fakeRuntime();
     const author = canvas() as unknown as HTMLCanvasElement;

@@ -140,7 +140,7 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         capability_id: "material-abi-192b",
         support: RendererCapabilitySupport::Degraded,
         reason: RendererCapabilityReasonCode::ReducedTier,
-        evidence: "mesh_abi::MATERIAL_UNIFORM_FLOATS=46(核心块 40 逐字节不变+扩展带 40..46;行型 MATERIAL_UNIFORM_ROW_FLOATS=60/240B,Web 240B advanced 布局同构,零带回退)",
+        evidence: "mesh_abi::MATERIAL_UNIFORM_FLOATS=46(核心块 40 逐字节不变+扩展带 40..46;行型 MATERIAL_UNIFORM_ROW_FLOATS=80/320B,Web 240B advanced 布局同构,零带回退)",
     },
     NativeCapabilitySelfCheck {
         capability_id: "gi-probe-directions",
@@ -361,13 +361,13 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         evidence: "pbr_layered.rs LAYERED_SURFACE_BLOCK_BYTES=304 逐字节镜像 TS 布局;求值响应级混合 CPU 参考;layered_*_gpu_tests",
     },
     // C9/native 接通(2026-10-06):清漆层叠单源求值 + 扩展带消费,factor=0/
-    // 字段缺席默认关(零带回退 stock 逐位不变);anisotropy/transmission 槽位
+    // 字段缺席默认关(零带回退 stock 逐位不变);anisotropy/active-layer transmission 槽位
     // fail-closed 拒绝非零,如实随证据声明。
     NativeCapabilitySelfCheck {
         capability_id: "material-clearcoat",
         support: RendererCapabilitySupport::Supported,
         reason: RendererCapabilityReasonCode::OptInDefaultOff,
-        evidence: "mesh_abi::MATERIAL_UNIFORM_FLOATS=46(核心块 40 逐字节不变+消费 Web 扩展带 40..46;行型 60 float/240B)+pbr_texture::prepare_material_uniform(扩展带 6 词=TS packExtendedParameterBlock 同序)+native_mesh_v1.wgsl native_extended_shade(单源 materialEvaluateCore.wgsl deepEvaluateExtendedMaterial 清漆层叠替换主方向光直射,与 I-C23 层路径共用;全零带回退 native_lit_response 旧包逐位不变,RT 入口同换)+material_extended_cpu(TS f64 镜像)+material_parity_tests(fixture material-native-parity-v1.json:f64 ≤1e-9/词 ≤2ulp/打包词位级)+renderer::material_extended_gpu_tests 真机腿(clearcoat/sheen/组合/零带位级控制);native 子集:anisotropy.strength/transmission.factor 非零由 contract::validate 拒绝",
+        evidence: "packages/deep-engine-native/src/mesh_abi.rs:320B row keeps the 240B prefix; pbr_texture seven slots and extended band 40..46; native_extended_shade shares clearcoat direct kernels. native_material_specular_v1.wgsl consumes F0/F90 plus linear strength alpha and sRGB color with independent UV0/UV1. native_material_transmission_v1.wgsl samples the current opaque HDR copy with source alpha retained. physical_material_gpu_tests actual DX12 device requested at sampled16 verifies stock/factor/color/alpha/UV1 and alpha1 red/blue interiors; anisotropy and active layered transmission remain rejected.",
     },
     // C9/native 保守子集接通(2026-10-06):advancedParameters 闭合域打开,
     // production mesh 路只消费 sheen(直射 Charlie lobe+直/间接能量补偿);
@@ -376,7 +376,7 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         capability_id: "material-advanced",
         support: RendererCapabilitySupport::Degraded,
         reason: RendererCapabilityReasonCode::ReducedTier,
-        evidence: "contract::types StockAdvancedParameters(闭合域与 TS 同构)+contract::validate validate_stock_extensions(native 子集:sheen 放行,iridescence.factor/volume.thickness 非零 fail-closed 拒绝;unlit 拒绝)+pbr_texture::prepare_material_uniform(advanced 带 48..52=sheen.rgb+roughness,TS packAdvancedParameterBlock 前 4 词同序位级)+native_mesh_v1.wgsl(deepAdvDCharlie/deepAdvVNeubelt/deepAdvIblSheen 与 Web materialAdvancedWgsl 同名同式;native_extended_shade 直射 Charlie lobe+能量补偿)+material_extended_cpu(TS materialAdvancedReference f64 镜像)+material_parity_tests(原语/能量对拍 fixture)+renderer::material_extended_gpu_tests 真机 sheen/组合/零带腿;如实降档:iridescence/volume 未接(contract 非零拒绝),clearcoat IBL 分量未接(直射替换为 T08 单源式,非 Web advanced 变体 coat-IBL 合成)",
+        evidence: "packages/deep-engine-native/src/contract/types.rs:StockAdvancedParameters and specular tuple; 320B row preserves sheen band 48..52 and appends specular UV/factors 60..80. Existing sheen GPU evidence remains; physical_material_gpu_tests adds actual specular and stock screen transmission. Shared Rust renderer/frame and transmission lifecycle feed Native/WASM. Nonzero iridescence/volume thickness and clearcoat indirect lobe remain unsupported; reduced-tier is retained.",
     },
     NativeCapabilitySelfCheck {
         capability_id: "local-shadow-abi-16",

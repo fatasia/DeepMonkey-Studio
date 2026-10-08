@@ -1,9 +1,10 @@
 /// <reference types="@webgpu/types" />
+import { assertOwnedSkinningInput } from "../packetPreparationOwnership.js";
 import type { DeviceSession } from "./deviceSession.js";
 import type { DeformationStaticUpload } from "./deformationStaticSources.js";
 import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.js";
 import { packJointPalette, prepareSkinningInput } from "./gpuSkinningPacking.js";
-import type { GpuSkinningResult, SkinningPalette, SkinningSource } from "./gpuSkinningTypes.js";
+import type { GpuSkinningResult, SkinningPalette, SkinningSource, PreparedSkinningInput } from "./gpuSkinningTypes.js";
 import { GPU_SKINNING_INPUT_STRIDE, GPU_SKINNING_JOINT_STRIDE, GPU_SKINNING_OUTPUT_STRIDE,
   GPU_SKINNING_WGSL, GPU_SKINNING_WORKGROUP_SIZE } from "./gpuSkinningWgsl.js";
 
@@ -46,7 +47,7 @@ export class GpuSkinner {
 
   get vertexCount(): number { return this.resources?.vertexCount ?? 0; }
 
-  setSource(source: SkinningSource, palette: SkinningPalette): boolean {
+  setSource(source: SkinningSource, palette: SkinningPalette, ownedPrepared?: PreparedSkinningInput): boolean {
     this.assertReady();
     const current = this.resources;
     if (current && this.staticUpload && source.revision !== current.source.revision) throw new Error("Shared skinning source lease cannot change revision.");
@@ -55,7 +56,8 @@ export class GpuSkinner {
       if (source !== current.source) throw new Error("Skinning source changed without a revision.");
       return this.updatePalette(palette);
     }
-    const prepared = prepareSkinningInput(source, palette), created: GPUBuffer[] = [], device = this.session.device;
+    if (ownedPrepared) assertOwnedSkinningInput(ownedPrepared, source, palette);
+    const prepared = ownedPrepared ?? prepareSkinningInput(source, palette), created: GPUBuffer[] = [], device = this.session.device;
     const hasTangents = prepared.tangents !== undefined, outputStride = hasTangents ? 48 : GPU_SKINNING_OUTPUT_STRIDE;
     const inputBytes = prepared.vertices.byteLength + (prepared.tangents?.byteLength ?? 0);
     const sizes = [inputBytes, prepared.vertexCount * outputStride, prepared.joints.byteLength];

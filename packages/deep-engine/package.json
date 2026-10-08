@@ -1,6 +1,6 @@
 {
   "name": "@bim-studio/deep-engine",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "WebGPU-first rendering, shader, scene, and compatibility foundations for Deep Monkey Studio",
   "license": "SEE LICENSE IN ../../LICENSE",
@@ -282,13 +282,15 @@
     "test:shadow-ray-gpu": "node scripts/shadowRayGpuTest.mjs",
     "test:reflection-ray-gpu": "node scripts/reflectionRayGpuTest.mjs"
   },
+  "dependencies": {
+    "fflate": "0.8.3"
+  },
   "devDependencies": {
     "@types/node": "^24.10.0",
     "@types/three": "0.186.0",
     "@webgpu/types": "0.1.72",
     "esbuild": "0.28.1",
     "fake-indexeddb": "6.2.4",
-    "fflate": "0.8.3",
     "three": "0.186.1",
     "three-mesh-bvh": "0.9.14",
     "typescript": "^5.9.3",

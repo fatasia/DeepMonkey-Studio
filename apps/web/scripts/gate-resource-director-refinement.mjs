@@ -102,7 +102,7 @@ try {
       assert.equal(await page.locator(".timeline-marker").count(), 1);
       const vector = page.locator(".timeline-frame-vector input").first();
       const before = await vector.inputValue();
-      const canvas = page.locator(".viewport canvas").first(); const rect = await canvas.boundingBox();
+      const canvas = page.locator('.viewport canvas:not([aria-hidden="true"])').first(); const rect = await canvas.boundingBox();
       await page.mouse.move(rect.x + rect.width * .45, rect.y + 110); await page.mouse.down();
       await page.mouse.move(rect.x + rect.width * .58, rect.y + 160, { steps: 12 }); await page.mouse.up();
       await page.waitForFunction(value => document.querySelector(".timeline-frame-vector input")?.value !== value, before);

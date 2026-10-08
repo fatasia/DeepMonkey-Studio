@@ -8,7 +8,11 @@ export function parseUniqueRuntimeJson(text: string): unknown {
     const char = text[index], top = stack[stack.length - 1];
     if (char === "\"") {
       const start = index;
-      for (index += 1; index < text.length; index += 1) {
+      const nextQuote = text.indexOf("\"", start + 1);
+      // Large canonical byte strings contain no escapes. Scan them with the engine's
+      // bounded native string operations instead of one JavaScript iteration per byte.
+      if (nextQuote - start > 65_536 && !text.slice(start + 1, nextQuote).includes("\\")) index = nextQuote;
+      else for (index += 1; index < text.length; index += 1) {
         if (text[index] === "\\") index += 1;
         else if (text[index] === "\"") break;
       }

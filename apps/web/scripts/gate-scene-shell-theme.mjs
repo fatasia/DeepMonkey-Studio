@@ -25,7 +25,7 @@ async function createScene(page, projectId) {
   // 从实际二维入口进入，让产品保存返回上下文；直接 goto 三维 URL 不等于二维往返。
   await page.goto(dashboardPath); await page.locator(".dashboard-workspace").waitFor();
   await page.getByRole("button", { name: "三维", exact: true }).click();
-  await page.waitForURL(scenePath); await page.locator(".viewport canvas").waitFor();
+  await page.waitForURL(scenePath); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
   const autoSave = page.getByLabel("自动保存"); if (await autoSave.isChecked()) await autoSave.uncheck();
   return { application, scenePath };
 }
@@ -36,7 +36,7 @@ async function inspectRow(page, tree, shot, entry) {
   const pause = tree.getByRole("button", { name: "暂停模型动画", exact: true });
   if (await pause.count()) await pause.click();
   await page.getByLabel("搜索构件", { exact: true }).click();
-  await page.locator(".viewport canvas").hover();
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').hover();
   const title = tree.locator(".asset-copy strong");
   entry.idle = await title.evaluate(node => ({ text: node.textContent, width: node.clientWidth, contentWidth: node.scrollWidth, controlWidth: node.closest("button").clientWidth, fullName: node.title }));
   assert.ok(entry.idle.controlWidth >= 100 && entry.idle.width >= Math.min(entry.idle.contentWidth, 90), `Idle asset title must not collapse to one character: ${JSON.stringify(entry.idle)}`);
@@ -56,7 +56,7 @@ async function inspectRow(page, tree, shot, entry) {
   });
   assert.ok(entry.hover.actionsContained);
   await shot("hover-actions");
-  await page.locator(".viewport canvas").hover();
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').hover();
   await row.locator(".asset-main").focus();
   for (const button of await optional.all()) assert.equal(await button.isVisible(), true);
   const focusNames = [];
@@ -185,7 +185,7 @@ async function runCase(theme, width) {
     await page.locator(".dashboard-scene-summary").getByText("1 个场景对象", { exact: true }).waitFor({ timeout: 5000 });
     await shot("2d-model-preserved");
     await inspectDashboardPrimary(page, shot, entry);
-    await page.getByRole("button", { name: "三维", exact: true }).click(); await page.locator(".viewport canvas").waitFor();
+    await page.getByRole("button", { name: "三维", exact: true }).click(); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
     await tree.getByRole("button", { name: "隐藏", exact: true }).waitFor();
     assert.deepEqual((await gate.json("GET", appPath)).scenes.find(scene => scene.id === expectedScene.id).models, expectedScene.models);
     assert.equal(page.url(), scenePath); await shot("mode-roundtrip");

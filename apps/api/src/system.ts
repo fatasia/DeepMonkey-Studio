@@ -125,6 +125,11 @@ export async function registerSystemRoutes(
     const pathname = request.url.split("?", 1)[0] ?? request.url;
     if (!pathname.startsWith("/api/") || pathname.startsWith("/api/admin/audit")) return;
     if (["GET", "HEAD"].includes(request.method) && reply.statusCode < 400) return;
+    // Empty driver transport polls do not create author data. Each otherwise rewrites the metadata document.
+    if (request.method === "POST" && reply.statusCode === 204
+      && /^\/api\/editor-scene-driver\/[^/]+\/(?:next|snapshot-request)$/.test(pathname)) return;
+    if (request.method === "PUT" && reply.statusCode === 200
+      && /^\/api\/editor-presence\/[^/]+$/.test(pathname)) return;
     const record: AuditLogRecord = {
       id: randomUUID(),
       ...(request.systemUser ? { userId: request.systemUser.id, username: request.systemUser.username } : {}),

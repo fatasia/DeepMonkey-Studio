@@ -342,6 +342,8 @@ mod tests {
             occlusion_texture: None,
             emissive_factor: None,
             emissive_texture: None,
+            specular_factor: None, specular_color_factor: None,
+            specular_texture: None, specular_color_texture: None,
             base_color_alpha: None,
             alpha_mode: None,
             alpha_cutoff: None,

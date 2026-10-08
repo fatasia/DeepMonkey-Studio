@@ -25,6 +25,7 @@ import {
   auditKeyboardNavigation,
   auditPage,
   captureProcessOutput,
+  dismissRecoveryDialogs as dismissSharedRecoveryDialogs,
   readJsonResponse,
   recordStep,
   reservePort,
@@ -42,21 +43,7 @@ const outputRoot = resolve(repositoryRoot, "test-output/online-flow");
 const dataRoot = resolve(outputRoot, "data");
 const modelFixturePath = resolve(outputRoot, "online-flow-triangle.gltf");
 const chromePath = process.env.BIM_STUDIO_CHROME_PATH ?? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-/** 两类恢复对话框会在草稿存在且 activeScene.updatedAt 刷新时随时弹出;交互前统一处置。 */
-async function dismissRecoveryDialogs(page) {
-  const sceneDialog = page.locator('section[aria-label="恢复未保存工作"]');
-  const appDialog = page.locator('section[aria-label="恢复应用修改"]');
-  for (let round = 0; round < 4; round++) {
-    if (await sceneDialog.isVisible().catch(() => false)) {
-      await sceneDialog.getByRole("button", { name: "丢弃副本" }).click();
-      await sceneDialog.waitFor({ state: "hidden", timeout: 15_000 }).catch(() => {});
-    } else if (await appDialog.isVisible().catch(() => false)) {
-      await appDialog.getByRole("button", { name: "稍后处理" }).click();
-      await appDialog.waitFor({ state: "hidden", timeout: 15_000 }).catch(() => {});
-    } else break;
-    await page.waitForTimeout(300);
-  }
-}
+const dismissRecoveryDialogs = page => dismissSharedRecoveryDialogs(page, { maxRounds: 4, applicationAction: "稍后处理" });
 
 if (!existsSync(webDistRoot) || !existsSync(apiEntry)) throw new Error("缺少生产产物，请先执行 pnpm build");
 if (!existsSync(chromePath)) throw new Error(`Chrome 不存在：${chromePath}`);
@@ -799,4 +786,3 @@ try {
   await new Promise((resolveClosed, reject) => server.close((error) => error ? reject(error) : resolveClosed()));
   rmSync(dataRoot, { recursive: true, force: true });
 }
-

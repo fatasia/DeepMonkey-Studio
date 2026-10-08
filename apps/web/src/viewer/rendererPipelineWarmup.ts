@@ -97,12 +97,16 @@ export class RendererPipelineWarmupScheduler {
 }
 
 export function createBrowserPipelineWarmupScheduler(): RendererPipelineWarmupScheduler {
-  const supportsIdleCallback = typeof window.requestIdleCallback === "function";
-  const schedule: ScheduleTask = supportsIdleCallback
-    ? (run) => window.requestIdleCallback(run, { timeout: 800 })
-    : (run) => window.setTimeout(run, 0);
-  const cancel: CancelTask = supportsIdleCallback
-    ? (handle) => window.cancelIdleCallback(handle)
-    : (handle) => window.clearTimeout(handle);
+  // Submit compilation before RAF can force the same shaders synchronously.
+  // A cancellable microtask coalesces all edits in the current browser task.
+  let nextHandle = 0;
+  const pending = new Map<number, () => void>();
+  const schedule: ScheduleTask = run => {
+    const handle = ++nextHandle;
+    pending.set(handle, run);
+    queueMicrotask(() => { const callback = pending.get(handle); pending.delete(handle); callback?.(); });
+    return handle;
+  };
+  const cancel: CancelTask = handle => { pending.delete(handle); };
   return new RendererPipelineWarmupScheduler(schedule, cancel);
 }

@@ -44,6 +44,13 @@ pub mod deep2d_context_wiring_tests;
 #[path = "../../deep-engine-native/src/deep2d_gpu.rs"]
 pub mod deep2d_gpu;
 
+#[path = "../../deep-engine-native/src/deep2d_dynamic_gpu.rs"]
+pub mod deep2d_dynamic_gpu;
+#[path = "../../deep-engine-native/src/deep2d_frame_context.rs"]
+pub mod deep2d_frame_context;
+#[path = "../../deep-engine-native/src/deep2d_backdrop_gpu.rs"]
+pub mod deep2d_backdrop_gpu;
+
 #[path = "../../deep-engine-native/src/deep2d_gpu_cache.rs"]
 pub mod deep2d_gpu_cache;
 

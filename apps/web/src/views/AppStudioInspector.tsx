@@ -1,4 +1,5 @@
 import { Box, Braces, ChevronRight, Layers3, Lock, MousePointer2, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { explosionModeName } from "../appPresentation";
 import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
 import { layerLockCommand, selectionDeleteCommand, selectionRenameCommand } from "../commands/engineEditCommand";
@@ -21,6 +22,7 @@ import { StructuredProperties, TransformFields } from "../components/AppFormCont
 import type { AppStudioController } from "./AppStudioShell";
 
 export function AppStudioInspector({ controller }: { controller: AppStudioController }) {
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const {
     activeApplication,
     activeScene,
@@ -287,10 +289,12 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
             />
           )}
           {inspectorTab === "overview" && (
-            <details className="inspector-collapsible inspector-appearance-settings">
+            <details className="inspector-collapsible inspector-appearance-settings" open={appearanceOpen}
+              onToggle={event => { if (event.target === event.currentTarget) setAppearanceOpen(event.currentTarget.open); }}>
               <summary>{tr(locale, "外观、特效与动画", "Appearance, effects & animation")}</summary>
               <div className="inspector-collapsible-body">
                 <ObjectAppearanceEditor
+                  key={`${selected.id}:${selectedLayerId ?? "root"}`}
                   materialSlots={engine?.getSelectionMaterialSlots() ?? []}
                   locale={locale}
                   rendererBackend={rendererBackend}

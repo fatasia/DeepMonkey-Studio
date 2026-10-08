@@ -7,12 +7,22 @@ import { test } from "node:test";
 import {
   assertSceneViewerViteManifest,
   createSceneViewerPayload,
+  createTauriOverlay,
   injectDeliveryMarker,
   pruneSceneViewerFrontend,
   resolveSceneViewerBuildPaths,
   sceneViewerWebBuildEnvironment,
   validateSource,
 } from "./scene-viewer-package-core.mjs";
+
+test("read-only installers exclude editor API resources and retain offline WebView defaults", () => {
+  const overlay = createTauriOverlay({ productName: "QA Viewer", version: "1.0.0", identifier: "com.test.qa", frontendDist: "../fixture" });
+  assert.deepEqual(overlay.bundle.resources, []);
+  assert.equal(overlay.build.beforeBuildCommand, "");
+  assert.deepEqual(overlay.app.security.capabilities, ["scene-viewer"]);
+  assert.deepEqual(overlay.app.windows[0].backgroundColor, [11, 17, 20, 255]);
+  assert.equal(overlay.bundle.windows.webviewInstallMode, undefined);
+});
 
 test("isolates generated viewer output from the regular Web dist", () => {
   const desktop = path.join(tmpdir(), "studio", "apps", "desktop");
@@ -111,6 +121,10 @@ test("prunes optional runtimes and stale brand files from a primitive-only clien
     "draco/decoder.wasm": "draco",
     "downloads/old.zip": "download",
     "showcase/old.svg": "showcase",
+    "dev/pkg/deep_engine_wasm_bg.wasm": "development build",
+    "engine-wasm/deep_engine_wasm_bg.wasm": "production build",
+    "docs-assets/manual.png": "manual",
+    "samples/battery.csv": "sample",
   };
   for (const [name, content] of Object.entries(files)) {
     const target = path.join(frontend, name);
@@ -135,7 +149,11 @@ test("prunes optional runtimes and stale brand files from a primitive-only clien
     delete viteManifest.fragments;
     viteManifest["src/delivery/SceneViewerRoot.tsx"].dynamicImports = Object.keys(viteManifest).slice(1);
     const result = await pruneSceneViewerFrontend(frontend, deliveryManifest, viteManifest);
-    assert.deepEqual(result.removedPublicRoots.sort(), ["downloads", "draco", "showcase", "wasm"]);
+    assert.deepEqual(result.removedPublicRoots.sort(), ["dev", "docs-assets", "downloads", "draco", "samples", "showcase", "wasm"]);
+    for (const name of ["dev/pkg/deep_engine_wasm_bg.wasm", "docs-assets/manual.png", "samples/battery.csv"]) {
+      await assert.rejects(() => readFile(path.join(frontend, name)), /ENOENT/);
+    }
+    assert.equal(await readFile(path.join(frontend, "engine-wasm/deep_engine_wasm_bg.wasm"), "utf8"), "production build");
     assert.equal(await readFile(path.join(frontend, "assets/core.js"), "utf8"), "core");
     await assert.rejects(() => readFile(path.join(frontend, "assets/rapier.js")), /ENOENT/);
     await assert.rejects(() => readFile(path.join(frontend, "assets/fragments.js")), /ENOENT/);
@@ -178,12 +196,35 @@ test("keeps model and physics runtimes required by the frozen publication", asyn
   try {
     const result = await pruneSceneViewerFrontend(frontend, deliveryManifest, viteManifest);
     assert.deepEqual(result.removedRuntimeEntries, []);
-    assert.deepEqual(result.removedPublicRoots, ["downloads", "showcase"]);
+    assert.deepEqual(result.removedPublicRoots, ["downloads", "showcase", "dev", "docs-assets", "samples"]);
     for (const name of ["assets/rapier.js", "assets/fragments.js", "wasm/web-ifc.wasm", "draco/decoder.wasm"]) {
       assert.equal(await readFile(path.join(frontend, name), "utf8"), name);
     }
     assert.deepEqual(viteManifest["src/delivery/SceneViewerRoot.tsx"].dynamicImports, [rapierKey, fragmentsKey]);
   } finally {
+    await rm(frontend, { recursive: true, force: true });
+  }
+});
+
+test("preserves explicit frozen references to sample, document and development resources", async () => {
+  const frontend = await mkdtemp(path.join(tmpdir(), "bim-studio-scene-viewer-referenced-"));
+  const referenced = ["dev/custom.glb", "docs-assets/custom.png", "samples/custom.csv"];
+  for (const name of [...referenced, "brand/app-icon-industrial.svg"]) {
+    await mkdir(path.dirname(path.join(frontend, name)), { recursive: true });
+    await writeFile(path.join(frontend, name), name);
+  }
+  const deliveryManifest = {
+    publication: { snapshot: { models: [{ material: { baseColorMapUrl: "/docs-assets/custom.png" } }],
+      primitives: [], dataBindings: [{ sourceUrl: "/samples/custom.csv" }] } },
+    project: { models: [{ sourceUrl: "/dev/custom.glb", manifest: { viewerKind: "gltf" } }] },
+    branding: {},
+  };
+  try {
+    const result = await pruneSceneViewerFrontend(frontend, deliveryManifest, {});
+    assert.deepEqual(result.removedPublicRoots, ["wasm", "downloads", "showcase"]);
+    for (const name of referenced) assert.equal(await readFile(path.join(frontend, name), "utf8"), name);
+  } finally {
+    assert.equal(path.dirname(frontend), path.resolve(tmpdir()));
     await rm(frontend, { recursive: true, force: true });
   }
 });

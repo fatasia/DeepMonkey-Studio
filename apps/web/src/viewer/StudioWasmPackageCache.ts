@@ -10,7 +10,15 @@ export class StudioWasmPackageCache {
   matches(bytes: Uint8Array): boolean {
     const previous = this.bytes;
     if (!previous || previous.byteLength !== bytes.byteLength) return false;
-    for (let index = 0; index < bytes.byteLength; index++) {
+    let index = 0;
+    if (bytes.byteOffset % 4 === 0 && previous.byteOffset % 4 === 0) {
+      const count = Math.floor(bytes.byteLength / 4);
+      const left = new Uint32Array(previous.buffer, previous.byteOffset, count);
+      const right = new Uint32Array(bytes.buffer, bytes.byteOffset, count);
+      for (let word = 0; word < count; word++) if (left[word] !== right[word]) return false;
+      index = count * 4;
+    }
+    for (; index < bytes.byteLength; index++) {
       if (previous[index] !== bytes[index]) return false;
     }
     return true;

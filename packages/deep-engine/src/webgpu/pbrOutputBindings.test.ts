@@ -25,6 +25,16 @@ function fixture() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PBR output pass ownership", () => {
+  it("bypasses an already allocated SpatialAA for direct frames and reuses it when Composer returns", () => {
+    const f = fixture(), output = new PbrOutputBindings(f.session, f.pipelines, () => 0);
+    for (const [toneMapping, draws] of [[-1, 1], [0, 2], [-1, 1], [0, 2]]) {
+      output.data[3] = toneMapping!; f.pass.draw.mockClear();
+      output.present(f.encoder as unknown as GPUCommandEncoder, f.source, {}, false);
+      expect(f.pass.draw).toHaveBeenCalledTimes(draws!);
+      expect(output.spatialAaActive).toBe(toneMapping === 0);
+    }
+    expect(f.device.createTexture).toHaveBeenCalledOnce(); output.dispose(); expect(f.owned.size).toBe(0);
+  });
   it("records provenance only after successful non-SpatialAA encoding and only when requested", () => {
     const f = fixture(), refsFor = vi.fn(() => []);
     const output = new PbrOutputBindings(f.session, { ...f.pipelines, outputShaderProvenance: { refsFor } }, () => 0, false);

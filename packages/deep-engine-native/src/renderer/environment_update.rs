@@ -63,7 +63,8 @@ impl Renderer {
             source.provenance,
             deep_engine_native::ibl::IblProvenance::DisabledProbe
         );
-        let candidate = GpuIblEnvironment::new(&self.device, &self.queue, source).map(|ibl| {
+        let candidate = GpuIblEnvironment::new(&self.device, &self.queue, source).map(|mut ibl| {
+            ibl.set_scene_opaque_view(self.forward_targets.scene_opaque_view.as_ref());
             let frame_bind_group = ibl.create_frame_bind_group(
                 &self.device,
                 &self.frame_layout,

@@ -93,7 +93,9 @@ export async function pruneSceneViewerFrontend(frontendDirectory, deliveryManife
   const removedPublicRoots = [];
   if (!needsFragments) await removePublicRoot(root, "wasm", removedPublicRoots);
   if (!viewerKinds.has("gltf")) await removePublicRoot(root, "draco", removedPublicRoots);
-  for (const name of ["downloads", "showcase"]) {
+  // Vite copies all public files, including editor documentation, sample data
+  // and the development WASM build. Frozen viewers only keep explicit references.
+  for (const name of ["downloads", "showcase", "dev", "docs-assets", "samples"]) {
     if (!containsUrlPrefix(deliveryManifest, `/${name}/`)) await removePublicRoot(root, name, removedPublicRoots);
   }
   const keptBrandFiles = await pruneBrandDirectory(root, deliveryManifest.branding);
@@ -200,9 +202,13 @@ export function createTauriOverlay(options) {
       },
       // 桌面 setup hook 统一创建主窗；只读入口没有编辑器的自绘标题栏。
       windows: [{ label: "main", title: options.productName, create: false, decorations: true,
-        width: 1440, height: 900, minWidth: 900, minHeight: 600, center: true, resizable: true }],
+        width: 1440, height: 900, minWidth: 900, minHeight: 600, center: true, resizable: true,
+        backgroundColor: [11, 17, 20, 255] }],
     },
     bundle: {
+      // Frozen viewers embed their frontend and assets; they never start the
+      // editor API. An array replaces the base config's resource map on merge.
+      resources: [],
       ...(options.iconPath ? { icon: [options.iconPath] } : {}),
       windows: {
         nsis: {

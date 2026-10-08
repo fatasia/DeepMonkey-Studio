@@ -1,7 +1,7 @@
 import { encodeFrameCaptureTextureReadback, type FrameCaptureTextureReadback } from "./frameCaptureReadback.js";
 
 /** Fixed whitelist of PBR resources a diagnostic host may snapshot. Never guessed, never implicitly extended. */
-export const PBR_FRAME_READBACK_RESOURCES = Object.freeze(["present-color", "opaque-hdr", "linear-depth"] as const);
+export const PBR_FRAME_READBACK_RESOURCES = Object.freeze(["present-color", "opaque-hdr", "linear-depth", "composited-hdr"] as const);
 export type PbrFrameReadbackResourceId = (typeof PBR_FRAME_READBACK_RESOURCES)[number];
 
 export interface PbrFrameReadbackRequest {
@@ -89,7 +89,7 @@ export class PbrFrameReadbackPlan {
 
   /** Encodes staging copies on the caller's frame encoder. Resource identity is the caller's contract. */
   beginFrame(frameId: string, device: GPUDevice, encoder: GPUCommandEncoder,
-    textures: Readonly<Record<PbrFrameReadbackResourceId, GPUTexture | undefined>>): void {
+    textures: Readonly<Partial<Record<PbrFrameReadbackResourceId, GPUTexture | undefined>>>): void {
     if (this.frame !== undefined) {
       throw new Error("PBR frame readback frame is still open; collect or cancel before encoding the next frame.");
     }

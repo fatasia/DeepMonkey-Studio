@@ -40,7 +40,8 @@ try {
       WEB_ORIGIN: "http://tauri.localhost", METADATA_STORE: "sqlite",
       SQLITE_DATABASE: path.join(workspace, "metadata.sqlite"), OBJECT_STORE: "local",
       DATA_DIR: path.join(workspace, "data"), NATIVE_SCENE_VERIFIER_EXECUTABLE: resources.nativeExecutable,
-      JAVA_HOME: resolveBundlePath(manifest.environment.JAVA_HOME), DASHBOARD_NATIVE_DEPLOYMENT_FILE: dashboardFile,
+      ...(manifest.environment.JAVA_HOME ? { JAVA_HOME: resolveBundlePath(manifest.environment.JAVA_HOME) } : {}),
+      DASHBOARD_NATIVE_DEPLOYMENT_FILE: dashboardFile,
       THREE_SCENE_VIEWER_LAUNCHER_EXECUTABLE: desktopExecutable },
   });
   const errors = []; child.stderr.on("data", chunk => { if (errors.length < 100) errors.push(chunk); });

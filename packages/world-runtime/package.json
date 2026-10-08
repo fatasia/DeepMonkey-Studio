@@ -1,6 +1,6 @@
 {
   "name": "@bim-studio/world-runtime",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "World API v1 无头确定性运行时（Rapier 固定步长，Node 可运行，不依赖浏览器/DOM/WebGPU）",
   "type": "module",

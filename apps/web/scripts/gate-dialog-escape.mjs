@@ -179,7 +179,7 @@ try {
 
       const applicationPath = `/api/projects/${data.project.id}/applications/${data.application.metadata.id}`;
       const studio = `${gate.origin}/studio/${data.project.id}/applications/${data.application.metadata.id}/scenes/${data.scene.id}`;
-      await page.goto(studio); await page.locator(".viewport canvas").waitFor();
+      await page.goto(studio); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
       const auto = page.getByLabel("自动保存"); if (await auto.isChecked()) await auto.uncheck();
       const primitive = page.locator(".scene-tree-row.object").filter({ hasText: "验证泵" });
       if (!await primitive.count()) await page.getByRole("button", { name: "场景图层与编组", exact: true }).click();

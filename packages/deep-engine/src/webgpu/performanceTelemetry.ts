@@ -105,6 +105,16 @@ export class EnginePerformanceTelemetry {
     });
   }
 
+  /** Frame decisions need only their measured stage, without summarizing every diagnostic pass. */
+  stageSummary(stage: EngineTimingStage): EngineTimingQuantiles | undefined {
+    const values: number[] = [];
+    for (const frame of this.frames.values()) {
+      const value = frame.get(stage);
+      if (value !== undefined) values.push(value);
+    }
+    return values.length ? summarize(values, this.frames.size) : undefined;
+  }
+
   /** Returns retained raw values in frame order for benchmark-window consumers. */
   samples(stage: EngineTimingStage): readonly number[] {
     const frameIds = [...this.frames.keys()].sort((left, right) => left - right);

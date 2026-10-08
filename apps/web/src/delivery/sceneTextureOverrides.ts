@@ -65,6 +65,16 @@ function decodedBytes(image: { readonly width: number; readonly height: number }
   return image.width * image.height * 4;
 }
 
+/** TextureLoader author maps use flipY=true; packet textures use top-down UV upload. */
+function authorImageOrientation(image: GltfDecodedImage): GltfDecodedImage {
+  const stride = image.bytesPerRow ?? image.width * 4;
+  const data = new Uint8Array(stride * image.height);
+  for (let row = 0; row < image.height; row++) {
+    data.set(image.data.subarray(row * stride, (row + 1) * stride), (image.height - row - 1) * stride);
+  }
+  return { ...image, data };
+}
+
 function sniffTextureMime(bytes: Uint8Array): GltfTextureMimeType | undefined {
   if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
@@ -197,7 +207,7 @@ export class AuthorTextureResolver {
       const encoded: GltfEncodedImage = { id: url, imageIndex: 0, mimeType, data: bytes };
       const decoded = await this.source.imageDecoder.decode(encoded, this.signal);
       this.signal.throwIfAborted();
-      return decoded;
+      return authorImageOrientation(decoded);
     });
     this.images.set(url, task);
     return task;
@@ -211,8 +221,8 @@ export class AuthorTextureResolver {
       // textureDimensionCap 超预算时返回最低档而非 undefined,降采样后仍超则 fail-closed。
       const cap = textureDimensionCap([[image.width, image.height]], Math.max(1, remaining)) ?? 256;
       const mimeType = sniffTextureMime(await this.loadBytes(url))!;
-      image = await capImageDimension(this.source.imageDecoder, cap)
-        .decode({ id: url, imageIndex: 0, mimeType, data: await this.loadBytes(url) }, this.signal);
+      image = authorImageOrientation(await capImageDimension(this.source.imageDecoder, cap)
+        .decode({ id: url, imageIndex: 0, mimeType, data: await this.loadBytes(url) }, this.signal));
       this.signal.throwIfAborted();
       if (decodedBytes(image) > remaining) throw appearanceUnsupportedError(`作者贴图 ${url} 超出 Deep 纹理解码预算`);
     }

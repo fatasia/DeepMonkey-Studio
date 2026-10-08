@@ -36,7 +36,7 @@ try {
       scene.camera = { position: { x: 5, y: 4, z: 5 }, target: { x: 0, y: 0, z: 0 }, mode: "orbit" };
       Object.assign(documentScene, { primitives: scene.primitives, camera: scene.camera });
       await gate.json("PUT", `${appPath}/workspace`, { application, scene });
-      await page.goto(`${scenePath}?renderer=webgpu`); await page.locator(".viewport canvas").waitFor();
+      await page.goto(`${scenePath}?renderer=webgpu`); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
       const ready = () => page.waitForFunction(() => !document.querySelector('[aria-label="进入播放模式"]')?.disabled);
       await ready(); const autoSave = page.getByLabel("自动保存"); if (await autoSave.isChecked()) await autoSave.uncheck();
       const open = async () => {
@@ -55,14 +55,14 @@ try {
       assert.equal(valid.postProcessing.volumetricGodRaysStrength, .7); await shot("configured");
       entry.strengthBounds = await strength.boundingBox();
       assert.ok(entry.strengthBounds && entry.strengthBounds.x >= 0 && entry.strengthBounds.x + entry.strengthBounds.width <= 1920);
-      await page.reload(); await page.locator(".viewport canvas").waitFor(); await ready(); await open();
+      await page.reload(); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor(); await ready(); await open();
       assert.equal(await strength.inputValue(), "0.7"); assert.equal(await shafts.getAttribute("aria-pressed"), "true");
       await strength.focus(); await strength.press("End"); await strength.press("ArrowRight"); assert.equal(await strength.inputValue(), "8");
       await strength.press("Home"); await strength.press("ArrowLeft"); assert.equal(await strength.inputValue(), "0");
       await shafts.click(); assert.equal(await strength.count(), 0);
       const disabled = await saveScene(page, appPath); assert.equal(disabled.postProcessing.volumetricGodRays, false);
       assert.equal(disabled.postProcessing.volumetricGodRaysStrength, 0); assert.equal(disabled.postProcessing.volumetricFog, true);
-      await page.reload(); await page.locator(".viewport canvas").waitFor(); await ready(); await open();
+      await page.reload(); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor(); await ready(); await open();
       assert.equal(await shafts.getAttribute("aria-pressed"), "false"); await shafts.click();
       assert.equal(await strength.inputValue(), "0"); await shot("reloaded-zero");
       entry.persisted = valid.postProcessing; entry.zeroPreserved = true; entry.rangeClamped = true;

@@ -15,7 +15,7 @@ export async function gateOptimizerPublication(gate, page, entry, projectId, mod
   const appPath = `/api/projects/${projectId}/applications/${application.metadata.id}`;
   const scenePath = `${gate.origin}/studio/${projectId}/applications/${application.metadata.id}/scenes/${scene.id}`;
   await page.goto(scenePath);
-  await page.locator(".viewport canvas").waitFor();
+  await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
   const autoSave = page.getByLabel("自动保存");
   if (await autoSave.isChecked()) await autoSave.uncheck();
   if (!await page.locator(".asset-row").count()) await page.getByRole("button", { name: "场景图层与编组", exact: true }).click();
@@ -28,7 +28,7 @@ export async function gateOptimizerPublication(gate, page, entry, projectId, mod
   const saved = await savedResponse; assert.equal(saved.status(), 200);
   const workspace = await saved.json();
   assert.deepEqual(workspace.scene.models.map(model => model.modelId), [model.id], "Only the chosen derivative belongs in this scene");
-  await page.reload(); await page.locator(".viewport canvas").waitFor();
+  await page.reload(); await page.locator('.viewport canvas:not([aria-hidden="true"])').waitFor();
   await page.screenshot({ path: resolve(gate.output, `${entry.theme}-${entry.width}-optimized-in-scene.png`) });
   const persisted = await gate.json("GET", appPath);
   assert.deepEqual(persisted.scenes.find(item => item.id === scene.id).models.map(model => model.modelId), [model.id]);

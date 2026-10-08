@@ -1,18 +1,18 @@
-//! R4 生产接线:MSAA 深度 resolve → HiZ 金字塔(r32float,min 缩减,标准 Z)。
+//! R4 生产接线:MSAA 深度 resolve → HiZ 金字塔(r32float,max 缩减,标准 Z)。
 //!
 //! 消费链(docs/development.md §2.2)已就绪等待本输入:
 //! 本模块产出 [`OcclusionSource`] 契约的真实纹理——r32float 2D mip 链,
-//! 第 0 层 = 主视锥全分辨率深度(min over 4x MSAA 样本),第 i 层 = 上一层的
-//! min 缩减,一路降到 1×1(层数公式与 webgpu 侧 `hiZPyramid.ts` 一致)。
+//! 第 0 层保留 4x MSAA 样本最远深度，第 i 层保留上一层窗口最远值。
+//! 全足迹都较近才构成完整遮挡；未覆盖样本保留远平面。
 //!
 //! 转换方案(§1 审计结论):
 //! - `copy_texture` 不可行:multisampled 纹理禁 COPY_SRC,且 Depth24Plus→r32float
 //!   格式不一致;wgpu render pass 的 `resolve_target` 只支持颜色,深度无法 resolve。
 //! - 因此第 0 层用一次全屏 render pass:采样 `texture_depth_multisampled_2d`,
-//!   4 样本定序 min,颜色写入 r32float mip 0(免中间 depth32float 纹理与
+//!   4 样本定序 max,颜色写入 r32float mip 0(免中间 depth32float 纹理与
 //!   frag_depth 移植坑;`native_hi_z_extract_v1.wgsl` 手写,理由见该文件头)。
 //! - 第 1 级起直接 `include_str!` 复用已认证的 DCIR 工件文本
-//!   (`dcir_hi_z_first_stage_min_v1.wgsl` / `dcir_hi_z_variable_reduce_min_v1.wgsl`),
+//!   (`dcir_hi_z_first_stage_max_v1.wgsl` / `dcir_hi_z_variable_reduce_max_v1.wgsl`),
 //!   不改 shader 文本;anchored/variable 选择规则与 TS `encodePasses` 一致
 //!   (源 even×even → anchored,否则 variable)。
 //!
@@ -25,7 +25,7 @@
 //! 1e-6 裕量不覆盖运动补偿;定档与补偿属精度-召回联测切片。
 //!
 //! 确定性纪律(docs/development.md §4):
-//! 全步定序(min 按固定次序展开)、无原子、无共享内存;±0 由缩减链内核
+//! 全步定序(max 按固定次序展开)、无原子、无共享内存;±0 由缩减链内核
 //! `select(v, 0.0, v == 0.0)` 规范化为 +0。
 //!
 //! 边界(如实):遮挡判定内核已按足迹逐实例定档(顶层为上限,TS
@@ -107,10 +107,10 @@ pub(crate) fn reference_reduce(source: &[f32], source_width: u32, source_height:
     let mut target = Vec::with_capacity((target_width * target_height) as usize);
     for ty in 0..target_height {
         for tx in 0..target_width {
-            let mut value = f32::INFINITY;
+            let mut value = f32::NEG_INFINITY;
             for y in window(ty, source_height, target_height) {
                 for x in window(tx, source_width, target_width) {
-                    value = value.min(source[(y * source_width + x) as usize]);
+                    value = value.max(source[(y * source_width + x) as usize]);
                 }
             }
             // ±0 规范化(与 DCIR 内核一致)。
@@ -312,12 +312,12 @@ impl HiZPyramid {
         // DCIR 已认证工件文本逐字复用(include_str!,不改变 shader 文本)。
         let anchored_pipeline = make_reduce_pipeline(
             "Deep Engine native Hi-Z anchored reduce",
-            include_str!("../../assets/shaders/dcir_hi_z_first_stage_min_v1.wgsl"),
+            include_str!("../../assets/shaders/dcir_hi_z_first_stage_max_v1.wgsl"),
             "hi_z_first_stage",
         );
         let variable_pipeline = make_reduce_pipeline(
             "Deep Engine native Hi-Z variable reduce",
-            include_str!("../../assets/shaders/dcir_hi_z_variable_reduce_min_v1.wgsl"),
+            include_str!("../../assets/shaders/dcir_hi_z_variable_reduce_max_v1.wgsl"),
             "hi_z_variable_reduce",
         );
 
@@ -473,6 +473,7 @@ impl HiZPyramid {
         });
         pass.set_pipeline(&self.extract_pipeline);
         pass.set_bind_group(0, &self.extract_bind_group, &[]);
+        deep_engine_native::benchmark_observer::note_draw();
         pass.draw(0..3, 0..1);
     }
 
