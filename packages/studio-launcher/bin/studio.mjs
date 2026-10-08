@@ -76,6 +76,14 @@ catch {
   await writeFile(ready, JSON.stringify({ version: manifest.version, sha256: manifest.sha256 }) + '\n');
   }
 }
+// The launcher also supplies the default client branding to older runtime caches.
+const icon = join(runtime, 'apps/desktop/src-tauri/icons/icon.ico');
+try { await access(icon); }
+catch (error) {
+  if (error.code !== 'ENOENT') throw error;
+  await mkdir(dirname(icon), { recursive: true });
+  await writeFile(icon, await readFile(new URL('./studio.ico', import.meta.url)), { flag: 'wx' });
+}
 console.log(`Studio runtime: ${runtime}\nProject data: ${data}`);
 if (args.includes('--prepare-only')) process.exit(0);
 await mkdir(data, { recursive: true });

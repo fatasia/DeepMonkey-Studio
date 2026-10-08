@@ -53,6 +53,8 @@ await copyPackage('apps/api', api);
 for (const name of chosen) { const item = packages.get(name); await copyPackage(item.path, item.manifest); }
 await cp(join(root, 'apps/web/dist'), join(stage, 'apps/web/dist'), { recursive: true, dereference: true });
 await cp(join(root, 'apps/web/public/assets/nature-kit'), join(stage, 'apps/web/public/assets/nature-kit'), { recursive: true });
+await mkdir(join(stage, 'apps/desktop/src-tauri/icons'), { recursive: true });
+await cp(join(root, 'apps/desktop/src-tauri/icons/icon.ico'), join(stage, 'apps/desktop/src-tauri/icons/icon.ico'));
 await mkdir(join(stage, 'scripts'));
 await cp(join(root, 'scripts/docker-entrypoint.mjs'), join(stage, 'scripts/docker-entrypoint.mjs'));
 await cp(join(root, 'apps/desktop/src-tauri/target/release/local-api/publication/native'), join(stage, 'publication/native'), { recursive: true });

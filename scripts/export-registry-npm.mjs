@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 const run = promisify(execFile), root = resolve(import.meta.dirname, '..');
 const output = resolve(process.argv[2] ?? 'artifacts/releases/0.2.0/registry');
 const version = '0.2.0';
-const sdkVersion = '0.2.2';
+const sdkVersion = '0.2.3';
 await mkdir(output, { recursive: true });
 const source = join(output, 'sdk-source');
 await mkdir(source, { recursive: true });
@@ -25,6 +25,7 @@ manifest.publishConfig = { access: 'public', registry: 'https://registry.npmjs.o
 await writeFile(join(sdk, 'package.json'), JSON.stringify(manifest, null, 2));
 await cp(join(root, 'packages/deep-engine/README.npm.md'), join(sdk, 'README.md'));
 await cp(join(root, 'packages/studio-launcher/bin'), join(sdk, 'bin'), { recursive: true });
+await cp(join(root, 'apps/desktop/src-tauri/icons/icon.ico'), join(sdk, 'bin/studio.ico'));
 await cp(resolve(process.argv[3] ?? 'artifacts/releases/0.2.0/node-runtime-final/runtime-manifest.json'), join(sdk, 'runtime-manifest.json'));
 for (const name of ['LICENSE', 'LICENSE.zh-CN.md', 'THIRD_PARTY_NOTICES.md']) await cp(join(root, name), join(sdk, name));
 async function pack(directory) {
@@ -70,6 +71,7 @@ for (const name of ['LICENSE', 'LICENSE.zh-CN.md', 'THIRD_PARTY_NOTICES.md']) aw
 const creatorArchive = await pack(creator);
 const launcher = join(output, 'deepmonkey-studio');
 await cp(join(root, 'packages/studio-launcher'), launcher, { recursive: true });
+await cp(join(root, 'apps/desktop/src-tauri/icons/icon.ico'), join(launcher, 'bin/studio.ico'));
 const launcherManifest = JSON.parse(await readFile(join(launcher, 'package.json'), 'utf8'));
 launcherManifest.private = false; launcherManifest.license = 'SEE LICENSE IN LICENSE';
 await writeFile(join(launcher, 'package.json'), JSON.stringify(launcherManifest, null, 2));

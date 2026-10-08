@@ -25,6 +25,7 @@ async function fixture(t) {
   t.after(() => new Promise(done => server.close(done)));
   const launcher = join(directory, 'launcher'); await mkdir(join(launcher, 'bin'), { recursive: true });
   await cp(join(root, 'packages/studio-launcher/bin'), join(launcher, 'bin'), { recursive: true });
+  await cp(join(root, 'apps/desktop/src-tauri/icons/icon.ico'), join(launcher, 'bin/studio.ico'));
   const manifest = { version: '0.2.0', sha256, bytes: bytes.length, url: `http://127.0.0.1:${server.address().port}/runtime` };
   await writeFile(join(launcher, 'runtime-manifest.json'), JSON.stringify(manifest));
   const npm = join(directory, 'npm-test.js');
@@ -43,6 +44,12 @@ test('verified download installs once and cached preparation preserves user data
   assert.equal(await readFile(join(runtime, 'runtime-proof.txt'), 'utf8'), 'verified runtime');
   assert.equal(await readFile(join(runtime, 'install-proof.txt'), 'utf8'), 'installed\n');
   assert.equal(await readFile(join(f.data, 'database.json'), 'utf8'), '{"sentinel":"keep"}');
+  const icon = join(runtime, 'apps/desktop/src-tauri/icons/icon.ico');
+  assert.deepEqual(await readFile(icon), await readFile(join(f.launcher, 'bin/studio.ico')));
+  await rm(icon);
+  await f.invoke('--prepare-only');
+  assert.deepEqual(await readFile(icon), await readFile(join(f.launcher, 'bin/studio.ico')));
+  assert.equal(f.downloads(), 1);
 });
 
 test('checksum mismatch prevents extraction, installation and ready state', async t => {
