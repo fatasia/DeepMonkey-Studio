@@ -41,6 +41,8 @@ import {
 } from "@bim-studio/server-sdk";
 import { runtimeHost, isDesktopRuntime } from "./adapters/runtimeHost.js";
 import { RuntimeServerClient } from './adapters/runtimeServerClient';
+import { isPagesDemoRuntime } from './adapters/pagesDemoRuntime';
+import { pagesDemoFetch } from './adapters/pagesDemoApi';
 import { networkStatusMonitor } from "./appStatus/networkStatusMonitor";
 import { createScenePublicationDependencyApi } from "./apiClients/scenePublicationDependencyApi.js";
 import { createDashboardPublicationApi } from "./apiClients/dashboardPublicationApi.js";
@@ -94,7 +96,7 @@ const monitoredWebFetch: typeof globalThis.fetch = (input, init) =>
 const desktopAwareFetch = (input: RequestInfo | URL, init?: RequestInit) =>
   isSceneViewerDeliveryRuntime()
     ? sceneViewerDeliveryFetch(input, init)
-    : monitoredWebFetch(input, init);
+    : isPagesDemoRuntime() ? pagesDemoFetch(input, init) : monitoredWebFetch(input, init);
 
 const STARTUP_MANIFEST_TIMEOUT_MS = 15_000;
 const UNITY_UPLOAD_TIMEOUT_MS = 10 * 60_000;

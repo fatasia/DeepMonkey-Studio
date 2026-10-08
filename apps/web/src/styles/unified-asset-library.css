@@ -122,6 +122,9 @@
 .unified-asset-actions { container-type: inline-size; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; min-width:0; margin:0 12px 12px; transition: opacity .16s ease; }
 /* 对标素材库卡片“封面干净、hover 才出现操作”;键盘焦点(focus-within)下同样保持可见。 */
 .unified-asset-card:not(:hover):not(:focus-within) .unified-asset-actions { opacity: 0; pointer-events: none; }
+@media (hover: none) {
+  .unified-asset-card:not(:hover):not(:focus-within) .unified-asset-actions { opacity: 1; pointer-events: auto; }
+}
 .unified-asset-actions > button,
 .unified-asset-actions > .resource-link-action { min-width:0; width:100%; margin:0; }
 .unified-asset-actions > button { min-height:34px; padding:0 4px; overflow:hidden; }

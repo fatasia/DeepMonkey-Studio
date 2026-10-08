@@ -75,7 +75,8 @@ jobs:
               archive.extractall(root)
           if not (root / 'editor-hosting.json').is_file():
               raise ValueError('Complete editor has no hosting manifest')
-          if sum(p.stat().st_size for p in root.rglob('*') if p.is_file()) > 1_000_000_000:
+          archives = {'deepmonkey-studio-browser.zip', 'deepmonkey-studio-editor.zip'}
+          if sum(p.stat().st_size for p in root.rglob('*') if p.is_file() and p.name not in archives) > 1_000_000_000:
               raise ValueError('Pages site exceeds total size budget')
           PY
           rm deepmonkey-studio-browser.zip deepmonkey-studio-editor.zip

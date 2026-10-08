@@ -9,6 +9,7 @@ import { readEditorSceneRuntime } from "../studio/editorSceneRuntimeOwner.js";
 import { runEditorSceneTransaction, sceneMetadataDraftPatch } from "../studio/editorSceneWriteDriver.js";
 import type { AppState } from "./useAppState.js";
 import type { EditorPrimitiveDeleteAuthoring } from "../studio/editorPrimitiveDeleteAuthoring";
+import { isPagesDemoRuntime } from '../adapters/pagesDemoRuntime';
 
 const HEARTBEAT_MS = 15_000;
 /** 写事务轮询：仅场景编辑面开启；无在途事务时服务端 204，开销可忽略。 */
@@ -59,7 +60,7 @@ export function useEditorPresence(state: AppState, sceneAuthoring?: EditorPrimit
   } : undefined;
 
   useEffect(() => {
-    if (!descriptor) return;
+    if (!descriptor || isPagesDemoRuntime()) return;
     const current = { identity: descriptor.identity, sessionId: window.crypto.randomUUID(), leaseId: window.crypto.randomUUID() };
     lease.current = current;
     // 与根级 store 订阅逐事件同步；已打开文档的历史 emit 在此对齐一次基准。

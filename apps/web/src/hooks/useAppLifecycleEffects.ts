@@ -21,6 +21,7 @@ import {
 import { applyDocumentBranding } from "../branding/documentBranding";
 import { canAutomaticallyChangeRenderer } from "../viewer/rendererBackendPreference";
 import { useEditorPresence } from "./useEditorPresence.js";
+import { isPagesDemoRuntime } from '../adapters/pagesDemoRuntime';
 import type { EditorPrimitiveDeleteAuthoring } from "../studio/editorPrimitiveDeleteAuthoring";
 
 type ApplicationController = ReturnType<typeof createApplicationRuntimeController>;
@@ -151,7 +152,7 @@ export function useAppLifecycleEffects({ state, playModeActive = false, saveActi
       setAuthReady(true);
     };
     window.addEventListener("bim-studio-auth-required", requireLogin);
-    const deliveryUser = sceneViewerDeliveryUser();
+    const deliveryUser = isPagesDemoRuntime() ? { ...localDesktopUser(), displayName: '浏览器体验者' } : sceneViewerDeliveryUser();
     if (deliveryUser) {
       setCurrentUser(deliveryUser);
       setAuthReady(true);

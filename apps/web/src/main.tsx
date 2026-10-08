@@ -12,6 +12,7 @@ import { exposeStartupEvidenceCollector } from "./startupEvidence";
 import { DesktopWindowFrame } from "./components/DesktopWindowFrame";
 import { isPublishedApplicationRoute } from "./bootstrapRoute";
 import { applicationLocationPath } from './adapters/browserRuntimeConfig';
+import { initializePagesDemo } from './adapters/pagesDemoApi';
 
 // The installed desktop launcher injects the same immutable delivery marker at
 // runtime, so it can reuse this build without compiling one Tauri binary per scene.
@@ -28,6 +29,10 @@ function renderRoot(children: ReactNode) {
 
 async function bootstrap(): Promise<void> {
   markStartup("bootstrap-start");
+  const pagesWorkspace = await initializePagesDemo();
+  if (pagesWorkspace && applicationLocationPath(window.location.pathname) === '/') {
+    window.history.replaceState(null, '', `${import.meta.env.BASE_URL.slice(0, -1)}${pagesWorkspace.defaultPath}`);
+  }
   await initializeSceneViewerDelivery(loadSceneViewerDeliveryManifest);
   markStartup("delivery-manifest-loaded");
   if (sceneViewerBuild) {

@@ -6,6 +6,7 @@ import { dataBindingProduct, directSceneDataBindingMessage, sceneDataBindingMess
 import { DirectBindingRuntime } from "../directBindingRuntime";
 import { publishLocalSceneData, subscribeSceneData } from "../sceneDataBridge";
 import { isSceneViewerDeliveryRuntime } from "../delivery/sceneViewerDelivery";
+import { isPagesDemoRuntime } from '../adapters/pagesDemoRuntime';
 import type { AppRuntimeEffectsContext } from "./useAppRuntimeEffects.context";
 
 /** 实时数据订阅、数据绑定轮询与视觉事件轮询(pipeline/dataset/vision 三源)。 */
@@ -24,7 +25,7 @@ export function useSceneDataRuntimeEffects(context: AppRuntimeEffectsContext): v
     visionEventCursorRef,
   } = context;
   useEffect(() => {
-    if (isSceneViewerDeliveryRuntime() || !engine || !project || !["studio", "view", "published"].includes(route.view)) return;
+    if (isSceneViewerDeliveryRuntime() || isPagesDemoRuntime() || !engine || !project || !["studio", "view", "published"].includes(route.view)) return;
     return subscribeSceneData(
       project.id,
       (data) => {
@@ -123,7 +124,7 @@ export function useSceneDataRuntimeEffects(context: AppRuntimeEffectsContext): v
   }, [project?.id, route.sceneId, route.view, sceneDataBindings]);
 
   useEffect(() => {
-    if (isSceneViewerDeliveryRuntime() || !engine || !project || !route.sceneId || !["studio", "view", "published"].includes(route.view)) return;
+    if (isSceneViewerDeliveryRuntime() || isPagesDemoRuntime() || !engine || !project || !route.sceneId || !["studio", "view", "published"].includes(route.view)) return;
     let cancelled = false;
     const sceneId = route.sceneId;
     const scope = `${project.id}:${sceneId}`;

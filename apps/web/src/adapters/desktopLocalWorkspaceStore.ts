@@ -35,46 +35,47 @@ export interface DesktopLocalWorkspaceStore {
 
 /** IndexedDB 让本地草稿独立于服务器，并保留比 localStorage 更合理的容量与事务语义。 */
 export class IndexedDbDesktopLocalWorkspaceStore implements DesktopLocalWorkspaceStore {
+  constructor(private readonly databaseName = DATABASE_NAME) {}
   async read(): Promise<DesktopLocalWorkspaceState> {
-    const database = await openDatabase();
+    const database = await openDatabase(this.databaseName);
     const stored = await transact(database, "readonly", (store) => store.get(STATE_KEY));
     return isWorkspaceState(stored) ? structuredClone(stored) : createInitialWorkspaceState();
   }
 
   async write(state: DesktopLocalWorkspaceState): Promise<void> {
-    const database = await openDatabase();
+    const database = await openDatabase(this.databaseName);
     await transact(database, "readwrite", (store) => store.put(structuredClone(state), STATE_KEY));
   }
 
   async readModelAsset(modelId: string): Promise<Blob | undefined> {
-    const database = await openDatabase();
+    const database = await openDatabase(this.databaseName);
     const stored = await transactStore(database, ASSET_STORE_NAME, "readonly", (store) => store.get(modelId));
     return stored instanceof Blob ? stored : undefined;
   }
 
   async writeModelAsset(modelId: string, asset: Blob): Promise<void> {
-    const database = await openDatabase();
+    const database = await openDatabase(this.databaseName);
     await transactStore(database, ASSET_STORE_NAME, "readwrite", (store) => store.put(asset, modelId));
   }
 
   async deleteModelAsset(modelId: string): Promise<void> {
-    const database = await openDatabase();
+    const database = await openDatabase(this.databaseName);
     await transactStore(database, ASSET_STORE_NAME, "readwrite", (store) => store.delete(modelId));
   }
 
   async readScriptDependency(dependencyId: string): Promise<Blob | undefined> {
-    const database = await openDatabase();
+    const database = await openDatabase(this.databaseName);
     const stored = await transactStore(database, SCRIPT_DEPENDENCY_STORE_NAME, "readonly", (store) => store.get(dependencyId));
     return stored instanceof Blob ? stored : undefined;
   }
 
   async writeScriptDependency(dependencyId: string, asset: Blob): Promise<void> {
-    const database = await openDatabase();
+    const database = await openDatabase(this.databaseName);
     await transactStore(database, SCRIPT_DEPENDENCY_STORE_NAME, "readwrite", (store) => store.put(asset, dependencyId));
   }
 
   async deleteScriptDependency(dependencyId: string): Promise<void> {
-    const database = await openDatabase();
+    const database = await openDatabase(this.databaseName);
     await transactStore(database, SCRIPT_DEPENDENCY_STORE_NAME, "readwrite", (store) => store.delete(dependencyId));
   }
 }
@@ -108,10 +109,10 @@ function isWorkspaceState(value: unknown): value is DesktopLocalWorkspaceState {
     && Array.isArray(state.applicationPublications);
 }
 
-function openDatabase(): Promise<IDBDatabase> {
+function openDatabase(databaseName: string): Promise<IDBDatabase> {
   if (!("indexedDB" in globalThis)) return Promise.reject(new Error("当前 WebView 不支持 IndexedDB，无法使用本地工作台"));
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
+    const request = indexedDB.open(databaseName, DATABASE_VERSION);
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(STORE_NAME)) request.result.createObjectStore(STORE_NAME);
       if (!request.result.objectStoreNames.contains(ASSET_STORE_NAME)) request.result.createObjectStore(ASSET_STORE_NAME);

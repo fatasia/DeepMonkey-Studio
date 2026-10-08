@@ -1,10 +1,10 @@
-import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, cp } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { resolve, relative, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const [outputArg, originArg, base = '/DeepMonkey-Studio/'] = process.argv.slice(2);
+const [outputArg, originArg, base = '/DeepMonkey-Studio/', demoArg] = process.argv.slice(2);
 if (!outputArg || !originArg) throw new Error('Usage: node scripts/prepare-full-editor-pages.mjs <new output> <api origin> [base]');
 const api = originArg === '-' ? undefined : new URL(originArg);
 if (api && (!['http:', 'https:'].includes(api.protocol) || api.username || api.password || api.pathname !== '/' || api.search || api.hash)) throw new Error('API must be a credential-free HTTP(S) origin');
@@ -26,9 +26,17 @@ if (prune.status !== 0) throw new Error('Isolated development assets prune faile
 let html = await readFile(join(output, 'index.html'), 'utf8');
 // Meta is an editable non-secret runtime override; API credentials never enter this build.
 html = html.replace('</head>', `<meta name="studio-api-origin" content="${api?.origin ?? ''}">\n</head>`);
+if (demoArg) {
+  if (api) throw new Error('Browser-local demo must use its own workspace, without a server origin');
+  const demo = resolve(demoArg);
+  const manifest = JSON.parse(await readFile(join(demo, 'workspace.json'), 'utf8'));
+  if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.state?.projects)) throw new Error('Invalid browser demo seed');
+  await cp(demo, join(output, 'demo'), { recursive: true });
+  html = html.replace('</head>', `<meta name="studio-pages-workspace" content="${base}demo/workspace.json">\n</head>`);
+}
 await writeFile(join(output, 'index.html'), html);
 await writeFile(join(output, '404.html'), html);
 await writeFile(join(output, '.nojekyll'), '');
 await writeFile(join(output, 'editor-hosting.json'), JSON.stringify({ kind: 'complete-editor', base, apiOrigin: api?.origin ?? null,
-  productionDeployment: api ? 'api-configured-pending-live-verification' : 'frontend-only-api-unconfigured', version: '0.2.0' }, null, 2));
+  productionDeployment: demoArg ? 'browser-local-demo' : api ? 'api-configured-pending-live-verification' : 'frontend-only-api-unconfigured', version: '0.2.0' }, null, 2));
 console.log(JSON.stringify({ output, base, apiOrigin: api?.origin ?? null, published: false }, null, 2));

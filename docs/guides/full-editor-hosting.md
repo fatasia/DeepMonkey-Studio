@@ -1,6 +1,6 @@
 # 完整编辑器托管
 
-Pages托管完整Web编辑器，独立API服务保存工程、处理数据、转换资源和运行Agent。前端不是只读播放器；正式公开部署在Deep真实验收后执行。当前已实现分源配置和子路径路由，公网API域名及完整浏览器验收待定。[GitHub Pages仅托管静态文件](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages)。
+Pages 默认提供 [浏览器本地体验](online-browser.md)：完整编辑器、SMT、素材和示例数据，编辑保存在 IndexedDB。需要多人共享工程、工业转换、外部数据与 Agent 时，使用下述独立 API 配置。[GitHub Pages 托管静态文件](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages)。
 
 ## 前端
 
