@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 const run = promisify(execFile), root = resolve(import.meta.dirname, '..');
 const output = resolve(process.argv[2] ?? 'artifacts/releases/0.2.0/registry');
 const version = '0.2.0';
-const sdkVersion = '0.2.1';
+const sdkVersion = '0.2.2';
 await mkdir(output, { recursive: true });
 const source = join(output, 'sdk-source');
 await mkdir(source, { recursive: true });

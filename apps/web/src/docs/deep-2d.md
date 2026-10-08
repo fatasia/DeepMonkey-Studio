@@ -16,6 +16,6 @@ Native 端的绘制词汇包含三件视觉命令：线性与径向渐变、圆�
 
 ## 宿主怎么用
 
-Native 宿主在 deep2d 上下文里挂组件树、声明样式，布局求解与视觉命令的产出对宿主是自动的；验证入口见 Native 便携包（[Deep Engine](/docs/deep-engine#native-便携包)），显示列表在引擎分层中的位置见[引擎借鉴与设计理念](/docs/engine-design-influences)。Web 宿主需要等效视觉时继续使用现有二维组件，不要假设 TS 端能消费 deep2D 视觉命令。
+Native 宿主在 deep2d 上下文里挂组件树、声明样式，布局求解与视觉命令的产出对宿主是自动的；验证入口见 Native 便携包（[Deep Engine](/docs/deep-engine#native-便携包)），显示列表在引擎分层中的位置见[引擎架构](/docs/engine-architecture)。Web 宿主需要等效视觉时继续使用现有二维组件，不要假设 TS 端能消费 deep2D 视觉命令。
 
 能力边界以[引擎能力矩阵](/docs/engine-capability-matrix)为准；三行能力当前都是 Native 端完整可用、Web 端按设计缺席，不接受“浏览器里也能跑 deep2D”的表述。

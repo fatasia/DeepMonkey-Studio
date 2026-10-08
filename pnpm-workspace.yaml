@@ -1,3 +1,4 @@
+# Source workspaces; distributable bundles are generated under artifacts/.
 packages:
   - apps/*
   - packages/*

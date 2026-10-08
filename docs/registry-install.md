@@ -13,7 +13,7 @@ Node.js 24+ 可直接启动编辑器，浏览器 SDK 需要 WebGPU 与 HTTPS / l
 
 ## Studio
 
-首次启动下载 GitHub Release 的运行包，核对大小与 SHA-256。Windows x64 包已包含服务端依赖，解压即可启动；其他平台首次安装锁定的依赖。后续启动使用缓存。账号 `admin`，密码保存在终端提示的 `standalone-credentials.json` 的 `adminPassword` 字段。
+首次启动通过当前 npm registry 安装运行组件，支持 npm 镜像并核对 SHA-256。Windows x64 组件已包含服务端依赖；其他平台首次安装锁定的依赖。后续启动使用缓存。账号 `admin`，密码保存在终端提示的 `standalone-credentials.json` 的 `adminPassword` 字段。
 
 ```sh
 npx deepmonkey --port 4200 --data-dir ./studio-data --no-open
@@ -24,7 +24,9 @@ npx deepmonkey --prepare-only
 
 这是本地 Web/API 部署；AI Provider、外部数据源与云渲染仍需配置对应服务。Windows 包含预编译的 Deep Native 播放器与 LibreDWG；其他平台的原生目标需按能力配置。Windows 桌面窗口、Android 和签名发布使用对应 Release 或源码构建链。
 
-SDK npm 压缩包约 3.1 MB，脚手架约 3.3 MB；启动器约 16 KB。完整 Studio 的 Windows x64 运行包约 287 MB，包含 Web、API、原生播放器与依赖；其他平台使用约 156 MB 的基础包，再安装服务端依赖。
+SDK npm 压缩包约 3.1 MB，脚手架约 3.3 MB；启动器约 18 KB。Web/API 运行组件约 111 MB，Windows x64 原生工具与依赖组件约 151 MB，分别缓存。其他平台安装基础组件后再安装本机依赖。
+
+更新启动器使用 `npx deepmonkey@latest`。若镜像尚未同步新版本，可临时使用官方源：`npx --registry=https://registry.npmjs.org deepmonkey@latest`。
 
 ## SDK 与 Skill
 

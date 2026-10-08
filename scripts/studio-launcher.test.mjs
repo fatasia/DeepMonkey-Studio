@@ -24,14 +24,14 @@ async function fixture(t) {
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   t.after(() => new Promise(done => server.close(done)));
   const launcher = join(directory, 'launcher'); await mkdir(join(launcher, 'bin'), { recursive: true });
-  await cp(join(root, 'packages/studio-launcher/bin/studio.mjs'), join(launcher, 'bin/studio.mjs'));
+  await cp(join(root, 'packages/studio-launcher/bin'), join(launcher, 'bin'), { recursive: true });
   const manifest = { version: '0.2.0', sha256, bytes: bytes.length, url: `http://127.0.0.1:${server.address().port}/runtime` };
   await writeFile(join(launcher, 'runtime-manifest.json'), JSON.stringify(manifest));
   const npm = join(directory, 'npm-test.js');
   await writeFile(npm, 'require("node:fs").appendFileSync("install-proof.txt", "installed\\n");');
   const cache = join(directory, 'cache'), data = join(directory, 'data');
   const invoke = (...args) => run(process.execPath, [join(launcher, 'bin/studio.mjs'), '--cache-dir', cache, '--data-dir', data, ...args], { env: { ...process.env, npm_execpath: npm }, timeout: 30000 });
-  return { directory, launcher, manifest, cache, data, invoke, downloads: () => downloads };
+  return { directory, launcher, manifest, cache, data, npm, archive, invoke, downloads: () => downloads };
 }
 
 test('verified download installs once and cached preparation preserves user data', async t => {
@@ -71,4 +71,24 @@ test('platform bundle skips installation and is reused', async t => {
   const runtime = join(f.cache, `0.2.0-${variant.sha256.slice(0, 12)}`);
   await assert.rejects(access(join(runtime, 'install-proof.txt')));
   assert.equal(JSON.parse(await readFile(join(runtime, '.ready.json'))).sha256, variant.sha256);
+});
+
+test('registry payload is verified, extracted and reused without GitHub access', async t => {
+  const f = await fixture(t);
+  const packageRoot = join(f.directory, 'registry'); await mkdir(join(packageRoot, 'package'), { recursive: true });
+  await cp(f.archive, join(packageRoot, 'package/runtime.tar.gz'));
+  const packed = join(f.directory, 'registry.tgz'); await run('tar', ['-czf', packed, '-C', packageRoot, 'package']);
+  await writeFile(f.npm, `const fs = require('node:fs'), path = require('node:path');
+const dest = process.argv[process.argv.indexOf('--pack-destination') + 1];
+fs.copyFileSync(${JSON.stringify(packed)}, path.join(dest, 'registry.tgz'));
+process.stdout.write(JSON.stringify([{filename:'registry.tgz'}]));`);
+  const manifest = { ...f.manifest, dependenciesInstalled: true, npmPackages: [{ package: 'test-runtime@1.0.0', sha256: f.manifest.sha256, bytes: f.manifest.bytes }] };
+  await writeFile(join(f.launcher, 'runtime-manifest.json'), JSON.stringify(manifest));
+  await f.invoke('--prepare-only');
+  assert.equal(f.downloads(), 0);
+  const runtime = join(f.cache, `0.2.0-${manifest.sha256.slice(0, 12)}`);
+  assert.equal(await readFile(join(runtime, 'runtime-proof.txt'), 'utf8'), 'verified runtime');
+  await rm(join(runtime, '.ready.json'));
+  await writeFile(f.npm, 'process.exit(1)');
+  const again = await f.invoke('--prepare-only'); assert.match(again.stdout, /Using cached/);
 });

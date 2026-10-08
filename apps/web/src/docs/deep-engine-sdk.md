@@ -125,7 +125,7 @@ pnpm gate:deep-engine-consumer
 
 `PbrRenderer` 的默认色调映射是与 Three r185 一致的 ACES（`three-aces-r185`），与 Studio 的显示合约同源；需要旧算子时显式传 `deep-aces`。产品里的曝光、色彩空间、环境强度、阴影滤波与泛光参数见 `packages/contracts/src/displayContract.ts`。独立接入时如果希望画面与 Studio 编辑器一致，从同一份合约取值，不要各自写死。
 
-两端的像素级对比由 `pnpm gate:parity` 守护，结果见[引擎性能与画质基准](/docs/engine-benchmarks#three-与-deep-的像素一致性门)。
+两端的像素级对比由 `pnpm gate:parity` 守护，结果见[渲染性能诊断](/docs/engine-performance)。
 
 ### 光照与全局光照
 

@@ -29,4 +29,4 @@ Deep 的光线追踪在 Web 端以帧内联 BVH（compute 着色）实现，目�
 
 - 三个地址栏开关可以单独使用，也可以组合；关闭即回到原路径，帧逐位不变。
 - 开关不生效时，先确认地址参数拼写，再在“渲染引擎设置”面板里导出诊断，查看特性快照与逐通道读数。
-- 画质与性能的量测口径见[引擎性能与画质基准](/docs/engine-benchmarks)，接入方式见[Deep Engine 独立 SDK](/docs/deep-engine-sdk)。
+- 画质与性能的量测口径见[渲染性能诊断](/docs/engine-performance)，接入方式见[Deep Engine 独立 SDK](/docs/deep-engine-sdk)。

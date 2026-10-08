@@ -1,7 +1,9 @@
-import type { AssetLibraryItem, AssetLibraryPage, DataDatasetRecord, ProjectAssetMapRecord, ProjectAssetRecord } from '@bim-studio/contracts';
+import type { AssetLibraryItem, AssetLibraryPage, DataDatasetRecord, DataPipelineDefinition, ProjectAssetMapRecord, ProjectAssetRecord, SemanticModelRecord } from '@bim-studio/contracts';
+import { pagesOntologyRoute, seedPagesExperience } from './pagesDemoOntology';
+import { pagesAssistantRoute } from './pagesDemoAssistant';
 import { DesktopLocalApi } from './desktopLocalApi';
 import { IndexedDbDesktopLocalWorkspaceStore, type DesktopLocalWorkspaceState, type DesktopLocalWorkspaceStore } from './desktopLocalWorkspaceStore';
-import { jsonResponse, notFound, serverOnly } from './desktopLocalApiHttp';
+import { jsonResponse, notFound, serverOnly, badRequest, conflict } from './desktopLocalApiHttp';
 import { isPagesDemoRuntime, pagesDemoManifestUrl } from './pagesDemoRuntime';
 import { DEFAULT_BRANDING } from '../appDefaults';
 import { applicationPath } from './browserRuntimeConfig';
@@ -26,6 +28,7 @@ export class PagesDemoApi {
   async initialize(): Promise<void> {
     const current = await this.store.read() as PagesState;
     if (current.pagesSeedVersion === undefined) await this.store.write({ ...structuredClone(this.manifest.state), pagesSeedVersion: 1 } as PagesState);
+    await seedPagesExperience(this.store);
   }
   get defaultPath(): string { return this.manifest.defaultPath; }
   async handle(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
@@ -57,8 +60,10 @@ export class PagesDemoApi {
     const imported = path.match(/^\/api\/projects\/([^/]+)\/asset-library\/([^/]+)\/import$/);
     if (imported && method === 'POST') return this.importItem(decodeURIComponent(imported[1]!), decodeURIComponent(imported[2]!));
     if (path === '/api/demo/sensors') return jsonResponse(this.manifest.sensorRows);
+    const ontology = await pagesOntologyRoute(this.store, path, method, init); if (ontology) return ontology;
+    const assistant = await pagesAssistantRoute(this.store, this.manifest.sensorRows, url, method, init); if (assistant) return assistant;
     const resources = path.match(/^\/api\/projects\/([^/]+)\/(assets|data-connections|datasets|data-pipelines|data-endpoints|semantic-models)(?:\/([^/]+))?(?:\/(preview|diagnostics|test))?$/);
-    if (resources) return this.projectResources(decodeURIComponent(resources[1]!), resources[2]!, resources[3], resources[4], method, init);
+    if (resources) return this.projectResources(decodeURIComponent(resources[1]!), resources[2]!, resources[3], resources[4], method, init, url);
     return this.local.handle(url, { ...init, method });
   }
   private async importItem(projectId: string, itemId: string): Promise<Response> {
@@ -92,7 +97,7 @@ export class PagesDemoApi {
     (project.assets ??= []).push(asset); project.updatedAt = now; await this.store.write(state);
     return jsonResponse({ kind: 'resource', asset, reused: false }, 201);
   }
-  private async projectResources(projectId: string, kind: string, id: string | undefined, action: string | undefined, method: string, init: RequestInit): Promise<Response> {
+  private async projectResources(projectId: string, kind: string, id: string | undefined, action: string | undefined, method: string, init: RequestInit, url: URL): Promise<Response> {
     const state = await this.store.read(), project = state.projects.find(x => x.id === projectId);
     if (!project) return notFound('项目不存在');
     if (kind === 'data-connections' && id === 'diagnostics') return jsonResponse([]);
@@ -116,9 +121,39 @@ export class PagesDemoApi {
         if (dataset.sourceKey !== '/api/demo/sensors') return serverOnly('外部数据源');
         return jsonResponse({ dataset, fields: dataset.fields, rows: this.manifest.sensorRows, durationMs: 0 });
       }
+      if (kind === 'data-pipelines' && action === 'preview') {
+        const { executeDataPipeline, DataPipelineError } = await import('@bim-studio/data-runtime/pipeline');
+        const pipeline = record as unknown as DataPipelineDefinition;
+        try { return jsonResponse(await executeDataPipeline(pipeline, async datasetId => {
+          const dataset = project.datasets?.find(x => x.id === datasetId);
+          if (!dataset || dataset.sourceKey !== '/api/demo/sensors') throw new Error('此演示仅能读取当前项目内置的遥测数据集');
+          return structuredClone(this.manifest.sensorRows);
+        }, url.searchParams.has('throughNodeId') ? { throughNodeId: url.searchParams.get('throughNodeId')! } : {})); }
+        catch (error) { return jsonResponse({ pipeline, status: 'error', fields: [], rows: [], durationMs: 0,
+          diagnostics: error instanceof DataPipelineError ? error.diagnostics : [], failedNodeId: error instanceof DataPipelineError ? error.nodeId : undefined,
+          error: error instanceof Error ? error.message : '管线运行失败' }); }
+      }
       return jsonResponse(record);
     }
-    if (!['assets', 'data-connections', 'datasets'].includes(kind)) return serverOnly(`${kind}写入`);
+    if (kind === 'semantic-models' && (method === 'POST' || method === 'PUT')) {
+      try {
+        const body = JSON.parse(String(init.body));
+        const existing = collection.find(x => x.id === (id ?? body.id));
+        if (method === 'PUT' && !existing) return notFound('语义模型不存在');
+        if (existing && body.revision !== existing.revision) return conflict('语义模型已更新，请重新加载');
+        if (collection.some(x => x !== existing && x.name === body.name)) return conflict('语义模型名称已存在');
+        const { validateSemanticModel } = await import('@bim-studio/data-runtime/semantic');
+        const now = new Date().toISOString();
+        const model: SemanticModelRecord = { ...body, id: existing?.id ?? crypto.randomUUID(), revision: Number(existing?.revision ?? 0) + 1,
+          metrics: body.metrics ?? [], dimensions: body.dimensions ?? [], parameters: body.parameters ?? [], createdAt: existing?.createdAt ?? now, updatedAt: now };
+        const errors = validateSemanticModel(model, { listDatasets: () => project.datasets ?? [], listDataPipelines: () => project.dataPipelines ?? [] }, projectId);
+        if (errors.length) return badRequest(errors.join('；'));
+        const saved = model as unknown as { id: string; [key: string]: unknown };
+        if (existing) collection[collection.indexOf(existing)] = saved; else collection.push(saved);
+        Object.assign(project, { [key]: collection }); await this.store.write(state); return jsonResponse(model, existing ? 200 : 201);
+      } catch (error) { return badRequest(error instanceof Error ? error.message : '语义模型格式无效'); }
+    }
+    if (!['assets', 'data-connections', 'datasets', 'data-pipelines', 'semantic-models'].includes(kind)) return serverOnly(`${kind}写入`);
     if (method === 'DELETE' && id) {
       const index = collection.findIndex(x => x.id === decodeURIComponent(id)); if (index < 0) return notFound('资源不存在');
       collection.splice(index, 1);
@@ -129,6 +164,14 @@ export class PagesDemoApi {
       await this.store.write(state); return jsonResponse(record);
     } else if (method === 'POST' && !id && kind !== 'assets') {
       const body = JSON.parse(String(init.body));
+      if (kind === 'data-pipelines') {
+        const { validateDataPipeline } = await import('@bim-studio/data-runtime/pipeline');
+        try { validateDataPipeline(body); } catch (error) { return badRequest(error instanceof Error ? error.message : '管线无效'); }
+        const now = new Date().toISOString(), existing = collection.find(x => x.id === body.id);
+        const saved = { ...body, id: existing?.id ?? crypto.randomUUID(), projectId, createdAt: existing?.createdAt ?? now, updatedAt: now };
+        if (existing) collection[collection.indexOf(existing)] = saved; else collection.push(saved);
+        Object.assign(project, { [key]: collection }); await this.store.write(state); return jsonResponse(saved, existing ? 200 : 201);
+      }
       if (kind === 'data-connections' && body.config?.url !== '/api/demo/sensors') return serverOnly('外部数据连接');
       if (kind === 'datasets' && body.sourceKey !== '/api/demo/sensors') return serverOnly('外部数据集');
       const now = new Date().toISOString(); collection.push({ ...body, id: crypto.randomUUID(), projectId, createdAt: now, updatedAt: now });

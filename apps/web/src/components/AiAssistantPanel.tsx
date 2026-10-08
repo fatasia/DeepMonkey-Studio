@@ -1,4 +1,5 @@
 import { AiAssistantMessages } from "./AiAssistantMessages";
+import { isPagesDemoRuntime } from '../adapters/pagesDemoRuntime';
 import { AiAssistantComposer } from "./AiAssistantComposer";
 import { AssistantModelControls, type AssistantSessionOptions } from "./AssistantModelControls";
 import { useAssistantScroll } from "../ai/useAssistantScroll";
@@ -217,7 +218,8 @@ export function AiAssistantPanel({
 
   const dashboardModeAvailable = Boolean(onApplyDashboard || onValidateDashboardPageDraft);
   const tabs = assistantModeTabs(locale, surface, Boolean(workspaceTarget.selected), dashboardModeAvailable);
-  const suggestions = assistantSuggestions(mode, locale);
+  const pagesDemo = isPagesDemoRuntime();
+  const suggestions = pagesDemo ? [t('统计遥测数据', 'Summarize telemetry data'), t('解释 SMT 本体关系', 'Explain SMT ontology relationships'), t('有哪些场景和模型', 'List scenes and models')] : assistantSuggestions(mode, locale);
   const latestReliability = conversation.at(-1)?.reliability;
   const readiness = assistantContextReadiness(effectiveSources);
   const contextLoading = !platformLoaded && !projectMissing;
@@ -327,8 +329,8 @@ export function AiAssistantPanel({
           {!conversationActive && mode !== "sql" && (
             <div className="ai-assistant-empty">
               <Sparkles size={22} aria-hidden="true" />
-              <strong>{t("问当前平台，不问空泛知识", "Ask your platform, not generic knowledge")}</strong>
-              <span>{t("回答只基于本项目证据与已装载能力；点下面的问题即可直接提问。", "Answers use only this project's evidence and loaded capabilities; tap a question to ask it.")}</span>
+              <strong>{pagesDemo ? t('SMT 演示助手', 'SMT demo assistant') : t("问当前平台，不问空泛知识", "Ask your platform, not generic knowledge")}</strong>
+              <span>{pagesDemo ? t('使用本地示例数据回答。选择一个问题开始体验。', 'Answers use local sample data. Choose a question to get started.') : t("回答只基于本项目证据与已装载能力；点下面的问题即可直接提问。", "Answers use only this project's evidence and loaded capabilities; tap a question to ask it.")}</span>
               <div className="ai-platform-suggestions">
                 {suggestions.map((item) => (
                   <button key={item} type="button" disabled={busy || sessions.loading} onClick={() => void ask(item)}>

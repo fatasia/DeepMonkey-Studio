@@ -67,6 +67,8 @@ describe("web architecture boundary", () => {
       path.join("optimizer", "modelOptimizerIO.ts"),
       // Local Basis/KTX2 encoder bootstrap only; it fetches bundled assets, not business data.
       path.join("optimizer", "ktx2Encoder.ts"),
+      // Pages fetches its same-origin manifest and packaged assets; business requests are handled locally.
+      path.join("adapters", "pagesDemoApi.ts"),
       // SMAA LUT data URL adapter for the offscreen renderer; no external business transport.
       path.join("viewer", "offscreenPostProcessing.ts"),
       // Bundled battery CSV fixtures are static product assets, not business HTTP.

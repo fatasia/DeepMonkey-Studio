@@ -7,6 +7,7 @@ export function useWorkbenchGraphViewport<N extends Node>(nodes: N[], size: { wi
   const instance = useRef<ReactFlowInstance<N> | null>(null);
   const current = useRef(nodes);
   current.current = nodes;
+  const nodeIds = JSON.stringify(nodes.map(node => node.id).sort());
   function fit(next = current.current) {
     const element = container.current, flow = instance.current;
     if (!element || !flow || !next.length || element.clientWidth < 1 || element.clientHeight < 1) return;
@@ -20,5 +21,8 @@ export function useWorkbenchGraphViewport<N extends Node>(nodes: N[], size: { wi
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+  // Query results can arrive after mount without changing the canvas size.
+  // Refit membership changes, while keeping the user's view during node dragging.
+  useEffect(() => { fit(); }, [nodeIds]);
   return { container, instance, fit };
 }

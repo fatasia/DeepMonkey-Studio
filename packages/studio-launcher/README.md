@@ -12,7 +12,7 @@ Start the complete DeepMonkey Studio Web editor and API on your computer.
 npx deepmonkey-studio
 ```
 
-Requires Node.js 24+. The first run downloads the verified runtime. Windows x64 includes server dependencies; other platforms install them on first launch. Later runs reuse it. Project data stays in your local DeepMonkeyStudio data directory across version upgrades.
+Requires Node.js 24+. The first run installs verified runtime components through your configured npm registry, including npm mirrors. Windows x64 includes server dependencies; other platforms install them on first launch. Later runs reuse the cache. Project data stays in your local DeepMonkeyStudio data directory across version upgrades.
 
 Use `--port 4200`, `--data-dir ./my-studio-data` or `--no-open` as needed. The administrator account is `admin`; the terminal shows the location of its generated password. AI providers and remote render workers use the same configuration as a normal Studio deployment.
 
@@ -22,7 +22,7 @@ npx deepmonkey-studio --port 4200 --data-dir ./my-studio-data
 
 Read `adminPassword` in the printed `standalone-credentials.json` file to sign in. `--prepare-only` downloads and prepares the runtime; `--cache-dir` selects its cache. Ctrl+C stops the server.
 
-The launcher is about 16 KB. The separate Windows x64 runtime is about 287 MB and includes Web, API, native tools and dependencies. Other platforms use a 156 MB base package and install their server dependencies on first launch.
+The Web/API runtime is about 111 MB. Windows x64 adds about 151 MB of native tools and dependencies. Each component is cached separately. Studio installation no longer requires a GitHub Releases download.
 
 ## Use AI or build an application
 

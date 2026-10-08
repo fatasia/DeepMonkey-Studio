@@ -87,4 +87,4 @@ Deep WebGPU 下有一组不需要作者开启的质感层，它们决定接地�
 
 ## 两种渲染器下看到的差别
 
-上面几项里，火焰曲线、体积雾和后处理在 Three（WebGL）和 Deep 之间有细节差别，文中已逐项标出。整体的画面一致性、对拍方法和已知差距见 [Deep Engine](/docs/deep-engine#与-three-js-的显示一致性) 和[引擎性能与画质基准](/docs/engine-benchmarks#three-与-deep-的像素一致性门)。
+上面几项里，火焰曲线、体积雾和后处理在 Three（WebGL）和 Deep 之间有细节差别，文中已逐项标出。整体的画面一致性、对拍方法和已知差距见 [Deep Engine](/docs/deep-engine#与-three-js-的显示一致性) 和[渲染性能诊断](/docs/engine-performance)。

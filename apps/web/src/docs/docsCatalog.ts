@@ -13,8 +13,8 @@ import engineCapabilityMatrix from "./engine-capability-matrix.md?raw";
 import realtimeGi from "./realtime-gi.md?raw";
 import rayTracing from "./ray-tracing.md?raw";
 import deep2d from "./deep-2d.md?raw";
-import engineDesignInfluences from "./engine-design-influences.md?raw";
-import engineBenchmarks from "./engine-benchmarks.md?raw";
+import engineDesignInfluences from "./engine-architecture.md?raw";
+import engineBenchmarks from "./engine-performance.md?raw";
 import aiModeling3dApi from "./ai-modeling3d-api.md?raw";
 import aiWorkflows from "./ai-workflows.md?raw";
 import apiReference from "./api-reference.md?raw";
@@ -67,8 +67,8 @@ export const docsDocuments = createDocsCatalog([
   { id: "faq", category: "交付与运维", order: 44, version: DOCS_VERSION, markdown: faq },
   { id: "deep-engine", category: "渲染引擎", order: 50, version: DOCS_VERSION, markdown: deepEngine },
   { id: "deep-engine-sdk", category: "渲染引擎", order: 51, version: DOCS_VERSION, markdown: deepEngineSdk },
-  { id: "engine-design-influences", category: "渲染引擎", order: 52, version: DOCS_VERSION, markdown: engineDesignInfluences },
-  { id: "engine-benchmarks", category: "渲染引擎", order: 53, version: DOCS_VERSION, markdown: engineBenchmarks },
+  { id: "engine-architecture", category: "渲染引擎", order: 52, version: DOCS_VERSION, markdown: engineDesignInfluences },
+  { id: "engine-performance", category: "渲染引擎", order: 53, version: DOCS_VERSION, markdown: engineBenchmarks },
   // 六引擎对标 P2:公开能力矩阵页(导语文档;数据表由 EngineCapabilityMatrix 组件在 DocsCenter 内渲染,单源=contracts 登记表)。
   { id: "engine-capability-matrix", category: "渲染引擎", order: 54, version: DOCS_VERSION, markdown: engineCapabilityMatrix },
   // 渲染能力专题:口径与 rendererCapabilityManifest 一致(supported / opt-in-default-off / harness-only 措辞区分)。

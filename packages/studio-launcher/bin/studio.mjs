@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createServer } from 'node:net';
+import { installRegistryRuntime } from './registry-runtime.mjs';
 
 const args = process.argv.slice(2), run = promisify(execFile);
 if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('DeepMonkey Studio requires Node.js 24+');
@@ -49,6 +50,11 @@ try { const cached = JSON.parse(await readFile(ready, 'utf8')); if (cached.sha25
 catch {
   await mkdir(cache, { recursive: true });
   await mkdir(runtime, { recursive: true });
+  if (manifest.npmPackages) {
+    await installRegistryRuntime(manifest, runtime, cache, npmCli);
+    if (!manifest.dependenciesInstalled) await npmInstall();
+    await writeFile(ready, JSON.stringify({ version: manifest.version, sha256: manifest.sha256 }) + '\n');
+  } else {
   const archive = join(cache, `${manifest.version}-${randomUUID()}.tar.gz`);
   const temporary = `${archive}.part`, hash = createHash('sha256');
   console.log(`Downloading Studio ${manifest.version} (${Math.ceil(manifest.bytes / 1_000_000)} MB)…`);
@@ -68,6 +74,7 @@ catch {
   await rm(archive);
   if (!manifest.dependenciesInstalled) await npmInstall();
   await writeFile(ready, JSON.stringify({ version: manifest.version, sha256: manifest.sha256 }) + '\n');
+  }
 }
 console.log(`Studio runtime: ${runtime}\nProject data: ${data}`);
 if (args.includes('--prepare-only')) process.exit(0);

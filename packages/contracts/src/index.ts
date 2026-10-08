@@ -425,3 +425,4 @@ export * from "./eventRecording.js";
 export * from "./processAdmission.js";
 export * from "./worldApi.js";
 export * from "./worldApiValidation.js";
+export * from "./ontologyGraphQuery.js";

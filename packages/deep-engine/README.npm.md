@@ -22,7 +22,7 @@
 | Add the TypeScript SDK to your project | `npm i deepmonkey` |
 | Generate an editable 3D app with AI Skills | `npx create-deepmonkey my-world` |
 
-The npm SDK archive is about **3.1 MB**. Starting Studio downloads a separate runtime once: approximately **287 MB on Windows x64**, including its server dependencies. Your SDK-only application does not download Studio during installation.
+The npm SDK archive is about **3.1 MB**. Starting Studio installs its Web/API runtime (**111 MB**) and, on Windows x64, native tools and dependencies (**151 MB**) through your configured npm registry. SDK-only installation does not download Studio.
 
 ## Start Studio
 
@@ -32,7 +32,7 @@ Requires **Node.js 24+**. No repository checkout or Rust build is needed for the
 npx deepmonkey
 ```
 
-The first run downloads the SHA-256-verified Studio runtime. Windows x64 includes server dependencies; other platforms install them on first launch. Studio opens `http://localhost:4100` (or the next available port). Later runs reuse the cached runtime. Projects remain in a separate local data directory across upgrades.
+The first run installs SHA-256-verified runtime components through npm, using your configured registry or mirror. Windows x64 includes server dependencies; other platforms install them on first launch. Studio opens `http://localhost:4100` (or the next available port). Later runs reuse the cached runtime. Projects remain in a separate local data directory across upgrades.
 
 The administrator account is **admin**. The terminal prints the path of the generated credential file; read its `adminPassword` field to sign in.
 

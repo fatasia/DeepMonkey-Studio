@@ -51,6 +51,7 @@ tools/unity/.smoke-runs/
 !/packages/create-deepmonkey/bin/create.mjs
 !/packages/studio-launcher/bin/
 !/packages/studio-launcher/bin/studio.mjs
+!/packages/studio-launcher/bin/registry-runtime.mjs
 test-output*.mjs
 .idea/
 .vscode/
@@ -78,3 +79,6 @@ bim-studio-docs/
 data/external-assets/
 must-not-be-created/
 _unity-bench/
+
+/packages/deep-engine-native/geometry_dag/docs/HANDOFF.md
+/docs/specs/

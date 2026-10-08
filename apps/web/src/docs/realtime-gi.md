@@ -26,4 +26,4 @@
 - 开启 `sdf-gi=1` 后，烘焙出的探针场接管主渲染的探针采样，逐帧捕获停驱；关掉开关即回到逐帧捕获。
 - `sdf-gi` 与 `ssgi` 是地址栏开关，不写进场景数据，刷新或切换渲染器后回到默认状态；想让遮蔽关系长期生效，使用探针 GI 开关或后续版本的烘焙发布能力。
 
-开启方式与边界如有变化，以[引擎能力矩阵](/docs/engine-capability-matrix)的登记为准；画面口径与对拍方法见[引擎性能与画质基准](/docs/engine-benchmarks)。
+开启方式与边界如有变化，以[引擎能力矩阵](/docs/engine-capability-matrix)的登记为准；画面口径与对拍方法见[渲染性能诊断](/docs/engine-performance)。
