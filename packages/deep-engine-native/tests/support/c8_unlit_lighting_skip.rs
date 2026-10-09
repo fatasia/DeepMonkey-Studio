@@ -82,12 +82,14 @@ fn native_unlit_lighting_work_is_guarded_and_output_semantics_remain_outside() {
             "RT fragment must consume the shared response core, not a text copy: {call}"
         );
     }
+    assert!(mesh.contains("let original = native_lit_response("));
+    assert!(mesh.contains("if (legacy) {\n    return original;"));
     let stripped_mesh: String = mesh.chars().filter(|c| !c.is_whitespace()).collect();
     for semantic in [
         "native_view_geometry_roughness(geometry_normal)",
         "mapped_normal(input,front_facing)",
         "letauthored_light=",
-        "surface_color=native_lit_response(",
+        "surface_color=native_extended_shade(",
         "letoutput_alpha=",
     ] {
         assert!(

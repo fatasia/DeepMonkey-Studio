@@ -25,8 +25,12 @@ fn every_native_output_variant_consumes_shared_display_math_once() {
             assert!(source.contains("return deepLinearToSrgb(linear)"));
             assert_eq!(source.contains("forward_depth:"), fog);
             assert_eq!(source.contains("bloom_color:"), bloom);
-            assert!(source.contains("vec4f(aces(author_grading_apply(hdr.rgb)), hdr.a)"));
-            assert!(source.contains("linear_to_srgb(aces(author_grading_apply(hdr.rgb)))"));
+            assert!(
+                source.contains("vec4f(aces(author_grading_apply(hdr.rgb, vignette_uv)), hdr.a)")
+            );
+            assert!(
+                source.contains("linear_to_srgb(aces(author_grading_apply(hdr.rgb, vignette_uv)))")
+            );
         }
     }
 }

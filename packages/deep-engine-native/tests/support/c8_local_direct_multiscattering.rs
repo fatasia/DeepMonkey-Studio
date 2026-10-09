@@ -140,7 +140,10 @@ fn local_energy_fixture_has_primary_zero_author_mode_three() {
         for lane in 0..3 {
             let delta = expected_delta(case, 8000, 1.8304877, lane);
             assert!(delta.is_finite() && delta >= 0.0);
-            assert_eq!(delta > 0.0, DIRECTED_CASES.contains(&case));
+            assert_eq!(
+                delta > 0.0,
+                DIRECTED_CASES.contains(&case) || case == "hemisphere"
+            );
         }
     }
 }

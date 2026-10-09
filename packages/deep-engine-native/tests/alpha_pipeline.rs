@@ -129,11 +129,8 @@ fn material_alpha_factor_is_separate_from_texture_alpha_and_cutoff() {
     assert_eq!(scene.instances[1][29], 0.4);
     assert_eq!(scene.instances[2][35], 0.45);
     assert_eq!(scene.instances[3][35], 0.65);
-    assert!(
-        pbr.materials
-            .iter()
-            .all(|material| material.uniform.len() == 40)
-    );
+    assert!(pbr.materials.iter().all(|material| material.uniform.len()
+        == deep_engine_native::mesh_abi::MATERIAL_UNIFORM_ROW_FLOATS));
     assert!(!mask_covered(0.75, 128, 0.4));
     assert!(mask_covered(0.75, 224, 0.4));
     let blended = straight_alpha_over([0.8, 0.4, 0.2, 0.25], [0.2, 0.4, 0.8, 0.5]);
@@ -197,7 +194,9 @@ fn wgsl_and_pipeline_sources_freeze_mask_blend_and_two_sided_rules() {
     assert!(pipeline.contains("src_factor: wgpu::BlendFactor::One"));
     assert!(pipeline.contains("BlendFactor::OneMinusSrcAlpha"));
     assert!(
-        pipeline.contains("depth_write_enabled: Some(matches!(semantic, BlendSemantic::Solid))")
+        pipeline.split_whitespace().collect::<String>().contains(
+            "depth_write_enabled:Some(matches!(semantic,BlendSemantic::Solid)&&!matches!(capture,CaptureMode::MegaLights),)"
+        )
     );
     assert!(pipeline.contains("double_sided"));
     let abi = fs::read_to_string(root.join("src/mesh_abi.rs")).expect("mesh ABI source");

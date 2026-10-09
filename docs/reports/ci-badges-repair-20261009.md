@@ -14,6 +14,9 @@
 - Studio：能力清单黄金字节换行不一致；跨包源码深导入；Ontology 预览测试对象缺失合同字段；Deep overlay mock 缺失新增导出；API 测试依赖未提交的 factory.zip。
 - Engine：旧 Bloom 测试依赖 shallow checkout 不含的历史提交；CPU 层目录测试依赖未提交 GPU 证据；MegaLights 原始 shader 与镜像跨系统换行不同；PBR 材质校验在设备所有权检查之前；Windows 集成测试编译 gpu_texture_mips 时漏挂支持模块。
 - 后续门禁：隔离检查仍禁止已经使用的 fflate，且把 esbuild 裁剪的 Three 导入算作运行代码；Native 存量源码未通过 Rust 1.93 格式化与全目标严格 Clippy。
+- 干净构建：Web 工作流手工列出的依赖缺失 workcell-validation-plugin 与 plugin-runtime；改为按 pnpm 的 Web workspace 依赖图拓扑构建。
+- 原生测试：材质 ABI 已扩展为 46 个有效 float／80 个行 float／320 B；输出 shader 已引入 vignette UV、扩展材质包装和 MegaLights 深度策略，旧测试尚未同步。半球光 CPU 参考已有非零 Lambert 响应，断言仍只认可定向光。
+- Windows LPAC：本机系统 vcruntime140.dll 不向受限应用包授予读取权限，隔离进程在进入 worker 代码前以 0xc0000022 退出。每次启动将宿主已加载的 VC runtime 复制到独占 scratch，仅授权该 profile SID 读取执行；不修改系统 DLL ACL 或 sandbox capabilities。
 
 失败记录：Governance 37822360547、Engine 37821584305、Studio 37819885965。原始日志保存在忽略的 test-output/ci-repair-20261009/。
 
@@ -32,4 +35,6 @@ Native 变更包含 cargo fmt 对存量源码的机械格式化，以及严格 C
 - 治理与 Unity 归档 6 个测试；许可证审计 536 个生产版本；离线文档构建及 5 个测试。
 - Native 全目标、全特性 Clippy（Rust 1.93，`-D warnings`）及 cargo fmt 检查。
 
-Native 全量测试、双端验收门和 GitHub Actions 干净环境验证仍在进行；结果随后补充。
+真实 LPAC 四项回归测试已通过：零 capability 身份／IPC、真实文件与 TCP 拒绝及普通进程正对照、非法镜像与取消、超时终止和 scratch 清理。
+
+GitHub 首轮干净环境：[Engine](https://github.com/fatasia/DeepMonkey-Studio/actions/runs/37872053631) 的 browser-core（含 J5 双端门）、[Studio](https://github.com/fatasia/DeepMonkey-Studio/actions/runs/37872053651) 的 Contracts/API、[Governance](https://github.com/fatasia/DeepMonkey-Studio/actions/runs/37872053736) 两个 job 已通过。Web 构建和 Native 的剩余失败已按上述根因修复，正在复验。
