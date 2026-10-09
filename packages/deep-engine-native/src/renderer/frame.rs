@@ -150,30 +150,64 @@ impl Renderer {
         }
         if let Some(mega) = self.mega_lights.as_mut() {
             mega.note_scene_content(self.scene.scene_content_key());
-            mega.advance(self.view, self.lighting.as_ref(), self.rt_residency.is_some());
-            // GPU 执行腿计划帧提前注入前向前向尺寸(懒挂载首挂载的视口来源)。
-            mega.note_pending_viewport(
-                self.forward_targets.width(),
-                self.forward_targets.height(),
+            mega.advance(
+                self.view,
+                self.lighting.as_ref(),
+                self.rt_residency.is_some(),
             );
+            // GPU 执行腿计划帧提前注入前向前向尺寸(懒挂载首挂载的视口来源)。
+            mega.note_pending_viewport(self.forward_targets.width(), self.forward_targets.height());
         }
         // megaLights GPU 执行腿计划帧:opaque 深度是重建核的消费源,store 不能
         // discard(TS megaLightsPlanned 纳入深度消费集同款语义)。
-        let mega_leg_before = self.mega_lights.as_ref().map(|mega| mega.telemetry().execution_leg);
-        let mega_planned = self.mega_lights.as_mut().is_some_and(|mega| mega.prepare_gpu_frame(
-            &self.device, &self.queue, &self.forward_targets.depth_view, self.forward_depth_epoch,
-            &self.frame_layout, &self.material_layout, self.rt_residency.as_ref().map(|r| r.tlas()),
-            self.scene.shader_materials.is_none() && !self.scene.pbr.materials.iter().any(|m| m.layered.is_some())
-                && self.rt_residency.as_ref().is_none_or(|r| r.plan().conservative_mask_instances == 0)
-                && self.scene.batches.iter().all(|b| b.cast_shadow || b.alpha_mode == deep_engine_native::contract::AlphaMode::Blend)
-                && self.lighting.as_ref().is_none_or(|l| l.local_lights.iter().all(|light|
-                    matches!(light.kind, deep_engine_native::local_lighting::LocalLightKind::Disabled | deep_engine_native::local_lighting::LocalLightKind::Point | deep_engine_native::local_lighting::LocalLightKind::Spot))),
-        ));
-        if let Some(mega) = self.mega_lights.as_ref() && mega_leg_before != Some(mega.telemetry().execution_leg) {
+        let mega_leg_before = self
+            .mega_lights
+            .as_ref()
+            .map(|mega| mega.telemetry().execution_leg);
+        let mega_planned = self.mega_lights.as_mut().is_some_and(|mega| {
+            mega.prepare_gpu_frame(
+                &self.device,
+                &self.queue,
+                &self.forward_targets.depth_view,
+                self.forward_depth_epoch,
+                &self.frame_layout,
+                &self.material_layout,
+                self.rt_residency.as_ref().map(|r| r.tlas()),
+                self.scene.shader_materials.is_none()
+                    && !self.scene.pbr.materials.iter().any(|m| m.layered.is_some())
+                    && self
+                        .rt_residency
+                        .as_ref()
+                        .is_none_or(|r| r.plan().conservative_mask_instances == 0)
+                    && self.scene.batches.iter().all(|b| {
+                        b.cast_shadow
+                            || b.alpha_mode == deep_engine_native::contract::AlphaMode::Blend
+                    })
+                    && self.lighting.as_ref().is_none_or(|l| {
+                        l.local_lights.iter().all(|light| {
+                            matches!(
+                                light.kind,
+                                deep_engine_native::local_lighting::LocalLightKind::Disabled
+                                    | deep_engine_native::local_lighting::LocalLightKind::Point
+                                    | deep_engine_native::local_lighting::LocalLightKind::Spot
+                            )
+                        })
+                    }),
+            )
+        });
+        if let Some(mega) = self.mega_lights.as_ref()
+            && mega_leg_before != Some(mega.telemetry().execution_leg)
+        {
             match mega.telemetry().execution_leg {
-                super::megalights_runtime::MegaLightsExecutionLeg::GpuDispatchResident => self.diagnostics.note_megalights_gpu_resident(),
-                super::megalights_runtime::MegaLightsExecutionLeg::GpuDegraded => self.diagnostics.note_megalights_gpu_degraded(
-                    mega.telemetry_gpu_reject_reason().unwrap_or("native_megalights_gpu_device_rejected")),
+                super::megalights_runtime::MegaLightsExecutionLeg::GpuDispatchResident => {
+                    self.diagnostics.note_megalights_gpu_resident()
+                }
+                super::megalights_runtime::MegaLightsExecutionLeg::GpuDegraded => {
+                    self.diagnostics.note_megalights_gpu_degraded(
+                        mega.telemetry_gpu_reject_reason()
+                            .unwrap_or("native_megalights_gpu_device_rejected"),
+                    )
+                }
                 _ => {}
             }
         }
@@ -245,12 +279,21 @@ impl Renderer {
         }
 
         gpu_begin(&self.telemetry, GpuSegment::Opaque, &mut encoder);
-        if mega_planned && let Some(chain) = self.mega_lights.as_ref().and_then(|m| m.gpu.as_ref()) {
-            chain.local_lighting(&self.queue, &mut encoder, &self.frame_buffer, self.frame[14][2], false);
+        if mega_planned && let Some(chain) = self.mega_lights.as_ref().and_then(|m| m.gpu.as_ref())
+        {
+            chain.local_lighting(
+                &self.queue,
+                &mut encoder,
+                &self.frame_buffer,
+                self.frame[14][2],
+                false,
+            );
         }
         // v10 studio 渐变档:opaque 前(background pass 清屏+画渐变;
         // mesh pass 颜色 Load,深度照常自 Clear)。
-        if self.forward_targets.studio_gradient && let Some(background) = &self.studio_background {
+        if self.forward_targets.studio_gradient
+            && let Some(background) = &self.studio_background
+        {
             deep_engine_native::studio_background::encode_studio_background_pass(
                 &mut encoder,
                 &self.forward_targets.msaa_view,
@@ -331,8 +374,14 @@ impl Renderer {
         // 挂载失败 sticky 降级 = 静默跳过(本帧直射已由簇光内联渲染,fail-closed)。
         if mega_planned && let Some(mega) = self.mega_lights.as_mut() {
             if let Some(gbuffer) = &mega.gbuffer {
-                gbuffer.encode(&mut encoder, &self.forward_targets.depth_view, &self.frame_bind_group,
-                    &self.scene, &self.culling, self.lod.as_ref());
+                gbuffer.encode(
+                    &mut encoder,
+                    &self.forward_targets.depth_view,
+                    &self.frame_bind_group,
+                    &self.scene,
+                    &self.culling,
+                    self.lod.as_ref(),
+                );
             }
             let leg_before = mega.telemetry().execution_leg;
             let frame_rows: [[f32; 4]; 4] = std::array::from_fn(|row| self.frame[row]);
@@ -345,8 +394,14 @@ impl Renderer {
                 &self.forward_targets.depth_view,
                 self.forward_depth_epoch,
                 &self.forward_targets.hdr_view,
-                self.scene.has_transparent().then_some(&self.forward_targets.msaa_view),
-                if self.frame[13][3] >= 2.0 { self.frame[14][0] } else { 1.0 },
+                self.scene
+                    .has_transparent()
+                    .then_some(&self.forward_targets.msaa_view),
+                if self.frame[13][3] >= 2.0 {
+                    self.frame[14][0]
+                } else {
+                    1.0
+                },
             );
             let leg_after = mega.telemetry().execution_leg;
             if leg_before != leg_after {
@@ -356,7 +411,8 @@ impl Renderer {
                     }
                     super::megalights_runtime::MegaLightsExecutionLeg::GpuDegraded => {
                         self.diagnostics.note_megalights_gpu_degraded(
-                            mega.telemetry_gpu_reject_reason().unwrap_or("native_megalights_gpu_device_rejected"),
+                            mega.telemetry_gpu_reject_reason()
+                                .unwrap_or("native_megalights_gpu_device_rejected"),
                         );
                     }
                     _ => {}
@@ -366,8 +422,15 @@ impl Renderer {
         }
 
         let has_transparent = self.scene.has_transparent();
-        if mega_planned && let Some(chain) = self.mega_lights.as_ref().and_then(|m| m.gpu.as_ref()) {
-            chain.local_lighting(&self.queue, &mut encoder, &self.frame_buffer, self.frame[14][2], true);
+        if mega_planned && let Some(chain) = self.mega_lights.as_ref().and_then(|m| m.gpu.as_ref())
+        {
+            chain.local_lighting(
+                &self.queue,
+                &mut encoder,
+                &self.frame_buffer,
+                self.frame[14][2],
+                true,
+            );
         }
         gpu_begin(&self.telemetry, GpuSegment::Transparent, &mut encoder);
         let transparent = timer(token).filter(|_| has_transparent);

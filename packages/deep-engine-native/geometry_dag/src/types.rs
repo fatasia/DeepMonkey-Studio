@@ -130,8 +130,10 @@ pub(crate) mod rustc_hash_lite {
     }
 
     /// 以 FxHasher 为后端的 `HashMap` 别名。
-    pub(crate) type FxHashMap<K, V> = std::collections::HashMap<K, V, std::hash::BuildHasherDefault<FxHasher>>;
+    pub(crate) type FxHashMap<K, V> =
+        std::collections::HashMap<K, V, std::hash::BuildHasherDefault<FxHasher>>;
 
     /// 以 FxHasher 为后端的 `HashSet` 别名。
-    pub(crate) type FxHashSet<K> = std::collections::HashSet<K, std::hash::BuildHasherDefault<FxHasher>>;
+    pub(crate) type FxHashSet<K> =
+        std::collections::HashSet<K, std::hash::BuildHasherDefault<FxHasher>>;
 }

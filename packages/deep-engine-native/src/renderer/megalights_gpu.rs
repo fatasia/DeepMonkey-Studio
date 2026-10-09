@@ -1,17 +1,25 @@
 //! Native RIS resources. Actual material GBuffer and winner TLAS visibility replace
 //! opaque local lighting; unsupported profiles retain clustered lighting.
 
-#[path = "megalights_gpu_shaders.rs"] mod shaders;
-#[path = "megalights_gpu_math.rs"] mod math;
-#[path = "megalights_gpu_create.rs"] mod create;
-#[path = "megalights_gpu_encode.rs"] mod encode;
-#[path = "megalights_gpu_bindings.rs"] mod bindings;
-#[path = "megalights_gpu_budget.rs"] pub(crate) mod budget;
-use shaders::{REBUILD_WGSL, COMPOSITE_WGSL};
+#[path = "megalights_gpu_bindings.rs"]
+mod bindings;
+#[path = "megalights_gpu_budget.rs"]
+pub(crate) mod budget;
+#[path = "megalights_gpu_create.rs"]
+mod create;
+#[path = "megalights_gpu_encode.rs"]
+mod encode;
+#[path = "megalights_gpu_math.rs"]
+mod math;
+#[path = "megalights_gpu_shaders.rs"]
+mod shaders;
+use bindings::{compute_entries, queue_zero, storage_layout};
+#[cfg(test)]
+pub(crate) use math::multiply4;
+pub(crate) use math::{combined_clip_to_view, invert4, pack_ris_params, world_to_view};
+use math::{pack_composite_params, pack_rebuild_params};
 pub(crate) use shaders::compose_production_shader;
-pub(crate) use math::{multiply4, invert4, world_to_view, combined_clip_to_view, pack_ris_params};
-use math::{pack_rebuild_params, pack_composite_params};
-use bindings::{storage_layout, compute_entries, queue_zero};
+use shaders::{COMPOSITE_WGSL, REBUILD_WGSL};
 
 use deep_engine_native::lighting_math_wgsl::DEEP_IES_SAMPLING_WGSL;
 use deep_engine_native::megalights_abi::MEGA_LIGHT_WORDS;
@@ -78,7 +86,7 @@ const IES_PLACEHOLDER_ROW: [f32; 4] = [-1.0, -1.0, -1.0, -1.0];
 pub(crate) struct MegaLightsGpuChain {
     width: u32,
     height: u32,
-    full: (u32,u32),
+    full: (u32, u32),
     epoch: u64,
     rebuild_pipeline: wgpu::ComputePipeline,
     build_pipeline: wgpu::ComputePipeline,
@@ -109,13 +117,14 @@ pub(crate) struct MegaLightsGpuChain {
 
 impl MegaLightsGpuChain {
     /// 视口(链驻留尺寸;调用方换代判定用)。
+    #[allow(dead_code)]
     pub(crate) fn viewport(&self) -> (u32, u32) {
         (self.width, self.height)
     }
 
     /// 视口/深度视图代/IES 载荷长度是否与链一致(不一致调用方整体重建)。
     pub(crate) fn matches(&self, width: u32, height: u32, epoch: u64, ies_words: usize) -> bool {
-        self.full == (width,height) && self.epoch == epoch && self.ies_capacity == ies_words
+        self.full == (width, height) && self.epoch == epoch && self.ies_capacity == ies_words
     }
 
     /// 灯池缓冲容量是否覆盖本帧字数(不足调用方先扩容)。
@@ -133,7 +142,9 @@ impl MegaLightsGpuChain {
         self.lights = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("megalights lights"),
             size: (capacity * 4) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         queue_zero(device, queue, &self.lights);
@@ -152,20 +163,36 @@ impl MegaLightsGpuChain {
             label: Some("megalights build bindings"),
             layout: &build_layout,
             entries: &compute_entries(
-                ris_params, lights, surfaces, motion, reservoirs_a, reservoirs_b,
-                color, color_history, ies, &self.visibility, true,
+                ris_params,
+                lights,
+                surfaces,
+                motion,
+                reservoirs_a,
+                reservoirs_b,
+                color,
+                color_history,
+                ies,
+                &self.visibility,
+                true,
             ),
         });
         self.shade_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("megalights shade bindings"),
             layout: &shade_layout,
             entries: &compute_entries(
-                ris_params, lights, surfaces, motion, reservoirs_a, reservoirs_b,
-                color, color_history, ies, &self.visibility, false,
+                ris_params,
+                lights,
+                surfaces,
+                motion,
+                reservoirs_a,
+                reservoirs_b,
+                color,
+                color_history,
+                ies,
+                &self.visibility,
+                false,
             ),
         });
         self.lights_capacity_words = capacity;
     }
-
 }
-

@@ -16,44 +16,101 @@ impl MegaLightsFrameRuntime {
 
     /// Prepare the complete replacement before suppressing any clustered light.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn prepare_gpu_frame(&mut self, device: &wgpu::Device, queue: &wgpu::Queue,
-        depth: &wgpu::TextureView, epoch: u64, frame_layout: &wgpu::BindGroupLayout,
-        material_layout: &wgpu::BindGroupLayout, tlas: Option<&wgpu::Tlas>, supported_materials: bool) -> bool {
-        if !self.gpu_frame_planned() { return false; }
-        if self.packed.as_ref().is_none_or(|p| p.count == 0) { return false; }
-        let reason = if !supported_materials { Some("native_megalights_material_profile_unsupported") }
-            else if tlas.is_none() { Some("native_megalights_tlas_unavailable") } else { None };
-        if let Some(reason) = reason { self.degrade(reason); return false; }
+    pub(crate) fn prepare_gpu_frame(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        depth: &wgpu::TextureView,
+        epoch: u64,
+        frame_layout: &wgpu::BindGroupLayout,
+        material_layout: &wgpu::BindGroupLayout,
+        tlas: Option<&wgpu::Tlas>,
+        supported_materials: bool,
+    ) -> bool {
+        if !self.gpu_frame_planned() {
+            return false;
+        }
+        if self.packed.as_ref().is_none_or(|p| p.count == 0) {
+            return false;
+        }
+        let reason = if !supported_materials {
+            Some("native_megalights_material_profile_unsupported")
+        } else if tlas.is_none() {
+            Some("native_megalights_tlas_unavailable")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            self.degrade(reason);
+            return false;
+        }
         let tlas = tlas.expect("checked TLAS");
-        if !self.ensure_gpu_chain(device, depth, epoch, self.ies.as_ref().map(|(w,_)| w.len())) { return false; }
+        if !self.ensure_gpu_chain(
+            device,
+            depth,
+            epoch,
+            self.ies.as_ref().map(|(w, _)| w.len()),
+        ) {
+            return false;
+        }
         let chain = self.gpu.as_mut().expect("prepared chain");
         let words = self.packed.as_ref().map_or(0, |p| p.data.len());
         let grew = !chain.lights_fit(words);
-        let replace_gbuffer = self.gbuffer.as_ref().is_none_or(|g| g.dimensions != self.pending_viewport || g.epoch != epoch);
+        let replace_gbuffer = self
+            .gbuffer
+            .as_ref()
+            .is_none_or(|g| g.dimensions != self.pending_viewport || g.epoch != epoch);
         let replace_inputs = chain.inputs.as_ref().is_none_or(|i| i.tlas != *tlas);
-        if !grew && !replace_gbuffer && !replace_inputs { return true; }
-        let scopes = [device.push_error_scope(wgpu::ErrorFilter::Validation),
-            device.push_error_scope(wgpu::ErrorFilter::OutOfMemory), device.push_error_scope(wgpu::ErrorFilter::Internal)];
-        if grew { chain.grow_lights(device, queue, words); }
+        if !grew && !replace_gbuffer && !replace_inputs {
+            return true;
+        }
+        let scopes = [
+            device.push_error_scope(wgpu::ErrorFilter::Validation),
+            device.push_error_scope(wgpu::ErrorFilter::OutOfMemory),
+            device.push_error_scope(wgpu::ErrorFilter::Internal),
+        ];
+        if grew {
+            chain.grow_lights(device, queue, words);
+        }
         if replace_gbuffer {
-            self.gbuffer = Some(crate::renderer::megalights_gbuffer::MegaLightsGBuffer::create(device, frame_layout,
-                material_layout, self.pending_viewport.0, self.pending_viewport.1, epoch));
+            self.gbuffer = Some(
+                crate::renderer::megalights_gbuffer::MegaLightsGBuffer::create(
+                    device,
+                    frame_layout,
+                    material_layout,
+                    self.pending_viewport.0,
+                    self.pending_viewport.1,
+                    epoch,
+                ),
+            );
         }
         if grew || replace_gbuffer || replace_inputs {
             chain.attach_inputs(device, self.gbuffer.as_ref().expect("GBuffer"), depth, tlas);
             self.history_valid = false;
         }
-        let errors: Vec<_> = scopes.into_iter().rev().filter_map(|scope| pollster::block_on(scope.pop())).collect();
+        let errors: Vec<_> = scopes
+            .into_iter()
+            .rev()
+            .filter_map(|scope| pollster::block_on(scope.pop()))
+            .collect();
         #[cfg(test)]
-        for error in &errors { eprintln!("MegaLights actual inputs rejected: {error}"); }
+        for error in &errors {
+            eprintln!("MegaLights actual inputs rejected: {error}");
+        }
         let rejected = !errors.is_empty();
-        if rejected { self.degrade("native_megalights_actual_inputs_device_rejected"); return false; }
+        if rejected {
+            self.degrade("native_megalights_actual_inputs_device_rejected");
+            return false;
+        }
         true
     }
 
     fn degrade(&mut self, reason: &'static str) {
-        self.gpu = None; self.gbuffer = None; self.history_valid = false;
-        self.execution_leg = MegaLightsExecutionLeg::GpuDegraded; self.gpu_reject_reason = Some(reason);
+        self.gpu = None;
+        self.gbuffer = None;
+        self.history_valid = false;
+        self.execution_leg = MegaLightsExecutionLeg::GpuDegraded;
+        self.gpu_reject_reason = Some(reason);
     }
 
     /// GPU 执行腿帧段:懒挂载/换代重建 → 重建核 + RIS 两趟 + 加性合成。
@@ -97,7 +154,9 @@ impl MegaLightsFrameRuntime {
             let Some(packed) = self.packed.as_ref() else {
                 return false;
             };
-            if !self.history_valid { chain.clear_history(encoder); }
+            if !self.history_valid {
+                chain.clear_history(encoder);
+            }
             chain.encode_frame(
                 queue,
                 encoder,
@@ -130,10 +189,15 @@ impl MegaLightsFrameRuntime {
         epoch: u64,
         ies_words: Option<usize>,
     ) -> bool {
-        if let Some(chain) = &self.gpu {
-            if chain.matches(self.pending_viewport.0, self.pending_viewport.1, epoch, ies_words.unwrap_or(4)) {
-                return true;
-            }
+        if let Some(chain) = &self.gpu
+            && chain.matches(
+                self.pending_viewport.0,
+                self.pending_viewport.1,
+                epoch,
+                ies_words.unwrap_or(4),
+            )
+        {
+            return true;
         }
         // 重建前拿视口:链已存在沿用其视口来源由调用方保证(前向目标换代 =
         // epoch 变,尺寸一并传入)。这里直接从现有链取,首挂载用调用方注入的
@@ -167,8 +231,9 @@ impl MegaLightsFrameRuntime {
                 drop(chain);
                 self.gpu = None;
                 self.execution_leg = MegaLightsExecutionLeg::GpuDegraded;
-                self.gpu_reject_reason =
-                    Some(crate::renderer::megalights_gpu::MegaLightsGpuReject::DeviceRejected.reason());
+                self.gpu_reject_reason = Some(
+                    crate::renderer::megalights_gpu::MegaLightsGpuReject::DeviceRejected.reason(),
+                );
                 false
             }
             (Err(reject), None) => {
@@ -179,5 +244,4 @@ impl MegaLightsFrameRuntime {
             }
         }
     }
-
 }

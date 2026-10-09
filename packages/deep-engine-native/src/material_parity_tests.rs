@@ -11,9 +11,9 @@
 //!   pow/exp2 跨 libm 哨兵如实)。
 
 use crate::material_extended_cpu::{
-    direct_dfg_185, d_charlie, evaluate_extended_material_direct, extended_band_words,
-    f_schlick, ibl_sheen_brdf, sheen_direct_brdf, sheen_direct_energy, sheen_indirect_energy,
-    v_neubelt, ExtendedInputs,
+    ExtendedInputs, d_charlie, direct_dfg_185, evaluate_extended_material_direct,
+    extended_band_words, f_schlick, ibl_sheen_brdf, sheen_direct_brdf, sheen_direct_energy,
+    sheen_indirect_energy, v_neubelt,
 };
 use serde_json::Value;
 
@@ -55,7 +55,11 @@ fn assert_vec3_relative(actual: [f64; 3], expected: [f64; 3], label: &str) {
 fn assert_words_within_ulp(actual: &[f32], expected: &[f32], label: &str, ulps: f64) {
     assert_eq!(actual.len(), expected.len(), "{label} word count drift");
     for (index, (actual, expected)) in actual.iter().zip(expected).enumerate() {
-        assert_eq!(actual.is_nan(), expected.is_nan(), "{label}[{index}] NaN drift");
+        assert_eq!(
+            actual.is_nan(),
+            expected.is_nan(),
+            "{label}[{index}] NaN drift"
+        );
         if actual.is_nan() || actual == expected {
             continue;
         }
@@ -104,10 +108,23 @@ fn extended_direct_matches_ts_authority() {
         assert_vec3_relative(rgb, vec3(&want["rgb"]), &format!("{id}.rgb"));
         assert_vec3_relative(diffuse, vec3(&want["diffuse"]), &format!("{id}.diffuse"));
         assert_vec3_relative(specular, vec3(&want["specular"]), &format!("{id}.specular"));
-        assert_vec3_relative(clearcoat, vec3(&want["clearcoat"]), &format!("{id}.clearcoat"));
-        assert_vec3_relative(transmission, vec3(&want["transmission"]), &format!("{id}.transmission"));
+        assert_vec3_relative(
+            clearcoat,
+            vec3(&want["clearcoat"]),
+            &format!("{id}.clearcoat"),
+        );
+        assert_vec3_relative(
+            transmission,
+            vec3(&want["transmission"]),
+            &format!("{id}.transmission"),
+        );
         let rgb_words: [f32; 3] = std::array::from_fn(|axis| rgb[axis] as f32);
-        assert_words_within_ulp(&rgb_words, &words(&want["rgbWords"]), &format!("{id}.rgbWords"), 2.0);
+        assert_words_within_ulp(
+            &rgb_words,
+            &words(&want["rgbWords"]),
+            &format!("{id}.rgbWords"),
+            2.0,
+        );
     }
 }
 
@@ -116,12 +133,36 @@ fn extended_direct_matches_ts_authority() {
 fn sheen_primitives_match_ts_authority() {
     let grid = &fixture()["inputs"]["sheenPrimitiveGrid"];
     let want = &fixture()["ts"]["sheenPrimitives"];
-    let roughness: Vec<f64> = grid["roughness"].as_array().unwrap()
-        .iter().map(|v| v.as_f64().unwrap()).collect();
-    let nh: Vec<f64> = grid["nh"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
-    let nv: Vec<f64> = grid["nv"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
-    let nl: Vec<f64> = grid["nl"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
-    let cosines: Vec<f64> = grid["cosines"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+    let roughness: Vec<f64> = grid["roughness"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_f64().unwrap())
+        .collect();
+    let nh: Vec<f64> = grid["nh"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_f64().unwrap())
+        .collect();
+    let nv: Vec<f64> = grid["nv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_f64().unwrap())
+        .collect();
+    let nl: Vec<f64> = grid["nl"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_f64().unwrap())
+        .collect();
+    let cosines: Vec<f64> = grid["cosines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_f64().unwrap())
+        .collect();
     for (row, r) in roughness.iter().enumerate() {
         for (column, h) in nh.iter().enumerate() {
             assert_f64_relative(
@@ -161,7 +202,9 @@ fn sheen_primitives_match_ts_authority() {
 /// sheen 直射项与能量补偿:TS 同输入对拍(f64 + 词 ≤2 ulp)。
 #[test]
 fn sheen_direct_and_energy_match_ts_authority() {
-    let cases = fixture()["inputs"]["sheenCases"].as_array().expect("sheenCases");
+    let cases = fixture()["inputs"]["sheenCases"]
+        .as_array()
+        .expect("sheenCases");
     let expected = fixture()["ts"]["sheen"].as_array().expect("ts.sheen");
     for (case, want) in cases.iter().zip(expected) {
         let color = vec3(&case["color"]);
@@ -196,7 +239,9 @@ fn sheen_direct_and_energy_match_ts_authority() {
 /// 如实与 TS 全域打包词区分。
 #[test]
 fn pack_bands_match_ts_words() {
-    let extended_cases = fixture()["ts"]["packExtended"].as_array().expect("packExtended");
+    let extended_cases = fixture()["ts"]["packExtended"]
+        .as_array()
+        .expect("packExtended");
     for (index, want) in extended_cases.iter().enumerate() {
         let inputs = &fixture()["inputs"]["packExtendedCases"][index]["params"];
         let params = ExtendedInputs {
@@ -209,23 +254,35 @@ fn pack_bands_match_ts_words() {
         };
         let actual = extended_band_words(params);
         let expected = words(want);
-        assert_eq!(actual.as_slice(), expected.as_slice(), "extended band words [{index}]");
+        assert_eq!(
+            actual.as_slice(),
+            expected.as_slice(),
+            "extended band words [{index}]"
+        );
     }
-    let advanced_cases = fixture()["ts"]["packAdvanced"].as_array().expect("packAdvanced");
+    let advanced_cases = fixture()["ts"]["packAdvanced"]
+        .as_array()
+        .expect("packAdvanced");
     for (index, want) in advanced_cases.iter().enumerate() {
         let expected = words(want);
         // native 子集:advanced0 = sheen.rgb + roughness(TS 词 0..4 逐位)。
-        let sheen_color = &fixture()["inputs"]["packAdvancedCases"][index]["params"]["sheen"]["color"];
-        let roughness = fixture()["inputs"]["packAdvancedCases"][index]["params"]["sheen"]["roughness"]
-            .as_f64()
-            .unwrap_or(1.0);
+        let sheen_color =
+            &fixture()["inputs"]["packAdvancedCases"][index]["params"]["sheen"]["color"];
+        let roughness =
+            fixture()["inputs"]["packAdvancedCases"][index]["params"]["sheen"]["roughness"]
+                .as_f64()
+                .unwrap_or(1.0);
         let actual: [f32; 4] = [
             sheen_color[0].as_f64().unwrap_or(0.0) as f32,
             sheen_color[1].as_f64().unwrap_or(0.0) as f32,
             sheen_color[2].as_f64().unwrap_or(0.0) as f32,
             roughness as f32,
         ];
-        assert_eq!(actual.as_slice(), &expected[..4], "advanced sheen words [{index}]");
+        assert_eq!(
+            actual.as_slice(),
+            &expected[..4],
+            "advanced sheen words [{index}]"
+        );
     }
 }
 
@@ -239,9 +296,9 @@ fn direct_dfg_samples_stay_on_table_vertices() {
         for v in dot_nv {
             let sampled = direct_dfg_185(r, v);
             // u = r*16-0.5, v = nv*16-0.5 的整数格点 → 端点即表值;半格点处双线性。
-            for lane in 0..2 {
-                assert!(sampled[lane].is_finite(), "dfg sample must be finite at ({r},{v})");
-                assert!((0.0..=1.0).contains(&sampled[lane]), "dfg sample out of range");
+            for sample in sampled {
+                assert!(sample.is_finite(), "dfg sample must be finite at ({r},{v})");
+                assert!((0.0..=1.0).contains(&sample), "dfg sample out of range");
             }
         }
     }

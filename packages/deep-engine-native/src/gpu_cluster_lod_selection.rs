@@ -137,17 +137,41 @@ pub enum ClusterLodSelectionError {
 impl core::fmt::Display for ClusterLodSelectionError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::CameraPositionNotFinite => write!(f, "Cluster LOD camera position must be 3 finite numbers."),
-            Self::CameraForwardNotFinite => write!(f, "Cluster LOD camera forward must be 3 finite numbers."),
+            Self::CameraPositionNotFinite => {
+                write!(f, "Cluster LOD camera position must be 3 finite numbers.")
+            }
+            Self::CameraForwardNotFinite => {
+                write!(f, "Cluster LOD camera forward must be 3 finite numbers.")
+            }
             Self::CameraForwardZero => write!(f, "Cluster LOD camera forward must be nonzero."),
-            Self::CameraViewportHeightInvalid => write!(f, "Cluster LOD camera viewportHeightPixels must be finite and positive."),
-            Self::CameraTanHalfFovInvalid => write!(f, "Cluster LOD camera tanHalfFovY must be finite and positive."),
-            Self::CameraPixelThresholdInvalid => write!(f, "Cluster LOD camera pixelThreshold must be finite and positive."),
-            Self::NodeErrorInvalid(id) => write!(f, "Cluster LOD node {id} error must be finite and nonnegative."),
-            Self::NodeBoundsInvalid(id) => write!(f, "Cluster LOD node {id} bounds must be finite."),
-            Self::UnknownChild { parent, child } => write!(f, "Cluster LOD node {parent} references unknown child {child}."),
+            Self::CameraViewportHeightInvalid => write!(
+                f,
+                "Cluster LOD camera viewportHeightPixels must be finite and positive."
+            ),
+            Self::CameraTanHalfFovInvalid => write!(
+                f,
+                "Cluster LOD camera tanHalfFovY must be finite and positive."
+            ),
+            Self::CameraPixelThresholdInvalid => write!(
+                f,
+                "Cluster LOD camera pixelThreshold must be finite and positive."
+            ),
+            Self::NodeErrorInvalid(id) => write!(
+                f,
+                "Cluster LOD node {id} error must be finite and nonnegative."
+            ),
+            Self::NodeBoundsInvalid(id) => {
+                write!(f, "Cluster LOD node {id} bounds must be finite.")
+            }
+            Self::UnknownChild { parent, child } => write!(
+                f,
+                "Cluster LOD node {parent} references unknown child {child}."
+            ),
             Self::MonotonicityViolated { parent, child } => {
-                write!(f, "Cluster LOD error monotonicity violated at {parent} -> {child}: parent error must dominate.")
+                write!(
+                    f,
+                    "Cluster LOD error monotonicity violated at {parent} -> {child}: parent error must dominate."
+                )
             }
         }
     }
@@ -169,7 +193,7 @@ pub fn validate_camera(camera: &ClusterLodCamera) -> Result<(), ClusterLodSelect
         + camera.forward[1] * camera.forward[1]
         + camera.forward[2] * camera.forward[2])
         .sqrt();
-    if !(length > 0.0) {
+    if length.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
         return Err(ClusterLodSelectionError::CameraForwardZero);
     }
     if !camera.viewport_height_pixels.is_finite() || camera.viewport_height_pixels <= 0.0 {
@@ -241,7 +265,11 @@ pub fn select_cluster_lod(
         let error = cluster_screen_error(node.bounds_min, node.bounds_max, node.error, camera);
         screen_errors[index] = error as f32;
         let selected = node.triangle_count > 0 && (error as f32) <= camera.pixel_threshold as f32;
-        selection[index] = if selected { node.level } else { CLUSTER_LOD_REFINE_SENTINEL };
+        selection[index] = if selected {
+            node.level
+        } else {
+            CLUSTER_LOD_REFINE_SENTINEL
+        };
     }
     let is_child: std::collections::HashSet<&str> = nodes
         .iter()
@@ -249,7 +277,10 @@ pub fn select_cluster_lod(
         .collect();
     let mut frontier = Vec::new();
     // 迭代 DFS(与 TS 递归 visit 同序;栈顶先弹保持兄弟顺序)。
-    let mut stack: Vec<&ClusterLodNode> = nodes.iter().filter(|node| !is_child.contains(node.id.as_str())).collect();
+    let mut stack: Vec<&ClusterLodNode> = nodes
+        .iter()
+        .filter(|node| !is_child.contains(node.id.as_str()))
+        .collect();
     stack.reverse();
     while let Some(node) = stack.pop() {
         let index = index_of[node.id.as_str()];
@@ -260,7 +291,12 @@ pub fn select_cluster_lod(
         let mut children: Vec<&ClusterLodNode> = node
             .children
             .iter()
-            .map(|child| nodes.iter().find(|candidate| candidate.id == *child).expect("validated above"))
+            .map(|child| {
+                nodes
+                    .iter()
+                    .find(|candidate| candidate.id == *child)
+                    .expect("validated above")
+            })
             .collect();
         children.reverse();
         stack.extend(children);
@@ -278,7 +314,7 @@ pub fn pack_cluster_lod_node(
     cluster_index: u32,
 ) -> [u8; CLUSTER_LOD_NODE_STRIDE_BYTES] {
     let mut buffer = [0u8; CLUSTER_LOD_NODE_STRIDE_BYTES];
-    let floats = &mut buffer;
+    let _floats = &mut buffer;
     let put_f32 = |buffer: &mut [u8], word: usize, value: f64| {
         let bits = (value as f32).to_bits();
         buffer[word * 4..word * 4 + 4].copy_from_slice(&bits.to_le_bytes());
@@ -286,19 +322,55 @@ pub fn pack_cluster_lod_node(
     let put_u32 = |buffer: &mut [u8], word: usize, value: u32| {
         buffer[word * 4..word * 4 + 4].copy_from_slice(&value.to_le_bytes());
     };
-    put_f32(&mut buffer, ClusterLodNodeWord::BOUNDS_MIN_X, node.bounds_min[0]);
-    put_f32(&mut buffer, ClusterLodNodeWord::BOUNDS_MIN_Y, node.bounds_min[1]);
-    put_f32(&mut buffer, ClusterLodNodeWord::BOUNDS_MIN_Z, node.bounds_min[2]);
+    put_f32(
+        &mut buffer,
+        ClusterLodNodeWord::BOUNDS_MIN_X,
+        node.bounds_min[0],
+    );
+    put_f32(
+        &mut buffer,
+        ClusterLodNodeWord::BOUNDS_MIN_Y,
+        node.bounds_min[1],
+    );
+    put_f32(
+        &mut buffer,
+        ClusterLodNodeWord::BOUNDS_MIN_Z,
+        node.bounds_min[2],
+    );
     put_f32(&mut buffer, ClusterLodNodeWord::BOUNDS_MIN_PAD, 0.0);
-    put_f32(&mut buffer, ClusterLodNodeWord::BOUNDS_MAX_X, node.bounds_max[0]);
-    put_f32(&mut buffer, ClusterLodNodeWord::BOUNDS_MAX_Y, node.bounds_max[1]);
-    put_f32(&mut buffer, ClusterLodNodeWord::BOUNDS_MAX_Z, node.bounds_max[2]);
+    put_f32(
+        &mut buffer,
+        ClusterLodNodeWord::BOUNDS_MAX_X,
+        node.bounds_max[0],
+    );
+    put_f32(
+        &mut buffer,
+        ClusterLodNodeWord::BOUNDS_MAX_Y,
+        node.bounds_max[1],
+    );
+    put_f32(
+        &mut buffer,
+        ClusterLodNodeWord::BOUNDS_MAX_Z,
+        node.bounds_max[2],
+    );
     put_f32(&mut buffer, ClusterLodNodeWord::BOUNDS_MAX_PAD, 0.0);
     put_f32(&mut buffer, ClusterLodNodeWord::ERROR_SCALAR, node.error);
     put_u32(&mut buffer, ClusterLodNodeWord::LOD_LEVEL, node.level);
-    put_u32(&mut buffer, ClusterLodNodeWord::CLUSTER_INDEX, cluster_index);
-    put_u32(&mut buffer, ClusterLodNodeWord::FIRST_TRIANGLE, node.first_triangle);
-    put_u32(&mut buffer, ClusterLodNodeWord::TRIANGLE_COUNT, node.triangle_count);
+    put_u32(
+        &mut buffer,
+        ClusterLodNodeWord::CLUSTER_INDEX,
+        cluster_index,
+    );
+    put_u32(
+        &mut buffer,
+        ClusterLodNodeWord::FIRST_TRIANGLE,
+        node.first_triangle,
+    );
+    put_u32(
+        &mut buffer,
+        ClusterLodNodeWord::TRIANGLE_COUNT,
+        node.triangle_count,
+    );
     put_u32(&mut buffer, ClusterLodNodeWord::PAD0, 0);
     put_u32(&mut buffer, ClusterLodNodeWord::PAD1, 0);
     put_u32(&mut buffer, ClusterLodNodeWord::PAD2, 0);
@@ -307,7 +379,7 @@ pub fn pack_cluster_lod_node(
 
 /// 从 64B stride 解出节点(TS `unpackClusterLodNodes` 同构;stride 校验 fail-closed)。
 pub fn unpack_cluster_lod_nodes(buffer: &[u8]) -> Result<Vec<SerializedClusterLodNode>, String> {
-    if buffer.len() % CLUSTER_LOD_NODE_STRIDE_BYTES != 0 {
+    if !buffer.len().is_multiple_of(CLUSTER_LOD_NODE_STRIDE_BYTES) {
         return Err(format!(
             "Cluster LOD node buffer must be a multiple of {CLUSTER_LOD_NODE_STRIDE_BYTES} bytes."
         ));

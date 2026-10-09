@@ -44,7 +44,10 @@ mod tests {
             for b in [0u32, 42, 255] {
                 for c in [0u32, 7, 255] {
                     let packed = pack_local_triangle(a, b, c).expect("valid indices");
-                    assert_eq!(unpack_local_triangle(packed).expect("valid packed"), [a as u8, b as u8, c as u8]);
+                    assert_eq!(
+                        unpack_local_triangle(packed).expect("valid packed"),
+                        [a as u8, b as u8, c as u8]
+                    );
                 }
             }
         }

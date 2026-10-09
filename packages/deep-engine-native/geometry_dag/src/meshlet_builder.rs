@@ -10,7 +10,7 @@ use crate::types::{
     IndexedGeometry, MESHLET_BOUNDS_STRIDE, MESHLET_DESCRIPTOR_STRIDE, MESHLET_SCHEMA_VERSION,
     OUTPUT_MESHLETS_BUDGET, PendingMeshlet,
 };
-use crate::validation::{budget, validate_input, ValidatedInput};
+use crate::validation::{ValidatedInput, budget, validate_input};
 
 /// 输出字节预算(TS `MESHLET_BUILD_BUDGETS.outputBytes`,512 MiB)。
 const OUTPUT_BYTES_BUDGET: u64 = 512 * 1024 * 1024;
@@ -80,7 +80,11 @@ pub fn build_meshlets(
     let mut offset = 0;
     while offset < indices.len() {
         let global = [indices[offset], indices[offset + 1], indices[offset + 2]];
-        let mut added_vertices = if pending.contains_global(global[0]) { 0 } else { 1 };
+        let mut added_vertices = if pending.contains_global(global[0]) {
+            0
+        } else {
+            1
+        };
         if global[1] != global[0] && !pending.contains_global(global[1]) {
             added_vertices += 1;
         }
@@ -150,8 +154,12 @@ impl Accumulator {
         ]);
         self.remap.extend_from_slice(&pending.vertices);
         self.triangles.extend_from_slice(&pending.triangles);
-        let meshlet_bounds =
-            compute_meshlet_bounds(positions, &pending.vertices, &pending.normals, pending.has_degenerate)?;
+        let meshlet_bounds = compute_meshlet_bounds(
+            positions,
+            &pending.vertices,
+            &pending.normals,
+            pending.has_degenerate,
+        )?;
         self.bounds.extend_from_slice(&meshlet_bounds.to_flat());
         assert_output_budget(
             self.descriptors.len(),
@@ -195,7 +203,17 @@ mod tests {
         let mut indices = Vec::new();
         for t in 0..triangles {
             let base = (t * 3) as u32;
-            positions.extend_from_slice(&[t as f32, 0.0, 0.0, t as f32 + 1.0, 0.0, 0.0, t as f32, 1.0, 0.0]);
+            positions.extend_from_slice(&[
+                t as f32,
+                0.0,
+                0.0,
+                t as f32 + 1.0,
+                0.0,
+                0.0,
+                t as f32,
+                1.0,
+                0.0,
+            ]);
             indices.extend_from_slice(&[base, base + 1, base + 2]);
         }
         IndexedGeometry { positions, indices }
@@ -203,7 +221,10 @@ mod tests {
 
     #[test]
     fn empty_mesh_yields_zero_meshlets() {
-        let g = IndexedGeometry { positions: vec![], indices: vec![] };
+        let g = IndexedGeometry {
+            positions: vec![],
+            indices: vec![],
+        };
         let r = build_meshlets(&g, None, None).expect("empty ok");
         assert_eq!(r.meshlet_count, 0);
         assert!(r.descriptors.is_empty());
@@ -227,7 +248,9 @@ mod tests {
         let g = triangle_grid(200);
         let r = build_meshlets(&g, None, Some(4)).expect("build");
         assert_eq!(r.source_triangle_count, 200);
-        let counts: Vec<u32> = (0..r.meshlet_count).map(|i| r.descriptors[i * 4 + 3]).collect();
+        let counts: Vec<u32> = (0..r.meshlet_count)
+            .map(|i| r.descriptors[i * 4 + 3])
+            .collect();
         assert_eq!(counts.first(), Some(&4));
         assert_eq!(counts.last(), Some(&4)); // 200 % 4 == 0,批批打满
         assert_eq!(counts.iter().sum::<u32>(), 200);
@@ -239,11 +262,18 @@ mod tests {
         // 每三角形 3 个独立顶点:顶点上限 64 → 每簇 21 三角形(63 顶点,第 22 个超限)。
         let g = triangle_grid(200);
         let r = build_meshlets(&g, Some(64), Some(64)).expect("build");
-        let vertex_counts: Vec<u32> = (0..r.meshlet_count).map(|i| r.descriptors[i * 4 + 1]).collect();
+        let vertex_counts: Vec<u32> = (0..r.meshlet_count)
+            .map(|i| r.descriptors[i * 4 + 1])
+            .collect();
         assert!(vertex_counts.iter().all(|&c| c <= 64));
-        let tri_counts: Vec<u32> = (0..r.meshlet_count).map(|i| r.descriptors[i * 4 + 3]).collect();
+        let tri_counts: Vec<u32> = (0..r.meshlet_count)
+            .map(|i| r.descriptors[i * 4 + 3])
+            .collect();
         assert_eq!(tri_counts.iter().sum::<u32>(), 200);
-        assert!(tri_counts.iter().all(|&c| c <= 21), "independent-vertex grid caps at 21 tris/cluster, got {tri_counts:?}");
+        assert!(
+            tri_counts.iter().all(|&c| c <= 21),
+            "independent-vertex grid caps at 21 tris/cluster, got {tri_counts:?}"
+        );
     }
 
     #[test]
@@ -251,11 +281,18 @@ mod tests {
         // 每三角形 3 个独立顶点,maxVertices=8 → 每 2 个三角形 flush(6 顶点,第 3 个到 9)。
         let g = triangle_grid(10);
         let r = build_meshlets(&g, Some(8), Some(64)).expect("build");
-        let counts: Vec<u32> = (0..r.meshlet_count).map(|i| r.descriptors[i * 4 + 1]).collect();
+        let counts: Vec<u32> = (0..r.meshlet_count)
+            .map(|i| r.descriptors[i * 4 + 1])
+            .collect();
         assert!(counts.iter().all(|&c| c <= 8));
-        let tri_counts: Vec<u32> = (0..r.meshlet_count).map(|i| r.descriptors[i * 4 + 3]).collect();
+        let tri_counts: Vec<u32> = (0..r.meshlet_count)
+            .map(|i| r.descriptors[i * 4 + 3])
+            .collect();
         assert_eq!(tri_counts.iter().sum::<u32>(), 10);
-        assert!(tri_counts.iter().all(|&c| c == 2), "expect 2 tris per cluster, got {tri_counts:?}");
+        assert!(
+            tri_counts.iter().all(|&c| c == 2),
+            "expect 2 tris per cluster, got {tri_counts:?}"
+        );
         assert_eq!(r.meshlet_count, 5);
     }
 

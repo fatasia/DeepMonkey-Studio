@@ -9,7 +9,7 @@ use deep_engine_native::deep2d::{
     prepare_display_list, prepare_display_list_cached,
 };
 
-use crate::deep2d_gpu::deep2d_frame_context;
+use crate::deep2d_frame_context::deep2d_frame_context;
 
 fn fixture() -> Deep2dDisplayList {
     deep_engine_native::deep2d::decode_display_list(include_bytes!(

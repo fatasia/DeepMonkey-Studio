@@ -4,8 +4,8 @@
 //! frontier 顺序一致;错误族(fail-closed)以枚举变体对拍。
 
 use crate::gpu_cluster_lod_selection::{
-    select_cluster_lod, unpack_cluster_lod_nodes, ClusterLodCamera, ClusterLodNode,
-    CLUSTER_LOD_NODE_STRIDE_BYTES,
+    CLUSTER_LOD_NODE_STRIDE_BYTES, ClusterLodCamera, ClusterLodNode, select_cluster_lod,
+    unpack_cluster_lod_nodes,
 };
 use serde::Deserialize;
 
@@ -85,25 +85,25 @@ fn nodes_of(input: &[ParityNode]) -> Vec<ClusterLodNode> {
 fn golden_parity_matches_ts_authority() {
     let raw = include_str!("../fixtures/cluster-lod-native-parity-v1.json");
     let fixture: ParityFixture = serde_json::from_str(raw).expect("parity fixture parses");
-    assert!(fixture.cases.len() >= 3, "fixture must carry at least 3 cases");
+    assert!(
+        fixture.cases.len() >= 3,
+        "fixture must carry at least 3 cases"
+    );
     for case in &fixture.cases {
         let result = select_cluster_lod(&nodes_of(&case.nodes), &camera_of(&case.camera))
             .unwrap_or_else(|error| panic!("case {} must select cleanly: {error}", case.name));
         assert_eq!(
-            result.selection,
-            case.expected_selection,
+            result.selection, case.expected_selection,
             "case {} selection mismatch",
             case.name
         );
         assert_eq!(
-            result.screen_errors,
-            case.expected_screen_errors,
+            result.screen_errors, case.expected_screen_errors,
             "case {} screen errors must match f32-quantized TS words",
             case.name
         );
         assert_eq!(
-            result.frontier,
-            case.expected_frontier,
+            result.frontier, case.expected_frontier,
             "case {} frontier order must match TS DFS",
             case.name
         );

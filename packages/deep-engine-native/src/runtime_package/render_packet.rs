@@ -16,14 +16,19 @@ pub(super) fn decode_owned(
     textures: Option<Vec<crate::contract::TextureResource>>,
 ) -> Result<(RenderPacket, crate::contract::ContractSummary), RuntimePackageError> {
     let mut packet = decode_skeleton(id, value)?;
-    if let Some(textures) = textures { packet.textures = textures; }
+    if let Some(textures) = textures {
+        packet.textures = textures;
+    }
     let summary = validate_packet(&packet)
         .map_err(|error| RuntimePackageError(format!("resource {id}: {error}")))?;
     Ok((packet, summary))
 }
 
 /// Binary transport hydrates its checked typed planes before contract validation.
-pub(super) fn decode_skeleton(id: &str, mut value: Value) -> Result<RenderPacket, RuntimePackageError> {
+pub(super) fn decode_skeleton(
+    id: &str,
+    mut value: Value,
+) -> Result<RenderPacket, RuntimePackageError> {
     let root = value.as_object_mut().ok_or_else(|| {
         RuntimePackageError(format!("resource {id} RenderPacket must be an object"))
     })?;

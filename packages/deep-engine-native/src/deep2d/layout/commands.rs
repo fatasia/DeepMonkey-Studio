@@ -14,7 +14,7 @@
 //! 由同一个 [`CommandPlan`] 派生,无第二份判定逻辑。
 
 use super::solve::LayoutRect;
-use super::tree::{LayoutBoxVisual, LayoutLeaf, LayoutTree, LayoutTextSpec, NodeId};
+use super::tree::{LayoutBoxVisual, LayoutLeaf, LayoutTextSpec, LayoutTree, NodeId};
 use crate::deep2d::command_types::{Deep2dCommand, PathCommand, TextCommand};
 use crate::deep2d::types::{
     Deep2dDisplayList, Deep2dPathVerb, Deep2dResource, FontResource, PathResource,
@@ -82,7 +82,11 @@ fn to_commands_from_plan(
         let z_order = index as i32;
         match (&node.leaf, &node.visual) {
             (LayoutLeaf::Text(spec), _) => commands.push(Deep2dCommand::Text(text_command(
-                params.id_prefix, *id, z_order, *rect, spec,
+                params.id_prefix,
+                *id,
+                z_order,
+                *rect,
+                spec,
             ))),
             // Box 视觉必须有 background:无 fill 的圆角/阴影盒画不出来,且
             // 冻结校验链以 EmptyPaint 拒绝无 fill/stroke 的 Path 命令。

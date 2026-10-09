@@ -10,10 +10,10 @@
 use std::sync::mpsc;
 
 use deep_engine_native::deep2d::{
-    compare, prepare_display_list, prepare_display_list_cached, rasterize_prepared, BoxShadow,
-    Deep2dCommand, Deep2dDisplayList, Deep2dPaint, Deep2dPathVerb, Deep2dResource,
+    BoxShadow, Deep2dCommand, Deep2dDisplayList, Deep2dPaint, Deep2dPathVerb, Deep2dResource,
     Deep2dRuntimeContent, GradientStop, LinearGradientPaint, PathCommand, PathResource,
-    RadialGradientPaint,
+    RadialGradientPaint, compare, prepare_display_list, prepare_display_list_cached,
+    rasterize_prepared,
 };
 
 use crate::deep2d_gpu::Deep2dGpuPainter;
@@ -27,10 +27,22 @@ fn rect_resource(id: &str, min: [f64; 2], max: [f64; 2]) -> Deep2dResource {
         id: id.into(),
         revision: 1,
         verbs: vec![
-            Deep2dPathVerb::Move { x: min[0], y: min[1] },
-            Deep2dPathVerb::Line { x: max[0], y: min[1] },
-            Deep2dPathVerb::Line { x: max[0], y: max[1] },
-            Deep2dPathVerb::Line { x: min[0], y: max[1] },
+            Deep2dPathVerb::Move {
+                x: min[0],
+                y: min[1],
+            },
+            Deep2dPathVerb::Line {
+                x: max[0],
+                y: min[1],
+            },
+            Deep2dPathVerb::Line {
+                x: max[0],
+                y: max[1],
+            },
+            Deep2dPathVerb::Line {
+                x: min[0],
+                y: max[1],
+            },
             Deep2dPathVerb::Close,
         ],
     })
@@ -207,11 +219,7 @@ fn assert_matches_oracle(
         })
         .collect::<Vec<[u8; 4]>>();
     let prepared = prepare_display_list(list).expect("oracle prepare");
-    let reference = rasterize_prepared(
-        [8.0, 8.0],
-        [WIDTH, HEIGHT],
-        &prepared,
-    );
+    let reference = rasterize_prepared([8.0, 8.0], [WIDTH, HEIGHT], &prepared);
     let report = compare(&reference, &gpu, WIDTH, HEIGHT, 8);
     let mut worst = (0u8, 0usize, [0u8; 4], [0u8; 4]);
     for (index, (reference_pixel, gpu_pixel)) in reference.iter().zip(gpu.iter()).enumerate() {
@@ -315,14 +323,32 @@ fn linear_gradient_ramp_matches_cpu_reference() {
     );
     let content = Deep2dRuntimeContent::DisplayList(list.clone());
     let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
-    let painter = Deep2dGpuPainter::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &content, &cache)
-        .expect("gradient painter");
+    let painter = Deep2dGpuPainter::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &content,
+        &cache,
+    )
+    .expect("gradient painter");
     let gpu = assert_matches_oracle(&device, &queue, &painter, &list, "linear ramp");
     // Ramp endpoints and midpoint carry analytic values (pixel centers at
     // logical 0.75 / 4.0 / 7.25 on the [0, 8] ramp).
-    assert_near(pixel(&gpu, [0.75, 4.25]), [0.90625, 0.0, 0.09375, 1.0], "left");
-    assert_near(pixel(&gpu, [4.25, 4.25]), [0.46875, 0.0, 0.53125, 1.0], "mid");
-    assert_near(pixel(&gpu, [7.25, 4.25]), [0.09375, 0.0, 0.90625, 1.0], "right");
+    assert_near(
+        pixel(&gpu, [0.75, 4.25]),
+        [0.90625, 0.0, 0.09375, 1.0],
+        "left",
+    );
+    assert_near(
+        pixel(&gpu, [4.25, 4.25]),
+        [0.46875, 0.0, 0.53125, 1.0],
+        "mid",
+    );
+    assert_near(
+        pixel(&gpu, [7.25, 4.25]),
+        [0.09375, 0.0, 0.90625, 1.0],
+        "right",
+    );
     println!("linear gradient readback OK: adapter={adapter}");
 }
 
@@ -345,15 +371,28 @@ fn radial_gradient_falloff_matches_cpu_reference() {
     );
     let content = Deep2dRuntimeContent::DisplayList(list.clone());
     let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
-    let painter = Deep2dGpuPainter::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &content, &cache)
-        .expect("radial painter");
+    let painter = Deep2dGpuPainter::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &content,
+        &cache,
+    )
+    .expect("radial painter");
     let gpu = assert_matches_oracle(&device, &queue, &painter, &list, "radial falloff");
     // Pixel center (4.25, 4.25): t = hypot(0.25, 0.25)/4 ≈ 0.0884 on the
     // white->black ramp -> 255 * (1 - t) ≈ 232.
-    assert_near(pixel(&gpu, [4.25, 4.25]), [0.910, 0.910, 0.910, 1.0], "near center");
+    assert_near(
+        pixel(&gpu, [4.25, 4.25]),
+        [0.910, 0.910, 0.910, 1.0],
+        "near center",
+    );
     // Corner center (0.75, 0.75): t = hypot(3.25, 3.25)/4 > 1 -> clamped black.
     let corner = pixel(&gpu, [0.75, 0.75]);
-    assert!(corner[0] <= 40 && corner[1] <= 40, "far corner nears black: {corner:?}");
+    assert!(
+        corner[0] <= 40 && corner[1] <= 40,
+        "far corner nears black: {corner:?}"
+    );
     println!("radial gradient readback OK: adapter={adapter}");
 }
 
@@ -376,8 +415,14 @@ fn rounded_rect_corners_and_stroke_are_analytic() {
     );
     let content = Deep2dRuntimeContent::DisplayList(list.clone());
     let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
-    let painter = Deep2dGpuPainter::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &content, &cache)
-        .expect("rounded rect painter");
+    let painter = Deep2dGpuPainter::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &content,
+        &cache,
+    )
+    .expect("rounded rect painter");
     let gpu = assert_matches_oracle(&device, &queue, &painter, &list, "rounded rect");
     // Cut corner: (1.25, 1.25) sits deep outside the corner arc -> fully
     // transparent. A sharp-corner rasterizer would have painted it.
@@ -418,11 +463,21 @@ fn box_shadow_offset_and_blur_match_cpu_reference() {
     );
     let content = Deep2dRuntimeContent::DisplayList(list.clone());
     let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
-    let painter = Deep2dGpuPainter::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &content, &cache)
-        .expect("shadow painter");
+    let painter = Deep2dGpuPainter::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &content,
+        &cache,
+    )
+    .expect("shadow painter");
     let gpu = assert_matches_oracle(&device, &queue, &painter, &list, "box shadow");
     // Interior: opaque fill hides the shadow underneath.
-    assert_near(pixel(&gpu, [4.25, 4.25]), [1.0, 0.0, 0.0, 1.0], "fill over shadow");
+    assert_near(
+        pixel(&gpu, [4.25, 4.25]),
+        [1.0, 0.0, 0.0, 1.0],
+        "fill over shadow",
+    );
     // Shadow-only band right of the quad: analytic smoothstep falloff
     // (coverage ~0.55 at (7.75, 4.25) under blur 2).
     let band = pixel(&gpu, [7.75, 4.25]);
@@ -489,8 +544,14 @@ fn cache_hit_frames_render_gradients_identically_to_fresh_prepare() {
     );
     let content = Deep2dRuntimeContent::DisplayList(list.clone());
     let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
-    let painter = Deep2dGpuPainter::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &content, &cache)
-        .expect("cache frame 1");
+    let painter = Deep2dGpuPainter::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &content,
+        &cache,
+    )
+    .expect("cache frame 1");
     let first = assert_matches_oracle(&device, &queue, &painter, &list, "cache frame 1");
     let stats = painter.path_cache_stats();
     assert_eq!(stats.misses, 2, "frame 1 tessellates both cards");
@@ -550,9 +611,21 @@ fn cache_prepare_matches_fresh_prepare_for_all_three_commands() {
     let render = |prepared: &deep_engine_native::deep2d::PreparedDeep2d| {
         rasterize_prepared([8.0, 8.0], [WIDTH, HEIGHT], prepared)
     };
-    assert_eq!(render(&fresh), render(&second), "cache-hit pixels equal fresh pixels");
-    assert_eq!(render(&first), render(&fresh), "cold prepare pixels equal too");
-    assert_eq!(second.paints.len(), fresh.paints.len(), "same paint entry count");
+    assert_eq!(
+        render(&fresh),
+        render(&second),
+        "cache-hit pixels equal fresh pixels"
+    );
+    assert_eq!(
+        render(&first),
+        render(&fresh),
+        "cold prepare pixels equal too"
+    );
+    assert_eq!(
+        second.paints.len(),
+        fresh.paints.len(),
+        "same paint entry count"
+    );
 }
 
 #[test]
@@ -597,7 +670,7 @@ fn gradient_stops_survive_wire_round_trip_through_display_list() {
 #[test]
 fn oracle_and_paint_formulas_agree_on_a_known_shadow_profile() {
     // CPU mirror self-check: shadow falloff at the analytic midpoints.
-    use deep_engine_native::deep2d::{quad_fragment, Deep2dPaintData};
+    use deep_engine_native::deep2d::{Deep2dPaintData, quad_fragment};
     let entry = Deep2dPaintData {
         kind: deep_engine_native::deep2d::DEEP2D_PAINT_KIND_QUAD,
         p0: [4.0, 4.0],

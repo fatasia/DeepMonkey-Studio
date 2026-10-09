@@ -46,8 +46,8 @@ pub(super) fn prepare(
         let summary = combined_summary(output.summary, part.summary)?;
         let path_offset = u32::try_from(output.path.vertices.len())
             .map_err(|_| "composite path offset overflow")?;
-        let edge_offset =
-            u32::try_from(output.path.dynamic_edges.len()).map_err(|_| "composite edge overflow")?;
+        let edge_offset = u32::try_from(output.path.dynamic_edges.len())
+            .map_err(|_| "composite edge overflow")?;
         let atlas_offset = u32::try_from(output.atlas_vertices.len())
             .map_err(|_| "composite atlas offset overflow")?;
         let atlas_index_offset = output.atlases.len();
@@ -67,12 +67,15 @@ pub(super) fn prepare(
         // 刀 4 backdrop 底色参数随合成层平移(与顶点同规则);索引偏移
         // 在 chunk 循环里按已接收数量计算,先于 chunk 处理完成登记。
         let backdrop_offset = output.path.backdrop_chunks.len();
-        output.path.backdrop_chunks.extend(part.path.backdrop_chunks.iter().map(|backdrop| {
-            let mut backdrop = *backdrop;
-            backdrop.rect[0] += layer.translation[0] as f32;
-            backdrop.rect[1] += layer.translation[1] as f32;
-            backdrop
-        }));
+        output
+            .path
+            .backdrop_chunks
+            .extend(part.path.backdrop_chunks.iter().map(|backdrop| {
+                let mut backdrop = *backdrop;
+                backdrop.rect[0] += layer.translation[0] as f32;
+                backdrop.rect[1] += layer.translation[1] as f32;
+                backdrop
+            }));
         for mut chunk in part.chunks {
             chunk.layer_index = Some(layer_index);
             chunk.clip_rect = match chunk.clip_rect {
@@ -110,7 +113,9 @@ pub(super) fn prepare(
                 PreparedDeep2dChunkKind::Backdrop { index } => {
                     // backdrop 块的底色参数在 path.backdrop_chunks:索引按
                     // 已接收数量偏移,矩形随合成层平移(与顶点同规则)。
-                    *index = index.checked_add(backdrop_offset).ok_or("composite backdrop overflow")?;
+                    *index = index
+                        .checked_add(backdrop_offset)
+                        .ok_or("composite backdrop overflow")?;
                 }
             }
             output.chunks.push(chunk);

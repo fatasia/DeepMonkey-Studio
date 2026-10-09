@@ -1,8 +1,8 @@
 mod author_lod;
 mod lod;
 mod lod_json;
-mod types;
 mod texture_bytes;
+mod types;
 mod uv_sets;
 mod validate;
 mod validate_geometry;
@@ -32,11 +32,11 @@ use std::{fs::File, io::Read, path::Path};
 pub use lod::DEFAULT_LOD_HYSTERESIS_RATIO;
 pub use types::{
     AlphaMode, GeometryResource, LayerAnisotropyParams, LayerBlendMode, LayerClearcoatParams,
-    LayerMaterialParams, LayerResponseModel, LayerSurface, LayerTransmissionParams, LayeredMaterial, MaterialLayer,
-    NormalTextureSlot, OcclusionTextureSlot, PbrMaterial, PixelLevel, RenderInstance,
-    RenderLodLevel, RenderLodProfile, RenderPacket, ShadingModel, StockAdvancedParameters,
-    StockIridescenceParameters, StockSheenParameters, StockVolumeParameters, TextureResource, TextureSampler,
-    TextureSemantic, TextureSlot,
+    LayerMaterialParams, LayerResponseModel, LayerSurface, LayerTransmissionParams,
+    LayeredMaterial, MaterialLayer, NormalTextureSlot, OcclusionTextureSlot, PbrMaterial,
+    PixelLevel, RenderInstance, RenderLodLevel, RenderLodProfile, RenderPacket, ShadingModel,
+    StockAdvancedParameters, StockIridescenceParameters, StockSheenParameters,
+    StockVolumeParameters, TextureResource, TextureSampler, TextureSemantic, TextureSlot,
 };
 pub use validate::{ContractSummary, validate_packet};
 

@@ -31,11 +31,17 @@ pub fn parse_obj(text: &str) -> DagResult<IndexedGeometry> {
                 if coords.len() < 3 {
                     return Err(DagError::ObjParse {
                         line: line_no,
-                        reason: format!("vertex needs 3 (optionally 4 with w) components, got {}", coords.len()),
+                        reason: format!(
+                            "vertex needs 3 (optionally 4 with w) components, got {}",
+                            coords.len()
+                        ),
                     });
                 }
                 if !coords[..3].iter().all(|v| v.is_finite()) {
-                    return Err(DagError::ObjParse { line: line_no, reason: "vertex component must be finite".into() });
+                    return Err(DagError::ObjParse {
+                        line: line_no,
+                        reason: "vertex component must be finite".into(),
+                    });
                 }
                 positions.extend_from_slice(&coords[..3]);
             }
@@ -46,7 +52,10 @@ pub fn parse_obj(text: &str) -> DagResult<IndexedGeometry> {
                 if indices.len() != 3 {
                     return Err(DagError::ObjParse {
                         line: line_no,
-                        reason: format!("only triangle faces are supported, got {} vertices", indices.len()),
+                        reason: format!(
+                            "only triangle faces are supported, got {} vertices",
+                            indices.len()
+                        ),
                     });
                 }
                 raw_faces.push([indices[0], indices[1], indices[2]]);
@@ -62,7 +71,12 @@ pub fn parse_obj(text: &str) -> DagResult<IndexedGeometry> {
             if vertex >= positions.len() / 3 {
                 return Err(DagError::ObjParse {
                     line: 0,
-                    reason: format!("face {} references vertex {} beyond {} defined", face_no + 1, vertex + 1, positions.len() / 3),
+                    reason: format!(
+                        "face {} references vertex {} beyond {} defined",
+                        face_no + 1,
+                        vertex + 1,
+                        positions.len() / 3
+                    ),
                 });
             }
             indices.push(vertex as u32);
@@ -73,26 +87,34 @@ pub fn parse_obj(text: &str) -> DagResult<IndexedGeometry> {
 
 /// 解析 f32 分量(fail-closed,含定位)。
 fn parse_f32(token: &str, line_no: usize) -> DagResult<f32> {
-    token
-        .parse::<f32>()
-        .map_err(|_| DagError::ObjParse { line: line_no, reason: format!("invalid number: {token:?}") })
+    token.parse::<f32>().map_err(|_| DagError::ObjParse {
+        line: line_no,
+        reason: format!("invalid number: {token:?}"),
+    })
 }
 
 /// 解析面顶点:`v`、`v/vt`、`v//vn`、`v/vt/vn`;1-based 正索引与负索引(相对当前)。
 /// 仅返回位置槽(vt/vn 槽位与编译无关)。
 fn parse_face_vertex(token: &str, line_no: usize, vertex_count: usize) -> DagResult<usize> {
     let vertex_str = token.split('/').next().unwrap_or_default();
-    let raw: i64 = vertex_str
-        .parse::<i64>()
-        .map_err(|_| DagError::ObjParse { line: line_no, reason: format!("invalid face index: {token:?}") })?;
+    let raw: i64 = vertex_str.parse::<i64>().map_err(|_| DagError::ObjParse {
+        line: line_no,
+        reason: format!("invalid face index: {token:?}"),
+    })?;
     if raw == 0 {
-        return Err(DagError::ObjParse { line: line_no, reason: "face index 0 is not valid OBJ".into() });
+        return Err(DagError::ObjParse {
+            line: line_no,
+            reason: "face index 0 is not valid OBJ".into(),
+        });
     }
     if raw > 0 {
         Ok((raw - 1) as usize)
     } else {
         if vertex_count == 0 {
-            return Err(DagError::ObjParse { line: line_no, reason: "negative face index before any vertex".into() });
+            return Err(DagError::ObjParse {
+                line: line_no,
+                reason: "negative face index before any vertex".into(),
+            });
         }
         let resolved = vertex_count as i64 + raw;
         Ok(resolved as usize)
@@ -102,7 +124,8 @@ fn parse_face_vertex(token: &str, line_no: usize, vertex_count: usize) -> DagRes
 /// 将几何写为 OBJ 文本(诊断/回归对比用)。Rust f32 `Display` 本身保证 round-trip。
 #[must_use]
 pub fn write_obj(geometry: &IndexedGeometry, comment: &str) -> String {
-    let mut out = String::with_capacity(geometry.positions.len() * 16 + geometry.indices.len() * 16);
+    let mut out =
+        String::with_capacity(geometry.positions.len() * 16 + geometry.indices.len() * 16);
     out.push_str("# ");
     out.push_str(comment);
     out.push('\n');
@@ -110,7 +133,12 @@ pub fn write_obj(geometry: &IndexedGeometry, comment: &str) -> String {
         out.push_str(&format!("v {} {} {}\n", tri[0], tri[1], tri[2]));
     }
     for face in geometry.indices.chunks_exact(3) {
-        out.push_str(&format!("f {} {} {}\n", face[0] + 1, face[1] + 1, face[2] + 1));
+        out.push_str(&format!(
+            "f {} {} {}\n",
+            face[0] + 1,
+            face[1] + 1,
+            face[2] + 1
+        ));
     }
     out
 }

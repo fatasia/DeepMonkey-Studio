@@ -17,7 +17,10 @@ mod tests {
     fn single_source_is_nonempty_and_entry_point_present() {
         assert!(CLUSTER_LOD_SELECTION_WGSL.len() > 1000);
         assert!(CLUSTER_LOD_SELECTION_WGSL.contains("fn select_cluster_lod"));
-        assert!(CLUSTER_LOD_SELECTION_WGSL.contains("@group(0) @binding(3) var<uniform> params: Params;"));
+        assert!(
+            CLUSTER_LOD_SELECTION_WGSL
+                .contains("@group(0) @binding(3) var<uniform> params: Params;")
+        );
     }
 
     #[test]

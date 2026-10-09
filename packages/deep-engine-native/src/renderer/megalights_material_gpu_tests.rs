@@ -1,6 +1,5 @@
 //! Hardware test for production geometry/material/depth/TLAS and ordered local-light replacement.
-#[path = "megalights_material_fixture.rs"]
-mod fixture;
+use super::megalights_material_fixture as fixture;
 use super::{
     megalights_runtime::{MegaLightsFrameRuntime, MegaLightsGate},
     rt_residency::RtSceneResidency,

@@ -126,6 +126,7 @@ impl QualityTelemetry {
     }
 
     /// 最新落账帧号;无帧时 None(供诊断访问器判空,不构造 JSON)。
+    #[allow(dead_code)]
     pub fn last_frame(&self) -> Option<u64> {
         self.window.back().map(|record| record.frame)
     }

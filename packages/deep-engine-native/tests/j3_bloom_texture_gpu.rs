@@ -4,8 +4,7 @@ mod bloom_pass;
 mod bloom_pipeline;
 #[path = "../src/half_float.rs"]
 mod half_float;
-#[path = "../src/shader_package/hash.rs"]
-mod hash;
+use deep_engine_native::shader_package::hash;
 #[path = "../src/output_pass.rs"]
 mod output_pass;
 
@@ -37,7 +36,7 @@ fn input_pixel(id: &str, x: u32, y: u32, width: u32, height: u32) -> [f32; 4] {
             y as f32 / (height - 1) as f32 * 2.,
             (x + y) as f32 / (width + height - 2) as f32,
         ],
-        "signed-checker" if (x + y) % 2 == 0 => [4., -2., 1.],
+        "signed-checker" if (x + y).is_multiple_of(2) => [4., -2., 1.],
         "signed-checker" => [-4., 2., -1.],
         "threshold-stripes" => match x % 4 {
             0 => [0.75, 0.5, 0.25],

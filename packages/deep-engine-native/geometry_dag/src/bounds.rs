@@ -25,10 +25,22 @@ impl MeshletBounds {
     #[must_use]
     pub fn to_flat(&self) -> [f32; 16] {
         [
-            self.sphere[0], self.sphere[1], self.sphere[2], self.sphere[3],
-            self.aabb_min[0], self.aabb_min[1], self.aabb_min[2], 0.0,
-            self.aabb_max[0], self.aabb_max[1], self.aabb_max[2], 0.0,
-            self.cone[0], self.cone[1], self.cone[2], self.cone[3],
+            self.sphere[0],
+            self.sphere[1],
+            self.sphere[2],
+            self.sphere[3],
+            self.aabb_min[0],
+            self.aabb_min[1],
+            self.aabb_min[2],
+            0.0,
+            self.aabb_max[0],
+            self.aabb_max[1],
+            self.aabb_max[2],
+            0.0,
+            self.cone[0],
+            self.cone[1],
+            self.cone[2],
+            self.cone[3],
         ]
     }
 }
@@ -116,10 +128,18 @@ pub fn compute_meshlet_bounds(
 /// f32 邻域步进:与 TS `adjacentFloat32` 一致(位操作 ±1 ulp;零值走向最小次正规数)。
 fn adjacent_float32(value: f32, direction: i32) -> f32 {
     if value == 0.0 {
-        return if direction > 0 { f32::from_bits(1) } else { f32::from_bits(1).copysign(-1.0) };
+        return if direction > 0 {
+            f32::from_bits(1)
+        } else {
+            f32::from_bits(1).copysign(-1.0)
+        };
     }
     let bits = value.to_bits();
-    let next = if (value > 0.0) == (direction > 0) { bits + 1 } else { bits - 1 };
+    let next = if (value > 0.0) == (direction > 0) {
+        bits + 1
+    } else {
+        bits - 1
+    };
     f32::from_bits(next)
 }
 
@@ -237,7 +257,9 @@ mod tests {
 
     #[test]
     fn triangle_normal_rejects_collinear_and_repeated() {
-        let positions = [0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let positions = [
+            0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+        ];
         assert!(triangle_normal(&positions, 0, 1, 2).is_none()); // 共线
         assert!(triangle_normal(&positions, 0, 0, 1).is_none()); // 重合顶点
         let n = triangle_normal(&positions, 0, 1, 3).expect("valid triangle");

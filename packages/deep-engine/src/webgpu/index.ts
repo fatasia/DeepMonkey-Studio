@@ -287,5 +287,7 @@ export { snapshotEditorOverlay, EDITOR_OVERLAY_MAX_VERTICES, type EditorOverlayS
 export type { AuthorGridView } from "./authorGridTypes.js";
 export * from "./adaptiveQuality.js";
 export { advancedMaterialFeatures } from "./advancedMaterialFeatures.js";
+export { assertSnapshotRevisions } from "./packetDeformationRevision.js";
+export { resolvePbrMsaaSampleCount } from "./renderTargets.js";
 export type { PbrReflectionProbeSource } from "./pbrReflectionProbePreparation.js";
 export { createBrowserImageDecoder, type DecodedImageHandle, type ImageDecoderHost } from "./browserImageDecoder.js";

@@ -57,7 +57,7 @@ fn content() -> Deep2dRuntimeContent {
             shadow: None,
             blend: None,
             backdrop_blur: None,
-            })],
+        })],
         atlases: vec![],
     })
 }

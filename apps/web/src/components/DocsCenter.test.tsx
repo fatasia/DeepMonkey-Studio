@@ -41,18 +41,17 @@ describe("DocsCenter", () => {
     expect(html).toContain("bundle:scene-viewer");
   });
 
-  it("renders the engine SDK, design sources and benchmark evidence in the existing center", () => {
-    const design = renderToStaticMarkup(<DocsCenter systemName="DeepMonkey Studio" documentId="engine-design-influences" onNavigate={() => undefined} onClose={() => undefined} />);
-    expect(design).toContain("引擎借鉴与设计理念");
-    expect(design).toContain("Unity");
-    expect(design).toContain("Babylon.js");
-    expect(design).toContain("Bevy");
-    expect(design).toContain("Godot");
+  it("renders the current engine architecture and performance guides", () => {
+    const design = renderToStaticMarkup(<DocsCenter systemName="DeepMonkey Studio" documentId="engine-architecture" onNavigate={() => undefined} onClose={() => undefined} />);
+    expect(design).toContain("引擎架构");
+    expect(design).toContain("场景与资源");
+    expect(design).toContain("帧与生命周期");
+    expect(design).toContain("DeepApp");
 
-    const benchmark = renderToStaticMarkup(<DocsCenter systemName="DeepMonkey Studio" documentId="engine-benchmarks" onNavigate={() => undefined} onClose={() => undefined} />);
-    expect(benchmark).toContain("引擎性能与画质基准");
-    expect(benchmark).toContain("Three.js、Babylon.js、Unity、Bevy 0.19");
-    expect(benchmark).toContain("UE 与 Godot 不参与正式基准");
-    expect(benchmark).toContain("尚未形成最终胜出结论");
+    const benchmark = renderToStaticMarkup(<DocsCenter systemName="DeepMonkey Studio" documentId="engine-performance" onNavigate={() => undefined} onClose={() => undefined} />);
+    expect(benchmark).toContain("渲染性能诊断");
+    expect(benchmark).toContain("F9");
+    expect(benchmark).toContain("定位瓶颈");
+    expect(benchmark).toContain("调整设置");
   });
 });

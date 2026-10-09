@@ -34,14 +34,18 @@ pub(super) const SLIDER_OVERSHOOT: f32 = 5e-3;
 pub(super) const SLIDER_TRAVEL_STEPS: usize = 12;
 pub(super) const SLIDER_TRAVEL_TOLERANCE_STEPS: usize = 4;
 pub(super) const SLIDER_GUIDE_DRIFT: f32 = 1e-3;
-pub(super) const SLIDER_TILT_RADIANS: f32 = 0.01;
 /// 1:1 刚性耦合:全程转角差上限(弧度)与末窗角速度比半带宽。
 pub(super) const RIGID_ANGLE_TOLERANCE: f32 = 0.02;
 pub(super) const RIGID_RATIO_BAND: f32 = 0.01;
 /// 2:1 目标耦合:末窗实测角速度比相对目标的容差(相对)。
 pub(super) const TARGET_RATIO_RELATIVE_TOLERANCE: f32 = 0.03;
 
-pub(super) fn mech_body(id: &str, translation: [f64; 3], mass: f64, instance: &str) -> serde_json::Value {
+pub(super) fn mech_body(
+    id: &str,
+    translation: [f64; 3],
+    mass: f64,
+    instance: &str,
+) -> serde_json::Value {
     serde_json::json!({
         "id": id, "type": "dynamic",
         "initialPose": {"translation": translation, "rotation": [0, 0, 0, 1]},

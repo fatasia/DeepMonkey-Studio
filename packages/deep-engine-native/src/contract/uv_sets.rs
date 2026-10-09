@@ -50,8 +50,14 @@ impl MaterialFeatures {
                 .as_ref()
                 .map(|slot| slot.tex_coord.unwrap_or(0)),
         ];
-        selected_uvs.extend([material.specular_texture.as_ref(),material.specular_color_texture.as_ref()]
-            .into_iter().map(|slot|slot.map(|value|value.tex_coord.unwrap_or(0))));
+        selected_uvs.extend(
+            [
+                material.specular_texture.as_ref(),
+                material.specular_color_texture.as_ref(),
+            ]
+            .into_iter()
+            .map(|slot| slot.map(|value| value.tex_coord.unwrap_or(0))),
+        );
         // I-C23 分层纹理槽参与同一 UV-set 需求合同:层槽声明 texCoord 1 时
         // 几何必须驻留 uv1(与基材槽同规则)。
         if let Some(layered) = &material.layered {

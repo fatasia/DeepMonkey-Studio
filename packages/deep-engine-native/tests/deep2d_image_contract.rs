@@ -262,7 +262,7 @@ fn path_command(id: &str, z: i32) -> Deep2dCommand {
         shadow: None,
         blend: None,
         backdrop_blur: None,
-        })
+    })
 }
 
 fn path_resource() -> Deep2dResource {

@@ -23,16 +23,16 @@ pub(crate) fn invert4(m: &[[f32; 4]; 4]) -> Option<[[f32; 4]; 4]> {
         let det = minor[0] * (minor[4] * minor[8] - minor[5] * minor[7])
             - minor[1] * (minor[3] * minor[8] - minor[5] * minor[6])
             + minor[2] * (minor[3] * minor[7] - minor[4] * minor[6]);
-        if (c + r) % 2 == 0 { det } else { -det }
+        if (c + r).is_multiple_of(2) { det } else { -det }
     };
     let determinant: f64 = (0..4).map(|col| v(col, 0) * cofactor(col, 0)).sum();
     if !determinant.is_finite() || determinant.abs() < 1e-12 {
         return None;
     }
     let mut inverse = [[0.0f32; 4]; 4];
-    for col in 0..4 {
-        for row in 0..4 {
-            inverse[row][col] = (cofactor(col, row) / determinant) as f32;
+    for (row, values) in inverse.iter_mut().enumerate() {
+        for (col, value) in values.iter_mut().enumerate() {
+            *value = (cofactor(col, row) / determinant) as f32;
         }
     }
     Some(inverse)
@@ -71,6 +71,8 @@ pub(crate) fn combined_clip_to_view(
 
 /// RIS 帧参数打包(位型契约:整数字段 u32 位型、浮点字段 f32 位型——
 /// 真机破案在案,全 f32 位型会把 lightCount 读成 96.0f32≈11.2 亿)。
+// Explicit GPU binding and uniform ABI inputs.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn pack_ris_params(
     width: u32,
     height: u32,
@@ -101,7 +103,11 @@ pub(crate) fn pack_ris_params(
     ]
 }
 
-pub(super) fn pack_rebuild_params(combined: &[[f32; 4]; 4], width: u32, height: u32) -> [u32; REBUILD_PARAM_WORDS] {
+pub(super) fn pack_rebuild_params(
+    combined: &[[f32; 4]; 4],
+    width: u32,
+    height: u32,
+) -> [u32; REBUILD_PARAM_WORDS] {
     let mut words = [0u32; REBUILD_PARAM_WORDS];
     for col in 0..4 {
         for row in 0..4 {
@@ -113,7 +119,10 @@ pub(super) fn pack_rebuild_params(combined: &[[f32; 4]; 4], width: u32, height: 
     words
 }
 
-pub(super) fn pack_composite_params(width: u32, height: u32, exposure: f32) -> [u32; COMPOSITE_PARAM_WORDS] {
+pub(super) fn pack_composite_params(
+    width: u32,
+    height: u32,
+    exposure: f32,
+) -> [u32; COMPOSITE_PARAM_WORDS] {
     [width, height, exposure.to_bits(), 0]
 }
-

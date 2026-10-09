@@ -14,17 +14,32 @@ pub(super) enum BlendSemantic {
 }
 
 #[derive(Clone, Copy)]
-enum CaptureMode { None, Normal, MegaLights }
+enum CaptureMode {
+    None,
+    Normal,
+    MegaLights,
+}
 impl CaptureMode {
-    fn enabled(self) -> bool { !matches!(self, Self::None) }
+    fn enabled(self) -> bool {
+        !matches!(self, Self::None)
+    }
 }
 
 pub(super) fn create_megalights_material_pipelines(
-    device: &wgpu::Device, frame_layout: &wgpu::BindGroupLayout,
-    material_layout: &wgpu::BindGroupLayout, shader: &wgpu::ShaderModule,
+    device: &wgpu::Device,
+    frame_layout: &wgpu::BindGroupLayout,
+    material_layout: &wgpu::BindGroupLayout,
+    shader: &wgpu::ShaderModule,
 ) -> MaterialPipelines {
-    material_pipelines_with_entries(device, frame_layout, material_layout, shader,
-        BlendSemantic::Solid, CaptureMode::MegaLights, false)
+    material_pipelines_with_entries(
+        device,
+        frame_layout,
+        material_layout,
+        shader,
+        BlendSemantic::Solid,
+        CaptureMode::MegaLights,
+        false,
+    )
 }
 
 pub(super) fn create_material_pipelines(
@@ -41,7 +56,11 @@ pub(super) fn create_material_pipelines(
         material_layout,
         shader,
         semantic,
-        if capture { CaptureMode::Normal } else { CaptureMode::None },
+        if capture {
+            CaptureMode::Normal
+        } else {
+            CaptureMode::None
+        },
         false,
     )
 }
@@ -62,7 +81,11 @@ pub(super) fn create_layered_material_pipelines(
         layered_material_layout,
         shader,
         semantic,
-        if capture { CaptureMode::Normal } else { CaptureMode::None },
+        if capture {
+            CaptureMode::Normal
+        } else {
+            CaptureMode::None
+        },
         true,
     )
 }
@@ -113,14 +136,31 @@ fn create_raster_pipelines(
 ) -> RasterPipelines {
     let slot = |raster| {
         if capture.enabled() {
-            return create_mesh_pipeline(device, frame_layout, material_layout, shader,
-                raster, semantic, normal_mapped, capture, layered_entries, true).into();
+            return create_mesh_pipeline(
+                device,
+                frame_layout,
+                material_layout,
+                shader,
+                raster,
+                semantic,
+                normal_mapped,
+                capture,
+                layered_entries,
+                true,
+            )
+            .into();
         }
         super::PipelineSlot::Mesh(std::sync::Arc::new(DeferredMeshPipeline {
-        device: device.clone(), frame_layout: frame_layout.clone(),
-        material_layout: material_layout.clone(), shader: shader.clone(),
-        raster, semantic, normal_mapped, capture, layered_entries,
-        pipelines: std::array::from_fn(|_| std::sync::OnceLock::new()),
+            device: device.clone(),
+            frame_layout: frame_layout.clone(),
+            material_layout: material_layout.clone(),
+            shader: shader.clone(),
+            raster,
+            semantic,
+            normal_mapped,
+            capture,
+            layered_entries,
+            pipelines: std::array::from_fn(|_| std::sync::OnceLock::new()),
         }))
     };
     RasterPipelines {
@@ -145,16 +185,28 @@ pub(super) struct DeferredMeshPipeline {
 }
 impl DeferredMeshPipeline {
     #[cfg(test)]
-    pub(super) fn is_ready(&self) -> bool { self.pipelines.iter().any(|p| p.get().is_some()) }
+    pub(super) fn is_ready(&self) -> bool {
+        self.pipelines.iter().any(|p| p.get().is_some())
+    }
     pub(super) fn get(&self) -> &wgpu::RenderPipeline {
         self.get_profile(true)
     }
     pub(super) fn get_profile(&self, extended: bool) -> &wgpu::RenderPipeline {
         let extended = extended || self.layered_entries;
-        self.pipelines[usize::from(extended)].get_or_init(|| create_mesh_pipeline(
-            &self.device, &self.frame_layout, &self.material_layout, &self.shader,
-            self.raster, self.semantic, self.normal_mapped, self.capture, self.layered_entries, extended,
-        ))
+        self.pipelines[usize::from(extended)].get_or_init(|| {
+            create_mesh_pipeline(
+                &self.device,
+                &self.frame_layout,
+                &self.material_layout,
+                &self.shader,
+                self.raster,
+                self.semantic,
+                self.normal_mapped,
+                self.capture,
+                self.layered_entries,
+                extended,
+            )
+        })
     }
 }
 
@@ -220,8 +272,15 @@ fn create_mesh_pipeline(
         // 深度写只属于 solid;两种透明语义(straight/premultiplied)都不写深度,与 Web weighted OIT 一致。
         depth_stencil: Some(wgpu::DepthStencilState {
             format: FORWARD_DEPTH_FORMAT,
-            depth_write_enabled: Some(matches!(semantic, BlendSemantic::Solid) && !matches!(capture, CaptureMode::MegaLights)),
-            depth_compare: Some(if matches!(capture, CaptureMode::MegaLights) { wgpu::CompareFunction::Equal } else { wgpu::CompareFunction::Less }),
+            depth_write_enabled: Some(
+                matches!(semantic, BlendSemantic::Solid)
+                    && !matches!(capture, CaptureMode::MegaLights),
+            ),
+            depth_compare: Some(if matches!(capture, CaptureMode::MegaLights) {
+                wgpu::CompareFunction::Equal
+            } else {
+                wgpu::CompareFunction::Less
+            }),
             stencil: Default::default(),
             bias: Default::default(),
         }),

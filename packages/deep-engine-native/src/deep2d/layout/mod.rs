@@ -24,8 +24,8 @@ mod tree;
 #[cfg(test)]
 mod golden_tests;
 
-pub use commands::{to_commands, to_display_list, CommandParams};
-pub use solve::{solve, LayoutRect, LayoutSolution, TextMeasureInput, TextMeasurer};
+pub use commands::{CommandParams, to_commands, to_display_list};
+pub use solve::{LayoutRect, LayoutSolution, TextMeasureInput, TextMeasurer, solve};
 pub use style::{
     LayoutAlign, LayoutDirection, LayoutEdges, LayoutJustify, LayoutStyle, LayoutWrap,
 };

@@ -7,16 +7,17 @@
 //! fixture 与 `gpu_cluster_lod_dag_tests` 同源(quick_sphere 黄金字节;解码器本地
 //! 复刻以保持测试模块自含,源 = 该文件 decode_base64)。
 
-use crate::gpu_cluster_lod_dag::{ClusterLodDagRuntime, CLUSTER_LOD_MAX_NODES};
+use crate::gpu_cluster_lod_dag::{CLUSTER_LOD_MAX_NODES, ClusterLodDagRuntime};
 use crate::gpu_cluster_lod_indirect::{
-    plan_cluster_lod_indirect, CLUSTER_LOD_INDIRECT_COMMAND_STRIDE_BYTES,
+    CLUSTER_LOD_INDIRECT_COMMAND_STRIDE_BYTES, plan_cluster_lod_indirect,
 };
 use crate::gpu_cluster_lod_runtime::{
     cluster_lod_command_bytes, pack_cluster_lod_camera_uniform, validate_cluster_lod_residency,
 };
-use crate::gpu_cluster_lod_selection::{select_cluster_lod, ClusterLodCamera, ClusterLodNode};
+use crate::gpu_cluster_lod_selection::{ClusterLodCamera, ClusterLodNode, select_cluster_lod};
 
-const GOLDEN_JSON: &str = include_str!("../geometry_dag/tests/fixtures/quick_sphere.dgc.golden.json");
+const GOLDEN_JSON: &str =
+    include_str!("../geometry_dag/tests/fixtures/quick_sphere.dgc.golden.json");
 
 /// 标准 alphabet base64 解码(与 gpu_cluster_lod_dag_tests::decode_base64 同式;
 /// 输入来自入库 fixture,损坏即 panic)。GPU 探针共用。
@@ -56,7 +57,9 @@ pub fn decode_base64(text: &str) -> Vec<u8> {
 /// golden 变体字节(GPU 探针共用)。
 pub fn golden_variant(name: &str) -> Vec<u8> {
     let json: serde_json::Value = serde_json::from_str(GOLDEN_JSON).expect("golden json parses");
-    let bytes_b64 = json["variants"][name]["bytesB64"].as_str().expect("bytesB64");
+    let bytes_b64 = json["variants"][name]["bytesB64"]
+        .as_str()
+        .expect("bytesB64");
     decode_base64(bytes_b64)
 }
 
@@ -76,7 +79,11 @@ pub fn camera_for(runtime: &ClusterLodDagRuntime, pixel_threshold: f64) -> Clust
             max[axis] = max[axis].max(node.bounds_max[axis]);
         }
     }
-    let center = [(min[0] + max[0]) * 0.5, (min[1] + max[1]) * 0.5, (min[2] + max[2]) * 0.5];
+    let center = [
+        (min[0] + max[0]) * 0.5,
+        (min[1] + max[1]) * 0.5,
+        (min[2] + max[2]) * 0.5,
+    ];
     ClusterLodCamera {
         position: [center[0], center[1], max[2] + 6.0],
         forward: [0.0, 0.0, -1.0],
@@ -109,9 +116,17 @@ fn camera_uniform_word_order_matches_ts_pack() {
         .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
         .collect();
     let bits = |value: f64| (value as f32).to_bits();
-    assert_eq!(words[0..3], [bits(1.0), bits(2.0), bits(2000.0)], "camPos xyz");
+    assert_eq!(
+        words[0..3],
+        [bits(1.0), bits(2.0), bits(2000.0)],
+        "camPos xyz"
+    );
     assert_eq!(words[3], bits(0.5), "tanHalfFovY");
-    assert_eq!(words[4..7], [bits(0.0), bits(0.0), bits(-1.0)], "forward xyz");
+    assert_eq!(
+        words[4..7],
+        [bits(0.0), bits(0.0), bits(-1.0)],
+        "forward xyz"
+    );
     assert_eq!(words[7], bits(4.0), "pixelThreshold");
     assert_eq!(words[8], bits(1080.0), "viewportHeightPixels");
     assert_eq!(words[9], bits(7.0), "nodeCount");
@@ -121,10 +136,16 @@ fn camera_uniform_word_order_matches_ts_pack() {
 #[test]
 fn camera_uniform_fails_closed_on_invalid_camera_and_budget() {
     let runtime = golden_runtime();
-    assert!(runtime.nodes.len() > 0, "golden fixture is non-degenerate");
+    assert!(
+        !runtime.nodes.is_empty(),
+        "golden fixture is non-degenerate"
+    );
     let mut invalid = camera_for(&runtime, 1.0);
     invalid.forward = [0.0, 0.0, 0.0];
-    assert!(pack_cluster_lod_camera_uniform(&invalid, 1).is_err(), "zero forward rejected");
+    assert!(
+        pack_cluster_lod_camera_uniform(&invalid, 1).is_err(),
+        "zero forward rejected"
+    );
     assert!(
         pack_cluster_lod_camera_uniform(&camera_for(&runtime, 1.0), CLUSTER_LOD_MAX_NODES + 1)
             .is_err(),
@@ -172,9 +193,7 @@ fn fabricate(
         vertex_buffer: runtime.vertex_buffer.clone(),
         index_buffer: {
             let mut indices = runtime.index_buffer.clone();
-            for _ in 0..extra_index_words.unwrap_or(0) {
-                indices.push(0);
-            }
+            indices.resize(indices.len() + extra_index_words.unwrap_or(0), 0);
             indices
         },
         leaf_triangle_total: runtime.leaf_triangle_total,
@@ -195,7 +214,10 @@ fn refine_arm_command_bytes_match_plan_draws_word_for_word() {
     .expect("plan builds");
     assert!(plan.draw_count > 1, "refine arm fans out to leaves");
     let bytes = cluster_lod_command_bytes(&plan);
-    assert_eq!(bytes.len(), plan.draw_count * CLUSTER_LOD_INDIRECT_COMMAND_STRIDE_BYTES);
+    assert_eq!(
+        bytes.len(),
+        plan.draw_count * CLUSTER_LOD_INDIRECT_COMMAND_STRIDE_BYTES
+    );
     for (slot, draw) in plan.draws.iter().enumerate() {
         let base = slot * CLUSTER_LOD_INDIRECT_COMMAND_STRIDE_BYTES;
         for (word, expected) in draw.indirect_command.iter().enumerate() {
@@ -230,8 +252,16 @@ fn coarse_arm_command_words_match_independent_span_recompute() {
         first_index_base += summary.index_count;
         base_vertex += summary.vertex_count;
     }
-    assert_eq!(first_index_base, runtime.index_buffer.len(), "stitch parity");
-    assert_eq!(base_vertex * 3, runtime.vertex_buffer.len(), "stitch parity");
+    assert_eq!(
+        first_index_base,
+        runtime.index_buffer.len(),
+        "stitch parity"
+    );
+    assert_eq!(
+        base_vertex * 3,
+        runtime.vertex_buffer.len(),
+        "stitch parity"
+    );
     for draw in &plan.draws {
         let node = &runtime.nodes[draw.node_index];
         let (_, index_base, vertex_base) = spans[node.level as usize];

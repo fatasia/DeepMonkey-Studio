@@ -11,9 +11,9 @@
 use std::sync::mpsc;
 
 use deep_engine_native::deep2d::{
-    compare, prepare_display_list, rasterize_prepared, Deep2dBlendMode, Deep2dCommand,
-    Deep2dDisplayList, Deep2dPaint, Deep2dPathVerb, Deep2dResource, Deep2dRuntimeContent,
-    PathCommand, PathResource,
+    Deep2dBlendMode, Deep2dCommand, Deep2dDisplayList, Deep2dPaint, Deep2dPathVerb, Deep2dResource,
+    Deep2dRuntimeContent, PathCommand, PathResource, compare, prepare_display_list,
+    rasterize_prepared,
 };
 
 use crate::deep2d_gpu::Deep2dGpuPainter;
@@ -27,10 +27,22 @@ fn rect_resource(id: &str, min: [f64; 2], max: [f64; 2]) -> Deep2dResource {
         id: id.into(),
         revision: 1,
         verbs: vec![
-            Deep2dPathVerb::Move { x: min[0], y: min[1] },
-            Deep2dPathVerb::Line { x: max[0], y: min[1] },
-            Deep2dPathVerb::Line { x: max[0], y: max[1] },
-            Deep2dPathVerb::Line { x: min[0], y: max[1] },
+            Deep2dPathVerb::Move {
+                x: min[0],
+                y: min[1],
+            },
+            Deep2dPathVerb::Line {
+                x: max[0],
+                y: min[1],
+            },
+            Deep2dPathVerb::Line {
+                x: max[0],
+                y: max[1],
+            },
+            Deep2dPathVerb::Line {
+                x: min[0],
+                y: max[1],
+            },
             Deep2dPathVerb::Close,
         ],
     })
@@ -256,12 +268,7 @@ fn pixel(gpu: &[[u8; 4]], logical: [f64; 2]) -> [u8; 4] {
 
 /// Reads the blended patch center back and asserts it against the analytic
 /// `blend_composite` value (the CPU mirror of the fixed-function state).
-fn assert_blend_value(
-    gpu: &[[u8; 4]],
-    mode: Deep2dBlendMode,
-    source: [f64; 4],
-    context: &str,
-) {
+fn assert_blend_value(gpu: &[[u8; 4]], mode: Deep2dBlendMode, source: [f64; 4], context: &str) {
     let expected = deep_engine_native::deep2d::blend_composite(
         mode.as_u32(),
         source.map(|channel| channel as f32),
@@ -290,9 +297,14 @@ fn multiply_blends_against_cpu_reference() {
     let list = blend_frame(Deep2dBlendMode::Multiply, solid(source));
     let content = Deep2dRuntimeContent::DisplayList(list.clone());
     let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
-    let painter =
-        Deep2dGpuPainter::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &content, &cache)
-            .expect("multiply painter");
+    let painter = Deep2dGpuPainter::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &content,
+        &cache,
+    )
+    .expect("multiply painter");
     let gpu = draw_and_compare(&device, &queue, &painter, &list, "multiply", 2);
     assert_blend_value(&gpu, Deep2dBlendMode::Multiply, source, "multiply patch");
     // Outside the patch the background chunk (normal) is untouched.
@@ -308,9 +320,14 @@ fn screen_blends_against_cpu_reference() {
     let list = blend_frame(Deep2dBlendMode::Screen, solid(source));
     let content = Deep2dRuntimeContent::DisplayList(list.clone());
     let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
-    let painter =
-        Deep2dGpuPainter::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &content, &cache)
-            .expect("screen painter");
+    let painter = Deep2dGpuPainter::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &content,
+        &cache,
+    )
+    .expect("screen painter");
     let gpu = draw_and_compare(&device, &queue, &painter, &list, "screen", 2);
     assert_blend_value(&gpu, Deep2dBlendMode::Screen, source, "screen patch");
     println!("adapter={adapter}");
@@ -380,28 +397,31 @@ fn multiply_gradient_fill_blends_against_cpu_reference() {
     let (device, queue, adapter) = real_gpu();
     let list = blend_frame(
         Deep2dBlendMode::Multiply,
-        Deep2dPaint::LinearGradient(
-            deep_engine_native::deep2d::LinearGradientPaint {
-                start: [2.0, 2.0],
-                end: [6.0, 6.0],
-                stops: vec![
-                    deep_engine_native::deep2d::GradientStop {
-                        offset: 0.0,
-                        color: [1.0, 0.0, 0.0, 1.0],
-                    },
-                    deep_engine_native::deep2d::GradientStop {
-                        offset: 1.0,
-                        color: [0.0, 0.0, 1.0, 1.0],
-                    },
-                ],
-            },
-        ),
+        Deep2dPaint::LinearGradient(deep_engine_native::deep2d::LinearGradientPaint {
+            start: [2.0, 2.0],
+            end: [6.0, 6.0],
+            stops: vec![
+                deep_engine_native::deep2d::GradientStop {
+                    offset: 0.0,
+                    color: [1.0, 0.0, 0.0, 1.0],
+                },
+                deep_engine_native::deep2d::GradientStop {
+                    offset: 1.0,
+                    color: [0.0, 0.0, 1.0, 1.0],
+                },
+            ],
+        }),
     );
     let content = Deep2dRuntimeContent::DisplayList(list.clone());
     let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
-    let painter =
-        Deep2dGpuPainter::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &content, &cache)
-            .expect("gradient multiply painter");
+    let painter = Deep2dGpuPainter::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &content,
+        &cache,
+    )
+    .expect("gradient multiply painter");
     let gpu = draw_and_compare(&device, &queue, &painter, &list, "gradient multiply", 2);
     // 像素中心采样点:逻辑 (4,4) 读的是像素 (8,8),其中心在逻辑
     // (4.25, 4.25)。线性坡度 start=[2,2] end=[6,6] 在该点的投影
@@ -435,9 +455,14 @@ fn normal_blend_stays_byte_compatible_with_the_legacy_pipeline() {
     let list = blend_frame(Deep2dBlendMode::Normal, solid([0.1, 0.7, 0.3, 1.0]));
     let content = Deep2dRuntimeContent::DisplayList(list.clone());
     let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
-    let painter =
-        Deep2dGpuPainter::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &content, &cache)
-            .expect("normal painter");
+    let painter = Deep2dGpuPainter::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &content,
+        &cache,
+    )
+    .expect("normal painter");
     draw_and_compare(&device, &queue, &painter, &list, "normal", 8);
     println!("adapter={adapter}");
 }

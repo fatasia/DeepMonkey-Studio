@@ -16,7 +16,7 @@ use crate::{
 const SHADER: &str = include_str!("../assets/shaders/native_deep2d_v1.wgsl");
 
 // 宿主入口保持原路径:app/deep2d_context.rs 从本模块导入帧上下文。
-pub use crate::deep2d_frame_context::{Deep2dFrameContext, deep2d_frame_context};
+pub use crate::deep2d_frame_context::Deep2dFrameContext;
 #[path = "deep2d_vertex_transfer.rs"]
 mod vertex_transfer;
 pub use vertex_transfer::VertexTransferStats;
@@ -40,8 +40,10 @@ use video_slot::dashboard_video_slots;
 struct Deep2dPathGpuResources {
     /// 刀 4:blend 管线族(按 `DEEP2D_BLEND_*` 索引;.0 无模板/.1 Stencil8
     /// no-op 变体;索引 0 = normal,与 legacy 主管线同参同对象)。
-    blend_families:
-        [(std::sync::Arc<wgpu::RenderPipeline>, std::sync::Arc<wgpu::RenderPipeline>); 6],
+    blend_families: [(
+        std::sync::Arc<wgpu::RenderPipeline>,
+        std::sync::Arc<wgpu::RenderPipeline>,
+    ); 6],
     /// Path bind group: frame uniform (binding 0) + paint storage (binding 1).
     bind_group: wgpu::BindGroup,
     vertex_buffer: std::sync::Arc<wgpu::Buffer>,
@@ -57,11 +59,7 @@ impl Deep2dPathGpuResources {
         } else {
             &self.blend_families[0]
         };
-        if with_stencil {
-            stencil
-        } else {
-            plain
-        }
+        if with_stencil { stencil } else { plain }
     }
 }
 
@@ -201,10 +199,9 @@ impl Deep2dGpuPainter {
             atlas,
             dynamic,
             stencil: std::cell::RefCell::new(None),
-            backdrop: std::cell::RefCell::new(
-                (!prepared.path.backdrop_chunks.is_empty())
-                    .then(|| crate::deep2d_backdrop_gpu::Deep2dBackdropGpuResources::new(device, format)),
-            ),
+            backdrop: std::cell::RefCell::new((!prepared.path.backdrop_chunks.is_empty()).then(
+                || crate::deep2d_backdrop_gpu::Deep2dBackdropGpuResources::new(device, format),
+            )),
             backdrop_chunks: std::mem::take(&mut prepared.path.backdrop_chunks),
             cache: Arc::clone(cache),
             path_cache,
@@ -358,16 +355,17 @@ impl Deep2dGpuPainter {
             .iter()
             .any(|chunk| matches!(chunk.kind, PreparedDeep2dChunkKind::DynamicPath { .. }));
         let stencil_guard = has_dynamic.then(|| self.stencil_view(physical_size));
-        let depth_stencil_attachment = stencil_guard.as_ref().map(|stencil| {
-            wgpu::RenderPassDepthStencilAttachment {
-                view: &stencil.view,
-                depth_ops: None,
-                stencil_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(0),
-                    store: wgpu::StoreOp::Store,
-                }),
-            }
-        });
+        let depth_stencil_attachment =
+            stencil_guard
+                .as_ref()
+                .map(|stencil| wgpu::RenderPassDepthStencilAttachment {
+                    view: &stencil.view,
+                    depth_ops: None,
+                    stencil_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                });
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Deep Engine native Deep2d ordered pass v2"),
             color_attachments: &color_attachments,
@@ -419,7 +417,10 @@ impl Deep2dGpuPainter {
                     pass.set_stencil_reference(0);
                     pass.set_vertex_buffer(0, path.vertex_buffer.slice(..));
                     deep_engine_native::benchmark_observer::note_draw();
-                    pass.draw(chunk.first_vertex..chunk.first_vertex + chunk.vertex_count, 0..1);
+                    pass.draw(
+                        chunk.first_vertex..chunk.first_vertex + chunk.vertex_count,
+                        0..1,
+                    );
                     pass.set_pipeline(cover_pipeline);
                     pass.set_bind_group(0, &dynamic.edge_bind_group, &[]);
                     pass.set_vertex_buffer(0, dynamic.edge_buffer.slice(..));
@@ -435,7 +436,10 @@ impl Deep2dGpuPainter {
                     });
                     pass.set_vertex_buffer(0, path.vertex_buffer.slice(..));
                     deep_engine_native::benchmark_observer::note_draw();
-                    pass.draw(chunk.first_vertex..chunk.first_vertex + chunk.vertex_count, 0..1);
+                    pass.draw(
+                        chunk.first_vertex..chunk.first_vertex + chunk.vertex_count,
+                        0..1,
+                    );
                     // 动态块自管绘制(clear/cover/fill),不走 match 后的尾随
                     // draw——否则 fill 会以当前管线再执行一次(实测二次混合)。
                     self.draw_evidence.record(chunk);
@@ -542,15 +546,14 @@ impl Deep2dGpuPainter {
                 store: wgpu::StoreOp::Store,
             },
         })];
-        let depth_stencil_attachment =
-            stencil.map(|view| wgpu::RenderPassDepthStencilAttachment {
-                view,
-                depth_ops: None,
-                stencil_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(0),
-                    store: wgpu::StoreOp::Store,
-                }),
-            });
+        let depth_stencil_attachment = stencil.map(|view| wgpu::RenderPassDepthStencilAttachment {
+            view,
+            depth_ops: None,
+            stencil_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Clear(0),
+                store: wgpu::StoreOp::Store,
+            }),
+        });
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Deep Engine native Deep2d ordered pass v2 (backdrop bracket)"),
             color_attachments: &color_attachments,
@@ -722,7 +725,10 @@ impl Deep2dPathGpuResources {
         });
         // 刀 4:族索引 0 用主管线同对象,保证 normal 帧与 legacy 逐字节一致。
         let mut blend_families = cached.blend_families.clone();
-        blend_families[0] = (Arc::clone(&cached.pipeline), Arc::clone(&cached.pipeline_stencil));
+        blend_families[0] = (
+            Arc::clone(&cached.pipeline),
+            Arc::clone(&cached.pipeline_stencil),
+        );
         let previous = previous.and_then(|p| {
             p.snapshot
                 .as_ref()

@@ -29,7 +29,7 @@ export async function validateRenderPacketAsync(packet: RenderPacket, options: M
       worker.onmessage = null; worker.onerror = null; worker.terminate();
       if (error !== undefined) reject(error); else resolve();
     };
-    const abort = () => finish(signal?.reason ?? new DOMException("Packet validation cancelled.", "AbortError"));
+    const abort = () => finish(signal?.reason ?? Object.assign(new Error("Packet validation cancelled."), { name: "AbortError" }));
     worker.onmessage = ({ data }) => {
       if (signal?.aborted) { abort(); return; }
       if (data?.error !== undefined) finish(new Error(data.error));

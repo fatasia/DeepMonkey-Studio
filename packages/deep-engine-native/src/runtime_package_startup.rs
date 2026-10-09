@@ -65,7 +65,8 @@ pub fn load_bytes_with_expected_hash(
 ) -> Result<PreparedRuntimePackage, String> {
     let package =
         deep_engine_native::runtime_package::parse_and_validate_runtime_package_with_expected_hash(
-            bytes, expected_hash,
+            bytes,
+            expected_hash,
         )
         .map_err(|error| error.to_string())?;
     prepare(package)

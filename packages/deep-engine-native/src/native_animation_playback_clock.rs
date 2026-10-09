@@ -101,7 +101,7 @@ impl NativeAnimationPlaybackClock {
         delta_seconds: f64,
     ) -> Result<Option<NativeAnimationAdvancePlan>, NativeAnimationTimeError> {
         // 镜像 TS `validateFrameDelta`。
-        if !delta_seconds.is_finite() || delta_seconds < 0.0 || delta_seconds > 1_000_000.0 {
+        if !delta_seconds.is_finite() || !(0.0..=1_000_000.0).contains(&delta_seconds) {
             return Err(NativeAnimationTimeError(
                 "Animation frame delta is invalid.",
             ));

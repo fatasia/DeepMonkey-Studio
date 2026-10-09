@@ -30,6 +30,7 @@ pub struct OutputPass {
 }
 
 impl OutputPass {
+    #[allow(dead_code)]
     pub fn new(
         device: &wgpu::Device,
         surface_format: wgpu::TextureFormat,
@@ -117,6 +118,7 @@ impl OutputPass {
         }
     }
 
+    #[cfg_attr(test, allow(dead_code))] // Standalone GPU harnesses use only selected output paths.
     pub fn display_profile(&self) -> OutputColorProfile {
         self.display_profile
     }
@@ -184,6 +186,8 @@ impl OutputPass {
 }
 
 /// Assemble once at pipeline creation, retaining Native author grading and upstream exposure.
+// Used by focused GPU harnesses; production selects the full profile.
+#[allow(dead_code)]
 pub fn output_shader(bloom: bool, fog: bool) -> String {
     output_shader_with_profile(bloom, fog, OutputColorProfile::default())
 }

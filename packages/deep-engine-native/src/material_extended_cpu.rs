@@ -126,6 +126,8 @@ impl Default for ExtendedInputs {
     }
 }
 
+pub type ExtendedMaterialDirect = ([f64; 3], [f64; 3], [f64; 3], [f64; 3], [f64; 3]);
+
 /// materialEvaluate.evaluateExtendedMaterialDirect 的 f64 移植。
 /// 返回 (rgb, diffuse, specular, clearcoat, transmission)。
 #[allow(clippy::too_many_arguments)]
@@ -139,7 +141,7 @@ pub fn evaluate_extended_material_direct(
     light_in: [f64; 3],
     tangent_in: Option<[f64; 3]>,
     radiance: [f64; 3],
-) -> ([f64; 3], [f64; 3], [f64; 3], [f64; 3], [f64; 3]) {
+) -> ExtendedMaterialDirect {
     // TS normalizeExtendedMaterialParameters:扩展参数先 fround(float32 语义)
     // 再进求值;表面输入(metallic/roughness/baseColor)按 TS 原样使用。
     let fround = |value: f64| f32::from_bits((value as f32).to_bits()) as f64;
@@ -165,10 +167,11 @@ pub fn evaluate_extended_material_direct(
     let v_dot_h = clamp(dot3(view, half_vector), 0.0, 1.0);
 
     let f0_dielectric = dielectric_f0(params.ior);
-    let f0: [f64; 3] =
-        [f0_dielectric + (base_color[0] - f0_dielectric) * metallic,
-         f0_dielectric + (base_color[1] - f0_dielectric) * metallic,
-         f0_dielectric + (base_color[2] - f0_dielectric) * metallic];
+    let f0: [f64; 3] = [
+        f0_dielectric + (base_color[0] - f0_dielectric) * metallic,
+        f0_dielectric + (base_color[1] - f0_dielectric) * metallic,
+        f0_dielectric + (base_color[2] - f0_dielectric) * metallic,
+    ];
     let schlick_scalar = |f0: f64, cosine: f64| f0 + (1.0 - f0) * (1.0 - cosine).powi(5);
     let fresnel: [f64; 3] = map3(f0, |channel| schlick_scalar(channel, v_dot_h));
 
@@ -178,22 +181,33 @@ pub fn evaluate_extended_material_direct(
         let denominator = n_dot_h * n_dot_h * (alpha2 - 1.0) + 1.0;
         alpha2 / (PI * denominator * denominator).max(1e-6)
     };
-    let distribution_ggx_anisotropic = |t_dot_h: f64, b_dot_h: f64, n_dot_h: f64, alpha: f64, strength: f64| {
-        let ax = (alpha * (1.0 + strength)).max(1e-3);
-        let ay = alpha.max(1e-3);
-        let d = (t_dot_h / ax) * (t_dot_h / ax) + (b_dot_h / ay) * (b_dot_h / ay) + n_dot_h * n_dot_h;
-        1.0 / (PI * ax * ay * d * d).max(1e-12)
-    };
+    let distribution_ggx_anisotropic =
+        |t_dot_h: f64, b_dot_h: f64, n_dot_h: f64, alpha: f64, strength: f64| {
+            let ax = (alpha * (1.0 + strength)).max(1e-3);
+            let ay = alpha.max(1e-3);
+            let d = (t_dot_h / ax) * (t_dot_h / ax)
+                + (b_dot_h / ay) * (b_dot_h / ay)
+                + n_dot_h * n_dot_h;
+            1.0 / (PI * ax * ay * d * d).max(1e-12)
+        };
     let mut distribution = distribution_ggx(n_dot_h, roughness);
     if params.anisotropy_strength != 0.0 {
         // anisotropicFrame(TS 同式:投影正交化 + 旋转)。
         let cross3 = |a: [f64; 3], b: [f64; 3]| {
-            [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+            [
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0],
+            ]
         };
         let raw = tangent_in.unwrap_or([1.0, 0.0, 0.0]);
         let projection = dot3(raw, normal);
         let projected = safe_normalize(
-            [raw[0] - normal[0] * projection, raw[1] - normal[1] * projection, raw[2] - normal[2] * projection],
+            [
+                raw[0] - normal[0] * projection,
+                raw[1] - normal[1] * projection,
+                raw[2] - normal[2] * projection,
+            ],
             [1.0, 0.0, 0.0],
         );
         let (sin_rotation, cos_rotation) = params.anisotropy_rotation.sin_cos();
@@ -205,7 +219,13 @@ pub fn evaluate_extended_material_direct(
             bitangent[axis] * cos_rotation - projected[axis] * sin_rotation
         });
         let alpha = roughness * roughness;
-        distribution = distribution_ggx_anisotropic(dot3(t, half_vector), dot3(b, half_vector), n_dot_h, alpha, params.anisotropy_strength);
+        distribution = distribution_ggx_anisotropic(
+            dot3(t, half_vector),
+            dot3(b, half_vector),
+            n_dot_h,
+            alpha,
+            params.anisotropy_strength,
+        );
     }
     let geometry_schlick = |n_dot_x: f64, roughness: f64| {
         let k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
@@ -214,7 +234,10 @@ pub fn evaluate_extended_material_direct(
     let geometry_term = geometry_schlick(n_dot_v, roughness) * geometry_schlick(n_dot_l, roughness);
     let specular_scalar = distribution * geometry_term / (4.0 * n_dot_v * n_dot_l).max(1e-4);
     let specular = scale3(fresnel, specular_scalar);
-    let diffuse = scale3(mul3(map3(fresnel, |value| 1.0 - value), base_color), (1.0 - metallic) / PI);
+    let diffuse = scale3(
+        mul3(map3(fresnel, |value| 1.0 - value), base_color),
+        (1.0 - metallic) / PI,
+    );
 
     let transmission = params.transmission_factor;
     let transmittance = schlick_scalar(f0_dielectric, n_dot_v);
@@ -225,7 +248,13 @@ pub fn evaluate_extended_material_direct(
     let scaled_diffuse = scale3(diffuse, 1.0 - transmission);
 
     let coat = evaluate_clearcoat_reference(
-        params.clearcoat_factor, params.clearcoat_roughness, n_dot_l, n_dot_v, n_dot_h, v_dot_h, [0.0, 0.0],
+        params.clearcoat_factor,
+        params.clearcoat_roughness,
+        n_dot_l,
+        n_dot_v,
+        n_dot_h,
+        v_dot_h,
+        [0.0, 0.0],
     );
     let base = [
         scaled_diffuse[0] + specular[0] + transmission_lobe[0],
@@ -319,7 +348,12 @@ fn direct_dfg_table() -> &'static [[f32; 2]; 256] {
             let (a, b) = pair.split_once(",").expect("dfg pair");
             table[index] = [
                 a.trim().parse::<f32>().expect("dfg x"),
-                b.split(')').next().expect("dfg y").trim().parse::<f32>().expect("dfg y"),
+                b.split(')')
+                    .next()
+                    .expect("dfg y")
+                    .trim()
+                    .parse::<f32>()
+                    .expect("dfg y"),
             ];
             index += 1;
         }
@@ -357,7 +391,11 @@ pub fn direct_dfg_185(roughness: f64, dot_nv: f64) -> [f32; 2] {
 }
 
 /// deepDirectMultiscatteringEnergy(brdfDirectMultiscattering.wgsl 同式)。
-pub fn direct_multiscattering_energy(f0: [f64; 3], dfg_view: [f32; 2], dfg_light: [f32; 2]) -> [f64; 3] {
+pub fn direct_multiscattering_energy(
+    f0: [f64; 3],
+    dfg_view: [f32; 2],
+    dfg_light: [f32; 2],
+) -> [f64; 3] {
     let view = [dfg_view[0] as f64, dfg_view[1] as f64];
     let light = [dfg_light[0] as f64, dfg_light[1] as f64];
     let single_view: [f64; 3] = std::array::from_fn(|axis| f0[axis] * view[0] + view[1]);
@@ -377,7 +415,13 @@ pub fn direct_multiscattering_energy(f0: [f64; 3], dfg_view: [f32; 2], dfg_light
 /// WGSL 逐字一致,不用 std 常量)。
 #[allow(clippy::too_many_arguments)]
 pub fn brdf_with_dielectric_f0(
-    n: [f64; 3], v: [f64; 3], l: [f64; 3], base: [f64; 3], metal: f64, rough: f64, dielectric: f64,
+    n: [f64; 3],
+    v: [f64; 3],
+    l: [f64; 3],
+    base: [f64; 3],
+    metal: f64,
+    rough: f64,
+    dielectric: f64,
 ) -> [f64; 3] {
     const WGSL_PI: f64 = core::f64::consts::PI;
     let fresnel = |cosine: f64, f0: [f64; 3]| -> [f64; 3] {
@@ -405,7 +449,12 @@ pub fn brdf_with_dielectric_f0(
 
 /// native_direct_multiscattering(native_mesh_v1.wgsl 同式)。
 pub fn native_direct_multiscattering(
-    normal: [f64; 3], light: [f64; 3], base: [f64; 3], metal: f64, rough: f64, dielectric: f64,
+    normal: [f64; 3],
+    light: [f64; 3],
+    base: [f64; 3],
+    metal: f64,
+    rough: f64,
+    dielectric: f64,
     dfg_view: [f32; 2],
 ) -> [f64; 3] {
     let nl = dot3(normal, light).clamp(0.0, 1.0);
@@ -428,8 +477,15 @@ pub fn native_direct_multiscattering(
 /// GPU 探针腿用,几何粗糙度在恒定法线面上为 0,由调用方传入)。
 #[allow(clippy::too_many_arguments)]
 pub fn native_stock_direct(
-    normal: [f64; 3], view: [f64; 3], light: [f64; 3], base: [f64; 3],
-    metal: f64, rough: f64, dielectric: f64, sun: [f64; 3], visibility: f64,
+    normal: [f64; 3],
+    view: [f64; 3],
+    light: [f64; 3],
+    base: [f64; 3],
+    metal: f64,
+    rough: f64,
+    dielectric: f64,
+    sun: [f64; 3],
+    visibility: f64,
 ) -> [f64; 3] {
     let nv = dot3(normal, view).clamp(0.001, 1.0);
     let dfg_view = direct_dfg_185(rough, nv);
@@ -447,7 +503,7 @@ pub fn native_stock_direct(
 /// native_extended_shade 的合成腿(无 IBL/无局部灯 → original ≡ stock_direct):
 /// 返回 (original − stock_direct − emissive)·energyIndirect + direct·energyDirect
 /// + sheenDirect + emissive;direct = extended.rgb·visibility(扩展带激活)否则
-/// stock_direct。与 WGSL wrapper 逐式同构(合成序见 native_mesh_v1.wgsl 注释)。
+///   stock_direct。与 WGSL wrapper 逐式同构(合成序见 native_mesh_v1.wgsl 注释)。
 #[allow(clippy::too_many_arguments)]
 pub fn native_extended_response(
     original: [f64; 3],

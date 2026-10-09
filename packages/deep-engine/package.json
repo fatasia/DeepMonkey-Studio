@@ -253,7 +253,7 @@
     "lab:serve": "node scripts/serveLab.mjs",
     "lab:verify": "node scripts/verifyLabArtifact.mjs",
     "lab:isolation": "node scripts/verifyIsolation.mjs && node scripts/verifyLabArtifact.mjs && pnpm --filter @bim-studio/web test src/architecture.test.ts",
-    "test": "vitest run src lab && node --test scripts/threeUsageScanner.test.mjs scripts/shaderUsageScanner.test.mjs scripts/runtimePurityPolicy.test.mjs scripts/collectNativeUiInventory.test.mjs && node scripts/runtimePurityGate.mjs && node scripts/sourceSizeGate.mjs && node ../../scripts/j5-dual-end-gate.mjs",
+    "test": "vitest run src lab && node --test scripts/threeUsageScanner.test.mjs scripts/shaderUsageScanner.test.mjs scripts/runtimePurityPolicy.test.mjs scripts/labIsolationPolicy.test.mjs scripts/collectNativeUiInventory.test.mjs && node scripts/runtimePurityGate.mjs && node scripts/sourceSizeGate.mjs && node ../../scripts/j5-dual-end-gate.mjs",
     "gate:j5": "node ../../scripts/j5-dual-end-gate.mjs",
     "gate:j5:gpu": "node ../../scripts/j5-dual-end-gate.mjs --with-gpu",
     "gate:source-size": "node scripts/sourceSizeGate.mjs",

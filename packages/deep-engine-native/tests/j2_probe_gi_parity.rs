@@ -1,8 +1,7 @@
 #[path = "support/j2_probe_gi_gpu.rs"]
 mod gpu;
 #[allow(dead_code)]
-#[path = "../src/shader_package/hash.rs"]
-mod hash;
+use deep_engine_native::shader_package::hash;
 
 use deep_engine_native::{
     probe_gi_abi::IrradianceProbeRecord,

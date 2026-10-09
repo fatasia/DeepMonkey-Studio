@@ -138,7 +138,10 @@ fn readback_records(
 
 /// ABI 词面(irradiance.rgb / validity / meanDistance / variance /
 /// occlusionFloor)与 F5/padding 恒零合同的同时校验,返回七词差的最大值。
-fn record_words_gap(gpu: &[f32; 24], cpu: &deep_engine_native::probe_gi_abi::IrradianceProbeRecord) -> f64 {
+fn record_words_gap(
+    gpu: &[f32; 24],
+    cpu: &deep_engine_native::probe_gi_abi::IrradianceProbeRecord,
+) -> f64 {
     let cpu_layout = [
         f64::from(cpu.irradiance[0]),
         f64::from(cpu.irradiance[1]),
@@ -246,10 +249,8 @@ fn gpu_production_chain_matches_cpu_authority_within_declared_tolerance() {
 
         // 期望侧 = 读回 GPU 场后按 CPU 权威数学重追(场差为共同输入;三层证据
         // 链见模块头)。镜像链与生产链同 lattice/方向/追踪配置/天空辐射。
-        let (grid_origin, cell_size, grid_dims) = runtime
-            .gpu_chain_mut()
-            .expect("GPU leg")
-            .grid_geometry();
+        let (grid_origin, cell_size, grid_dims) =
+            runtime.gpu_chain_mut().expect("GPU leg").grid_geometry();
         let gpu_field = {
             let chain = runtime.gpu_chain_mut().expect("GPU leg");
             let cells = chain.cells_for_test();
@@ -266,7 +267,9 @@ fn gpu_production_chain_matches_cpu_authority_within_declared_tolerance() {
             staging.map_async(wgpu::MapMode::Read, .., move |result| {
                 let _ = sender.send(result);
             });
-            device.poll(wgpu::PollType::wait_indefinitely()).expect("poll");
+            device
+                .poll(wgpu::PollType::wait_indefinitely())
+                .expect("poll");
             receiver.recv().expect("map callback").expect("map");
             let mapped = staging.get_mapped_range(..).expect("mapped range");
             mapped
@@ -293,8 +296,9 @@ fn gpu_production_chain_matches_cpu_authority_within_declared_tolerance() {
             direction_count,
             plan.trace_config.max_distance,
         );
-        let no_previous: Vec<Option<deep_engine_native::sdf_gi_probe_update::ProbeShPreviousRecord>> =
-            vec![None; probe_count];
+        let no_previous: Vec<
+            Option<deep_engine_native::sdf_gi_probe_update::ProbeShPreviousRecord>,
+        > = vec![None; probe_count];
         let mirror_init = deep_engine_native::sdf_gi_probe_update::update_probe_sh_with_sdf_gi(
             &mirror_input(&plan, &mirror_vis, &no_previous, &mirror_stats, None),
         );
@@ -329,9 +333,8 @@ fn gpu_production_chain_matches_cpu_authority_within_declared_tolerance() {
             chain.advance(&device, &queue, &storage);
         }
         let gpu_after_window = readback_records(&device, &queue, &storage, 1 + probe_count);
-        let previous: Vec<
-            Option<deep_engine_native::sdf_gi_probe_update::ProbeShPreviousRecord>,
-        > = mirror_init.records_f64.iter().cloned().map(Some).collect();
+        let previous: Vec<Option<deep_engine_native::sdf_gi_probe_update::ProbeShPreviousRecord>> =
+            mirror_init.records_f64.iter().cloned().map(Some).collect();
         let mirror_window = deep_engine_native::sdf_gi_probe_update::update_probe_sh_with_sdf_gi(
             &mirror_input(&plan, &mirror_vis, &previous, &mirror_stats, Some(0.1)),
         );
@@ -372,8 +375,7 @@ fn gpu_production_chain_matches_cpu_authority_within_declared_tolerance() {
         grown[0].transform.translation[0] += 3.0;
         let grown_plan = SdfGiFrameRuntime::plan_gpu(&grown, &diffuse).expect("grown plan");
         assert_ne!(
-            grown_plan.grid_plan.dimensions,
-            plan.grid_plan.dimensions,
+            grown_plan.grid_plan.dimensions, plan.grid_plan.dimensions,
             "反例前提:平移必须实际改变格几何"
         );
         if let Some(chain) = runtime.gpu_chain_mut() {

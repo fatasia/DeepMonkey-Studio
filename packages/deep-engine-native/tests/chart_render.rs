@@ -244,7 +244,9 @@ fn bar_series_renders_filled_rects_and_skips_zero_height_bars() {
     assert_eq!(commands.len(), 2, "zero-height bar skipped");
     for bar in &commands {
         assert_eq!(
-            bar.fill.as_ref().and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color),
+            bar.fill
+                .as_ref()
+                .and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color),
             Some(BAR_COLOR)
         );
         assert_eq!(bar.stroke, None);
@@ -299,7 +301,10 @@ fn scatter_series_renders_an_octagon_per_point() {
     assert_eq!(commands.len(), 3, "one marker per point");
     for marker in &commands {
         assert_eq!(
-            marker.fill.as_ref().and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color),
+            marker
+                .fill
+                .as_ref()
+                .and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color),
             Some(SCATTER_COLOR)
         );
         let resource = dl
@@ -346,7 +351,10 @@ fn pie_series_splits_value_share_clockwise_from_top() {
     assert_eq!(commands.len(), 3, "one wedge per row");
     for (index, wedge) in commands.iter().enumerate() {
         assert_eq!(
-            wedge.fill.as_ref().and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color),
+            wedge
+                .fill
+                .as_ref()
+                .and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color),
             Some(PIE_PALETTE[index]),
             "wedge {index} color ring"
         );
@@ -461,7 +469,11 @@ fn heatmap_cells_map_values_onto_blue_red_ramp() {
     assert_eq!(commands.len(), 4, "one cell per row");
     let fills: Vec<[f64; 4]> = commands
         .iter()
-        .filter_map(|c| c.fill.as_ref().and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color))
+        .filter_map(|c| {
+            c.fill
+                .as_ref()
+                .and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color)
+        })
         .collect();
     // 色带端点是浮点插值结果,用近似比较而非精确相等。
     let color_approx =

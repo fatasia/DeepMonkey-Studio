@@ -57,13 +57,28 @@ fn certified_shape_passes_and_every_violation_is_rejected() {
         assert!(error.contains(needle), "expected '{needle}' in: {error}");
     }
     reject_after(|e| e[0].kind = WindowEventKind::Presented, "WindowCreated");
-    reject_after(|e| drop(e.remove(4)), "after recovery present"); // 缺恢复 present
-    reject_after(|e| drop(e.remove(5)), "stale-event"); // 缺 stale 负例
+    reject_after(
+        |e| {
+            e.remove(4);
+        },
+        "after recovery present",
+    ); // 缺恢复 present
+    reject_after(
+        |e| {
+            e.remove(5);
+        },
+        "stale-event",
+    ); // 缺 stale 负例
     reject_after(|e| e[4].at = Duration::from_millis(3), "non-monotonic");
     reject_after(|e| e[2].renderer_id = 9, "lost callback id");
     reject_after(|e| e[3].renderer_id = 1, "new renderer id");
     reject_after(|e| e[4].renderer_id = 1, "must come from the new renderer");
-    reject_after(|e| drop(e.remove(3)), "expected candidate");
+    reject_after(
+        |e| {
+            e.remove(3);
+        },
+        "expected candidate",
+    );
     reject_after(|e| e[4].renderer_id = 3, "expected candidate");
     reject_after(|e| e[5].renderer_id = 2, "stale-event rejection");
     reject_after(|e| e[3].kind = WindowEventKind::Presented, "after loss");

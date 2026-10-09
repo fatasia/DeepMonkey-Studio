@@ -1,8 +1,7 @@
 use serde_json::Value;
 
-// 并行切片的待接线接口（identityGolden 域）；接线前保留避免半成品被误删。
-#[allow(dead_code)]
-pub(crate) fn hash_canonical(value: &Value) -> String {
+/// Canonical JSON identity shared by package validation and fixture builders.
+pub fn hash_canonical(value: &Value) -> String {
     let mut text = String::new();
     canonical(value, &mut text);
     sha256(text.as_bytes())

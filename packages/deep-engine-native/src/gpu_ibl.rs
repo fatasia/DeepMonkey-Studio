@@ -103,15 +103,32 @@ impl GpuIblEnvironment {
         });
         let scene_placeholder = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Native absent transmission source"),
-            size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
-            mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
             format: IBL_FORMAT,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        queue.write_texture(scene_placeholder.as_image_copy(), &[0u8; 8],
-            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(8), rows_per_image: Some(1) },
-            wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 });
+        queue.write_texture(
+            scene_placeholder.as_image_copy(),
+            &[0u8; 8],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(8),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
         Ok(Self {
             scene_placeholder_view: scene_placeholder.create_view(&Default::default()),
             _scene_placeholder: scene_placeholder,
@@ -132,8 +149,8 @@ impl GpuIblEnvironment {
         })
     }
 
-    pub fn set_scene_opaque_view(&mut self,view:Option<&wgpu::TextureView>) {
-        self.scene_opaque_view=view.cloned();
+    pub fn set_scene_opaque_view(&mut self, view: Option<&wgpu::TextureView>) {
+        self.scene_opaque_view = view.cloned();
     }
 
     pub fn write_cluster_grid(
@@ -260,7 +277,12 @@ impl GpuIblEnvironment {
             },
         ];
         if include_native_section {
-            entries.push(texture_entry(13,self.scene_opaque_view.as_ref().unwrap_or(&self.scene_placeholder_view)));
+            entries.push(texture_entry(
+                13,
+                self.scene_opaque_view
+                    .as_ref()
+                    .unwrap_or(&self.scene_placeholder_view),
+            ));
             entries.push(wgpu::BindGroupEntry {
                 binding: 9,
                 resource: ies

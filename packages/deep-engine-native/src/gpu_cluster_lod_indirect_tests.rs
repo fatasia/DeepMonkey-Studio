@@ -2,11 +2,10 @@
 //! fixture selection 驱动的计划命令字正确性、fail-closed 反例族。
 
 use crate::gpu_cluster_lod_indirect::{
-    derive_cluster_lod_frontier, plan_cluster_lod_indirect, ClusterLodIndirectDraw,
-    ClusterLodLevelGeometrySummary, ClusterLodPlanError, ClusterLodPlanNode,
-    CLUSTER_LOD_INDIRECT_COMMAND_STRIDE_BYTES,
+    CLUSTER_LOD_INDIRECT_COMMAND_STRIDE_BYTES, ClusterLodLevelGeometrySummary, ClusterLodPlanError,
+    ClusterLodPlanNode, derive_cluster_lod_frontier, plan_cluster_lod_indirect,
 };
-use crate::gpu_cluster_lod_selection::{select_cluster_lod, ClusterLodCamera, ClusterLodNode};
+use crate::gpu_cluster_lod_selection::{ClusterLodCamera, select_cluster_lod};
 
 fn two_level_dag() -> Vec<ClusterLodPlanNode> {
     vec![
@@ -36,8 +35,14 @@ fn two_level_dag() -> Vec<ClusterLodPlanNode> {
 
 fn levels() -> [ClusterLodLevelGeometrySummary; 2] {
     [
-        ClusterLodLevelGeometrySummary { vertex_count: 24, index_count: 48 },
-        ClusterLodLevelGeometrySummary { vertex_count: 48, index_count: 96 },
+        ClusterLodLevelGeometrySummary {
+            vertex_count: 24,
+            index_count: 48,
+        },
+        ClusterLodLevelGeometrySummary {
+            vertex_count: 48,
+            index_count: 96,
+        },
     ]
 }
 
@@ -71,14 +76,12 @@ fn plan_frontier_and_select_frontier_are_multiset_equal() {
     let selected = select_cluster_lod(&nodes_sel, &camera).expect("selects");
     let frontier_plan =
         derive_cluster_lod_frontier(&nodes, &selected.selection).expect("plan frontier");
-    let mut frontier_plan_ids: Vec<&str> =
-        frontier_plan.iter().map(|index| nodes[*index].id.as_str()).collect();
-    frontier_plan_ids.sort_unstable();
-    let mut frontier_select_ids: Vec<&str> = selected
-        .frontier
+    let mut frontier_plan_ids: Vec<&str> = frontier_plan
         .iter()
-        .map(String::as_str)
+        .map(|index| nodes[*index].id.as_str())
         .collect();
+    frontier_plan_ids.sort_unstable();
+    let mut frontier_select_ids: Vec<&str> = selected.frontier.iter().map(String::as_str).collect();
     frontier_select_ids.sort_unstable();
     assert_eq!(frontier_plan_ids, frontier_select_ids);
 }
@@ -89,7 +92,10 @@ fn plan_draws_carry_correct_command_words_and_spans() {
     let selection = [0xffff_ffff, 1, 1]; // 根未选,两叶选中 → 两前沿绘制(level 1)。
     let plan = plan_cluster_lod_indirect(&nodes, &selection, &levels()).expect("plans");
     assert_eq!(plan.draw_count, 2);
-    assert_eq!(plan.commands_byte_length, 2 * CLUSTER_LOD_INDIRECT_COMMAND_STRIDE_BYTES);
+    assert_eq!(
+        plan.commands_byte_length,
+        2 * CLUSTER_LOD_INDIRECT_COMMAND_STRIDE_BYTES
+    );
     assert_eq!(plan.level_spans[1].first_index_base, 48);
     assert_eq!(plan.level_spans[1].base_vertex, 24);
     assert_eq!(plan.covered_regions, 1);
@@ -117,7 +123,11 @@ fn fail_closed_family_matches_ts_semantics() {
     // 槽位值非法(既非哨兵也非层级)。
     assert!(matches!(
         plan_cluster_lod_indirect(&nodes, &[0xffff_ffff, 9, 1], &levels()),
-        Err(ClusterLodPlanError::SlotInvalid { slot: 1, value: 9, level: 1 })
+        Err(ClusterLodPlanError::SlotInvalid {
+            slot: 1,
+            value: 9,
+            level: 1
+        })
     ));
     // 子被双父引用。
     let claimed = vec![

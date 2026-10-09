@@ -18,10 +18,6 @@
 use super::rt_raster_parity_gpu_tests::{decode_hdr, map_readback};
 // 本文件挂载在 bin 目标(main.rs::renderer)下;CPU 镜像是 lib 模块,
 // 经 deep_engine_native:: 跨包引用(与 pbr_texture 等既有用法同式)。
-use deep_engine_native::material_extended_cpu::{
-    evaluate_extended_material_direct, native_extended_response, native_stock_direct,
-    ExtendedInputs,
-};
 use crate::{
     forward_targets::ForwardTargets,
     frame_bindings::{create_frame_layouts, create_native_mesh_shader},
@@ -33,6 +29,10 @@ use crate::{
     mesh_pass::encode_opaque_pass,
     pipeline::create_mesh_pipelines,
     player_shader_plan::scene_content_key,
+};
+use deep_engine_native::material_extended_cpu::{
+    ExtendedInputs, evaluate_extended_material_direct, native_extended_response,
+    native_stock_direct,
 };
 use deep_engine_native::{
     contract::{RenderPacket, validate_packet},
@@ -57,8 +57,9 @@ fn request_device() -> Option<(wgpu::Device, wgpu::Queue)> {
     descriptor.backends = wgpu::Backends::DX12 | wgpu::Backends::VULKAN;
     let instance = wgpu::Instance::new(descriptor);
     let adapter = pollster::block_on(instance.request_adapter(&Default::default())).ok()?;
-    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
-        .expect("extended-material probe adapter must create a device");
+    let (device, queue) =
+        pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+            .expect("extended-material probe adapter must create a device");
     Some((device, queue))
 }
 
@@ -69,20 +70,38 @@ fn wall_packet(material: Value) -> RenderPacket {
     let eye = view.eye();
     let center: [f32; 3] = std::array::from_fn(|axis| eye[axis] + forward[axis] * 2.0);
     let cross = |a: [f32; 3], b: [f32; 3]| {
-        [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
     };
     let normal = cross(right, up);
     let facing: f32 = normal.iter().zip(forward).map(|(a, b)| a * b).sum();
-    let up = if facing > 0.0 { [-up[0], -up[1], -up[2]] } else { up };
+    let up = if facing > 0.0 {
+        [-up[0], -up[1], -up[2]]
+    } else {
+        up
+    };
     let half = 3.0f32;
     let corner = |sr: f32, su: f32| -> [f32; 3] {
         std::array::from_fn(|axis| center[axis] + right[axis] * half * sr + up[axis] * half * su)
     };
     let mut vertices: Vec<f32> = Vec::new();
     for point in [
-        corner(-1.0, -1.0), corner(1.0, -1.0), corner(1.0, 1.0), corner(-1.0, 1.0),
+        corner(-1.0, -1.0),
+        corner(1.0, -1.0),
+        corner(1.0, 1.0),
+        corner(-1.0, 1.0),
     ] {
-        vertices.extend_from_slice(&[point[0], point[1], point[2], -forward[0], -forward[1], -forward[2]]);
+        vertices.extend_from_slice(&[
+            point[0],
+            point[1],
+            point[2],
+            -forward[0],
+            -forward[1],
+            -forward[2],
+        ]);
     }
     let packet: RenderPacket = serde_json::from_value(serde_json::json!({
         "schema": "deep-engine.render-packet",
@@ -107,7 +126,10 @@ fn wall_packet(material: Value) -> RenderPacket {
 
 /// 探针 frame:默认相机 + IBL 关(background.w=0)+ 曝光 1 + 无局部灯 +
 /// 雾关;sun 保持 legacy 默认(非作者模式 → sun=(3.2,3.0,2.8))。
-fn probe_frame() -> ([[f32; 4]; deep_engine_native::mesh_abi::FRAME_UNIFORM_FLOATS / 4], PlayerView) {
+fn probe_frame() -> (
+    [[f32; 4]; deep_engine_native::mesh_abi::FRAME_UNIFORM_FLOATS / 4],
+    PlayerView,
+) {
     let view = PlayerView::default();
     let mut frame =
         frame_data_with_camera(PhysicalSize::new(SIZE, SIZE), view, FogSettings::default());
@@ -224,7 +246,10 @@ fn render_wall(
         pollster::block_on(memory.pop()),
         pollster::block_on(validation.pop()),
     ] {
-        assert!(error.is_none(), "extended-material probe GPU error: {error:?}");
+        assert!(
+            error.is_none(),
+            "extended-material probe GPU error: {error:?}"
+        );
     }
     pixels
 }
@@ -287,8 +312,10 @@ fn assert_pixel_near(gpu: [f32; 3], cpu: [f64; 3], label: &str) {
 fn parity_fixture() -> &'static Value {
     static FIXTURE: OnceLock<Value> = OnceLock::new();
     FIXTURE.get_or_init(|| {
-        serde_json::from_str(include_str!("../../../deep-engine/fixtures/material-native-parity-v1.json"))
-            .expect("parity fixture must parse")
+        serde_json::from_str(include_str!(
+            "../../../deep-engine/fixtures/material-native-parity-v1.json"
+        ))
+        .expect("parity fixture must parse")
     })
 }
 
@@ -304,10 +331,25 @@ fn composed_expectation(
 ) -> [f64; 3] {
     let rough = roughness.clamp(0.045, 1.0);
     let stock_direct = native_stock_direct(
-        geometry.normal, geometry.view, geometry.light, base, metallic, rough, 0.04, geometry.sun, 1.0,
+        geometry.normal,
+        geometry.view,
+        geometry.light,
+        base,
+        metallic,
+        rough,
+        0.04,
+        geometry.sun,
+        1.0,
     );
     let (extended_rgb, ..) = evaluate_extended_material_direct(
-        base, metallic, roughness, params, geometry.normal, geometry.view, geometry.light, None,
+        base,
+        metallic,
+        roughness,
+        params,
+        geometry.normal,
+        geometry.view,
+        geometry.light,
+        None,
         geometry.sun,
     );
     let view_nv = dot(geometry.normal, geometry.view).clamp(0.001, 1.0);
@@ -315,8 +357,17 @@ fn composed_expectation(
     let half = normalize(add(geometry.view, geometry.light));
     let nh = dot(geometry.normal, half).clamp(0.0, 1.0);
     native_extended_response(
-        stock_direct, stock_direct, extended_rgb, [0.0; 3],
-        sheen_color, sheen_roughness.clamp(0.0001, 1.0), view_nv, nl, nh, geometry.sun, 1.0,
+        stock_direct,
+        stock_direct,
+        extended_rgb,
+        [0.0; 3],
+        sheen_color,
+        sheen_roughness.clamp(0.0001, 1.0),
+        view_nv,
+        nl,
+        nh,
+        geometry.sun,
+        1.0,
     )
 }
 
@@ -336,13 +387,28 @@ fn extended_material_bands_render_match_cpu_mirror_on_real_gpu() {
         "metallic": 0.9, "roughness": 0.4,
         "extendedParameters": { "ior": 1.5, "clearcoat": { "factor": 0.9, "roughness": 0.35 } }
     });
-    let pixels = render_wall(&device, &queue, &wall_packet(car_paint.clone()), "extended-coat");
+    let pixels = render_wall(
+        &device,
+        &queue,
+        &wall_packet(car_paint.clone()),
+        "extended-coat",
+    );
     let center = pixels[(SIZE * SIZE / 2 + SIZE / 2) as usize];
     let (coat_rgb, ..) = evaluate_extended_material_direct(
-        [0.043, 0.14, 0.42], 0.9, 0.4,
-        ExtendedInputs { ior: 1.5, clearcoat_factor: 0.9, clearcoat_roughness: 0.35,
-            ..ExtendedInputs::default() },
-        geometry.normal, geometry.view, geometry.light, None, geometry.sun,
+        [0.043, 0.14, 0.42],
+        0.9,
+        0.4,
+        ExtendedInputs {
+            ior: 1.5,
+            clearcoat_factor: 0.9,
+            clearcoat_roughness: 0.35,
+            ..ExtendedInputs::default()
+        },
+        geometry.normal,
+        geometry.view,
+        geometry.light,
+        None,
+        geometry.sun,
     );
 
     assert_pixel_near(center, coat_rgb, "coat leg");
@@ -353,10 +419,21 @@ fn extended_material_bands_render_match_cpu_mirror_on_real_gpu() {
         "metallic": 0.0, "roughness": 0.5,
         "advancedParameters": { "sheen": { "color": [0.35, 0.3, 0.25], "roughness": 0.6 } }
     });
-    let pixels = render_wall(&device, &queue, &wall_packet(sheen_material), "extended-sheen");
+    let pixels = render_wall(
+        &device,
+        &queue,
+        &wall_packet(sheen_material),
+        "extended-sheen",
+    );
     let center = pixels[(SIZE * SIZE / 2 + SIZE / 2) as usize];
     let sheen_expected = composed_expectation(
-        &geometry, [0.8, 0.6, 0.5], 0.0, 0.5, ExtendedInputs::default(), [0.35, 0.3, 0.25], 0.6,
+        &geometry,
+        [0.8, 0.6, 0.5],
+        0.0,
+        0.5,
+        ExtendedInputs::default(),
+        [0.35, 0.3, 0.25],
+        0.6,
     );
 
     assert_pixel_near(center, sheen_expected, "sheen leg");
@@ -371,10 +448,18 @@ fn extended_material_bands_render_match_cpu_mirror_on_real_gpu() {
     let pixels = render_wall(&device, &queue, &wall_packet(combined), "extended-combined");
     let center = pixels[(SIZE * SIZE / 2 + SIZE / 2) as usize];
     let combined_expected = composed_expectation(
-        &geometry, [0.043, 0.14, 0.42], 0.9, 0.4,
-        ExtendedInputs { ior: 1.5, clearcoat_factor: 0.9, clearcoat_roughness: 0.35,
-            ..ExtendedInputs::default() },
-        [0.35, 0.3, 0.25], 0.6,
+        &geometry,
+        [0.043, 0.14, 0.42],
+        0.9,
+        0.4,
+        ExtendedInputs {
+            ior: 1.5,
+            clearcoat_factor: 0.9,
+            clearcoat_roughness: 0.35,
+            ..ExtendedInputs::default()
+        },
+        [0.35, 0.3, 0.25],
+        0.6,
     );
 
     assert_pixel_near(center, combined_expected, "combined leg");
@@ -390,8 +475,18 @@ fn extended_material_bands_render_match_cpu_mirror_on_real_gpu() {
         "extendedParameters": { "clearcoat": { "factor": 0.0, "roughness": 0.0 } },
         "advancedParameters": { "sheen": { "color": [0, 0, 0], "roughness": 1 } }
     });
-    let absent_pixels = render_wall(&device, &queue, &wall_packet(absent), "extended-control-absent");
-    let zero_pixels = render_wall(&device, &queue, &wall_packet(explicit_zero), "extended-control-zero");
+    let absent_pixels = render_wall(
+        &device,
+        &queue,
+        &wall_packet(absent),
+        "extended-control-absent",
+    );
+    let zero_pixels = render_wall(
+        &device,
+        &queue,
+        &wall_packet(explicit_zero),
+        "extended-control-zero",
+    );
     let absent_center = absent_pixels[(SIZE * SIZE / 2 + SIZE / 2) as usize];
     let zero_center = zero_pixels[(SIZE * SIZE / 2 + SIZE / 2) as usize];
     assert_eq!(

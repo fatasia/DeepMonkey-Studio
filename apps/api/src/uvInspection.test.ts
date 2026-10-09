@@ -14,7 +14,7 @@ import {
   type MeshPrimitiveUvInput,
 } from "./uvInspection.js";
 
-const FACTORY_ZIP = path.resolve(import.meta.dirname, "../../../data/external-assets/open-packs/factory.zip");
+const FACTORY_ZIP = path.resolve(import.meta.dirname, "../../../test-fixtures/kenney-factory/factory.zip");
 const FACTORY_GLB_ENTRY = "Models/GLB format/robot-arm-a.glb";
 /** 1×1 透明 PNG,供合成纹理材质写入 GLB。 */
 const TINY_PNG = Buffer.from(

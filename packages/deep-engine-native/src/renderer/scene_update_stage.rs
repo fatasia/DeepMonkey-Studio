@@ -686,7 +686,10 @@ impl Renderer {
         // sdf-gi GPU 腿帧内重烘焙评估(publish 唯一提交点;哈希命中跳过 /
         // 原位重烘焙 / 格几何变化 fail-closed 维持旧静态层,CPU 腿不动)。
         // 字段级 disjoint 借用(storage 只读 + runtime 可变 + 诊断可变)。
-        if let Some(storage) = self.probe_gi_storage.as_ref().map(|storage| storage.buffer())
+        if let Some(storage) = self
+            .probe_gi_storage
+            .as_ref()
+            .map(|storage| storage.buffer())
             && let Some(input) = staged.sdf_gi_rebake.take()
             && let Some(runtime) = self.sdf_gi.as_mut()
         {

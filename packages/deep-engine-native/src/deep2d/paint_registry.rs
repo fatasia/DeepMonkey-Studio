@@ -17,8 +17,10 @@ use super::painter::{Deep2dPainterIssue, Deep2dPainterIssueCode, issue};
 /// `DEEP_2D_DISPLAY_LIST_BUDGETS.paints`); keeps the storage upload bounded.
 pub(super) const MAX_FRAME_PAINTS: usize = super::DEEP_2D_DISPLAY_LIST_BUDGETS.paints;
 
-const _: () =
-    assert!(super::paint_data::DEEP2D_MAX_GRADIENT_STOPS == super::DEEP_2D_DISPLAY_LIST_BUDGETS.gradient_stops_per_paint);
+const _: () = assert!(
+    super::paint_data::DEEP2D_MAX_GRADIENT_STOPS
+        == super::DEEP_2D_DISPLAY_LIST_BUDGETS.gradient_stops_per_paint
+);
 
 pub(super) struct PaintRegistry {
     entries: Vec<Deep2dPaintData>,
@@ -109,7 +111,9 @@ fn content_fingerprint(paint: &Deep2dPaintData) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::deep2d::paint_data::{DEEP2D_PAINT_KIND_LINEAR, DEEP2D_MAX_GRADIENT_STOPS, Deep2dPaintStop};
+    use crate::deep2d::paint_data::{
+        DEEP2D_MAX_GRADIENT_STOPS, DEEP2D_PAINT_KIND_LINEAR, Deep2dPaintStop,
+    };
 
     fn gradient(color: [f32; 4]) -> Deep2dPaintData {
         let mut stops = [Deep2dPaintStop {

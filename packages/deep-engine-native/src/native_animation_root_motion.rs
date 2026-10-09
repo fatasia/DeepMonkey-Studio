@@ -132,7 +132,9 @@ impl NativeRootMotionTracker {
         let mut count = 0usize;
         let mut rotation = [0.0, 0.0, 0.0, 1.0];
         for sample in &self.samples {
-            if !(sample.unwrapped_time > since_unwrapped_time) {
+            if sample.unwrapped_time.partial_cmp(&since_unwrapped_time)
+                != Some(std::cmp::Ordering::Greater)
+            {
                 continue;
             }
             x += sample.translation[0];
@@ -233,7 +235,7 @@ pub fn normalize_quaternion(quaternion: &[f64; 4]) -> [f64; 4] {
         + quaternion[2] * quaternion[2]
         + quaternion[3] * quaternion[3])
         .sqrt();
-    if !(length > 0.0) {
+    if length.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
         return [0.0, 0.0, 0.0, 1.0];
     }
     [
@@ -246,7 +248,7 @@ pub fn normalize_quaternion(quaternion: &[f64; 4]) -> [f64; 4] {
 
 fn normalize_axis(axis: [f64; 3]) -> Result<[f64; 3], NativeRootMotionError> {
     let length = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
-    if !(length > 0.0) {
+    if length.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
         return Err(NativeRootMotionError(
             "Root motion matrix has a degenerate rotation axis.",
         ));

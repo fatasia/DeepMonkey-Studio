@@ -9,12 +9,12 @@
 //! 的穷尽 match 无需机械同步),帧上下文、路径缓存依赖与 GPU 管线原样生效。
 
 use deep_engine_native::deep2d::layout::{
-    solve, to_display_list, CommandParams, LayoutTree, TextMeasurer,
+    CommandParams, LayoutTree, TextMeasurer, solve, to_display_list,
 };
 use deep_engine_native::deep2d::{Deep2dRuntimeContent, FontResource};
 
 use crate::app::NativeApp;
-use crate::deep2d_gpu::{Deep2dFrameContext, deep2d_frame_context};
+use crate::deep2d_frame_context::{Deep2dFrameContext, deep2d_frame_context};
 
 /// 组件布局内容注册:LayoutTree + 视口 → 可进帧流程的运行时内容。
 ///
@@ -74,12 +74,12 @@ pub(super) fn current_resource_epoch(app: &NativeApp) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::deep2d_gpu::deep2d_frame_context;
+    use crate::deep2d_frame_context::deep2d_frame_context;
     use deep_engine_native::deep2d::layout::{LayoutBoxVisual, LayoutNode, NodeId};
+    use deep_engine_native::deep2d::layout::{LayoutEdges, LayoutStyle};
     use deep_engine_native::deep2d::{
         BoxShadow, Deep2dPaint, GradientStop, LinearGradientPaint, validate_display_list,
     };
-    use deep_engine_native::deep2d::layout::{LayoutEdges, LayoutStyle};
 
     fn content(w: f64, h: f64) -> Deep2dRuntimeContent {
         let mut list = deep_engine_native::deep2d::decode_display_list(include_bytes!(
@@ -165,8 +165,7 @@ mod tests {
         let header = tree
             .append(
                 NodeId::ROOT,
-                LayoutNode::box_node(LayoutStyle::size(216.0, 36.0))
-                    .with_visual(header_visual),
+                LayoutNode::box_node(LayoutStyle::size(216.0, 36.0)).with_visual(header_visual),
             )
             .expect("header");
         let body = tree

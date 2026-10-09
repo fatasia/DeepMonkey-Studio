@@ -17,7 +17,7 @@
 //! - 有 `fill`(`corner_radius` 命令本就是零 CPU 解析 SDF quad,不参与);
 //! - 无 `clip_path_ids`(多边形剪刀需要 CPU 三角形);
 //! - fill 单边预算/帧预算未超限。
-//! 动态命令的 `stroke` 不在本刀范围,继续走既有 CPU 描边展开(如实降档)。
+//!   动态命令的 `stroke` 不在本刀范围,继续走既有 CPU 描边展开(如实降档)。
 
 use std::collections::{HashMap, VecDeque};
 
@@ -91,9 +91,9 @@ impl DynamicPathTracker {
 
     /// 测试与可观测性入口:某 id 当前是否动态(不推进窗口)。
     pub fn is_dynamic(&self, id: &str) -> bool {
-        self.records
-            .get(id)
-            .is_some_and(|record| record.window.iter().filter(|flag| **flag).count() >= DYNAMIC_CHANGES_THRESHOLD)
+        self.records.get(id).is_some_and(|record| {
+            record.window.iter().filter(|flag| **flag).count() >= DYNAMIC_CHANGES_THRESHOLD
+        })
     }
 }
 
@@ -107,8 +107,7 @@ pub(crate) fn resource_content_hash(resource: &PathResource) -> u64 {
     for verb in &resource.verbs {
         std::mem::discriminant(verb).hash(&mut hasher);
         match verb {
-            super::Deep2dPathVerb::Move { x, y }
-            | super::Deep2dPathVerb::Line { x, y } => {
+            super::Deep2dPathVerb::Move { x, y } | super::Deep2dPathVerb::Line { x, y } => {
                 x.to_bits().hash(&mut hasher);
                 y.to_bits().hash(&mut hasher);
             }

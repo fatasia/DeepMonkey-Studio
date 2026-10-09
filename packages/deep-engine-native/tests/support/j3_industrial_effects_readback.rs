@@ -1,11 +1,9 @@
+use crate::j3_geometry_depth_readback as depth;
+use crate::output_pass;
 use crate::{bloom_pass::BloomPass, forward_targets::ForwardTargets};
 use deep_engine_native::{bloom::BloomSettings, mesh_abi::FrameUniform};
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
-#[path = "j3_geometry_depth_readback.rs"]
-mod depth;
-#[path = "../../src/output_pass.rs"]
-mod output_pass;
 pub struct Readback {
     pub depth: wgpu::Buffer,
     pub display: wgpu::Buffer,

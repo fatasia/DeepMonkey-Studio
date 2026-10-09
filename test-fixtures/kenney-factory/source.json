@@ -1,0 +1,38 @@
+{
+  "sourceUrl": "https://kenney.nl/assets/factory-kit",
+  "downloadUrl": "https://kenney.nl/media/pages/assets/factory-kit/edaac9d4f6-1777639602/kenney_factory-kit_3.0.zip",
+  "version": "3.0",
+  "license": "CC0-1.0",
+  "usage": "Redistributable test fixtures; original GLB and texture bytes unchanged.",
+  "sourceArchiveSha256": "7e31fb2308e90304672bd15cd18fa9d9f02c03731a8cbc57a8e3e1c181dfb0a7",
+  "fixtureArchiveSha256": "75c6ce053ea620f51e852aad1737796c8e3b54c65947eb97e316b4663d286bb6",
+  "expectedGeometry": {
+    "machine": {
+      "vertices": 464,
+      "triangles": 268
+    },
+    "robotArm": "Original indexed triangle primitives with authored UVs"
+  },
+  "entries": [
+    {
+      "path": "License.txt",
+      "bytes": 700,
+      "sha256": "61e86565dd297e143ad631594980eda0a17fc81a4cd7c6d71acf2f5e0cad30b6"
+    },
+    {
+      "path": "Models/GLB format/Textures/colormap.png",
+      "bytes": 11813,
+      "sha256": "35d7bd6900dde0208429eeaec87fa17fbf024ed59f3f4eab54bc92802eba9dd7"
+    },
+    {
+      "path": "Models/GLB format/machine.glb",
+      "bytes": 25620,
+      "sha256": "a39e3042bcb7789274428357383317d70e1c31906e5301c99e7d9e90ac584863"
+    },
+    {
+      "path": "Models/GLB format/robot-arm-a.glb",
+      "bytes": 50592,
+      "sha256": "ad3f766791adadd1cfb5ccc27d2b2ac8787848282f2a15b3c407f350dc281b68"
+    }
+  ]
+}

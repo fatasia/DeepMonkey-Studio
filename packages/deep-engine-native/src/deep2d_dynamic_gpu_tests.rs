@@ -11,12 +11,12 @@
 
 use std::sync::mpsc;
 
+use crate::deep2d_gpu::Deep2dGpuPainter;
 use deep_engine_native::deep2d::{
-    compare, prepare_display_list, prepare_runtime_content_cached, rasterize_prepared,
     Deep2dCommand, Deep2dDisplayList, Deep2dPaint, Deep2dPathVerb, Deep2dRect, Deep2dResource,
     Deep2dRuntimeContent, FillRule, GradientStop, LinearGradientPaint, PathCommand, PathResource,
+    compare, prepare_display_list, prepare_runtime_content_cached, rasterize_prepared,
 };
-use crate::deep2d_gpu::Deep2dGpuPainter;
 
 const WIDTH: u32 = 16;
 const HEIGHT: u32 = 16;
@@ -27,7 +27,10 @@ fn square_resource(id: &str, min: [f64; 2], size: f64) -> PathResource {
         id: id.into(),
         revision: 1,
         verbs: vec![
-            Deep2dPathVerb::Move { x: min[0], y: min[1] },
+            Deep2dPathVerb::Move {
+                x: min[0],
+                y: min[1],
+            },
             Deep2dPathVerb::Line {
                 x: min[0] + size,
                 y: min[1],
@@ -36,7 +39,10 @@ fn square_resource(id: &str, min: [f64; 2], size: f64) -> PathResource {
                 x: min[0] + size,
                 y: min[1] + size,
             },
-            Deep2dPathVerb::Line { x: min[0], y: min[1] + size },
+            Deep2dPathVerb::Line {
+                x: min[0],
+                y: min[1] + size,
+            },
             Deep2dPathVerb::Close,
         ],
     }
@@ -287,7 +293,13 @@ fn dynamic_frame_sequence_matches_cpu_reference_on_every_frame() {
     let (device, queue, adapter) = real_gpu();
     let mut list = display_list(
         vec![square_resource("p", [2.0, 2.0], 8.0)],
-        vec![fill_command("draw", 0, "p", Deep2dPaint::Solid([1.0, 0.0, 0.0, 1.0]), None)],
+        vec![fill_command(
+            "draw",
+            0,
+            "p",
+            Deep2dPaint::Solid([1.0, 0.0, 0.0, 1.0]),
+            None,
+        )],
     );
     let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
     let content = Deep2dRuntimeContent::DisplayList(list.clone());
@@ -371,11 +383,9 @@ fn dynamic_donut_fill_rules_match_cpu_reference() {
         let mut oracle_cache = deep_engine_native::deep2d::Deep2dPathCache::default();
         let mut replay = replay_lists.pop().expect("replay list");
         let oracle_prepared = {
-            let _ = deep_engine_native::deep2d::prepare_display_list_cached(
-                &replay,
-                &mut oracle_cache,
-            )
-            .expect("oracle cold");
+            let _ =
+                deep_engine_native::deep2d::prepare_display_list_cached(&replay, &mut oracle_cache)
+                    .expect("oracle cold");
             for _ in 0..4 {
                 shift_x(&mut replay, 0.4);
                 let _ = deep_engine_native::deep2d::prepare_display_list_cached(
@@ -396,7 +406,13 @@ fn dynamic_donut_fill_rules_match_cpu_reference() {
         let worst = reference
             .iter()
             .zip(gpu.iter())
-            .map(|(r, g)| r.iter().zip(g.iter()).map(|(a, b)| a.abs_diff(*b)).max().unwrap_or(0))
+            .map(|(r, g)| {
+                r.iter()
+                    .zip(g.iter())
+                    .map(|(a, b)| a.abs_diff(*b))
+                    .max()
+                    .unwrap_or(0)
+            })
             .max()
             .unwrap_or(0);
         println!(
@@ -537,7 +553,10 @@ fn dynamic_path_respects_clip_rect_scissor() {
         );
     }
     let inside = pixel(&gpu, 4, 8);
-    assert!(inside[0] >= 240, "inside-clip pixel stays filled: {inside:?}");
+    assert!(
+        inside[0] >= 240,
+        "inside-clip pixel stays filled: {inside:?}"
+    );
     // 区域对拍:scissor 语义 oracle 不模拟——clip 外 GPU 必须为空,
     // clip 内逐像素与 oracle 差 ≤ 8。
     let static_prepared = prepare_display_list(&list).expect("oracle prepare");
@@ -578,8 +597,20 @@ fn static_card_and_dynamic_path_share_one_frame_in_z_order() {
     let mut list = display_list(
         vec![static_card, square_resource("p", [4.0, 4.0], 8.0)],
         vec![
-            fill_command("card-cmd", 0, "card", Deep2dPaint::Solid([0.1, 0.2, 0.4, 1.0]), None),
-            fill_command("draw", 1, "p", Deep2dPaint::Solid([1.0, 0.5, 0.0, 0.85]), None),
+            fill_command(
+                "card-cmd",
+                0,
+                "card",
+                Deep2dPaint::Solid([0.1, 0.2, 0.4, 1.0]),
+                None,
+            ),
+            fill_command(
+                "draw",
+                1,
+                "p",
+                Deep2dPaint::Solid([1.0, 0.5, 0.0, 0.85]),
+                None,
+            ),
         ],
     );
     let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
@@ -699,6 +730,9 @@ fn composite_dynamic_layer_matches_cpu_reference() {
     .expect("composite oracle");
     let reference = rasterize_prepared([16.0, 16.0], [WIDTH, HEIGHT], &static_prepared.path);
     let report = compare(&reference, &gpu, WIDTH, HEIGHT, 8);
-    assert_eq!(report.divergent, 0, "composite dynamic divergence {report:?}");
+    assert_eq!(
+        report.divergent, 0,
+        "composite dynamic divergence {report:?}"
+    );
     println!("composite dynamic readback OK: adapter={adapter}");
 }

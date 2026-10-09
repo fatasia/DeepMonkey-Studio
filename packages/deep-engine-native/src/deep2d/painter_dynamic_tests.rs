@@ -5,8 +5,8 @@
 //! oracle,静态帧回归由 `deep2d_paint_gpu_tests` 既有族覆盖。
 use super::*;
 use crate::deep2d::{
-    Deep2dCommand, Deep2dDisplayList, Deep2dPaint, Deep2dPathVerb, Deep2dRect, Deep2dResource,
-    Deep2dRuntimeContent, FillRule, PathCommand, PathResource, Deep2dPathCache,
+    Deep2dCommand, Deep2dDisplayList, Deep2dPaint, Deep2dPathCache, Deep2dPathVerb, Deep2dRect,
+    Deep2dResource, Deep2dRuntimeContent, FillRule, PathCommand, PathResource,
     prepare_display_list_cached, prepare_runtime_content_cached, rasterize_prepared,
 };
 
@@ -17,7 +17,10 @@ fn ring_resource(id: &str, min: [f64; 2], size: f64) -> PathResource {
         id: id.into(),
         revision: 1,
         verbs: vec![
-            Deep2dPathVerb::Move { x: min[0], y: min[1] },
+            Deep2dPathVerb::Move {
+                x: min[0],
+                y: min[1],
+            },
             Deep2dPathVerb::Line {
                 x: min[0] + size,
                 y: min[1],
@@ -26,7 +29,10 @@ fn ring_resource(id: &str, min: [f64; 2], size: f64) -> PathResource {
                 x: min[0] + size,
                 y: min[1] + size,
             },
-            Deep2dPathVerb::Line { x: min[0], y: min[1] + size },
+            Deep2dPathVerb::Line {
+                x: min[0],
+                y: min[1] + size,
+            },
             Deep2dPathVerb::Close,
         ],
     }
@@ -55,7 +61,12 @@ fn donut_resource() -> PathResource {
     }
 }
 
-fn fill_command(id: &str, z_order: i32, path_id: &str, fill_rule: Option<FillRule>) -> Deep2dCommand {
+fn fill_command(
+    id: &str,
+    z_order: i32,
+    path_id: &str,
+    fill_rule: Option<FillRule>,
+) -> Deep2dCommand {
     Deep2dCommand::Path(PathCommand {
         id: id.into(),
         z_order,
@@ -143,11 +154,20 @@ fn prepared_cached(
 fn tracker_needs_threshold_changes_and_cold_start_is_not_a_change() {
     let mut tracker = DynamicPathTracker::default();
     // 冷启动 + 2 次变更:不判动态(阈值 3)。
-    assert!(!tracker.observe("p", 1), "cold start must not count as a change");
+    assert!(
+        !tracker.observe("p", 1),
+        "cold start must not count as a change"
+    );
     assert!(!tracker.observe("p", 2));
-    assert!(!tracker.observe("p", 2), "identical content is not a change");
+    assert!(
+        !tracker.observe("p", 2),
+        "identical content is not a change"
+    );
     assert!(!tracker.observe("p", 3), "2 changes stay static");
-    assert!(tracker.observe("p", 4), "3 changes in window become dynamic");
+    assert!(
+        tracker.observe("p", 4),
+        "3 changes in window become dynamic"
+    );
     assert!(tracker.is_dynamic("p"));
     // 滑窗无迟滞:旧变更滑出 8 帧窗口、计数跌破阈值即退回静态。
     // 窗口未满时稳定帧只稀释不淘汰,需要数个稳定帧才跌破阈值。
@@ -193,7 +213,11 @@ fn fence_covers_every_edge_with_bbox_and_vertical_extrusion() {
     let fence = dynamic_fence(&linear, &[1.0, 0.0, 0.0, 1.0, 0.0, 0.0]).expect("fence");
     assert_eq!(fence.edge_count, 4, "closing edge included");
     assert_eq!(fence.edges.len(), fence.edge_count * VERTICES_PER_EDGE);
-    assert_eq!(fence.bbox, [2.0, 3.0, 4.0, 4.0], "bbox from transformed points");
+    assert_eq!(
+        fence.bbox,
+        [2.0, 3.0, 4.0, 4.0],
+        "bbox from transformed points"
+    );
     // 挤出点 = [x, +EXTRUDE_Y]:每个 6 顶点组是 (a, b, b_up) + (a, b_up, a_up)。
     let edge = &fence.edges[0..6];
     assert_eq!(edge[3][0], edge[0][0], "a_up shares a.x");
@@ -208,10 +232,13 @@ fn fence_covers_every_edge_with_bbox_and_vertical_extrusion() {
 fn dynamic_budget_gates_stay_consistent_with_static_limits() {
     // 单命令 fence 预算必须覆盖静态细分点上限(≤512 点的环回落静态总能成功),
     // 帧预算必须覆盖单命令预算。
-    assert!(
-        MAX_DYNAMIC_FILL_EDGES_PER_COMMAND >= super::super::painter_polygon::MAX_SIMPLE_POLYGON_POINTS
-    );
-    assert!(MAX_DYNAMIC_FILL_EDGES_TOTAL >= MAX_DYNAMIC_FILL_EDGES_PER_COMMAND);
+    const {
+        assert!(
+            MAX_DYNAMIC_FILL_EDGES_PER_COMMAND
+                >= super::super::painter_polygon::MAX_SIMPLE_POLYGON_POINTS
+        )
+    };
+    const { assert!(MAX_DYNAMIC_FILL_EDGES_TOTAL >= MAX_DYNAMIC_FILL_EDGES_PER_COMMAND) };
     assert_eq!(VERTICES_PER_EDGE, 6);
 }
 
@@ -246,10 +273,7 @@ fn stencil_route_serves_rings_beyond_the_static_tessellation_budget() {
             verbs,
         }
     };
-    let mut list = display_list(
-        vec![comb(0.0)],
-        vec![fill_command("draw", 0, "comb", None)],
-    );
+    let mut list = display_list(vec![comb(0.0)], vec![fill_command("draw", 0, "comb", None)]);
     list.logical_width = 400.0;
     list.logical_height = 16.0;
     let mut cache = Deep2dPathCache::default();
@@ -267,7 +291,10 @@ fn stencil_route_serves_rings_beyond_the_static_tessellation_budget() {
     // 物理 512×32(logical 400×16 → scale 1.28):梳齿之间大量内部像素填红。
     let pixels = rasterize_prepared([400.0, 16.0], [512, 32], &prepared);
     let filled = pixels.iter().filter(|pixel| pixel[0] > 0).count();
-    assert!(filled > 256, "comb interior fills on the stencil route: {filled}");
+    assert!(
+        filled > 256,
+        "comb interior fills on the stencil route: {filled}"
+    );
 }
 
 // ---- 路由正确性 ----
@@ -319,13 +346,14 @@ fn changing_content_routes_to_stencil_after_threshold_frames() {
     assert_eq!(prepared.summary.dynamic_commands, 1);
     assert_eq!(prepared.summary.dynamic_edges, 4, "one square = 4 edges");
     assert_eq!(prepared.dynamic_chunks.len(), 1);
-    assert!(prepared.chunks.is_empty(), "fill is no longer CPU tessellated");
+    assert!(
+        prepared.chunks.is_empty(),
+        "fill is no longer CPU tessellated"
+    );
     // runtime chunk 合并保留 DynamicPath 类型。
-    let runtime = prepare_runtime_content_cached(
-        &Deep2dRuntimeContent::DisplayList(list),
-        &mut cache,
-    )
-    .expect("runtime");
+    let runtime =
+        prepare_runtime_content_cached(&Deep2dRuntimeContent::DisplayList(list), &mut cache)
+            .expect("runtime");
     let dynamic = runtime
         .chunks
         .iter()
@@ -410,8 +438,7 @@ fn clip_path_candidates_fall_back_and_are_counted() {
         fallback_frames += usize::from(prepared.summary.dynamic_fallbacks == 1);
     }
     assert_eq!(
-        fallback_frames,
-        DYNAMIC_CHANGES_THRESHOLD,
+        fallback_frames, DYNAMIC_CHANGES_THRESHOLD,
         "frames above the change threshold are counted fallbacks"
     );
 }
@@ -429,7 +456,11 @@ fn oracle_matches_expected_pixels_for_dynamic_donut() {
     // 环带内部:逻辑 (4.5, 6.5) —— 外环内、内环 x 区间外 → 红。
     assert_eq!(pixel(9, 13), [255, 0, 0, 255], "ring band filled");
     // 内环洞中心:逻辑 (7.5, 7.5) → 空。
-    assert_eq!(pixel(15, 15), [0, 0, 0, 0], "hole stays empty under evenodd");
+    assert_eq!(
+        pixel(15, 15),
+        [0, 0, 0, 0],
+        "hole stays empty under evenodd"
+    );
     // 外环外:空;挤出带只写 stencil 不写色。
     assert_eq!(pixel(0, 0), [0, 0, 0, 0]);
     assert_eq!(pixel(30, 30), [0, 0, 0, 0]);
@@ -437,10 +468,7 @@ fn oracle_matches_expected_pixels_for_dynamic_donut() {
 
 #[test]
 fn nonzero_and_evenodd_disagree_on_same_facing_hole() {
-    let raster = |prepared| {
-        let pixels = rasterize_prepared([16.0, 16.0], [32, 32], &prepared);
-        pixels
-    };
+    let raster = |prepared| rasterize_prepared([16.0, 16.0], [32, 32], &prepared);
     let nonzero = raster(prepare_dynamic_donut(Some(FillRule::Nonzero)));
     let evenodd = raster(prepare_dynamic_donut(Some(FillRule::Evenodd)));
     let hole = |pixels: &[[u8; 4]]| pixels[15 * 32 + 15];
@@ -524,17 +552,15 @@ fn composite_layers_offset_dynamic_edges_and_chunks() {
         },
     };
     let composite_at = |frame: f64| {
-        crate::deep2d::Deep2dComposite::new(
-            "comp".into(),
-            1,
-            [32.0, 32.0],
-            vec![layer_at(frame)],
-        )
-        .expect("composite")
+        crate::deep2d::Deep2dComposite::new("comp".into(), 1, [32.0, 32.0], vec![layer_at(frame)])
+            .expect("composite")
     };
     let mut cache = Deep2dPathCache::default();
-    let _ = prepare_runtime_content_cached(&Deep2dRuntimeContent::Composite(composite_at(0.0)), &mut cache)
-        .expect("cold");
+    let _ = prepare_runtime_content_cached(
+        &Deep2dRuntimeContent::Composite(composite_at(0.0)),
+        &mut cache,
+    )
+    .expect("cold");
     let mut prepared = None;
     for frame in 1..=DYNAMIC_CHANGES_THRESHOLD {
         prepared = Some(

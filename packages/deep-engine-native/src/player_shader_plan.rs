@@ -224,26 +224,52 @@ pub fn scene_content_key(packet: &RenderPacket) -> u64 {
         digest.0.write_usize(data.len());
         digest.0.write(data);
     }
-    write!(&mut digest, "{:?}{:?}{:?}{:?}", packet.schema, packet.version, packet.materials, packet.instances)
-        .expect("digest formatting cannot fail");
+    write!(
+        &mut digest,
+        "{:?}{:?}{:?}{:?}",
+        packet.schema, packet.version, packet.materials, packet.instances
+    )
+    .expect("digest formatting cannot fail");
     digest.0.write_usize(packet.geometries.len());
     for geometry in &packet.geometries {
         write!(&mut digest, "{:?}{}", geometry.id, geometry.revision).unwrap();
         bytes(&mut digest, bytemuck::cast_slice(&geometry.vertices));
         bytes(&mut digest, bytemuck::cast_slice(&geometry.indices));
-        for field in [&geometry.uv0, &geometry.uv1, &geometry.tangents, &geometry.colors] {
+        for field in [
+            &geometry.uv0,
+            &geometry.uv1,
+            &geometry.tangents,
+            &geometry.colors,
+        ] {
             digest.0.write_u8(u8::from(field.is_some()));
-            if let Some(data) = field { bytes(&mut digest, bytemuck::cast_slice(data)); }
+            if let Some(data) = field {
+                bytes(&mut digest, bytemuck::cast_slice(data));
+            }
         }
     }
     digest.0.write_usize(packet.textures.len());
     for texture in &packet.textures {
-        write!(&mut digest, "{:?}{:?}{:?}{:?}{:?}{:?}{:?}", texture.id, texture.revision,
-            texture.semantic, texture.width, texture.height, texture.bytes_per_row, texture.sampler).unwrap();
+        write!(
+            &mut digest,
+            "{:?}{:?}{:?}{:?}{:?}{:?}{:?}",
+            texture.id,
+            texture.revision,
+            texture.semantic,
+            texture.width,
+            texture.height,
+            texture.bytes_per_row,
+            texture.sampler
+        )
+        .unwrap();
         bytes(&mut digest, &texture.data);
         digest.0.write_usize(texture.mipmaps.len());
         for mip in &texture.mipmaps {
-            write!(&mut digest, "{:?}{:?}{:?}", mip.width, mip.height, mip.bytes_per_row).unwrap();
+            write!(
+                &mut digest,
+                "{:?}{:?}{:?}",
+                mip.width, mip.height, mip.bytes_per_row
+            )
+            .unwrap();
             bytes(&mut digest, &mip.data);
         }
     }
@@ -257,12 +283,15 @@ mod content_key_tests {
     #[test]
     fn content_key_covers_bulk_buffers_and_resource_metadata() {
         let loaded = deep_engine_native::runtime_package::parse_and_validate_runtime_package(
-            include_bytes!("../tests/fixtures/runtime-package-v1.json")).unwrap();
+            include_bytes!("../tests/fixtures/runtime-package-v1.json"),
+        )
+        .unwrap();
         let mut source = loaded.render_packet;
         source.textures = vec![serde_json::from_str(r#"{"id":"color","revision":1,"semantic":"baseColor","width":1,"height":1,"data":[1,2,3,255]}"#).unwrap()];
         let key = scene_content_key(&source);
         assert_eq!(key, scene_content_key(&source.clone()));
-        let changes: Vec<Box<dyn Fn(&mut RenderPacket)>> = vec![
+        type PacketChange = Box<dyn Fn(&mut RenderPacket)>;
+        let changes: Vec<PacketChange> = vec![
             Box::new(|p| p.geometries[0].vertices[0] += 0.25),
             Box::new(|p| p.geometries[0].indices.swap(0, 1)),
             Box::new(|p| p.geometries[0].uv1 = Some(vec![1.0, 2.0])),
@@ -274,7 +303,8 @@ mod content_key_tests {
             Box::new(|p| p.instances[0].transform[12] += 1.0),
         ];
         for change in changes {
-            let mut candidate = source.clone(); change(&mut candidate);
+            let mut candidate = source.clone();
+            change(&mut candidate);
             assert_ne!(key, scene_content_key(&candidate));
         }
     }

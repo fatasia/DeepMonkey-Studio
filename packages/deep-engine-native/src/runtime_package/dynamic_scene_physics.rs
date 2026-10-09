@@ -270,6 +270,8 @@ pub struct DynamicGearConstraintRuntime {
     pub damping: f64,
 }
 
+// Commands retain inline body payloads to avoid one allocation per physics update.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum DynamicPhysicsCommand {
     Configure {
@@ -497,8 +499,23 @@ fn valid_soft_bodies(soft_bodies: &[DynamicSoftBodyRuntime]) -> Result<(), Runti
         }
         let particles: u64 = match body.kind.as_str() {
             "cloth" => {
-                let (Some(columns), Some(rows), Some(spacing), Some(compliance), Some(perturbation), Some(_seed), Some(origin)) =
-                    (body.columns, body.rows, body.spacing, body.compliance, body.perturbation, body.seed, body.origin)
+                let (
+                    Some(columns),
+                    Some(rows),
+                    Some(spacing),
+                    Some(compliance),
+                    Some(perturbation),
+                    Some(_seed),
+                    Some(origin),
+                ) = (
+                    body.columns,
+                    body.rows,
+                    body.spacing,
+                    body.compliance,
+                    body.perturbation,
+                    body.seed,
+                    body.origin,
+                )
                 else {
                     return fail("dynamic physics cloth soft body is missing cloth fields");
                 };
@@ -519,18 +536,23 @@ fn valid_soft_bodies(soft_bodies: &[DynamicSoftBodyRuntime]) -> Result<(), Runti
                 {
                     return fail("dynamic physics cloth soft body is invalid");
                 }
-                if let Some(wind) = &body.wind {
-                    if !wind.direction.iter().any(|component| component.abs() > 1e-9)
-                        || wind.direction.iter().any(|component| !component.is_finite())
+                if let Some(wind) = &body.wind
+                    && (!wind
+                        .direction
+                        .iter()
+                        .any(|component| component.abs() > 1e-9)
+                        || wind
+                            .direction
+                            .iter()
+                            .any(|component| !component.is_finite())
                         || !wind.base_speed.is_finite()
                         || wind.base_speed < 0.0
                         || !wind.gust_frequency.is_finite()
                         || wind.gust_frequency <= 0.0
                         || !wind.spatial_scale.is_finite()
-                        || wind.spatial_scale < 0.0
-                    {
-                        return fail("dynamic physics cloth wind is invalid");
-                    }
+                        || wind.spatial_scale < 0.0)
+                {
+                    return fail("dynamic physics cloth wind is invalid");
                 }
                 u64::from(columns) * u64::from(rows)
             }
@@ -545,19 +567,30 @@ fn valid_soft_bodies(soft_bodies: &[DynamicSoftBodyRuntime]) -> Result<(), Runti
                     || body.wind.is_some()
                     || body.positions.len() < 4
                     || body.positions.len() as u64 > MAX_SOFT_BODY_PARTICLES
-                    || body.positions.iter().any(|point| point.iter().any(|value| !value.is_finite()))
+                    || body
+                        .positions
+                        .iter()
+                        .any(|point| point.iter().any(|value| !value.is_finite()))
                     || body.tets.is_empty()
                     || body.tets.len() > MAX_SOFT_BODY_TETS
-                    || body
-                        .tets
-                        .iter()
-                        .any(|tet| tet.iter().any(|index| (*index as usize) >= body.positions.len()))
                     || body.tets.iter().any(|tet| {
-                        (tet[0] == tet[1]) || (tet[0] == tet[2]) || (tet[0] == tet[3])
-                            || (tet[1] == tet[2]) || (tet[1] == tet[3]) || (tet[2] == tet[3])
+                        tet.iter()
+                            .any(|index| (*index as usize) >= body.positions.len())
                     })
-                    || body.compliance_distance.is_none_or(|value| !value.is_finite() || value < 0.0)
-                    || body.compliance_volume.is_none_or(|value| !value.is_finite() || value < 0.0)
+                    || body.tets.iter().any(|tet| {
+                        (tet[0] == tet[1])
+                            || (tet[0] == tet[2])
+                            || (tet[0] == tet[3])
+                            || (tet[1] == tet[2])
+                            || (tet[1] == tet[3])
+                            || (tet[2] == tet[3])
+                    })
+                    || body
+                        .compliance_distance
+                        .is_none_or(|value| !value.is_finite() || value < 0.0)
+                    || body
+                        .compliance_volume
+                        .is_none_or(|value| !value.is_finite() || value < 0.0)
                 {
                     return fail("dynamic physics tetra soft body is invalid");
                 }
@@ -623,7 +656,7 @@ fn valid_collider(collider: &DynamicPhysicsColliderRuntime) -> bool {
                     .iter()
                     .all(|point| point.iter().all(|v| v.is_finite()))
                 && collider.indices.len() >= 3
-                && collider.indices.len() % 3 == 0
+                && collider.indices.len().is_multiple_of(3)
                 && collider.indices.len() <= MAX_COLLIDER_INDICES
                 && collider
                     .indices
@@ -638,10 +671,7 @@ fn valid_collider(collider: &DynamicPhysicsColliderRuntime) -> bool {
                 && collider.indices.is_empty()
                 && collider.primitive.is_none()
                 && instance_ids_ok
-                && collider
-                    .sdf
-                    .as_ref()
-                    .is_some_and(|sdf| valid_sdf_grid(sdf))
+                && collider.sdf.as_ref().is_some_and(valid_sdf_grid)
                 && precision_ok(true)
         }
         "primitive" => {

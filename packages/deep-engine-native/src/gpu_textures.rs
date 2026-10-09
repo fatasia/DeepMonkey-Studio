@@ -26,6 +26,7 @@ pub struct GpuMaterial {
 
 pub struct LayeredGpuMaterial {
     _uniform: wgpu::Buffer,
+    #[allow(dead_code)]
     texture_slots: [Option<Arc<GpuTexture>>; 4],
     pub bind_group: wgpu::BindGroup,
 }
@@ -91,7 +92,10 @@ pub fn create_layered_material_layout(device: &wgpu::Device) -> wgpu::BindGroupL
             sampler(17),
             texture(18),
             sampler(19),
-            texture(20),sampler(21),texture(22),sampler(23),
+            texture(20),
+            sampler(21),
+            texture(22),
+            sampler(23),
         ],
     })
 }
@@ -143,7 +147,10 @@ pub fn create_material_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
             sampler(8),
             texture(9),
             sampler(10),
-            texture(20),sampler(21),texture(22),sampler(23),
+            texture(20),
+            sampler(21),
+            texture(22),
+            sampler(23),
         ],
     })
 }
@@ -322,8 +329,10 @@ impl GpuMaterial {
             sampler_entry(8, slots[2]),
             view_entry(9, slots[4]),
             sampler_entry(10, slots[4]),
-            view_entry(20,slots[5]),sampler_entry(21,slots[5]),
-            view_entry(22,slots[6]),sampler_entry(23,slots[6]),
+            view_entry(20, slots[5]),
+            sampler_entry(21, slots[5]),
+            view_entry(22, slots[6]),
+            sampler_entry(23, slots[6]),
         ];
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Deep Engine native PBR material bindings v1"),
@@ -406,12 +415,18 @@ impl LayeredGpuMaterial {
             },
         ];
         for (slot, texture) in texture_slots.iter().enumerate() {
-            let backing = texture.as_deref().unwrap_or(&fallbacks[slot % fallbacks.len()]);
+            let backing = texture
+                .as_deref()
+                .unwrap_or(&fallbacks[slot % fallbacks.len()]);
             entries.push(view_entry(12 + slot as u32 * 2, backing));
             entries.push(sampler_entry(13 + slot as u32 * 2, backing));
         }
-        entries.extend([view_entry(20,base_backing(5)),sampler_entry(21,base_backing(5)),
-            view_entry(22,base_backing(6)),sampler_entry(23,base_backing(6))]);
+        entries.extend([
+            view_entry(20, base_backing(5)),
+            sampler_entry(21, base_backing(5)),
+            view_entry(22, base_backing(6)),
+            sampler_entry(23, base_backing(6)),
+        ]);
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Deep Engine native layered PBR material bindings v1"),
             layout,
@@ -442,7 +457,7 @@ fn sampler_entry(binding: u32, texture: &GpuTexture) -> wgpu::BindGroupEntry<'_>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use deep_engine_native::mesh_abi::MaterialUniformRow;
+
     use deep_engine_native::pbr_texture::PreparedPbrResources;
 
     fn prepared(id: &str, value: f32) -> PreparedMaterial {

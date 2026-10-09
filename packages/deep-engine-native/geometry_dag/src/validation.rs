@@ -2,8 +2,8 @@
 
 use crate::error::{DagError, DagResult};
 use crate::types::{
-    IndexedGeometry, MESHLET_MAX_TRIANGLES_LIMIT, MESHLET_MAX_VERTICES_LIMIT, SOURCE_TRIANGLES_BUDGET,
-    SOURCE_VERTICES_BUDGET,
+    IndexedGeometry, MESHLET_MAX_TRIANGLES_LIMIT, MESHLET_MAX_VERTICES_LIMIT,
+    SOURCE_TRIANGLES_BUDGET, SOURCE_VERTICES_BUDGET,
 };
 
 /// 已验证的构建输入。
@@ -42,10 +42,20 @@ pub fn validate_input(
     }
     let vertex_count = geometry.vertex_count();
     let triangle_count = geometry.triangle_count();
-    budget(vertex_count as u64, SOURCE_VERTICES_BUDGET, "source vertices")?;
-    budget(triangle_count as u64, SOURCE_TRIANGLES_BUDGET, "source triangles")?;
+    budget(
+        vertex_count as u64,
+        SOURCE_VERTICES_BUDGET,
+        "source vertices",
+    )?;
+    budget(
+        triangle_count as u64,
+        SOURCE_TRIANGLES_BUDGET,
+        "source triangles",
+    )?;
     if geometry.positions.iter().any(|v| !v.is_finite()) {
-        return Err(DagError::invalid_input("Position components must be finite."));
+        return Err(DagError::invalid_input(
+            "Position components must be finite.",
+        ));
     }
     for (offset, &index) in geometry.indices.iter().enumerate() {
         if index as usize >= vertex_count {
@@ -56,7 +66,11 @@ pub fn validate_input(
     }
     let max_vertices = meshlet_limit(max_vertices, MESHLET_MAX_VERTICES_LIMIT, "maxVertices")?;
     let max_triangles = meshlet_limit(max_triangles, MESHLET_MAX_TRIANGLES_LIMIT, "maxTriangles")?;
-    Ok(ValidatedInput { geometry: geometry.clone(), max_vertices, max_triangles })
+    Ok(ValidatedInput {
+        geometry: geometry.clone(),
+        max_vertices,
+        max_triangles,
+    })
 }
 
 /// TS `budget`:超出上限即报错。

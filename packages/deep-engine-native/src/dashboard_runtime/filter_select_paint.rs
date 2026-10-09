@@ -33,9 +33,10 @@ impl DashboardRuntime {
                 .commands
                 .iter()
                 .find_map(|command| match command {
-                    Deep2dCommand::Path(path) if path.hit_id.is_none() => {
-                        path.fill.as_ref().and_then(crate::deep2d::Deep2dPaint::solid_color)
-                    }
+                    Deep2dCommand::Path(path) if path.hit_id.is_none() => path
+                        .fill
+                        .as_ref()
+                        .and_then(crate::deep2d::Deep2dPaint::solid_color),
                     _ => None,
                 })
         {

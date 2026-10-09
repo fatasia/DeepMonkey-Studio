@@ -45,14 +45,9 @@ pub struct Deep2dCornerShape {
 impl Deep2dCornerShape {
     fn covers(&self, point: Point) -> bool {
         let local = inverse_transform_point(point, self.transform);
-        let center = [
-            self.x + self.width * 0.5,
-            self.y + self.height * 0.5,
-        ];
+        let center = [self.x + self.width * 0.5, self.y + self.height * 0.5];
         let half = [self.width * 0.5, self.height * 0.5];
-        let radius = self
-            .corner_radius
-            .clamp(0.0, half[0].min(half[1]).max(0.0));
+        let radius = self.corner_radius.clamp(0.0, half[0].min(half[1]).max(0.0));
         let q = [
             (local[0] - center[0]).abs() - (half[0] - radius),
             (local[1] - center[1]).abs() - (half[1] - radius),
@@ -162,20 +157,16 @@ pub fn build_hit_index(display_list: &Deep2dDisplayList) -> HitResult {
                 // reject hits exactly where the SDF quad renders nothing.
                 let corner = command.corner_radius.and_then(|radius| {
                     linear.subpaths.first().and_then(|subpath| {
-                        super::painter_quad::rect_of_flatten(
-                            &subpath.points,
-                            subpath.closed,
-                            &path,
-                        )
-                        .ok()
-                        .map(|[min, max]| Deep2dCornerShape {
-                            x: min[0],
-                            y: min[1],
-                            width: max[0] - min[0],
-                            height: max[1] - min[1],
-                            corner_radius: radius,
-                            transform: command.transform,
-                        })
+                        super::painter_quad::rect_of_flatten(&subpath.points, subpath.closed, &path)
+                            .ok()
+                            .map(|[min, max]| Deep2dCornerShape {
+                                x: min[0],
+                                y: min[1],
+                                width: max[0] - min[0],
+                                height: max[1] - min[1],
+                                corner_radius: radius,
+                                transform: command.transform,
+                            })
                     })
                 });
                 if has_fill && !rings.is_empty() {
@@ -328,14 +319,14 @@ impl Deep2dHitIndex {
     /// point only hits when it also passes the entry's clip context and its
     /// analytic corner gate (rounded rects never hit in their cut corners).
     pub fn hit(&self, point: Point) -> Option<&Deep2dHitEntry> {
-        self.entries
-            .iter()
-            .rev()
-            .find(|entry| {
-                entry.point_in_clips(point)
-                    && entry.corner.as_ref().is_none_or(|corner| corner.covers(point))
-                    && entry.kind_covers(point)
-            })
+        self.entries.iter().rev().find(|entry| {
+            entry.point_in_clips(point)
+                && entry
+                    .corner
+                    .as_ref()
+                    .is_none_or(|corner| corner.covers(point))
+                && entry.kind_covers(point)
+        })
     }
 
     pub fn entries(&self) -> &[Deep2dHitEntry] {

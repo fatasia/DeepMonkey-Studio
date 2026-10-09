@@ -1,15 +1,15 @@
 //! 按当前依赖准备几何并在成功细分后更新缓存;刀 3 起按滑窗变更计数把
 //! 动态路径自动分路到 stencil-then-cover(见 `painter_dynamic`)。
-use super::super::painter::{PathPrepareFrame, PathPrepareRoute};
-use super::super::{Deep2dPainterIssue, PreparedDeep2d};
 use super::super::paint_data::Deep2dPaintData;
 use super::super::paint_registry::PaintRegistry;
+use super::super::painter::{PathPrepareFrame, PathPrepareRoute};
 use super::super::painter_dynamic::{
     MAX_DYNAMIC_FILL_EDGES_TOTAL, VERTICES_PER_EDGE, cover_vertices, dynamic_fence,
     dynamic_fill_rule, resource_content_hash, stencil_eligible,
 };
 use super::super::painter_path::LinearPath;
 use super::super::painter_prepare::{emit_stroke, prepare_path, register_fill_paint};
+use super::super::{Deep2dPainterIssue, PreparedDeep2d};
 use super::keys::{resource_bytes, same_clip_ids, same_resource};
 use super::{
     Deep2dPathCache, Deep2dPathCacheMissReason, Entry, EntryWitness, PathCommand, PathResource,
@@ -95,7 +95,9 @@ impl Deep2dPathCache {
                 && same_resource(&entry.resource, resource)
         }) && clips_intact;
         // 刀 3:动态性观察——每帧每命令推进滑窗(内容指纹),达到阈值自动分路。
-        let dynamic = self.dynamic.observe(&command.id, resource_content_hash(resource));
+        let dynamic = self
+            .dynamic
+            .observe(&command.id, resource_content_hash(resource));
         if dynamic && stencil_eligible(command) {
             // 动态帧记账:条目几何不再消费;内容/见证未变记 hit,内容变化记
             // 首要原因(与静态同一套词表,条目原地保留以便退静态时正确归因)。
@@ -108,9 +110,14 @@ impl Deep2dPathCache {
                 self.stats.hits += 1;
             } else {
                 self.stats.misses += 1;
-                self.stats
-                    .miss_reasons
-                    .record(miss_reason(entry, document, clips_intact, command, resource, recently_evicted));
+                self.stats.miss_reasons.record(miss_reason(
+                    entry,
+                    document,
+                    clips_intact,
+                    command,
+                    resource,
+                    recently_evicted,
+                ));
             }
             return self.emit_dynamic(
                 command,
@@ -141,13 +148,14 @@ impl Deep2dPathCache {
             // 渐变/圆角顶点引用存储槽:按本帧注册表重登记并回填槽号,
             // 保证缓存命中在任何 paint 组合下都与现算逐字节一致。
             if !entry.paints.is_empty() {
-                let slots = registry
-                    .register_all(&entry.paints)
-                    .map_err(|issue| Deep2dPainterIssue {
-                        code: issue.code,
-                        path: format!("{path}.paints"),
-                        message: issue.message,
-                    })?;
+                let slots =
+                    registry
+                        .register_all(&entry.paints)
+                        .map_err(|issue| Deep2dPainterIssue {
+                            code: issue.code,
+                            path: format!("{path}.paints"),
+                            message: issue.message,
+                        })?;
                 for vertex in &mut output.vertices[first..] {
                     let old = vertex[8] as usize;
                     if old > 0 {
@@ -162,9 +170,14 @@ impl Deep2dPathCache {
         }
         self.stats.misses += 1;
         let recently_evicted = entry.is_none() && self.recently_evicted.remove(command.id.as_str());
-        self.stats
-            .miss_reasons
-            .record(miss_reason(entry, document, clips_intact, command, resource, recently_evicted));
+        self.stats.miss_reasons.record(miss_reason(
+            entry,
+            document,
+            clips_intact,
+            command,
+            resource,
+            recently_evicted,
+        ));
         let backdrop_rect = self.prepare_static(
             command,
             resource,
@@ -287,7 +300,8 @@ impl Deep2dPathCache {
         scale: f64,
         paths: &std::collections::HashMap<&str, (usize, &PathResource)>,
     ) -> Result<PathPrepareRoute, Deep2dPainterIssue> {
-        let linear = LinearPath::from_resource(resource, resource_path, path, command.transform, scale)?;
+        let linear =
+            LinearPath::from_resource(resource, resource_path, path, command.transform, scale)?;
         // 预算判定先于任何登记:回落帧必须与从未判动态的帧逐字节一致
         // (segments/paints 记账都留给静态路完成)。
         let fence = dynamic_fence(&linear, &command.transform).filter(|fence| {
@@ -297,7 +311,15 @@ impl Deep2dPathCache {
         let Some(fence) = fence else {
             output.summary.dynamic_fallbacks += 1;
             return self.static_after_dynamic(
-                command, resource, resource_path, path, frame, registry, output, scale, paths,
+                command,
+                resource,
+                resource_path,
+                path,
+                frame,
+                registry,
+                output,
+                scale,
+                paths,
             );
         };
         output.summary.path_segments += linear.segment_count();
@@ -334,14 +356,16 @@ impl Deep2dPathCache {
         } else {
             None
         };
-        Ok(PathPrepareRoute::Dynamic(super::super::painter::DynamicEmission {
-            cover_first,
-            cover_count,
-            edge_first,
-            edge_count: fence.edges.len() as u32,
-            fill_rule: dynamic_fill_rule(command),
-            stroke,
-        }))
+        Ok(PathPrepareRoute::Dynamic(
+            super::super::painter::DynamicEmission {
+                cover_first,
+                cover_count,
+                edge_first,
+                edge_count: fence.edges.len() as u32,
+                fill_rule: dynamic_fill_rule(command),
+                stroke,
+            },
+        ))
     }
 
     /// 动态候选的静态回落:与从未判动态的帧走完全相同的静态路

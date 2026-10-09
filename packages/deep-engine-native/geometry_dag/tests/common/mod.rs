@@ -31,21 +31,28 @@ pub struct GoldenLevel {
 }
 
 pub fn decode_u32(json: &serde_json::Value, key: &str) -> Vec<u32> {
-    let raw = B64.decode(json[key].as_str().expect("b64 string")).expect("b64");
+    let raw = B64
+        .decode(json[key].as_str().expect("b64 string"))
+        .expect("b64");
     raw.chunks_exact(4)
         .map(|c| u32::from_le_bytes(c.try_into().expect("4 bytes")))
         .collect()
 }
 
 pub fn decode_f32(json: &serde_json::Value, key: &str) -> Vec<f32> {
-    let raw = B64.decode(json[key].as_str().expect("b64 string")).expect("b64");
+    let raw = B64
+        .decode(json[key].as_str().expect("b64 string"))
+        .expect("b64");
     raw.chunks_exact(4)
         .map(|c| f32::from_le_bytes(c.try_into().expect("4 bytes")))
         .collect()
 }
 
 pub fn load_fixture(name: &str) -> GoldenFixture {
-    let path = format!("{}/tests/fixtures/{name}.golden.json", env!("CARGO_MANIFEST_DIR"));
+    let path = format!(
+        "{}/tests/fixtures/{name}.golden.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("cannot read fixture {path}: {e}"));
     let json: serde_json::Value = serde_json::from_str(&text).expect("json");

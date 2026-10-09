@@ -6,7 +6,7 @@
 //! bounds / sourceTriangles / clusterSourceSpans / error(f64 bits)/ parentsByLevel。
 
 use base64::Engine as _;
-use geometry_dag::{build_meshlet_dag, DagOptions, IndexedGeometry};
+use geometry_dag::{DagOptions, IndexedGeometry, build_meshlet_dag};
 
 const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
@@ -35,21 +35,28 @@ struct GoldenLevel {
 }
 
 fn decode_u32(json: &serde_json::Value, key: &str) -> Vec<u32> {
-    let raw = B64.decode(json[key].as_str().expect("b64 string")).expect("b64");
+    let raw = B64
+        .decode(json[key].as_str().expect("b64 string"))
+        .expect("b64");
     raw.chunks_exact(4)
         .map(|c| u32::from_le_bytes(c.try_into().expect("4 bytes")))
         .collect()
 }
 
 fn decode_f32(json: &serde_json::Value, key: &str) -> Vec<f32> {
-    let raw = B64.decode(json[key].as_str().expect("b64 string")).expect("b64");
+    let raw = B64
+        .decode(json[key].as_str().expect("b64 string"))
+        .expect("b64");
     raw.chunks_exact(4)
         .map(|c| f32::from_le_bytes(c.try_into().expect("4 bytes")))
         .collect()
 }
 
 fn load_fixture(name: &str) -> GoldenFixture {
-    let path = format!("{}/tests/fixtures/{name}.golden.json", env!("CARGO_MANIFEST_DIR"));
+    let path = format!(
+        "{}/tests/fixtures/{name}.golden.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("cannot read fixture {path}: {e}"));
     let json: serde_json::Value = serde_json::from_str(&text).expect("json");
@@ -120,37 +127,66 @@ fn assert_parity(fixture: &GoldenFixture, name: &str) {
     );
 
     for (k, (rust_level, golden)) in dag.levels.iter().zip(&fixture.levels).enumerate() {
-        assert_eq!(rust_level.error.to_bits(), golden.error.to_bits(), "{name} level {k}: error bits");
-        assert_eq!(rust_level.positions, golden.positions, "{name} level {k}: positions");
-        assert_eq!(rust_level.indices, golden.indices, "{name} level {k}: indices");
-        assert_eq!(rust_level.descriptors, golden.descriptors, "{name} level {k}: descriptors");
-        assert_eq!(rust_level.vertex_remap, golden.vertex_remap, "{name} level {k}: vertexRemap");
+        assert_eq!(
+            rust_level.error.to_bits(),
+            golden.error.to_bits(),
+            "{name} level {k}: error bits"
+        );
+        assert_eq!(
+            rust_level.positions, golden.positions,
+            "{name} level {k}: positions"
+        );
+        assert_eq!(
+            rust_level.indices, golden.indices,
+            "{name} level {k}: indices"
+        );
+        assert_eq!(
+            rust_level.descriptors, golden.descriptors,
+            "{name} level {k}: descriptors"
+        );
+        assert_eq!(
+            rust_level.vertex_remap, golden.vertex_remap,
+            "{name} level {k}: vertexRemap"
+        );
         assert_eq!(
             rust_level.local_triangle_indices, golden.local_triangle_indices,
             "{name} level {k}: localTriangleIndices"
         );
         assert_eq!(rust_level.bounds, golden.bounds, "{name} level {k}: bounds");
-        assert_eq!(rust_level.source_triangles, golden.source_triangles, "{name} level {k}: sourceTriangles");
+        assert_eq!(
+            rust_level.source_triangles, golden.source_triangles,
+            "{name} level {k}: sourceTriangles"
+        );
         assert_eq!(
             rust_level.cluster_source_spans, golden.cluster_source_spans,
             "{name} level {k}: clusterSourceSpans"
         );
     }
 
-    for (k, (rust_parents, golden_parents)) in dag.parents_by_level.iter().zip(&fixture.parents_by_level).enumerate() {
+    for (k, (rust_parents, golden_parents)) in dag
+        .parents_by_level
+        .iter()
+        .zip(&fixture.parents_by_level)
+        .enumerate()
+    {
         assert_eq!(
             rust_parents.len(),
             golden_parents.len(),
             "{name} parents {k}: length diverges"
         );
-        for (c, (&rust_parent, &golden_parent)) in rust_parents.iter().zip(golden_parents).enumerate() {
+        for (c, (&rust_parent, &golden_parent)) in
+            rust_parents.iter().zip(golden_parents).enumerate()
+        {
             // golden 的无父哨兵是 -1(Int32);Rust 侧是 u32::MAX。
             let expected = if golden_parent < 0 {
                 u32::MAX
             } else {
                 golden_parent as u32
             };
-            assert_eq!(rust_parent, expected, "{name} parents {k}: fine cluster {c}");
+            assert_eq!(
+                rust_parent, expected,
+                "{name} parents {k}: fine cluster {c}"
+            );
         }
     }
 }
@@ -168,7 +204,13 @@ fn golden_synthetic50k_parity() {
 #[test]
 fn golden_fixtures_exist() {
     for name in ["quick_sphere", "synthetic50k"] {
-        let path = format!("{}/tests/fixtures/{name}.golden.json", env!("CARGO_MANIFEST_DIR"));
-        assert!(std::path::Path::new(&path).exists(), "missing fixture {path}");
+        let path = format!(
+            "{}/tests/fixtures/{name}.golden.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        assert!(
+            std::path::Path::new(&path).exists(),
+            "missing fixture {path}"
+        );
     }
 }

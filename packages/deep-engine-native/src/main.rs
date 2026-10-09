@@ -16,29 +16,30 @@ mod cli_viewer_tools;
 #[cfg(windows)]
 mod dashboard_video_gpu;
 mod deep2d_atlas_gpu;
+mod deep2d_backdrop_gpu;
+#[cfg(test)]
+mod deep2d_backdrop_gpu_tests;
+#[cfg(test)]
+mod deep2d_blend_gpu_tests;
 #[cfg(test)]
 mod deep2d_clip_gpu_tests;
 #[cfg(test)]
 mod deep2d_context_wiring_tests;
-mod deep2d_frame_context;
-mod deep2d_backdrop_gpu;
-mod deep2d_gpu;
-mod deep2d_gpu_cache;
 #[path = "deep2d_dynamic_gpu.rs"]
 mod deep2d_dynamic_gpu;
+#[cfg(test)]
+mod deep2d_dynamic_gpu_tests;
+mod deep2d_frame_context;
+mod deep2d_gpu;
+mod deep2d_gpu_cache;
 #[cfg(test)]
 mod deep2d_gpu_cache_tests;
 mod deep2d_interleave_probe;
 #[cfg(test)]
 mod deep2d_layout_gpu_tests;
 #[cfg(test)]
-mod deep2d_dynamic_gpu_tests;
-#[cfg(test)]
-mod deep2d_blend_gpu_tests;
-#[cfg(test)]
 mod deep2d_paint_gpu_tests;
 #[cfg(test)]
-mod deep2d_backdrop_gpu_tests;
 mod deep2d_path_clip_gpu_tests;
 mod deep2d_scissor;
 #[cfg(test)]
@@ -105,6 +106,8 @@ mod player_shader_plan;
 mod player_state;
 // F3 GI storage 的 bin 侧依赖:probe_gi_abi 与 lib 共用同一源文件,
 // 缺此声明时 bin target 编译失败(probe_gi_storage 的 crate:: 引用无法解析)。
+#[cfg(test)]
+mod csm_sampling_gpu_timing_tests;
 mod probe_gi_abi;
 mod probe_gi_grid;
 mod probe_gi_storage;
@@ -131,8 +134,6 @@ mod shadow_probe;
 mod shadow_update_classify;
 mod telemetry;
 mod telemetry_gpu;
-#[cfg(test)]
-mod csm_sampling_gpu_timing_tests;
 mod text_raster_cli;
 mod texture_array_bindings;
 mod window_chrome;

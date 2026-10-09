@@ -17,8 +17,8 @@ use std::sync::Arc;
 
 use wgpu::util::DeviceExt;
 
-use deep_engine_native::deep2d::{FillRule, PreparedDeep2d};
 use crate::deep2d_gpu_cache::{CachedDynamicPipelines, Deep2dGpuAssetCache};
+use deep_engine_native::deep2d::{FillRule, PreparedDeep2d};
 
 const COVER_SHADER: &str = include_str!("../assets/shaders/native_deep2d_dynamic_cover_v1.wgsl");
 const FILL_SHADER: &str = include_str!("../assets/shaders/native_deep2d_v1.wgsl");
@@ -49,7 +49,8 @@ impl Deep2dDynamicPathGpuResources {
     ) -> Self {
         // 先取 paints 布局再进管线缓存锁:build_pipelines 在 dynamic_pipelines
         // 的互斥锁内执行,重入同一 Mutex 会死锁(首动态帧实测)。
-        let paints_layout = cache.path_paint_layout(|| crate::deep2d_gpu::path_paint_layout(device));
+        let paints_layout =
+            cache.path_paint_layout(|| crate::deep2d_gpu::path_paint_layout(device));
         let pipelines = cache.dynamic_pipelines(format, || {
             build_pipelines(device, format, frame_layout, &paints_layout)
         });
@@ -341,10 +342,10 @@ fn build_pipelines(
 }
 
 /// 依据 fill rule 选 (cover, fill) 管线对。
-pub(super) fn pipeline_pair<'a>(
-    pipelines: &'a CachedDynamicPipelines,
+pub(super) fn pipeline_pair(
+    pipelines: &CachedDynamicPipelines,
     fill_rule: FillRule,
-) -> (&'a wgpu::RenderPipeline, &'a wgpu::RenderPipeline) {
+) -> (&wgpu::RenderPipeline, &wgpu::RenderPipeline) {
     match fill_rule {
         FillRule::Nonzero => (&pipelines.cover, &pipelines.fill_nonzero),
         FillRule::Evenodd => (&pipelines.cover_evenodd, &pipelines.fill_evenodd),

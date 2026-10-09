@@ -4,8 +4,8 @@
 //! 的 `Deep2dPaint`/`BoxShadow`)。容器就是带子节点的节点;视觉可以挂在
 //! 任意节点上(卡片本体=容器+视觉,图标占位=固定尺寸叶子+视觉)。
 
-use super::style::LayoutStyle;
 use super::LAYOUT_BUDGETS;
+use super::style::LayoutStyle;
 use crate::deep2d::{BackdropBlur, BoxShadow, Deep2dBlendMode, Deep2dPaint};
 
 /// arena 下标;`Node::ROOT` 是 0 号(构造时的根)。
@@ -104,10 +104,7 @@ impl LayoutTree {
     /// 以根节点开树。根样式即顶层容器样式。
     pub fn new(root: LayoutNode) -> Self {
         Self {
-            nodes: vec![LayoutNode {
-                depth: 0,
-                ..root
-            }],
+            nodes: vec![LayoutNode { depth: 0, ..root }],
         }
     }
 
@@ -150,10 +147,7 @@ impl LayoutTree {
             ));
         }
         let id = NodeId(self.nodes.len() as u32);
-        self.nodes.push(LayoutNode {
-            depth,
-            ..node
-        });
+        self.nodes.push(LayoutNode { depth, ..node });
         self.nodes[parent.index()].children.push(id);
         Ok(id)
     }
@@ -164,7 +158,6 @@ impl LayoutTree {
     pub(crate) fn creation_order(&self) -> impl Iterator<Item = NodeId> + '_ {
         (0..self.nodes.len()).map(|index| NodeId(index as u32))
     }
-
 }
 
 #[cfg(test)]
@@ -203,8 +196,10 @@ mod tree_tests {
         // 创建序 = arena 下标序;second(2) 先于 first_child(3) 创建,
         // 但父子先后(first < first_child)保证恒成立。
         assert_eq!(order, vec![NodeId::ROOT, first, second, first_child]);
-        assert!(order.iter().position(|id| *id == first).unwrap()
-            < order.iter().position(|id| *id == first_child).unwrap());
+        assert!(
+            order.iter().position(|id| *id == first).unwrap()
+                < order.iter().position(|id| *id == first_child).unwrap()
+        );
     }
 
     #[test]

@@ -126,6 +126,8 @@ impl Composite {
             msaa,
         }
     }
+    // Explicit GPU binding and uniform ABI inputs.
+    #[allow(clippy::too_many_arguments)]
     pub fn encode(
         &self,
         queue: &wgpu::Queue,

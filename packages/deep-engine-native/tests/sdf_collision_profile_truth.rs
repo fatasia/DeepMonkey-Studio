@@ -45,7 +45,8 @@ impl Grid {
         let cx = x.clamp(0, GRID_DIMENSIONS[0] as i32 - 1);
         let cy = y.clamp(0, GRID_DIMENSIONS[1] as i32 - 1);
         let cz = z.clamp(0, GRID_DIMENSIONS[2] as i32 - 1);
-        self.field[((cz * GRID_DIMENSIONS[1] as i32 + cy) * GRID_DIMENSIONS[0] as i32 + cx) as usize]
+        self.field
+            [((cz * GRID_DIMENSIONS[1] as i32 + cy) * GRID_DIMENSIONS[0] as i32 + cx) as usize]
     }
 
     /// 返回 (distance, gradient, in_domain);域外 distance = NaN(fail-closed 合同)。
@@ -57,7 +58,10 @@ impl Grid {
         let max_x = GRID_DIMENSIONS[0] as f32 - 1.0;
         let max_y = GRID_DIMENSIONS[1] as f32 - 1.0;
         let max_z = GRID_DIMENSIONS[2] as f32 - 1.0;
-        if !(0.0..=max_x).contains(&qx) || !(0.0..=max_y).contains(&qy) || !(0.0..=max_z).contains(&qz) {
+        if !(0.0..=max_x).contains(&qx)
+            || !(0.0..=max_y).contains(&qy)
+            || !(0.0..=max_z).contains(&qz)
+        {
             return (f32::NAN, [0.0; 3], false);
         }
         let lx = qx.floor() as i32;
@@ -140,12 +144,15 @@ fn load_grid() -> Grid {
     let fixture: Fixture = serde_json::from_str(FIXTURE).expect("fixture parses");
     let cells = (GRID_DIMENSIONS[0] * GRID_DIMENSIONS[1] * GRID_DIMENSIONS[2]) as usize;
     assert_eq!(fixture.distances.len(), cells, "fixture cells 与网格不一致");
-    Grid { field: fixture.distances.iter().map(|&d| d as f32).collect() }
+    Grid {
+        field: fixture.distances.iter().map(|&d| d as f32).collect(),
+    }
 }
 
 /// Rapier 凸包真值行:hull 距离(solid 口径)、命中点、法线(距离增大方向)、幽灵面标记。
 struct TruthRow {
-    point: [f32; 3],
+    #[allow(dead_code)]
+    _point: [f32; 3],
     hull_distance: f32,
     normal: [f32; 3],
     ghost_face: bool,
@@ -161,30 +168,55 @@ fn hull_truth(shape: &SharedShape, iso: &Pose, point: [f32; 3]) -> TruthRow {
     let delta = pt - closest;
     let dist = delta.length();
     let normal = if dist > 0.0 {
-        if signed >= 0.0 { delta / dist } else { -delta / dist }
+        if signed >= 0.0 {
+            delta / dist
+        } else {
+            -delta / dist
+        }
     } else {
         Vector::new(0.0, 0.0, 1.0)
     };
     // 幽灵面 = 最近面点的 2D 位置在楔形(多边形 ∖ L,x>1 且 y>1)内。
     let ghost_face = closest.x > 1.0 + 1e-9 && closest.y > 1.0 + 1e-9;
-    TruthRow { point, hull_distance: signed, normal: normal.to_array(), ghost_face }
+    TruthRow {
+        _point: point,
+        hull_distance: signed,
+        normal: normal.to_array(),
+        ghost_face,
+    }
 }
 
 #[test]
 fn wgsl_single_source_matches_pinned_sidecar() {
     let sidecar = WGSL_SIDECAR.trim();
-    let (expected, bytes) = sidecar.split_once(' ').expect("sidecar 形如 \"<hex> <len>\"");
-    assert_eq!(sha256_hex(WGSL.as_bytes()), expected, "WGSL 真源 SHA-256 与 sidecar 不一致");
-    assert_eq!(WGSL.len(), bytes.parse::<usize>().expect("sidecar 字节数"), "WGSL 字节数与 sidecar 不一致");
+    let (expected, bytes) = sidecar
+        .split_once(' ')
+        .expect("sidecar 形如 \"<hex> <len>\"");
+    assert_eq!(
+        sha256_hex(WGSL.as_bytes()),
+        expected,
+        "WGSL 真源 SHA-256 与 sidecar 不一致"
+    );
+    assert_eq!(
+        WGSL.len(),
+        bytes.parse::<usize>().expect("sidecar 字节数"),
+        "WGSL 字节数与 sidecar 不一致"
+    );
 }
 
 #[test]
 fn rapier_hull_truth_matches_sdf_profile_budget_with_error_table() {
     let grid = load_grid();
-    let corners: Vec<Vector> = [[0.0f32, 0.0], [3.0, 0.0], [3.0, 1.0], [1.0, 3.0], [0.0, 3.0]]
-        .iter()
-        .flat_map(|[x, y]| [Vector::new(*x, *y, 0.0), Vector::new(*x, *y, 1.0)])
-        .collect();
+    let corners: Vec<Vector> = [
+        [0.0f32, 0.0],
+        [3.0, 0.0],
+        [3.0, 1.0],
+        [1.0, 3.0],
+        [0.0, 3.0],
+    ]
+    .iter()
+    .flat_map(|[x, y]| [Vector::new(*x, *y, 0.0), Vector::new(*x, *y, 1.0)])
+    .collect();
     let shape = SharedShape::convex_hull(&corners).expect("L 棱柱凸包有效");
     let iso = Pose::identity();
     let points = sample_points();
@@ -196,7 +228,7 @@ fn rapier_hull_truth_matches_sdf_profile_budget_with_error_table() {
     let mut worst_outside_error = (0.0f64, [0.0f32; 3]);
     let mut worst_alignment = (1.0f64, [0.0f32; 3]);
     let mut max_ghost_thickness = 0.0f64;
-    let mut agreement_rows = 0usize;
+    let mut _agreement_rows = 0usize;
     let mut band_rows = 0usize;
 
     for point in &points {
@@ -207,11 +239,14 @@ fn rapier_hull_truth_matches_sdf_profile_budget_with_error_table() {
         // sdf < 0 属「点在形状内部、恰在凸包面上」,距离误差 ≤ 采样上界,由
         // outside-agreement 分支正常验收,不是构建回归。
         if truth.hull_distance > 0.0 && distance < 0.0 {
-            panic!("leak:SDF 判内部({distance})而凸包判外部({}):SDF 比凸包更实,构建回归", truth.hull_distance);
+            panic!(
+                "leak:SDF 判内部({distance})而凸包判外部({}):SDF 比凸包更实,构建回归",
+                truth.hull_distance
+            );
         }
         if truth.hull_distance >= 0.0 && !truth.ghost_face {
             regions[0] += 1;
-            agreement_rows += 1;
+            _agreement_rows += 1;
             let error = (distance - truth.hull_distance).abs() as f64;
             assert!(
                 error <= sampling_bound,
@@ -220,12 +255,15 @@ fn rapier_hull_truth_matches_sdf_profile_budget_with_error_table() {
             if error > worst_outside_error.0 {
                 worst_outside_error = (error, *point);
             }
-            let length = (gradient[0] * gradient[0] + gradient[1] * gradient[1] + gradient[2] * gradient[2]).sqrt();
+            let length =
+                (gradient[0] * gradient[0] + gradient[1] * gradient[1] + gradient[2] * gradient[2])
+                    .sqrt();
             if length > 0.0 && distance.abs() <= 2.0 * GRID_CELL_SIZE {
                 band_rows += 1;
                 let alignment = ((gradient[0] * truth.normal[0]
                     + gradient[1] * truth.normal[1]
-                    + gradient[2] * truth.normal[2]) / length) as f64;
+                    + gradient[2] * truth.normal[2])
+                    / length) as f64;
                 if alignment < worst_alignment.0 {
                     worst_alignment = (alignment, *point);
                 }
@@ -245,8 +283,14 @@ fn rapier_hull_truth_matches_sdf_profile_budget_with_error_table() {
         } else if distance >= 0.0 {
             regions[2] += 1;
             let thickness = (distance - truth.hull_distance) as f64;
-            assert!(thickness > 0.0, "凹域幽灵厚度必须为正,实测 {thickness} @ {point:?}");
-            assert!(thickness <= ghost_bound, "幽灵厚度 {thickness} 超几何上界 {ghost_bound} @ {point:?}");
+            assert!(
+                thickness > 0.0,
+                "凹域幽灵厚度必须为正,实测 {thickness} @ {point:?}"
+            );
+            assert!(
+                thickness <= ghost_bound,
+                "幽灵厚度 {thickness} 超几何上界 {ghost_bound} @ {point:?}"
+            );
             max_ghost_thickness = max_ghost_thickness.max(thickness);
         } else {
             regions[3] += 1;
@@ -270,7 +314,10 @@ fn rapier_hull_truth_matches_sdf_profile_budget_with_error_table() {
         "幽灵厚度: max={:.6} ≤ 几何上界(√2+采样上界)={:.6}(F6 解析凹槽深 √2≈1.414 一族)",
         max_ghost_thickness, ghost_bound
     );
-    assert!(regions[0] > 400 && regions[2] > 50, "区域覆盖不足:{regions:?}");
+    assert!(
+        regions[0] > 400 && regions[2] > 50,
+        "区域覆盖不足:{regions:?}"
+    );
     assert!(worst_alignment.0 >= MIN_NORMAL_ALIGNMENT);
 }
 

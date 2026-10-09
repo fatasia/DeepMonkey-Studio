@@ -19,8 +19,8 @@ mod common;
 use base64::Engine as _;
 use common::load_fixture;
 use geometry_dag::{
-    build_meshlet_dag, read_dgc, write_dgc, DagOptions, DgcWriteOptions, IndexedGeometry, MeshletDag,
-    NO_PARENT,
+    DagOptions, DgcWriteOptions, IndexedGeometry, MeshletDag, NO_PARENT, build_meshlet_dag,
+    read_dgc, write_dgc,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -59,7 +59,8 @@ fn map_dag_to_cluster_lod(dag: &MeshletDag) -> Result<ContractDag, String> {
         ));
     }
     // childrenByLevel[k][p] = 引用粗层 k+1 簇 p 的细层 k 簇列表(父子表 O(n) 反转)。
-    let mut children_by_level: Vec<Vec<Vec<usize>>> = Vec::with_capacity(dag.parents_by_level.len());
+    let mut children_by_level: Vec<Vec<Vec<usize>>> =
+        Vec::with_capacity(dag.parents_by_level.len());
     for (k, parents) in dag.parents_by_level.iter().enumerate() {
         let fine_count = dag.levels[k].meshlet_count;
         if parents.len() != fine_count {
@@ -73,7 +74,10 @@ fn map_dag_to_cluster_lod(dag: &MeshletDag) -> Result<ContractDag, String> {
         for (c, &parent) in parents.iter().enumerate() {
             if parent != NO_PARENT {
                 if parent as usize >= coarse_count {
-                    return Err(format!("parent {parent} out of range for coarse level {}", k + 1));
+                    return Err(format!(
+                        "parent {parent} out of range for coarse level {}",
+                        k + 1
+                    ));
                 }
                 children[parent as usize].push(c);
             }
@@ -84,12 +88,20 @@ fn map_dag_to_cluster_lod(dag: &MeshletDag) -> Result<ContractDag, String> {
     let mut nodes = Vec::new();
     for (k, level) in dag.levels.iter().enumerate() {
         // childrenByLevel[k-1] 以本层簇号 c 为索引(k>0);叶层无子表,按 meshlet_count 遍历。
-        let children_of_level: &[Vec<usize>] = if k > 0 { &children_by_level[k - 1] } else { &[] };
+        let children_of_level: &[Vec<usize>] = if k > 0 {
+            &children_by_level[k - 1]
+        } else {
+            &[]
+        };
         for c in 0..level.meshlet_count {
             let base = c * 16;
             let children: Vec<String> = children_of_level
                 .get(c)
-                .map(|fine| fine.iter().map(|child| format!("l{}-c{}", k - 1, child)).collect())
+                .map(|fine| {
+                    fine.iter()
+                        .map(|child| format!("l{}-c{}", k - 1, child))
+                        .collect()
+                })
                 .unwrap_or_default();
             nodes.push(ContractNode {
                 id: format!("l{k}-c{c}"),
@@ -111,7 +123,10 @@ fn map_dag_to_cluster_lod(dag: &MeshletDag) -> Result<ContractDag, String> {
             });
         }
     }
-    Ok(ContractDag { leaf_triangle_total: dag.levels[0].indices.len() / 3, nodes })
+    Ok(ContractDag {
+        leaf_triangle_total: dag.levels[0].indices.len() / 3,
+        nodes,
+    })
 }
 
 /// `validateClusterLodDag` 合同核验镜像(校验序与不变量逐条对应,理由码为 native 措辞)。
@@ -134,10 +149,16 @@ fn validate_cluster_lod(dag: &ContractDag) -> Result<(), String> {
         }
         for child in &node.children {
             let Some(child_node) = dag.nodes.iter().find(|n| &n.id == child) else {
-                return Err(format!("Node {} references unknown child {child}.", node.id));
+                return Err(format!(
+                    "Node {} references unknown child {child}.",
+                    node.id
+                ));
             };
             if child_node.level >= node.level {
-                return Err(format!("Node {} child {child} does not refine a coarser level.", node.id));
+                return Err(format!(
+                    "Node {} child {child} does not refine a coarser level.",
+                    node.id
+                ));
             }
         }
         // 消费侧 sanity:包围盒退化或非有限即数据损坏(meshletBounds 保证 min ≤ max;
@@ -147,15 +168,20 @@ fn validate_cluster_lod(dag: &ContractDag) -> Result<(), String> {
                 node.bounds_min[axis].partial_cmp(&node.bounds_max[axis]),
                 Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
             ) {
-                return Err(format!("Node {} has inverted bounds on axis {axis}.", node.id));
+                return Err(format!(
+                    "Node {} has inverted bounds on axis {axis}.",
+                    node.id
+                ));
             }
         }
     }
     // 统一误差域:逐层严格递增(选层阈值单调性;单层 DAG 除外)。
     let mut level_errors: Vec<(usize, f64)> =
         dag.nodes.iter().map(|n| (n.level, n.error)).collect();
-    level_errors
-        .sort_by(|a, b| a.0.cmp(&b.0).then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)));
+    level_errors.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then(a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+    });
     level_errors.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
     let mut per_level_min: Vec<(usize, f64)> = Vec::new();
     for (level, error) in &level_errors {
@@ -180,8 +206,11 @@ fn validate_cluster_lod(dag: &ContractDag) -> Result<(), String> {
     // 根可达叶子三角形区间并集(逐层去重)== leafTriangleTotal(孤儿=仅该层可见额外叶子)。
     let by_id: HashMap<&str, &ContractNode> =
         dag.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
-    let is_child: HashSet<&str> =
-        dag.nodes.iter().flat_map(|n| n.children.iter().map(String::as_str)).collect();
+    let is_child: HashSet<&str> = dag
+        .nodes
+        .iter()
+        .flat_map(|n| n.children.iter().map(String::as_str))
+        .collect();
     let mut visited: HashSet<&str> = HashSet::new();
     let mut leaf_intervals_by_level: HashMap<usize, Vec<(u32, u32)>> = HashMap::new();
     for node in &dag.nodes {
@@ -196,10 +225,13 @@ fn validate_cluster_lod(dag: &ContractDag) -> Result<(), String> {
             }
             let current = by_id.get(id).copied().expect("child id known");
             if current.children.is_empty() && current.triangle_count > 0 {
-                leaf_intervals_by_level.entry(current.level).or_default().push((
-                    current.first_triangle,
-                    current.first_triangle + current.triangle_count,
-                ));
+                leaf_intervals_by_level
+                    .entry(current.level)
+                    .or_default()
+                    .push((
+                        current.first_triangle,
+                        current.first_triangle + current.triangle_count,
+                    ));
             }
             for child in &current.children {
                 stack.push(child.as_str());
@@ -230,11 +262,11 @@ fn validate_cluster_lod(dag: &ContractDag) -> Result<(), String> {
 /// 端到端:构建 → 序列化(两压缩档)→ 解析 → 映射 → 合同核验全绿。
 fn assert_dag_consumable(dag: &MeshletDag, label: &str) {
     for compress in [true, false] {
-        let bytes =
-            write_dgc(dag, &DgcWriteOptions { compress }).unwrap_or_else(|e| panic!("{label}: write: {e}"));
+        let bytes = write_dgc(dag, &DgcWriteOptions { compress })
+            .unwrap_or_else(|e| panic!("{label}: write: {e}"));
         let back = read_dgc(&bytes).unwrap_or_else(|e| panic!("{label}: read: {e}"));
-        let mapped =
-            map_dag_to_cluster_lod(&back).unwrap_or_else(|e| panic!("{label}: bridge mapping: {e}"));
+        let mapped = map_dag_to_cluster_lod(&back)
+            .unwrap_or_else(|e| panic!("{label}: bridge mapping: {e}"));
         validate_cluster_lod(&mapped)
             .unwrap_or_else(|e| panic!("{label} (compress={compress}): contract rejected: {e}"));
     }
@@ -242,10 +274,16 @@ fn assert_dag_consumable(dag: &MeshletDag, label: &str) {
 
 fn golden_dag(name: &str) -> MeshletDag {
     let fixture = load_fixture(name);
-    let geometry = IndexedGeometry { positions: fixture.positions, indices: fixture.indices };
+    let geometry = IndexedGeometry {
+        positions: fixture.positions,
+        indices: fixture.indices,
+    };
     build_meshlet_dag(
         &geometry,
-        &DagOptions { levels: Some(fixture.levels_option), ..Default::default() },
+        &DagOptions {
+            levels: Some(fixture.levels_option),
+            ..Default::default()
+        },
     )
     .unwrap_or_else(|e| panic!("{name}: build: {e}"))
 }
@@ -260,13 +298,20 @@ fn golden_dags_satisfy_consumption_contract() {
 
 #[test]
 fn committed_byte_golden_satisfies_consumption_contract() {
-    let path = format!("{}/tests/fixtures/quick_sphere.dgc.golden.json", env!("CARGO_MANIFEST_DIR"));
+    let path = format!(
+        "{}/tests/fixtures/quick_sphere.dgc.golden.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
     let json: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path}: {e}")),
     )
     .expect("json");
     let bytes = common::B64
-        .decode(json["variants"]["compressed"]["bytesB64"].as_str().expect("b64"))
+        .decode(
+            json["variants"]["compressed"]["bytesB64"]
+                .as_str()
+                .expect("b64"),
+        )
         .expect("b64");
     let dag = read_dgc(&bytes).expect("read committed bytes");
     let mapped = map_dag_to_cluster_lod(&dag).expect("bridge mapping");
@@ -308,7 +353,12 @@ fn rejects_child_not_refining_level() {
     // 粗层节点把 child 指回同层(不细化)。synthetic50k 粗层簇数 > 1,必有同层兄弟。
     let dag = golden_dag("synthetic50k");
     let mut mapped = map_dag_to_cluster_lod(&dag).expect("baseline mapping");
-    let min_level = mapped.nodes.iter().map(|n| n.level).min().expect("non-empty");
+    let min_level = mapped
+        .nodes
+        .iter()
+        .map(|n| n.level)
+        .min()
+        .expect("non-empty");
     let (coarsest, coarsest_level) = {
         let node = mapped
             .nodes
@@ -353,10 +403,16 @@ fn mapping_rejects_parent_table_shape_drift() {
     if let Some(parents) = drifted.parents_by_level.first_mut() {
         parents.pop();
     }
-    assert!(map_dag_to_cluster_lod(&drifted).is_err(), "parent table drift must be rejected");
+    assert!(
+        map_dag_to_cluster_lod(&drifted).is_err(),
+        "parent table drift must be rejected"
+    );
     // 零层 DAG → TS 桥「zero levels」拒绝。
     let mut empty = dag.clone();
     empty.levels.clear();
     empty.parents_by_level.clear();
-    assert!(map_dag_to_cluster_lod(&empty).is_err(), "zero levels must be rejected");
+    assert!(
+        map_dag_to_cluster_lod(&empty).is_err(),
+        "zero levels must be rejected"
+    );
 }

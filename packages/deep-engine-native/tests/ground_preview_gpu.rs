@@ -75,7 +75,11 @@ fn ground_preview_pass_matches_cpu_mirror() {
     });
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("ground preview target"),
-        size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -129,14 +133,20 @@ fn ground_preview_pass_matches_cpu_mirror() {
                 rows_per_image: None,
             },
         },
-        wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
     );
     queue.submit(Some(encoder.finish()));
     let (sender, receiver) = std::sync::mpsc::channel();
     staging.map_async(wgpu::MapMode::Read, .., move |result| {
         sender.send(result).unwrap();
     });
-    device.poll(wgpu::PollType::wait_indefinitely()).expect("poll device");
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("poll device");
     receiver
         .recv_timeout(std::time::Duration::from_secs(10))
         .unwrap()

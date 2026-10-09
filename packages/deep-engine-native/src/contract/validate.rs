@@ -82,8 +82,14 @@ pub fn validate_packet(packet: &RenderPacket) -> Result<ContractSummary, String>
         }
         validate_stock_extensions(material)?;
         if material.specular_factor.is_some_and(|value| !unit(value))
-            || material.specular_color_factor.is_some_and(|color| color.iter().any(|value| !value.is_finite() || *value < 0.0)) {
-            return Err(format!("material {} has invalid specular factors",material.id));
+            || material
+                .specular_color_factor
+                .is_some_and(|color| color.iter().any(|value| !value.is_finite() || *value < 0.0))
+        {
+            return Err(format!(
+                "material {} has invalid specular factors",
+                material.id
+            ));
         }
         material_features.insert(
             material.id.as_str(),
@@ -191,11 +197,9 @@ fn unit(value: f32) -> bool {
 /// - extended IOR 必须与实例 IOR 字段一致(TS renderPacketMaterials 同文);
 /// - advanced 只放行 sheen:iridescence.factor/volume.thickness 非零拒绝;
 /// - unlit 材质拒绝任何扩展 lobe(TS 同文)。
-/// 缺省字段(整个 extendedParameters/advancedParameters 缺席)= 扩展带全零 =
-/// stock 路径逐位不变(旧包 wire 兼容)。
-fn validate_stock_extensions(
-    material: &super::PbrMaterial,
-) -> Result<(), String> {
+///   缺省字段(整个 extendedParameters/advancedParameters 缺席)= 扩展带全零 =
+///   stock 路径逐位不变(旧包 wire 兼容)。
+fn validate_stock_extensions(material: &super::PbrMaterial) -> Result<(), String> {
     let id = material.id.as_str();
     let unlit = material.shading_model == Some(super::ShadingModel::Unlit);
     if let Some(extended) = &material.extended_parameters {
@@ -211,7 +215,10 @@ fn validate_stock_extensions(
                 "material {id}: Extended material IOR must match the v5 instance IOR field."
             ));
         }
-        let aniso_strength = extended.anisotropy.as_ref().and_then(|value| value.strength);
+        let aniso_strength = extended
+            .anisotropy
+            .as_ref()
+            .and_then(|value| value.strength);
         if aniso_strength.is_some_and(|value| value != 0.0) {
             return Err(format!(
                 "material {id}: Native materials do not support nonzero anisotropy.strength."
@@ -225,10 +232,7 @@ fn validate_stock_extensions(
             ));
         }
         validate_stock_advanced_ranges(id, advanced)?;
-        let iridescence = advanced
-            .iridescence
-            .as_ref()
-            .and_then(|value| value.factor);
+        let iridescence = advanced.iridescence.as_ref().and_then(|value| value.factor);
         if iridescence.is_some_and(|value| value != 0.0) {
             return Err(format!(
                 "material {id}: Native advanced subset does not support nonzero iridescence.factor."
@@ -309,10 +313,7 @@ fn validate_stock_advanced_ranges(
                 "material {id}: advancedParameters.sheen.color: Sheen color must be three finite floats in 0..1."
             ));
         }
-        if sheen
-            .roughness
-            .is_some_and(|value| !unit(value))
-        {
+        if sheen.roughness.is_some_and(|value| !unit(value)) {
             return Err(format!(
                 "material {id}: advancedParameters.sheen.roughness: Sheen roughness must be in 0..1."
             ));

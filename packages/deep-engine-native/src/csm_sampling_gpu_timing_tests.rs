@@ -1,9 +1,8 @@
 //! Diagnostic function timing, not a second production renderer.
 use crate::{telemetry::SampleToken, telemetry_gpu::GpuFrameTiming};
-use serde_json::{Value, json};
 #[allow(dead_code)]
-#[path = "shader_package/hash.rs"]
-mod hash;
+use deep_engine_native::shader_package::hash;
+use serde_json::{Value, json};
 #[allow(dead_code)]
 #[path = "../tests/support/j2_csm_oracle.rs"]
 mod oracle;

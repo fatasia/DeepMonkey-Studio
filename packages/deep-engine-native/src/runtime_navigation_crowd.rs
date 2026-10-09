@@ -64,7 +64,9 @@ impl AabbWall {
         if !min_x.is_finite() || !min_z.is_finite() || !max_x.is_finite() || !max_z.is_finite() {
             return Err("wall bounds must be finite".into());
         }
-        if !(min_x < max_x) || !(min_z < max_z) {
+        if min_x.partial_cmp(&max_x) != Some(std::cmp::Ordering::Less)
+            || min_z.partial_cmp(&max_z) != Some(std::cmp::Ordering::Less)
+        {
             return Err("wall bounds must satisfy min < max on both axes".into());
         }
         Ok(Self {
@@ -398,7 +400,9 @@ impl CrowdSimulation {
     /// tick (full quality).
     pub fn group_count(&self) -> u32 {
         (self.state.count / self.config.batch_size)
-            .saturating_add(u32::from(self.state.count % self.config.batch_size != 0))
+            .saturating_add(u32::from(
+                !self.state.count.is_multiple_of(self.config.batch_size),
+            ))
             .max(1)
     }
 

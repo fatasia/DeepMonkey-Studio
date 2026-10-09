@@ -22,7 +22,9 @@
 //! 修复式 `total = (1 − fraction) + fraction ≡ 1` 对任意 f0/rough/nv 构造性守恒;
 //! 金属路径(漫反射为 0)与镜面极限(fraction→f0)逐位不变。
 
-use crate::ibl::{PreparedIblCube, PreparedIblCubeMip, PreparedIblEnvironment, PreparedIblTexture2d};
+use crate::ibl::{
+    PreparedIblCube, PreparedIblCubeMip, PreparedIblEnvironment, PreparedIblTexture2d,
+};
 
 /// 白炉环境辐射度(线性 HDR);0.5 留出双向误差余量,避免半精度钳制混淆。
 /// 与 TS `WHITE_FURNACE_ENVIRONMENT_RADIANCE` 同值。
@@ -105,12 +107,16 @@ pub fn region_stats(
     let mut channel_sums = [0.0f64; 3];
     let mut relative = Vec::new();
     for (index, pixel) in pixels.iter().enumerate() {
-        if let Some(segmentation) = segmentation {
-            if segmentation.get(index).copied().unwrap_or(SEGMENT_EXCLUDED) != want {
-                continue;
-            }
+        if let Some(segmentation) = segmentation
+            && segmentation.get(index).copied().unwrap_or(SEGMENT_EXCLUDED) != want
+        {
+            continue;
         }
-        let (r, g, b) = (f64::from(pixel[0]), f64::from(pixel[1]), f64::from(pixel[2]));
+        let (r, g, b) = (
+            f64::from(pixel[0]),
+            f64::from(pixel[1]),
+            f64::from(pixel[2]),
+        );
         let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
         count += 1;
         luma_sum += luma;
@@ -135,8 +141,8 @@ pub fn region_stats(
         mean_radiance: mean_luma,
         mean_relative_error: (mean_luma - environment_radiance) / environment_radiance,
         max_abs_relative_error: relative[relative.len() - 1],
-        p99_abs_relative_error: relative[((0.99 * relative.len() as f64) as usize)
-            .min(relative.len() - 1)],
+        p99_abs_relative_error: relative
+            [((0.99 * relative.len() as f64) as usize).min(relative.len() - 1)],
         channel_gain,
     })
 }
@@ -158,9 +164,8 @@ pub fn furnace_sphere_segmentation(
     let mut region_of = vec![SEGMENT_EXCLUDED; width * height];
     for y in 0..height {
         for x in 0..width {
-            let distance = ((x as f64 + 0.5 - center_x).powi(2)
-                + (y as f64 + 0.5 - center_y).powi(2))
-            .sqrt();
+            let distance =
+                ((x as f64 + 0.5 - center_x).powi(2) + (y as f64 + 0.5 - center_y).powi(2)).sqrt();
             region_of[y * width + x] = if distance < disc_radius - guard {
                 0
             } else if distance > disc_radius + guard {
@@ -217,7 +222,10 @@ pub fn uniform_furnace_environment(
             .iter()
             .map(|mip| PreparedIblCubeMip {
                 size: mip.size,
-                texels: vec![[radiance as f32, radiance as f32, radiance as f32, 1.0]; mip.texels.len()],
+                texels: vec![
+                    [radiance as f32, radiance as f32, radiance as f32, 1.0];
+                    mip.texels.len()
+                ],
             })
             .collect(),
     };
@@ -265,8 +273,7 @@ pub fn evaluate_furnace_checks(
             name: "furnace-background-uniform",
             passed: background.mean_relative_error.abs()
                 <= FURNACE_TOLERANCES.background_mean_relative
-                && background.max_abs_relative_error
-                    <= FURNACE_TOLERANCES.background_max_relative,
+                && background.max_abs_relative_error <= FURNACE_TOLERANCES.background_max_relative,
             detail: format!(
                 "pixels={} meanErr={} maxErr={}",
                 background.pixels,
@@ -289,8 +296,7 @@ pub fn evaluate_furnace_checks(
     if let Some(geometry) = geometry.filter(|s| s.pixels > 0) {
         checks.push(FurnaceCheck {
             name: "furnace-geometry-conserved",
-            passed: geometry.mean_relative_error.abs()
-                <= FURNACE_TOLERANCES.geometry_mean_relative
+            passed: geometry.mean_relative_error.abs() <= FURNACE_TOLERANCES.geometry_mean_relative
                 && geometry.max_abs_relative_error <= FURNACE_TOLERANCES.geometry_max_relative,
             detail: format!(
                 "pixels={} meanErr={} maxErr={} p99={}",
@@ -339,9 +345,15 @@ mod tests {
             FURNACE_TOLERANCES.channel_gain_drift,
         ];
         for ((label, expected), actual) in TOLERANCE_LABELS.iter().zip(values) {
-            assert_eq!(*expected, actual, "furnace tolerance {label} drifted from TS authority");
+            assert_eq!(
+                *expected, actual,
+                "furnace tolerance {label} drifted from TS authority"
+            );
         }
-        assert_eq!(FURNACE_ENVIRONMENT_RADIANCE, 0.5, "furnace radiance drifted from TS authority");
+        assert_eq!(
+            FURNACE_ENVIRONMENT_RADIANCE, 0.5,
+            "furnace radiance drifted from TS authority"
+        );
     }
 
     #[test]
@@ -388,7 +400,9 @@ mod tests {
             before_worst > 0.02,
             "legacy defect must undershoot somewhere on the grid, worst {before_worst}"
         );
-        println!("C12 defect model grid: undershoot@nv=1 = {before_at_nv1:.6}, worst-on-grid = {before_worst:.6}");
+        println!(
+            "C12 defect model grid: undershoot@nv=1 = {before_at_nv1:.6}, worst-on-grid = {before_worst:.6}"
+        );
     }
 
     #[test]
@@ -396,7 +410,8 @@ mod tests {
         // TS 权威口径:predictedFurnaceOvershoot(0.04, 1, 1, dfg) ≈ −0.0265。
         let builtin = crate::ibl::builtin_default_environment();
         let lut = &builtin.brdf_lut;
-        let texel = lut.texels[(lut.height as usize - 1) * lut.width as usize + (lut.width as usize - 1)];
+        let texel =
+            lut.texels[(lut.height as usize - 1) * lut.width as usize + (lut.width as usize - 1)];
         let dfg = [f64::from(texel[0]), f64::from(texel[1])];
         let overshoot = predicted_furnace_overshoot(0.04, 1.0, 1.0, dfg);
         assert!(
@@ -459,15 +474,18 @@ mod tests {
         assert_eq!(furnace.specular.mips.len(), builtin.specular.mips.len());
         for (furnace_mip, builtin_mip) in furnace.specular.mips.iter().zip(&builtin.specular.mips) {
             assert_eq!(furnace_mip.size, builtin_mip.size);
-            assert!(furnace_mip
-                .texels
-                .iter()
-                .all(|t| (f64::from(t[0]) - FURNACE_ENVIRONMENT_RADIANCE).abs() < 1e-6));
+            assert!(
+                furnace_mip
+                    .texels
+                    .iter()
+                    .all(|t| (f64::from(t[0]) - FURNACE_ENVIRONMENT_RADIANCE).abs() < 1e-6)
+            );
         }
-        assert!(furnace.diffuse.mips.iter().all(|mip| mip
-            .texels
-            .iter()
-            .all(|t| (f64::from(t[0]) - FURNACE_ENVIRONMENT_RADIANCE).abs() < 1e-6)));
+        assert!(furnace.diffuse.mips.iter().all(|mip| {
+            mip.texels
+                .iter()
+                .all(|t| (f64::from(t[0]) - FURNACE_ENVIRONMENT_RADIANCE).abs() < 1e-6)
+        }));
         assert_eq!(furnace.brdf_lut.texels.len(), builtin.brdf_lut.texels.len());
     }
 
@@ -494,23 +512,37 @@ mod tests {
         for pixel in &mut chroma_shifted {
             pixel[0] = (environment * 1.5) as f32;
         }
-        let drifted = region_stats(&chroma_shifted, None, environment, FurnaceRegion::Geometry).unwrap();
+        let drifted =
+            region_stats(&chroma_shifted, None, environment, FurnaceRegion::Geometry).unwrap();
         let chroma_checks = evaluate_furnace_checks(None, Some(drifted));
         let chroma = chroma_checks
             .iter()
             .find(|check| check.name == "furnace-geometry-no-chroma-drift")
             .expect("chroma check must exist");
-        assert!(!chroma.passed, "red channel energy leak must be caught: {chroma:?}");
+        assert!(
+            !chroma.passed,
+            "red channel energy leak must be caught: {chroma:?}"
+        );
     }
 
     #[test]
     fn sphere_segmentation_partitions_frame() {
-        let segmentation = furnace_sphere_segmentation(256, 256, 4.0, 1.2, 2.0 * (1.0f64 / 2.05).atan());
+        let segmentation =
+            furnace_sphere_segmentation(256, 256, 4.0, 1.2, 2.0 * (1.0f64 / 2.05).atan());
         let geometry = segmentation.iter().filter(|r| **r == 0).count();
         let background = segmentation.iter().filter(|r| **r == 1).count();
-        let excluded = segmentation.iter().filter(|r| **r == SEGMENT_EXCLUDED).count();
-        assert!(geometry > 1000, "sphere disc must cover a real region, got {geometry}");
-        assert!(background > 1000, "background must cover the rest, got {background}");
+        let excluded = segmentation
+            .iter()
+            .filter(|r| **r == SEGMENT_EXCLUDED)
+            .count();
+        assert!(
+            geometry > 1000,
+            "sphere disc must cover a real region, got {geometry}"
+        );
+        assert!(
+            background > 1000,
+            "background must cover the rest, got {background}"
+        );
         assert!(excluded > 0, "guard ring must exist");
         assert_eq!(geometry + background + excluded, 256 * 256);
     }
@@ -546,7 +578,9 @@ mod tests {
                 "{label}: specular must consume the same specular_fraction"
             );
             assert!(
-                !source.contains("let f = f0 + (max(vec3f(1.0 - rough), f0) - f0) * pow(1.0 - nv, 5.0);"),
+                !source.contains(
+                    "let f = f0 + (max(vec3f(1.0 - rough), f0) - f0) * pow(1.0 - nv, 5.0);"
+                ),
                 "{label}: specular Schlick must not return as the diffuse reserve (C12 defect)"
             );
         }
@@ -554,9 +588,15 @@ mod tests {
         // 复用,故恰一次调用),不允许光照体文本副本。
         // C9/native(2026-10-06):RT 像素路与栅格路共用 native_extended_shade
         // (内部仍是唯一的 native_lit_response 共享核;零带回退逐位一致)。
-        assert_eq!(rt.matches("native_extended_shade(").count(), 1,
-            "RT fragment must consume the shared native_extended_shade wrapper");
-        assert_eq!(rt.matches("native_lit_response(").count(), 0,
-            "RT fragment must not bypass the extended wrapper for the lit core");
+        assert_eq!(
+            rt.matches("native_extended_shade(").count(),
+            1,
+            "RT fragment must consume the shared native_extended_shade wrapper"
+        );
+        assert_eq!(
+            rt.matches("native_lit_response(").count(),
+            0,
+            "RT fragment must not bypass the extended wrapper for the lit core"
+        );
     }
 }

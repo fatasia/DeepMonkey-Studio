@@ -1,8 +1,6 @@
+use crate::j3_geometry_depth_readback as depth;
+use crate::output_pass;
 use crate::{forward_targets::ForwardTargets, shadow_map::ShadowMap};
-#[path = "j3_geometry_depth_readback.rs"]
-mod depth;
-#[path = "../../src/output_pass.rs"]
-mod output_pass;
 
 pub struct Readback {
     pub depth: wgpu::Buffer,

@@ -144,6 +144,8 @@ pub use validation::validate_window_events;
 
 /// 注入计划；与既有 destroy 注入 probe 同族，只描述刺激不执行注入。
 #[derive(Debug, Clone, Copy)]
+// Injection profiles are shared with the explicit window GPU harness.
+#[allow(dead_code)]
 pub struct LossInjectionPlan {
     /// 旧 renderer 完成多少次真实 present 后销毁 device；0 = 恢复候选 Present 前再销毁。
     pub destroy_after_presents: u32,
@@ -153,6 +155,7 @@ pub struct LossInjectionPlan {
     pub injected_creation_failures: u8,
 }
 
+#[allow(dead_code)]
 impl LossInjectionPlan {
     /// 对照行：destroyed 一次性重建（已验语义锁定）。
     #[rustfmt::skip]

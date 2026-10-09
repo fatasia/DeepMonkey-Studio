@@ -3,6 +3,8 @@ use wgpu::util::DeviceExt;
 #[allow(dead_code)]
 #[path = "lod_draw_readback.rs"]
 mod readback;
+// Mirrors the explicit GPU sampling inputs.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn sample(
     device: &wgpu::Device,
     queue: &wgpu::Queue,

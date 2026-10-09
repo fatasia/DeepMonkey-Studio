@@ -28,7 +28,11 @@ pub(super) struct Scene {
 }
 
 impl Scene {
-    pub(super) fn new(character_spawn_y: f64, character: serde_json::Value, obstacles: Vec<Obstacle>) -> Self {
+    pub(super) fn new(
+        character_spawn_y: f64,
+        character: serde_json::Value,
+        obstacles: Vec<Obstacle>,
+    ) -> Self {
         Self::new_at(0.0, character_spawn_y, character, obstacles)
     }
 

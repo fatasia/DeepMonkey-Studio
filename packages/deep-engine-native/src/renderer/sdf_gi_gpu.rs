@@ -48,8 +48,10 @@ use deep_engine_native::sdf_gi_wgsl::{
     SDF_SKY_VISIBILITY_ENTRY,
 };
 
-use super::sdf_gi_runtime::{SDF_GI_PROBE_WINDOW_BUDGET, SdfGiBakeSource, SdfGiGpuPlan, SdfGiReject};
-use deep_engine_native::probe_gi_abi::{PROBE_GI_RECORD_BYTES, IrradianceProbeRecord};
+use super::sdf_gi_runtime::{
+    SDF_GI_PROBE_WINDOW_BUDGET, SdfGiBakeSource, SdfGiGpuPlan, SdfGiReject,
+};
+use deep_engine_native::probe_gi_abi::{IrradianceProbeRecord, PROBE_GI_RECORD_BYTES};
 use deep_engine_native::sdf_gi_probe_update::{
     BOUNCE_ENERGY_LIMIT, DEEP_GI_PROBE_TEMPORAL_ALPHA, SDF_GI_PROBE_RECORD_VEC4_STRIDE,
 };
@@ -156,7 +158,12 @@ fn flatten_world_triangles(sources: &[SdfGiBakeSource], plan: &SdfGiGpuPlan) -> 
                     f64::from(source.positions[offset + 1]),
                     f64::from(source.positions[offset + 2]),
                 );
-                triangles.extend_from_slice(&[point[0] as f32, point[1] as f32, point[2] as f32, 0.0]);
+                triangles.extend_from_slice(&[
+                    point[0] as f32,
+                    point[1] as f32,
+                    point[2] as f32,
+                    0.0,
+                ]);
             }
             triangles.extend_from_slice(&[
                 domain_origin[0],
@@ -177,9 +184,8 @@ fn flatten_world_triangles(sources: &[SdfGiBakeSource], plan: &SdfGiGpuPlan) -> 
 /// 显式落盘;哈希只与本进程上次烘焙对比。
 pub(crate) fn sdf_gi_bake_content_hash(sources: &[SdfGiBakeSource], cell_size: f64) -> [u8; 32] {
     const DOMAIN: &[u8] = b"deep-engine.sdf-gi.bake.content.v1\n";
-    let mut stream: Vec<u8> = Vec::with_capacity(
-        DOMAIN.len() + 4 + sources.len() * (4 + 64 + 4 + 48) + 8 + 1,
-    );
+    let mut stream: Vec<u8> =
+        Vec::with_capacity(DOMAIN.len() + 4 + sources.len() * (4 + 64 + 4 + 48) + 8 + 1);
     stream.extend_from_slice(DOMAIN);
     stream.extend_from_slice(&(sources.len() as u32).to_le_bytes());
     for source in sources {
@@ -321,8 +327,10 @@ impl SdfGiGpuChain {
             plan.trace_config.max_distance,
             1.0,
         );
-        let initial_words =
-            record_words(&pack_initial_sdf_gi_records(probe_count, plan.trace_config.max_distance));
+        let initial_words = record_words(&pack_initial_sdf_gi_records(
+            probe_count,
+            plan.trace_config.max_distance,
+        ));
         let bake_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("sdf-gi gpu bake params"),
             contents: bytemuck::bytes_of(&bake_params_struct),
@@ -415,9 +423,18 @@ impl SdfGiGpuChain {
                 label: Some("sdf bake bindings"),
                 layout: &layout,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: bake_params.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: triangle_buffer.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 2, resource: field.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: bake_params.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: triangle_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: field.as_entire_binding(),
+                    },
                 ],
             });
             (pipeline, bind_group)
@@ -451,12 +468,30 @@ impl SdfGiGpuChain {
                 label: Some("sdf sky trace bindings"),
                 layout: &layout,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: trace_params_buffer.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: field.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 2, resource: position_buffer.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 3, resource: direction_table.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 4, resource: visibilities.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 5, resource: hit_distances.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: trace_params_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: field.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: position_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: direction_table.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: visibilities.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: hit_distances.as_entire_binding(),
+                    },
                 ],
             });
             (pipeline, bind_group)
@@ -489,11 +524,26 @@ impl SdfGiGpuChain {
                 label: Some("sdf gi probe update bindings"),
                 layout: &layout,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: update_params.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: visibilities.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 2, resource: sky_buffer.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 3, resource: records.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 4, resource: hit_distances.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: update_params.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: visibilities.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: sky_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: records.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: hit_distances.as_entire_binding(),
+                    },
                 ],
             });
             (pipeline, bind_group)
@@ -601,8 +651,11 @@ impl SdfGiGpuChain {
         queue: &wgpu::Queue,
         storage_buffer: &wgpu::Buffer,
     ) {
-        let (offset, count) =
-            plan_sdf_gi_probe_window(self.probe_count, SDF_GI_PROBE_WINDOW_BUDGET, self.dispatched_windows);
+        let (offset, count) = plan_sdf_gi_probe_window(
+            self.probe_count,
+            SDF_GI_PROBE_WINDOW_BUDGET,
+            self.dispatched_windows,
+        );
         if count == 0 {
             return;
         }
@@ -720,7 +773,7 @@ impl SdfGiGpuChain {
         pass.dispatch_workgroups(self.lanes.div_ceil(64) as u32, 1, 1);
         pass.set_pipeline(&self.update_pipeline);
         pass.set_bind_group(0, &self.update_bind_group, &[]);
-        pass.dispatch_workgroups(window_count.div_ceil(64) as u32, 1, 1);
+        pass.dispatch_workgroups(window_count.div_ceil(64), 1, 1);
     }
 
     /// 发布:records 面复制 → probe storage(偏移 96B 网格头;全 GPU 驻留,
@@ -774,11 +827,13 @@ fn create_pipeline<'a>(
 ) -> wgpu::ComputePipeline {
     device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some(label),
-        layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some(layout_label),
-            bind_group_layouts: &[Some(layout)],
-            immediate_size: 0,
-        })),
+        layout: Some(
+            &device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some(layout_label),
+                bind_group_layouts: &[Some(layout)],
+                immediate_size: 0,
+            }),
+        ),
         module,
         entry_point: Some(entry_point),
         compilation_options: Default::default(),

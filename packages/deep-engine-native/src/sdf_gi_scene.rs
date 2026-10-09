@@ -2,9 +2,9 @@
 //!
 //! 唯一语义源 = Web `deep-engine/src/gi/sdfSceneBake.ts` + `sdfSceneBakeGrid.ts`
 //! + `physics/sdfGrid.ts`(`buildSdfGrid` 核:点到三角形精确距离 + +X 射线奇偶定号)。
-//! 本模块把静态资产的世界空间 SDF min 合成(闭体并集)成场景级距离场,产出与
-//! Web `SdfGrid` 同构,直供天光圆锥追踪([`crate::sdf_gi_trace`])与 GPU 烘焙核
-//! (`wgsl/sdfBakeSceneGrid.wgsl`,经 [`crate::sdf_gi_wgsl`] 消费)对拍。
+//!   本模块把静态资产的世界空间 SDF min 合成(闭体并集)成场景级距离场,产出与
+//!   Web `SdfGrid` 同构,直供天光圆锥追踪([`crate::sdf_gi_trace`])与 GPU 烘焙核
+//!   (`wgsl/sdfBakeSceneGrid.wgsl`,经 [`crate::sdf_gi_wgsl`] 消费)对拍。
 //!
 //! == 浮点镜像纪律(JS number = f64,Math.fround 显式落点)==
 //! TS 中间量是 f64、数组是 f32;本镜像逐式同构:标量走 f64,`fround` 落在

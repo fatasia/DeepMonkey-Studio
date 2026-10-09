@@ -158,7 +158,8 @@ fn rt_residency_rebuild_after_device_loss_is_self_sufficient() {
     // ---- 阶段 C:重建后的 frame RT 槽恢复(生产路径的槽位状态机)----
     // 干净态:刚重建、槽未挂、管线族未装——逐帧裁决必须回退栅格,绝不
     // 使用半途状态。
-    let ready_before_slot = rt_opaque_ready::<wgpu::BindGroup>(Some(&residency_b), None, false, false);
+    let ready_before_slot =
+        rt_opaque_ready::<wgpu::BindGroup>(Some(&residency_b), None, false, false);
     assert!(
         ready_before_slot.is_none(),
         "rebuilt residency without the frame RT slot must fall back to raster"

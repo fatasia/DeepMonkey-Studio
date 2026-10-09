@@ -248,7 +248,8 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
             #[cfg(target_arch = "wasm32")]
             GpuEvent::WasmPresentationPaused(paused) => {
                 if paused {
-                    self.presentation_paused_at.get_or_insert_with(web_time::Instant::now);
+                    self.presentation_paused_at
+                        .get_or_insert_with(web_time::Instant::now);
                 } else if let Some(started) = self.presentation_paused_at.take() {
                     let duration = started.elapsed();
                     if let Some(playback) = self.product_dynamic_playback.as_mut() {

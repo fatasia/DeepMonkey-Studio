@@ -1,11 +1,13 @@
 //! Legacy neutral reconstruction/RIS kernel oracle. Actual production GBuffer/TLAS
 //! coverage lives in megalights_material_gpu_tests.
-#[path = "megalights_probe_fixture.rs"] mod fixture;
-#[path = "megalights_probe_io.rs"] mod io;
-#[path = "megalights_probe_targets.rs"] mod targets;
-#[path = "megalights_probe_assertions.rs"] mod assertions;
-use fixture::*;
-use io::*;
+#[path = "megalights_probe_assertions.rs"]
+mod assertions;
+#[path = "megalights_probe_fixture.rs"]
+mod fixture;
+#[path = "megalights_probe_io.rs"]
+mod io;
+#[path = "megalights_probe_targets.rs"]
+mod targets;
 use deep_engine_native::megalights_abi::pack_mega_lights;
 use deep_engine_native::megalights_ris::{
     MegaLight, MegaLightKind, MegaLightsFrameConfig, MegaLightsFrameInput, MegaSurfaceRow,
@@ -13,6 +15,8 @@ use deep_engine_native::megalights_ris::{
 };
 use deep_engine_native::mesh_abi::{CAMERA_FAR, CAMERA_FOCAL, CAMERA_NEAR, FORWARD_SAMPLE_COUNT};
 use deep_engine_native::player_view::PlayerView;
+use fixture::*;
+use io::*;
 
 use super::megalights_gpu::MegaLightsGpuChain;
 
@@ -59,16 +63,25 @@ fn megalights_production_chain_rebuild_ris_composite_matches_mirror() {
             }
         }
         let covered = zones.iter().filter(|zone| **zone == Zone::Covered).count();
-        let background = zones.iter().filter(|zone| **zone == Zone::Background).count();
+        let background = zones
+            .iter()
+            .filter(|zone| **zone == Zone::Background)
+            .count();
         assert!(covered >= 8, "场景必须含覆盖区(实际 {covered})");
         assert!(background >= 8, "场景必须含背景区(实际 {background})");
         #[allow(clippy::duplicate_mod)]
         {
-            eprintln!("zones: {:?}", zones.iter().map(|z| match z {
-                Zone::Covered => 'C',
-                Zone::Skip => 'S',
-                Zone::Background => '.',
-            }).collect::<String>());
+            eprintln!(
+                "zones: {:?}",
+                zones
+                    .iter()
+                    .map(|z| match z {
+                        Zone::Covered => 'C',
+                        Zone::Skip => 'S',
+                        Zone::Background => '.',
+                    })
+                    .collect::<String>()
+            );
         }
         let mirror_surfaces = reference_surfaces(&depth, &combined);
 
@@ -78,7 +91,8 @@ fn megalights_production_chain_rebuild_ris_composite_matches_mirror() {
         let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
         let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
 
-        let (depth_texture, hdr, seed_words) = targets::prepare_targets(&device, &queue, view, &projection);
+        let (depth_texture, hdr, seed_words) =
+            targets::prepare_targets(&device, &queue, view, &projection);
         let depth_view = depth_texture.create_view(&Default::default());
         let hdr_view = hdr.create_view(&Default::default());
 
@@ -100,7 +114,8 @@ fn megalights_production_chain_rebuild_ris_composite_matches_mirror() {
             alpha_blend: alpha,
             exhaustive: true,
             hdr_view: &hdr_view,
-            msaa_view: None, exposure: 1.0,
+            msaa_view: None,
+            exposure: 1.0,
         };
         {
             let mut encoder = device.create_command_encoder(&Default::default());
@@ -116,17 +131,23 @@ fn megalights_production_chain_rebuild_ris_composite_matches_mirror() {
             queue.submit(Some(encoder.finish()));
         }
         let frame2_out = readback_buffer(&device, &queue, chain.probe_buffers()[2], PIXELS * 4);
-        let reservoirs_out = readback_buffer(&device, &queue, chain.probe_buffers()[1], PIXELS * 4);
+        let _reservoirs_out =
+            readback_buffer(&device, &queue, chain.probe_buffers()[1], PIXELS * 4);
         let surfaces_out = readback_buffer(&device, &queue, chain.probe_buffers()[4], PIXELS * 12);
         let composited = readback_hdr(&device, &queue, &hdr);
 
-        let gpu_errors = [internal.pop().await, memory.pop().await, validation.pop().await];
+        let gpu_errors = [
+            internal.pop().await,
+            memory.pop().await,
+            validation.pop().await,
+        ];
         assert!(
             gpu_errors.iter().flatten().next().is_none(),
             "生产链 error scope 必须干净: {gpu_errors:?}"
         );
 
-        let worst_surface = assertions::assert_surfaces(&zones, &surfaces_out, &mirror_surfaces, &depth);
+        let worst_surface =
+            assertions::assert_surfaces(&zones, &surfaces_out, &mirror_surfaces, &depth);
         // 对拍 2:CPU 权威两帧(镜像表面;α=1 → α=1/32 链)。
         let make_config = || {
             let mut config = MegaLightsFrameConfig::new(WIDTH, HEIGHT);
@@ -160,7 +181,9 @@ fn megalights_production_chain_rebuild_ris_composite_matches_mirror() {
         let color_budget = 0.002f64;
         let mut worst_color = [0.0f64; 2];
         for (frame_index, (gpu, expected)) in
-            [(&frame1_out, &frame1.color), (&frame2_out, &frame2.color)].into_iter().enumerate()
+            [(&frame1_out, &frame1.color), (&frame2_out, &frame2.color)]
+                .into_iter()
+                .enumerate()
         {
             for pixel in 0..PIXELS {
                 if zones[pixel] != Zone::Covered {
@@ -169,7 +192,8 @@ fn megalights_production_chain_rebuild_ris_composite_matches_mirror() {
                 for channel in 0..3 {
                     let actual = f64::from(gpu[pixel * 4 + channel]);
                     let expect = f64::from(expected[pixel * 3 + channel]);
-                    worst_color[frame_index] = worst_color[frame_index].max((actual - expect).abs());
+                    worst_color[frame_index] =
+                        worst_color[frame_index].max((actual - expect).abs());
                 }
             }
         }
@@ -185,8 +209,9 @@ fn megalights_production_chain_rebuild_ris_composite_matches_mirror() {
         // 解析表面已有独立精度断言；MSAA 边界不可作为随机逐位 oracle 输入。
         let ris_surfaces = assertions::decoded_surfaces(&surfaces_out);
         let motion_uv = vec![0.0f64; PIXELS * 2];
-        let mut rand_chain = MegaLightsGpuChain::create(&device, &depth_view, None, WIDTH, HEIGHT, 1)
-            .expect("random chain must build");
+        let mut rand_chain =
+            MegaLightsGpuChain::create(&device, &depth_view, None, WIDTH, HEIGHT, 1)
+                .expect("random chain must build");
         rand_chain.grow_lights(&device, &queue, packed.data.len());
         let rand_input = |alpha: f32, seed: u32| super::megalights_gpu::MegaLightsGpuFrameInput {
             view,
@@ -199,14 +224,16 @@ fn megalights_production_chain_rebuild_ris_composite_matches_mirror() {
             alpha_blend: alpha,
             exhaustive: false,
             hdr_view: &hdr_view,
-            msaa_view: None, exposure: 1.0,
+            msaa_view: None,
+            exposure: 1.0,
         };
         {
             let mut encoder = device.create_command_encoder(&Default::default());
             rand_chain.encode_frame(&queue, &mut encoder, &rand_input(1.0, 44));
             queue.submit(Some(encoder.finish()));
         }
-        let rand_frame1_out = readback_buffer(&device, &queue, rand_chain.probe_buffers()[2], PIXELS * 4);
+        let rand_frame1_out =
+            readback_buffer(&device, &queue, rand_chain.probe_buffers()[2], PIXELS * 4);
         {
             let mut encoder = device.create_command_encoder(&Default::default());
             rand_chain.encode_frame(&queue, &mut encoder, &rand_input(1.0 / 32.0, 45));
@@ -214,7 +241,8 @@ fn megalights_production_chain_rebuild_ris_composite_matches_mirror() {
         }
         let rand_reservoirs_out =
             readback_buffer(&device, &queue, rand_chain.probe_buffers()[1], PIXELS * 4);
-        let rand_color_out = readback_buffer(&device, &queue, rand_chain.probe_buffers()[2], PIXELS * 4);
+        let rand_color_out =
+            readback_buffer(&device, &queue, rand_chain.probe_buffers()[2], PIXELS * 4);
         let mut rand_config = MegaLightsFrameConfig::new(WIDTH, HEIGHT);
         rand_config.exhaustive = false;
         rand_config.temporal = true;
@@ -269,7 +297,8 @@ fn megalights_production_chain_rebuild_ris_composite_matches_mirror() {
                     continue;
                 }
                 for channel in 0..3 {
-                    let d = f64::from(gpu[pixel * 4 + channel]) - f64::from(expected[pixel * 3 + channel]);
+                    let d = f64::from(gpu[pixel * 4 + channel])
+                        - f64::from(expected[pixel * 3 + channel]);
                     total += d * d;
                     count += 1;
                 }
@@ -289,7 +318,8 @@ fn megalights_production_chain_rebuild_ris_composite_matches_mirror() {
         }
 
         // 对拍 4:目标保留两帧加性贡献；f16 每帧舍入，alpha 逐位不变。
-        let worst_composite = assertions::assert_composite(&composited, &seed_words, &frame1_out, &frame2_out);
+        let worst_composite =
+            assertions::assert_composite(&composited, &seed_words, &frame1_out, &frame2_out);
 
         println!(
             "megalights production chain probe: pixels={PIXELS} surface_worst={worst_surface:.6} \

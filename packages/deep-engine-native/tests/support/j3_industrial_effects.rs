@@ -2,6 +2,7 @@ use crate::{
     player_content::PlayerContent,
     shader_material_renderer::{FrameObservation, render_with_frame_observation},
 };
+use deep_engine_native::shader_package::hash;
 use deep_engine_native::{
     cascaded_shadow::CascadedShadowOptions,
     fog::FogSettings,
@@ -14,8 +15,6 @@ use deep_engine_native::{
 use serde_json::{Value, json};
 use std::io::Write;
 use winit::dpi::PhysicalSize;
-#[path = "../../src/shader_package/hash.rs"]
-mod hash;
 #[path = "j3_industrial_effects_readback.rs"]
 mod readback;
 fn vector(value: &Value) -> [f32; 3] {

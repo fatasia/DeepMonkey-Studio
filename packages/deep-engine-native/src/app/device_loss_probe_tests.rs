@@ -8,16 +8,16 @@ use winit::platform::windows::EventLoopBuilderExtWindows;
 
 #[path = "device_loss_probe_fresh.rs"]
 mod fresh;
-#[path = "device_loss_probe_input.rs"]
-mod input;
 #[path = "device_loss_gpu_measurement.rs"]
 mod gpu_measurement;
+#[path = "device_loss_probe_input.rs"]
+mod input;
+#[path = "device_loss_unknown_matrix.rs"]
+mod unknown_matrix;
 #[path = "../../tests/support/j3_window_events.rs"]
 mod window_events_support;
 #[path = "device_loss_window_timing.rs"]
 mod window_timing;
-#[path = "device_loss_unknown_matrix.rs"]
-mod unknown_matrix;
 use window_events_support::WindowEventKind;
 use window_timing::record_event;
 
@@ -289,7 +289,9 @@ impl Probe {
             evidence["windowEvents"] = window_timing::evidence(self.old_id, new_id);
         }
         evidence["fixtureInputNegativeControl"] = json!({"passed":true,"events":4});
-        if let Some(measurement) = gpu_measurement { gpu_measurement::attach(&mut evidence, measurement, self.window_events); }
+        if let Some(measurement) = gpu_measurement {
+            gpu_measurement::attach(&mut evidence, measurement, self.window_events);
+        }
         window_timing::write_evidence(&evidence, self.retry, self.window_events);
         println!("J3_WINDOW_RECOVERY {}", evidence);
         self.stage = 2;

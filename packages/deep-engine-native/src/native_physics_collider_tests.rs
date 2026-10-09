@@ -1,3 +1,6 @@
+// Frozen cross-host numeric references retain their original decimal precision.
+#![allow(clippy::excessive_precision)]
+
 //! T17 CAD→collider 来源规范 golden:真实 T00 工厂 machine.glb → 凸包 collider →
 //! Native 射线查询命中/未命中对照。
 //!

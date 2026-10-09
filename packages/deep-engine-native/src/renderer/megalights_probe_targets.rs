@@ -1,11 +1,20 @@
 //! Depth and HDR target setup for the neutral kernel oracle.
 use super::*;
 
-pub(super) fn prepare_targets(device: &wgpu::Device, queue: &wgpu::Queue, view: PlayerView, projection: &[[f32; 4]; 4]) -> (wgpu::Texture, wgpu::Texture, Vec<f32>) {
+pub(super) fn prepare_targets(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    view: PlayerView,
+    projection: &[[f32; 4]; 4],
+) -> (wgpu::Texture, wgpu::Texture, Vec<f32>) {
     // MSAA 深度纹理(生产格式 4x)+ 斜面光栅化(背景清屏 1)。
     let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("megalights probe msaa depth"),
-        size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: FORWARD_SAMPLE_COUNT,
         dimension: wgpu::TextureDimension::D2,
@@ -15,7 +24,7 @@ pub(super) fn prepare_targets(device: &wgpu::Device, queue: &wgpu::Queue, view: 
     });
     let depth_view = depth_texture.create_view(&Default::default());
     let (plane_pipeline, plane_vertices) =
-        plane_depth_pipeline(&device, wgpu::TextureFormat::Depth24Plus);
+        plane_depth_pipeline(device, wgpu::TextureFormat::Depth24Plus);
     // 斜面四角(view 系)→ clip,两三角形全覆盖斜面域。
     let clip_of = |view_point: [f64; 3]| -> [f32; 4] {
         let world = view_to_world(view, view_point);
@@ -46,7 +55,11 @@ pub(super) fn prepare_targets(device: &wgpu::Device, queue: &wgpu::Queue, view: 
     // HDR 合成目标:预填充图案(加性基线;f16 位级编码上传)。
     let hdr = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("megalights probe hdr"),
-        size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -56,7 +69,7 @@ pub(super) fn prepare_targets(device: &wgpu::Device, queue: &wgpu::Queue, view: 
             | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
-    let hdr_view = hdr.create_view(&Default::default());
+    let _hdr_view = hdr.create_view(&Default::default());
     let mut seed_words = Vec::with_capacity(PIXELS * 4);
     for pixel in 0..PIXELS {
         seed_words.extend_from_slice(&[
@@ -98,7 +111,11 @@ pub(super) fn prepare_targets(device: &wgpu::Device, queue: &wgpu::Queue, view: 
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
         );
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

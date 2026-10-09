@@ -1,7 +1,9 @@
+use crate::j3_hdr_frame as hdr_frame;
 use crate::{
     player_content::PlayerContent,
     shader_material_renderer::{FrameObservation, render_with_frame_observation},
 };
+use deep_engine_native::shader_package::hash;
 use deep_engine_native::{
     cascaded_shadow::CascadedShadowOptions,
     player_view::PlayerView,
@@ -10,10 +12,6 @@ use deep_engine_native::{
 };
 use serde_json::{Value, json};
 use winit::dpi::PhysicalSize;
-#[path = "../../src/shader_package/hash.rs"]
-mod hash;
-#[path = "j3_hdr_frame.rs"]
-mod hdr_frame;
 #[path = "j3_fullscene_readback.rs"]
 mod readback;
 fn vector(value: &Value) -> [f32; 3] {

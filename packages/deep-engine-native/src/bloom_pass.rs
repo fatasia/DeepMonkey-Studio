@@ -22,6 +22,8 @@ struct BloomUniform {
     _padding: f32,
 }
 
+// Standalone GPU harnesses exercise only the render path.
+#[cfg_attr(test, allow(dead_code))]
 pub struct BloomPass {
     settings: BloomSettings,
     layout: wgpu::BindGroupLayout,
@@ -45,12 +47,14 @@ pub struct BloomTargets {
     vertical_bind_group: wgpu::BindGroup,
 }
 
+#[cfg_attr(test, allow(dead_code))]
 impl BloomTargets {
     pub fn output_view(&self) -> &wgpu::TextureView {
         &self.blurred_view
     }
 }
 
+#[cfg_attr(test, allow(dead_code))]
 impl BloomPass {
     pub fn new(
         device: &wgpu::Device,

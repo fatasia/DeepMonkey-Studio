@@ -90,4 +90,3 @@ pub fn evaluate_mega_light_ies(
         cone * ies_factor,
     )
 }
-

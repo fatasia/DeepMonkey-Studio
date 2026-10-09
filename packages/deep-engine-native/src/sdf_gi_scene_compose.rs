@@ -4,10 +4,10 @@
 //! 与探针 lattice 推导。语义源与对拍纪律见彼处模块头。
 use crate::sdf_gi_scene::{
     MAX_SDF_SCENE_BAKE_AXIS, MAX_SDF_SCENE_BAKE_TRIANGLE_SAMPLES, MAX_SDF_SCENE_BAKE_TRIANGLES,
-    MAX_SDF_SCENE_CELLS, SdfInstanceDomain,
-    SdfSceneBakeError, SdfSceneBakeInstance, SdfSceneBakeInstanceReport, SdfSceneBakeInstanceStatus,
-    SdfSceneBakeReport, SdfSceneGrid, bake_instance_grid, compose_instance, derive_dimensions,
-    fround, hypot3, transformed_triangle_bounds,
+    MAX_SDF_SCENE_CELLS, SdfInstanceDomain, SdfSceneBakeError, SdfSceneBakeInstance,
+    SdfSceneBakeInstanceReport, SdfSceneBakeInstanceStatus, SdfSceneBakeReport, SdfSceneGrid,
+    bake_instance_grid, compose_instance, derive_dimensions, fround, hypot3,
+    transformed_triangle_bounds,
 };
 
 /// 场景网格规划半(实例过滤 + bounds 并集 + dimensions + cells 预算 + exterior;
@@ -150,11 +150,7 @@ pub fn bake_sdf_scene_grid(
         .iter()
         .filter(|report| report.status == SdfSceneBakeInstanceStatus::Skipped)
         .count();
-    for (ordinal, (bounds_min, bounds_max)) in plan
-        .static_indices
-        .iter()
-        .zip(&plan.static_bounds)
-    {
+    for (ordinal, (bounds_min, bounds_max)) in plan.static_indices.iter().zip(&plan.static_bounds) {
         let instance = &instances[*ordinal];
         let baked_grid = bake_instance_grid(
             instance.positions,

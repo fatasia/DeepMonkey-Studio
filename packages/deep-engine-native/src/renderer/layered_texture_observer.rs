@@ -14,8 +14,7 @@
 //! half round trip not being folded is structurally invalid. A bitcast cannot
 //! be folded, and the per-chunk guards reject any silent corruption.
 use super::render_material_frame_with_shader;
-#[path = "../shader_package/hash.rs"]
-mod observer_hash;
+use deep_engine_native::shader_package::hash as observer_hash;
 use deep_engine_native::{
     contract::RenderPacket, mesh_abi::FRAME_UNIFORM_FLOATS, player_view::PlayerView,
 };
@@ -147,8 +146,7 @@ pub(super) fn hardware_store(
 /// color through this same conversion and requires it to reproduce the
 /// production pixel within one binary16 ULP — proving actual consumption and
 /// complete word reassembly against the real pipeline.
-#[path = "../half_float.rs"]
-pub(super) mod binary16;
+pub(super) use crate::half_float as binary16;
 
 #[cfg(test)]
 #[test]

@@ -173,12 +173,11 @@ mod tests {
         clock.scene_prepared().unwrap();
         clock.resources_started().unwrap();
         clock.note_upload_bytes(96);
-        let staged = clock.upload_timed(|| {
+        clock.upload_timed(|| {
             for _ in 0..10_000 {
                 std::hint::black_box(64u64);
             }
         });
-        let _ = staged;
         clock.note_upload_bytes(64);
         complete_resources(&mut clock);
         let r = clock.finish(7).unwrap().json();
@@ -188,7 +187,10 @@ mod tests {
         assert_eq!(r["uploadedBytes"], 160);
         assert_eq!(r["gpuUploadTimeClockId"], "host-monotonic-upload-phase");
         let upload_ns = r["gpuUploadTimeNs"].as_u64().unwrap();
-        assert!(upload_ns > 0, "gpuUploadTimeNs must be measured, not null/zero");
+        assert!(
+            upload_ns > 0,
+            "gpuUploadTimeNs must be measured, not null/zero"
+        );
         assert_eq!(r["committed"], true);
         let total = r["scenePrepare"]["durationNs"].as_u64().unwrap()
             + r["deviceSetup"]["durationNs"].as_u64().unwrap()

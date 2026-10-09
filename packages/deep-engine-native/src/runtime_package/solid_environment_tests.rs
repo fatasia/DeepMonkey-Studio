@@ -196,12 +196,19 @@ fn grading_profile_decodes_optional_vignette_darkness() {
     assert_eq!(grading.pack()[0..4], [1.0, 1.0, 1.0, 0.0]);
     // 未声明 = 不启用(既有包逐字节不变,由上方六通道测试锚定)。
     // 越界/类型非法 fail-closed(TS scalar 同域 [0,3])。
-    for invalid in [serde_json::json!(3.0001), serde_json::json!(-0.1),
-                    serde_json::json!("1.5"), serde_json::json!(1e300)] {
+    for invalid in [
+        serde_json::json!(3.0001),
+        serde_json::json!(-0.1),
+        serde_json::json!("1.5"),
+        serde_json::json!(1e300),
+    ] {
         let mut bad = grading_source();
         bad["colorGrading"] = serde_json::json!({"hue":0,"saturation":0,
                 "brightness":0,"contrast":0,"vignetteDarkness":invalid});
-        assert!(decode(&bad, "scene.environment", 1).is_err(), "vignette {invalid} must be rejected");
+        assert!(
+            decode(&bad, "scene.environment", 1).is_err(),
+            "vignette {invalid} must be rejected"
+        );
     }
 }
 
@@ -333,7 +340,13 @@ fn v10_studio_gradient_decodes_with_fallback_background_and_flag() {
     let decoded = decode(&value, "scene.environment", 1).expect("v10 decode");
     assert!(decoded.studio_gradient);
     let expected = super::studio_gradient_fallback_background();
-    assert!(decoded.background.iter().zip(expected).all(|(a, b)| (a - b).abs() < 1e-12));
+    assert!(
+        decoded
+            .background
+            .iter()
+            .zip(expected)
+            .all(|(a, b)| (a - b).abs() < 1e-12)
+    );
 
     // 非 builtin kind 或旧 outputTransform 在 v10 一律拒绝(档位名必须真实)。
     value["kind"] = serde_json::json!("solid-background-no-ibl");

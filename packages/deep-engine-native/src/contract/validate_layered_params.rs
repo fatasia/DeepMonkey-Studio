@@ -142,7 +142,10 @@ pub(super) fn validate_layered_params(
     }
     for (index, layer) in layered.layers.iter().enumerate() {
         if layer.coverage.unwrap_or(0.0) > 0.0 {
-            if super::validate_metal_reflection::validate_metal_reflection(material, index, layer)? { continue; }
+            if super::validate_metal_reflection::validate_metal_reflection(material, index, layer)?
+            {
+                continue;
+            }
             if let Some(params) = &layer.params {
                 validate_supported(material, Some(index), params)?;
             }

@@ -43,7 +43,9 @@ fn rt_layer_clearcoat_pipeline_matches_raster() {
 
 fn run_layered_rt_parity(clearcoat: bool) {
     let Some((device, queue)) = super::request_layered_ray_query_device() else {
-        println!("rt_layered_executed=false clearcoat={clearcoat} reason=adapter_or_texture_limit scope=not_executed");
+        println!(
+            "rt_layered_executed=false clearcoat={clearcoat} reason=adapter_or_texture_limit scope=not_executed"
+        );
         return;
     };
     let errors = Arc::new(Mutex::new(Vec::new()));

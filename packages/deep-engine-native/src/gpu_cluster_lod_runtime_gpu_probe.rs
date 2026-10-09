@@ -8,7 +8,7 @@
 //! (fixture 与 CPU 腿同源:quick_sphere 黄金字节,粗化/细化双臂)。
 
 use crate::gpu_cluster_lod_dag::ClusterLodDagRuntime;
-use crate::gpu_cluster_lod_runtime::{cluster_lod_command_bytes, ClusterLodGpuRuntime};
+use crate::gpu_cluster_lod_runtime::{ClusterLodGpuRuntime, cluster_lod_command_bytes};
 use crate::gpu_cluster_lod_runtime_tests::{camera_for, golden_variant};
 use crate::gpu_cluster_lod_selection::select_cluster_lod;
 
@@ -36,7 +36,10 @@ fn cpu_plan_commands(runtime: &ClusterLodDagRuntime, pixel_threshold: f64) -> Ve
         &runtime.level_summaries,
     )
     .expect("CPU plan builds");
-    plan.draws.iter().map(|draw| draw.indirect_command).collect()
+    plan.draws
+        .iter()
+        .map(|draw| draw.indirect_command)
+        .collect()
 }
 
 #[test]
@@ -63,8 +66,8 @@ fn runtime_end_to_end_matches_cpu_authority_and_consumes_draws() {
                 .expect("golden builds");
 
         // 细化臂:阈值极小 → 全叶前沿,GPU 驱动计划与 CPU 权威逐命令字一致。
-        let mut runtime = ClusterLodGpuRuntime::new(&device, &queue, &runtime_dag)
-            .expect("residency builds");
+        let mut runtime =
+            ClusterLodGpuRuntime::new(&device, &queue, &runtime_dag).expect("residency builds");
         assert_eq!(runtime.node_count() as usize, runtime_dag.nodes.len());
         assert_eq!(runtime.draw_capacity() as usize, runtime_dag.nodes.len());
         assert!(runtime.needs_encode(), "fresh runtime dispatches once");
@@ -78,9 +81,15 @@ fn runtime_end_to_end_matches_cpu_authority_and_consumes_draws() {
         runtime.encode(&mut encoder);
         assert!(!runtime.needs_encode(), "encode clears camera dirty");
         queue.submit([encoder.finish()]);
-        let draws = runtime.commit_selection(&device, &queue).expect("refine commit");
+        let draws = runtime
+            .commit_selection(&device, &queue)
+            .expect("refine commit");
         let expected_refine = cpu_plan_commands(&runtime_dag, leaves_threshold);
-        assert_eq!(draws, expected_refine.len(), "GPU draw count must match CPU authority");
+        assert_eq!(
+            draws,
+            expected_refine.len(),
+            "GPU draw count must match CPU authority"
+        );
         let actual: Vec<[u32; 5]> = runtime
             .plan()
             .expect("refine plan cached")
@@ -88,7 +97,10 @@ fn runtime_end_to_end_matches_cpu_authority_and_consumes_draws() {
             .iter()
             .map(|draw| draw.indirect_command)
             .collect();
-        assert_eq!(actual, expected_refine, "refine arm command words word-for-word");
+        assert_eq!(
+            actual, expected_refine,
+            "refine arm command words word-for-word"
+        );
         assert_eq!(
             cluster_lod_command_bytes(runtime.plan().unwrap()).len(),
             draws * 20,
@@ -96,7 +108,9 @@ fn runtime_end_to_end_matches_cpu_authority_and_consumes_draws() {
         );
 
         // commit 幂等:无待提交时返回当前计划绘制数,不重复 readback。
-        let again = runtime.commit_selection(&device, &queue).expect("idempotent commit");
+        let again = runtime
+            .commit_selection(&device, &queue)
+            .expect("idempotent commit");
         assert_eq!(again, draws);
 
         // 粗化臂:相机变更即再 dispatch(帧循环合同),前沿收敛到根区域。
@@ -110,7 +124,9 @@ fn runtime_end_to_end_matches_cpu_authority_and_consumes_draws() {
         });
         runtime.encode(&mut encoder);
         queue.submit([encoder.finish()]);
-        let draws = runtime.commit_selection(&device, &queue).expect("coarse commit");
+        let draws = runtime
+            .commit_selection(&device, &queue)
+            .expect("coarse commit");
         let expected_coarse = cpu_plan_commands(&runtime_dag, roots_threshold);
         assert_eq!(draws, expected_coarse.len(), "coarse arm draw count");
         let actual: Vec<[u32; 5]> = runtime
@@ -120,13 +136,20 @@ fn runtime_end_to_end_matches_cpu_authority_and_consumes_draws() {
             .iter()
             .map(|draw| draw.indirect_command)
             .collect();
-        assert_eq!(actual, expected_coarse, "coarse arm command words word-for-word");
+        assert_eq!(
+            actual, expected_coarse,
+            "coarse arm command words word-for-word"
+        );
 
         // 渲染 pass 消费:最小管线 + 离屏目标,encode_draws 真发起全部计划槽位
         // (draw_indexed_indirect;校验错经默认 uncaptured handler 恐慌 = 门咬人)。
         let target = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("cluster_lod_runtime_consume_target"),
-            size: wgpu::Extent3d { width: 4, height: 4, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -187,6 +210,8 @@ fn runtime_end_to_end_matches_cpu_authority_and_consumes_draws() {
             assert_eq!(issued, draws, "consumption must issue every planned slot");
         }
         queue.submit([encoder.finish()]);
-        device.poll(wgpu::PollType::wait_indefinitely()).expect("consume poll");
+        device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("consume poll");
     });
 }

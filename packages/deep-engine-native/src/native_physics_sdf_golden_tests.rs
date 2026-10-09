@@ -9,7 +9,7 @@
 //! - 幽灵厚度对照:同一凹槽正上方 (2, 2.5, 0.5) 静止下落,SDF 首触 y≈1+r,
 //!   凸包首触于幽灵斜面 (4−x)+r·√2,厚度差解析值 1 + r·(√2−1) ≈ 1.124 m;
 //!   凸包球随后沿斜面滚出凹槽(球在斜面上必然滚动)—— 凸包无法在凹槽内承接。
-//! 两版本各跑两次,位姿逐位相等(enhanced-determinism 逐位合同)。
+//!   两版本各跑两次,位姿逐位相等(enhanced-determinism 逐位合同)。
 
 use super::*;
 use crate::runtime_package::parse_and_validate_dynamic_scene_runtime;
@@ -41,7 +41,14 @@ fn l_sdf_grid_json() -> serde_json::Value {
 
 /// 凹 L 棱柱的 12 个角点(凸包变体用)。
 fn l_hull_points() -> Vec<[f64; 3]> {
-    let corners = [[0.0, 0.0], [3.0, 0.0], [3.0, 1.0], [1.0, 1.0], [1.0, 3.0], [0.0, 3.0]];
+    let corners = [
+        [0.0, 0.0],
+        [3.0, 0.0],
+        [3.0, 1.0],
+        [1.0, 1.0],
+        [1.0, 3.0],
+        [0.0, 3.0],
+    ];
     corners
         .iter()
         .flat_map(|[x, y]| [[*x, *y, 0.0], [*x, *y, 1.0]])
@@ -100,9 +107,7 @@ fn notch_packet() -> RenderPacket {
             min[0], min[1], min[2], 0, 1, 0, max[0], max[1], max[2], 0, 1, 0, 0, 0, 0, 0, 1, 0
         ])
     };
-    let instance = |id: &str, geometry: &str, transform: [f64; 16]| {
-        serde_json::json!({"id": id, "geometry": geometry, "material": "mat", "transform": transform})
-    };
+    let instance = |id: &str, geometry: &str, transform: [f64; 16]| serde_json::json!({"id": id, "geometry": geometry, "material": "mat", "transform": transform});
     serde_json::from_value(serde_json::json!({
         "schema": "deep-engine.render-packet", "version": 1,
         "geometries": [
@@ -133,8 +138,8 @@ fn run_notch(
     velocity: Option<[f64; 3]>,
     steps: usize,
 ) -> Vec<BallPose> {
-    let runtime = parse_and_validate_dynamic_scene_runtime(&notch_scene(collider, start, velocity))
-        .unwrap();
+    let runtime =
+        parse_and_validate_dynamic_scene_runtime(&notch_scene(collider, start, velocity)).unwrap();
     let mut packet = notch_packet();
     let mut host = NativePhysicsHost::from_runtime(&runtime, &packet)
         .unwrap()
@@ -145,7 +150,12 @@ fn run_notch(
         let binding = host
             .bindings
             .iter()
-            .find(|binding| binding.instances.iter().any(|(instance, _)| instance == "notch-ball"))
+            .find(|binding| {
+                binding
+                    .instances
+                    .iter()
+                    .any(|(instance, _)| instance == "notch-ball")
+            })
             .expect("physics-owned ball");
         let body = host.bodies.get(binding.handle).expect("notch ball");
         let t = body.translation();
@@ -159,8 +169,18 @@ fn run_notch(
 #[test]
 fn sdf_notch_catches_the_rolled_in_ball_and_repeats_bit_exactly() {
     // 验收主场景:小球从竖臂顶面滚入凹槽,与 SDF trimesh 真实接触驻留。
-    let first = run_notch(sdf_collider_value(), ROLL_START, Some(ROLL_VELOCITY), SDF_STEPS);
-    let repeat = run_notch(sdf_collider_value(), ROLL_START, Some(ROLL_VELOCITY), SDF_STEPS);
+    let first = run_notch(
+        sdf_collider_value(),
+        ROLL_START,
+        Some(ROLL_VELOCITY),
+        SDF_STEPS,
+    );
+    let repeat = run_notch(
+        sdf_collider_value(),
+        ROLL_START,
+        Some(ROLL_VELOCITY),
+        SDF_STEPS,
+    );
     assert_eq!(repeat, first, "same input must replay bit-exactly");
 
     let end = first.last().expect("poses recorded");
@@ -176,7 +196,10 @@ fn sdf_notch_catches_the_rolled_in_ball_and_repeats_bit_exactly() {
         "ball must rest on the real groove floor y≈1.3, got y={y} (error {rest_error})"
     );
     // trimesh 小面片接触有确定性切向伪影(facet bias),z 向漂移有界即可。
-    assert!((z - 0.5).abs() < 0.12, "ball must stay near the z=0.5 plane, got z={z}");
+    assert!(
+        (z - 0.5).abs() < 0.12,
+        "ball must stay near the z=0.5 plane, got z={z}"
+    );
 }
 
 #[test]
@@ -193,13 +216,19 @@ fn native_host_rejects_soft_body_payloads_fail_closed() {
     }]);
     let runtime = parse_and_validate_dynamic_scene_runtime(&scene)
         .expect("soft-body payload must pass package validation");
-    let mut packet = notch_packet();
+    let packet = notch_packet();
     let error = match NativePhysicsHost::from_runtime(&runtime, &packet) {
         Ok(_) => panic!("native host must reject soft bodies"),
         Err(error) => error,
     };
-    assert!(error.contains("does not support soft bodies"), "got: {error}");
-    assert!(error.contains("the web solver session owns this channel"), "got: {error}");
+    assert!(
+        error.contains("does not support soft bodies"),
+        "got: {error}"
+    );
+    assert!(
+        error.contains("the web solver session owns this channel"),
+        "got: {error}"
+    );
 }
 
 /// 首次接触 = 竖直速度首次偏离自由落体预测(Rapier 半隐式欧拉:v_{n+1} =
@@ -246,5 +275,9 @@ fn convex_hull_ghost_thickness_measured_against_sdf_contact() {
     );
     let end = hull.last().expect("poses recorded");
     let escaped = f64::from(end[0]) > 3.0 + BALL_RADIUS || f64::from(end[1]) < 0.9;
-    assert!(escaped, "hull ball must escape the notch, got x={} y={}", end[0], end[1]);
+    assert!(
+        escaped,
+        "hull ball must escape the notch, got x={} y={}",
+        end[0], end[1]
+    );
 }

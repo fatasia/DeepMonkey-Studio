@@ -5,9 +5,9 @@
 //! 单独钉住:round 按累计位置取整(x=round, w=round(x+w)-round(x)),
 //! 保证兄弟盒共享边无半像素缝。
 
-use super::commands::{to_commands, to_display_list, CommandParams};
-use super::solve::{solve, LayoutSolution, TextMeasureInput};
-use super::tree::{LayoutBoxVisual, LayoutLeaf, LayoutNode, LayoutTextSpec, LayoutTree, NodeId};
+use super::commands::{CommandParams, to_commands, to_display_list};
+use super::solve::{LayoutSolution, TextMeasureInput, solve};
+use super::tree::{LayoutBoxVisual, LayoutNode, LayoutTextSpec, LayoutTree, NodeId};
 use super::{LayoutAlign, LayoutEdges, LayoutJustify, LayoutStyle, LayoutWrap};
 use crate::deep2d::command_types::{BoxShadow, Deep2dCommand, Deep2dPaint};
 
@@ -95,12 +95,32 @@ fn all_six_justify_states_pin_expected_positions() {
     // 4 个 20x10 子节点,容器 200x60,align=Start(交叉轴不拉伸)。
     // 无 gap:自由空间 = 200 - 4*20 = 120,全部整除,解析值无小数。
     let cases: [(&str, LayoutJustify, [f32; 4]); 6] = [
-        ("flex-start", LayoutJustify::FlexStart, [0.0, 20.0, 40.0, 60.0]),
-        ("flex-end", LayoutJustify::FlexEnd, [120.0, 140.0, 160.0, 180.0]),
+        (
+            "flex-start",
+            LayoutJustify::FlexStart,
+            [0.0, 20.0, 40.0, 60.0],
+        ),
+        (
+            "flex-end",
+            LayoutJustify::FlexEnd,
+            [120.0, 140.0, 160.0, 180.0],
+        ),
         ("center", LayoutJustify::Center, [60.0, 80.0, 100.0, 120.0]),
-        ("space-between", LayoutJustify::SpaceBetween, [0.0, 60.0, 120.0, 180.0]),
-        ("space-around", LayoutJustify::SpaceAround, [15.0, 65.0, 115.0, 165.0]),
-        ("space-evenly", LayoutJustify::SpaceEvenly, [24.0, 68.0, 112.0, 156.0]),
+        (
+            "space-between",
+            LayoutJustify::SpaceBetween,
+            [0.0, 60.0, 120.0, 180.0],
+        ),
+        (
+            "space-around",
+            LayoutJustify::SpaceAround,
+            [15.0, 65.0, 115.0, 165.0],
+        ),
+        (
+            "space-evenly",
+            LayoutJustify::SpaceEvenly,
+            [24.0, 68.0, 112.0, 156.0],
+        ),
     ];
     for (name, justify, starts) in cases {
         let mut tree = LayoutTree::new(box_node(LayoutStyle {
@@ -109,7 +129,7 @@ fn all_six_justify_states_pin_expected_positions() {
             ..fixed(200.0, 60.0)
         }));
         let mut ids = Vec::new();
-        for index in 0..4 {
+        for _index in 0..4 {
             ids.push(
                 tree.append(NodeId::ROOT, box_node(fixed(20.0, 10.0)))
                     .unwrap_or_else(|error| panic!("{name}: {error}")),
@@ -161,7 +181,7 @@ fn padding_offsets_children_and_root_margin_offsets_root() {
     // 钉住坐标语义:子 location 相对父 border box 原点,padding 计入偏移。
     assert_rect(&solution, child, [10.0, 10.0, 50.0, 20.0]);
 
-    let mut margined = LayoutTree::new(LayoutNode::box_node(LayoutStyle {
+    let margined = LayoutTree::new(LayoutNode::box_node(LayoutStyle {
         margin: LayoutEdges {
             top: 4.0,
             left: 6.0,
@@ -200,10 +220,13 @@ fn align_items_states_cross_axis_positions() {
         ..fixed(200.0, 60.0)
     }));
     let child = auto_height
-        .append(NodeId::ROOT, box_node(LayoutStyle {
-            width: Some(20.0),
-            ..LayoutStyle::new()
-        }))
+        .append(
+            NodeId::ROOT,
+            box_node(LayoutStyle {
+                width: Some(20.0),
+                ..LayoutStyle::new()
+            }),
+        )
         .expect("child");
     let solution = solve_ok(&auto_height, [200.0, 60.0]);
     // auto 高 + stretch → 拉满容器高(Box leaf 测量恒 0,被 clamp 为 0 后拉伸)。
@@ -307,7 +330,10 @@ fn text_leaf_measures_through_injected_seam() {
     .expect("text solve");
     assert_rect(&solution, text, [0.0, 0.0, 80.0, 14.0]);
     assert!(measure_calls >= 1, "measure invoked at least once");
-    assert!(saw_intrinsic_call, "intrinsic (MAX_CONTENT) call must happen");
+    assert!(
+        saw_intrinsic_call,
+        "intrinsic (MAX_CONTENT) call must happen"
+    );
 }
 
 #[test]
@@ -429,14 +455,12 @@ fn zero_sized_nodes_collapse_without_error() {
 
 #[test]
 fn commands_map_visuals_and_z_order_by_document_order() {
-    let mut tree = LayoutTree::new(
-        box_node(fixed(200.0, 120.0)).with_visual(LayoutBoxVisual {
-            background: Some(Deep2dPaint::Solid([0.1, 0.1, 0.12, 1.0])),
-            corner_radius: 12.0,
-            ..LayoutBoxVisual::default()
-        }),
-    );
-    let header = tree
+    let mut tree = LayoutTree::new(box_node(fixed(200.0, 120.0)).with_visual(LayoutBoxVisual {
+        background: Some(Deep2dPaint::Solid([0.1, 0.1, 0.12, 1.0])),
+        corner_radius: 12.0,
+        ..LayoutBoxVisual::default()
+    }));
+    let _header = tree
         .append(
             NodeId::ROOT,
             box_node(fixed(200.0, 32.0)).with_visual(LayoutBoxVisual {
@@ -504,13 +528,11 @@ fn display_list_assembles_resources_and_rejects_missing_fonts() {
         weight: 400,
         style: crate::deep2d::types::FontStyle::Normal,
     };
-    let mut tree = LayoutTree::new(
-        box_node(fixed(200.0, 60.0)).with_visual(LayoutBoxVisual {
-            background: Some(Deep2dPaint::Solid([0.08, 0.09, 0.11, 1.0])),
-            corner_radius: 8.0,
-            ..LayoutBoxVisual::default()
-        }),
-    );
+    let mut tree = LayoutTree::new(box_node(fixed(200.0, 60.0)).with_visual(LayoutBoxVisual {
+        background: Some(Deep2dPaint::Solid([0.08, 0.09, 0.11, 1.0])),
+        corner_radius: 8.0,
+        ..LayoutBoxVisual::default()
+    }));
     tree.append(
         NodeId::ROOT,
         LayoutNode::text_node(
@@ -557,20 +579,18 @@ fn display_list_assembles_resources_and_rejects_missing_fonts() {
 fn visual_without_background_emits_nothing_and_passes_validation() {
     // 同族排查钉死:挂了 corner_radius/shadow 但无 background 的视觉盒不产出
     // 命令与资源(冻结校验链 EmptyPaint 拒绝无 fill 的 Path 命令)。
-    let mut tree = LayoutTree::new(
-        box_node(fixed(100.0, 40.0)).with_visual(LayoutBoxVisual {
-            corner_radius: 8.0,
-            shadow: Some(BoxShadow {
-                offset_x: 0.0,
-                offset_y: 2.0,
-                blur_radius: 4.0,
-                spread: 0.0,
-                color: [0.0, 0.0, 0.0, 0.5],
-                corner_radius: None,
-            }),
-            ..LayoutBoxVisual::default()
+    let mut tree = LayoutTree::new(box_node(fixed(100.0, 40.0)).with_visual(LayoutBoxVisual {
+        corner_radius: 8.0,
+        shadow: Some(BoxShadow {
+            offset_x: 0.0,
+            offset_y: 2.0,
+            blur_radius: 4.0,
+            spread: 0.0,
+            color: [0.0, 0.0, 0.0, 0.5],
+            corner_radius: None,
         }),
-    );
+        ..LayoutBoxVisual::default()
+    }));
     tree.append(
         NodeId::ROOT,
         box_node(fixed(20.0, 10.0)).with_visual(LayoutBoxVisual {

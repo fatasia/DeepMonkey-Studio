@@ -73,7 +73,7 @@ fn display_list(fill_rule: Option<FillRule>, hole_winding: f64) -> Deep2dDisplay
             shadow: None,
             blend: None,
             backdrop_blur: None,
-            })],
+        })],
         atlases: Vec::new(),
     }
 }

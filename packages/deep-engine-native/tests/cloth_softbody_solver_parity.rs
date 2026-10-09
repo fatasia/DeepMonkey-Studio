@@ -30,7 +30,6 @@ use cloth_softbody_support::*;
 
 const FIXTURE: &str = include_str!("fixtures/cloth-softbody-solver-parity-v1.json");
 
-
 // ─── 软体镜像(四面体质点体,XPBD 体积守恒 + 边距离约束;softBodySolver.ts 镜像) ──
 
 struct SoftBodySolver {

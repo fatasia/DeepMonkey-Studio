@@ -48,11 +48,11 @@ pub fn blend_premultiplies(mode: u32) -> bool {
 /// - screen  `{One, OneMinusSrc, Add}` on premult output
 ///   = `s.a*s.rgb + d*(1 - s.a*s.rgb)`
 /// - darken  `{One, One, Min}`, lighten `{One, One, Max}`
-/// Alpha is `{One, OneMinusSrcAlpha, Add}` (normal over) for every mode
-/// except overwrite, whose alpha stage is `{One, Zero, Add}` (the pipeline
-/// replaces the target wholesale, rgb AND a). Multiply/screen are exact on
-/// opaque backdrops and follow the same fixed-function approximation as
-/// upstream GPUI where the backdrop is translucent.
+///   Alpha is `{One, OneMinusSrcAlpha, Add}` (normal over) for every mode
+///   except overwrite, whose alpha stage is `{One, Zero, Add}` (the pipeline
+///   replaces the target wholesale, rgb AND a). Multiply/screen are exact on
+///   opaque backdrops and follow the same fixed-function approximation as
+///   upstream GPUI where the backdrop is translucent.
 pub fn blend_composite(mode: u32, source: [f32; 4], destination: [f32; 4]) -> [f32; 4] {
     let [sr, sg, sb, sa] = source;
     let alpha = if mode == DEEP2D_BLEND_OVERWRITE {
@@ -338,7 +338,11 @@ pub fn shadow_coverage(d: f32, blur: f32, aa: f32) -> f32 {
 /// Full quad fragment composite: shadow (bottom) <- fill <- stroke band
 /// (top), every layer faded by `entry.opacity`. `local` is the interpolated
 /// pre-transform point. Mirrored in WGSL `quad_fragment`.
-pub fn quad_fragment(entry: &Deep2dPaintData, paints: &[Deep2dPaintData], local: [f32; 2]) -> [f32; 4] {
+pub fn quad_fragment(
+    entry: &Deep2dPaintData,
+    paints: &[Deep2dPaintData],
+    local: [f32; 2],
+) -> [f32; 4] {
     let aa = entry.aa_scale;
     let opacity = entry.opacity;
     // Shadow layer (only when a shadow was authored: shadow_color.a > 0 or
@@ -352,10 +356,13 @@ pub fn quad_fragment(entry: &Deep2dPaintData, paints: &[Deep2dPaintData], local:
         (entry.p1[0] + entry.shadow_spread).max(0.0),
         (entry.p1[1] + entry.shadow_spread).max(0.0),
     ];
-    let shadow_d = sd_rounded_box(shadow_rel, half, clamp_corner_radius(entry.shadow_radius, half));
-    let shadow_alpha = entry.shadow_color[3]
-        * shadow_coverage(shadow_d, entry.shadow_blur, aa)
-        * opacity;
+    let shadow_d = sd_rounded_box(
+        shadow_rel,
+        half,
+        clamp_corner_radius(entry.shadow_radius, half),
+    );
+    let shadow_alpha =
+        entry.shadow_color[3] * shadow_coverage(shadow_d, entry.shadow_blur, aa) * opacity;
     // Fill layer (paint slot or entry solid).
     let fill_rel = [local[0] - entry.p0[0], local[1] - entry.p0[1]];
     let fill_d = sd_rounded_box(fill_rel, entry.p1, entry.radius);
@@ -456,7 +463,10 @@ mod tests {
     fn linear_t_is_the_projected_ramp_position() {
         assert_eq!(linear_gradient_t([2.5, 7.0], [0.0, 0.0], [10.0, 0.0]), 0.25);
         // Outside the ramp keeps going (stops clamp later).
-        assert_eq!(linear_gradient_t([-5.0, 0.0], [0.0, 0.0], [10.0, 0.0]), -0.5);
+        assert_eq!(
+            linear_gradient_t([-5.0, 0.0], [0.0, 0.0], [10.0, 0.0]),
+            -0.5
+        );
         // Degenerate ramp pins to 0.
         assert_eq!(linear_gradient_t([3.0, 3.0], [1.0, 1.0], [1.0, 1.0]), 0.0);
     }
@@ -522,18 +532,33 @@ mod tests {
         // Interior: opaque fill wins.
         assert_close(quad_fragment(&entry, &[], [5.0, 5.0]), [1.0, 0.0, 0.0, 1.0]);
         // Far outside: transparent.
-        assert_close(quad_fragment(&entry, &[], [50.0, 50.0]), [0.0, 0.0, 0.0, 0.0]);
+        assert_close(
+            quad_fragment(&entry, &[], [50.0, 50.0]),
+            [0.0, 0.0, 0.0, 0.0],
+        );
         // Exactly on the edge: half a pixel of coverage each way.
-        assert_close(quad_fragment(&entry, &[], [10.0, 5.0]), [1.0, 0.0, 0.0, 0.5]);
-        assert_close(quad_fragment(&entry, &[], [10.5, 5.0]), [0.0, 0.0, 0.0, 0.0]);
+        assert_close(
+            quad_fragment(&entry, &[], [10.0, 5.0]),
+            [1.0, 0.0, 0.0, 0.5],
+        );
+        assert_close(
+            quad_fragment(&entry, &[], [10.5, 5.0]),
+            [0.0, 0.0, 0.0, 0.0],
+        );
 
         // Shadow behind an opaque fill: interior stays fill, the band outside
         // shows shadow, far outside stays transparent.
         entry.shadow_color = [0.0, 0.0, 1.0, 1.0];
         entry.shadow_offset = [2.0, 0.0];
         assert_close(quad_fragment(&entry, &[], [5.0, 5.0]), [1.0, 0.0, 0.0, 1.0]);
-        assert_close(quad_fragment(&entry, &[], [11.0, 5.0]), [0.0, 0.0, 1.0, 1.0]);
-        assert_close(quad_fragment(&entry, &[], [25.0, 5.0]), [0.0, 0.0, 0.0, 0.0]);
+        assert_close(
+            quad_fragment(&entry, &[], [11.0, 5.0]),
+            [0.0, 0.0, 1.0, 1.0],
+        );
+        assert_close(
+            quad_fragment(&entry, &[], [25.0, 5.0]),
+            [0.0, 0.0, 0.0, 0.0],
+        );
 
         // Stroke over fill: a 2-unit band centered on the edge is black on
         // both sides, the interior keeps the fill.
@@ -542,8 +567,14 @@ mod tests {
         entry.stroke_width = 2.0;
         assert_close(quad_fragment(&entry, &[], [5.0, 5.0]), [1.0, 0.0, 0.0, 1.0]);
         assert_close(quad_fragment(&entry, &[], [9.5, 5.0]), [0.0, 0.0, 0.0, 1.0]);
-        assert_close(quad_fragment(&entry, &[], [10.0, 5.0]), [0.0, 0.0, 0.0, 1.0]);
-        assert_close(quad_fragment(&entry, &[], [11.5, 5.0]), [0.0, 0.0, 0.0, 0.0]);
+        assert_close(
+            quad_fragment(&entry, &[], [10.0, 5.0]),
+            [0.0, 0.0, 0.0, 1.0],
+        );
+        assert_close(
+            quad_fragment(&entry, &[], [11.5, 5.0]),
+            [0.0, 0.0, 0.0, 0.0],
+        );
     }
 
     #[test]
@@ -586,8 +617,8 @@ mod tests {
         }
         // Premultiplied screen: s' + d*(1 - s') sends white sources to white.
         let out = blend_composite(DEEP2D_BLEND_SCREEN, white, dst);
-        for channel in 0..3 {
-            assert!((out[channel] - 1.0).abs() < 1e-6);
+        for channel in &out[..3] {
+            assert!((*channel - 1.0).abs() < 1e-6);
         }
         let dark = [0.2f32, 0.2, 0.2, 1.0];
         let out = blend_composite(DEEP2D_BLEND_SCREEN, dark, dst);
@@ -617,8 +648,8 @@ mod tests {
         // (premult s' = s.a*s.rgb drives the CSS formula).
         let out = blend_composite(DEEP2D_BLEND_MULTIPLY, translucent, dst);
         for channel in 0..3 {
-            let expected =
-                translucent[channel] * translucent[3] * dst[channel] + dst[channel] * (1.0 - translucent[3]);
+            let expected = translucent[channel] * translucent[3] * dst[channel]
+                + dst[channel] * (1.0 - translucent[3]);
             assert!((out[channel] - expected).abs() < 1e-6);
         }
     }
@@ -632,5 +663,4 @@ mod tests {
         assert!(!blend_premultiplies(DEEP2D_BLEND_LIGHTEN));
         assert!(!blend_premultiplies(DEEP2D_BLEND_OVERWRITE));
     }
-
 }

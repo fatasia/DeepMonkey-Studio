@@ -1,4 +1,4 @@
-pub(super) fn compose(source:&str)->String {
+pub(super) fn compose(source: &str) -> String {
     source.replace("advanced0: vec4f, advanced1: vec4f, advanced2: vec4f,",
         "advanced0: vec4f, advanced1: vec4f, advanced2: vec4f,\n  specular_row_0: vec4f, specular_row_1: vec4f,\n  specular_color_row_0: vec4f, specular_color_row_1: vec4f, specular_values: vec4f,")
         .replace("brdfWithDielectricF0(normal, view,", "native_specular_brdf(normal, view,")

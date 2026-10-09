@@ -224,7 +224,10 @@ impl NativePhysicsHost {
                     .map(|triangle| [triangle[0], triangle[1], triangle[2]])
                     .collect();
                 ColliderBuilder::trimesh(vertices, indices).map_err(|error| {
-                    format!("physics body {} SDF collision mesh rejected: {error}", body.id)
+                    format!(
+                        "physics body {} SDF collision mesh rejected: {error}",
+                        body.id
+                    )
                 })?
             }
             other => {
@@ -253,7 +256,7 @@ impl NativePhysicsHost {
                 CharacterDriver::new(
                     SharedShape::cuboid(render_half.x, render_half.y, render_half.z),
                     CharacterMotionConfig::from_runtime(Some(config)),
-                    (render_half.y * 2.0) as f32,
+                    render_half.y * 2.0,
                 )
             })
         } else {

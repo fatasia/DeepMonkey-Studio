@@ -167,8 +167,12 @@ impl From<&LayoutStyle> for taffy::Style {
                 bottom: taffy::LengthPercentageAuto::length(value.margin.bottom),
             },
             size: taffy::Size {
-                width: value.width.map_or(taffy::Dimension::AUTO, taffy::Dimension::length),
-                height: value.height.map_or(taffy::Dimension::AUTO, taffy::Dimension::length),
+                width: value
+                    .width
+                    .map_or(taffy::Dimension::AUTO, taffy::Dimension::length),
+                height: value
+                    .height
+                    .map_or(taffy::Dimension::AUTO, taffy::Dimension::length),
             },
             flex_grow: value.flex_grow,
             flex_shrink: value.flex_shrink,
@@ -199,9 +203,18 @@ mod style_tests {
             (LayoutJustify::FlexStart, taffy::AlignContent::FLEX_START),
             (LayoutJustify::FlexEnd, taffy::AlignContent::FLEX_END),
             (LayoutJustify::Center, taffy::AlignContent::CENTER),
-            (LayoutJustify::SpaceBetween, taffy::AlignContent::SPACE_BETWEEN),
-            (LayoutJustify::SpaceAround, taffy::AlignContent::SPACE_AROUND),
-            (LayoutJustify::SpaceEvenly, taffy::AlignContent::SPACE_EVENLY),
+            (
+                LayoutJustify::SpaceBetween,
+                taffy::AlignContent::SPACE_BETWEEN,
+            ),
+            (
+                LayoutJustify::SpaceAround,
+                taffy::AlignContent::SPACE_AROUND,
+            ),
+            (
+                LayoutJustify::SpaceEvenly,
+                taffy::AlignContent::SPACE_EVENLY,
+            ),
         ];
         for (mine, taffy_value) in cases {
             let style = LayoutStyle {
@@ -250,6 +263,9 @@ mod style_tests {
         assert_eq!(converted.gap.width, taffy::LengthPercentage::length(8.0));
         assert_eq!(converted.gap.height, taffy::LengthPercentage::length(4.0));
         assert_eq!(converted.padding.top, taffy::LengthPercentage::length(6.0));
-        assert_eq!(converted.margin.left, taffy::LengthPercentageAuto::length(4.0));
+        assert_eq!(
+            converted.margin.left,
+            taffy::LengthPercentageAuto::length(4.0)
+        );
     }
 }

@@ -1,9 +1,7 @@
 //! T19 人群仿真的固定 tick 测试,自 `runtime_navigation_crowd.rs` 内联测试原样拆出:
 //! 夹具、逐位确定性、性能画像与窄门排队回归。除缩进(随模块外提去一层)外逐字未改。
 
-use super::{
-    AabbWall, CrowdConfig, CrowdEventKind, CrowdSimulation, CrowdState, SIM_STEP_SECONDS,
-};
+use super::{AabbWall, CrowdConfig, CrowdEventKind, CrowdSimulation, CrowdState, SIM_STEP_SECONDS};
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -78,8 +76,7 @@ fn assert_velocities_bounded(sim: &CrowdSimulation) {
     let bound = sim.config().max_speed.max(2.0) + sim.config().separation_gain + 1e-3;
     let state = sim.state();
     for index in 0..state.count as usize {
-        let speed =
-            (state.vx[index] * state.vx[index] + state.vz[index] * state.vz[index]).sqrt();
+        let speed = (state.vx[index] * state.vx[index] + state.vz[index] * state.vz[index]).sqrt();
         assert!(
             speed <= bound,
             "agent {index} speed {speed} exceeds bounded maximum {bound}"
@@ -240,7 +237,7 @@ fn batch_schedule_partitions_all_agents_and_repeats_uniformly() {
     )
     .unwrap();
     assert_eq!(sim.group_count(), 3, "ceil(5/2) = 3 groups");
-    let mut covered = vec![false; 5];
+    let mut covered = [false; 5];
     for agent in 0..5u32 {
         covered[sim.schedule_group(agent) as usize] = true;
     }
@@ -294,8 +291,7 @@ fn run_open_field(
 
 #[test]
 fn hundred_agents_crossing_streams_arrive_with_low_collision_rate() {
-    let (all_arrived, worst_collision_rate, arrival_tick) =
-        run_open_field(10, 10, 2.0, 5400, 12);
+    let (all_arrived, worst_collision_rate, arrival_tick) = run_open_field(10, 10, 2.0, 5400, 12);
     assert!(
         all_arrived,
         "all 100 agents must arrive within 90 sim-seconds"
@@ -322,8 +318,7 @@ fn hundred_agents_crossing_streams_arrive_with_low_collision_rate() {
 
 #[test]
 fn thousand_agents_with_temporal_batching_arrive_and_report_cost() {
-    let (all_arrived, worst_collision_rate, arrival_tick) =
-        run_open_field(20, 50, 2.0, 10800, 24);
+    let (all_arrived, worst_collision_rate, arrival_tick) = run_open_field(20, 50, 2.0, 10800, 24);
     assert!(
         all_arrived,
         "all 1000 agents must arrive within 180 sim-seconds under 8-group batching"

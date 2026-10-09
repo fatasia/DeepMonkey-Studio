@@ -2,8 +2,8 @@
 //! 按测试主题原样拆出;共享常量与夹具在 `native_physics_mechanism_golden_support.rs`。
 //! 逐字未改,仅调整导入路径与可见性。
 
-use super::mechanism_golden_support::*;
 use super::NativePhysicsHost;
+use super::mechanism_golden_support::*;
 use crate::contract::RenderPacket;
 use crate::runtime_package::parse_and_validate_dynamic_scene_runtime;
 

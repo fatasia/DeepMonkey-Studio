@@ -18,7 +18,7 @@ use crate::frame_layout_generated::{
     FRAME_ABI_EXPOSURE_SHADOW_ENABLED, FRAME_ABI_LIGHT_DIRECTION, FRAME_ABI_RUST_FLOATS,
     FRAME_ABI_SCHEMA_SHA256, FRAME_ABI_SUN_COLOR, FRAME_ABI_TS_FLOATS,
 };
-use crate::mesh_abi::{frame_uniform, FRAME_UNIFORM_FLOATS};
+use crate::mesh_abi::{FRAME_UNIFORM_FLOATS, frame_uniform};
 use crate::scene_lighting::DirectionalLighting;
 use crate::shader_package::hash::sha256;
 use serde_json::Value;
@@ -104,7 +104,9 @@ fn golden_matches_fixture() {
         );
         // native 打包逐字对拍 fixture rust 段(位级:区分 -0/+0,SHA-256 同口径)。
         if case["rust"]["words"].is_null() {
-            panic!("{id}: rust words unfilled — run `cargo test regenerate_rust_golden_section -- --ignored`");
+            panic!(
+                "{id}: rust words unfilled — run `cargo test regenerate_rust_golden_section -- --ignored`"
+            );
         }
         let expected = f32_words(&case["rust"]["words"]);
         assert_eq!(

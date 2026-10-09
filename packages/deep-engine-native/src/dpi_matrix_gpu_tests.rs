@@ -59,7 +59,7 @@ fn probe_display_list() -> Deep2dDisplayList {
             shadow: None,
             blend: None,
             backdrop_blur: None,
-            })],
+        })],
         atlases: Vec::new(),
     }
 }

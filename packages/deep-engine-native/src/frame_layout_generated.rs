@@ -4,7 +4,8 @@
 //! J2-B7 单源 frame 布局（Rust 宿主 deep.native.frame.v8，596f/2384B）。
 //! 常量带 FRAME_ABI_ 前缀与手写 mesh_abi 常量并存；parity 门见 frame_layout_gate.rs。
 
-pub const FRAME_ABI_SCHEMA_SHA256: &str = "3291dacc0f11c4520e41d95c006be16fb5192d31d2fe5cbd4e09bbe61f40e54c";
+pub const FRAME_ABI_SCHEMA_SHA256: &str =
+    "3291dacc0f11c4520e41d95c006be16fb5192d31d2fe5cbd4e09bbe61f40e54c";
 pub const FRAME_ABI_TS_FLOATS: usize = 96;
 pub const FRAME_ABI_TS_BYTES: u64 = 384;
 pub const FRAME_ABI_RUST_FLOATS: usize = 596;

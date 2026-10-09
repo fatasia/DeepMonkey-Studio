@@ -9,11 +9,11 @@
 
 use std::io::Write;
 
-use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use flate2::write::ZlibEncoder;
 
-use crate::error::{DagError, DagResult};
 use crate::dag::{DagLevel, MeshletDag};
+use crate::error::{DagError, DagResult};
 use crate::types::{MESHLET_MAX_TRIANGLES_LIMIT, MESHLET_MAX_VERTICES_LIMIT};
 
 /// 魔数 `DGC1`。
@@ -142,9 +142,10 @@ pub fn write_dgc(dag: &MeshletDag, options: &DgcWriteOptions) -> DagResult<Vec<u
     for section in &mut sections {
         let stored = if options.compress {
             let mut encoder = ZlibEncoder::new(Vec::new(), Compression::new(6));
-            encoder
-                .write_all(&section.raw)
-                .map_err(|e| DagError::Io { path: std::path::PathBuf::from("<memory>"), source: e })?;
+            encoder.write_all(&section.raw).map_err(|e| DagError::Io {
+                path: std::path::PathBuf::from("<memory>"),
+                source: e,
+            })?;
             encoder.finish().map_err(|e| DagError::Io {
                 path: std::path::PathBuf::from("<memory>"),
                 source: std::io::Error::other(e),
@@ -160,7 +161,9 @@ pub fn write_dgc(dag: &MeshletDag, options: &DgcWriteOptions) -> DagResult<Vec<u
     let total_size = offset;
     // 边界锁定护栏:单文件 64 GiB 上限(防错位字段导致的荒谬分配)。
     if total_size as u64 > 64_u64 * 1024 * 1024 * 1024 {
-        return Err(DagError::overflow("serialized DAG exceeds 64 GiB sanity bound"));
+        return Err(DagError::overflow(
+            "serialized DAG exceeds 64 GiB sanity bound",
+        ));
     }
 
     let mut out = Vec::with_capacity(total_size);
@@ -188,7 +191,10 @@ pub fn write_dgc(dag: &MeshletDag, options: &DgcWriteOptions) -> DagResult<Vec<u
         extend_le_u32(&mut out, &[section.kind]);
         extend_le_u32(&mut out, &[section.level]);
         extend_le_f64(&mut out, &[section.error]);
-        extend_le_u32(&mut out, &section.counts.map(|c| u32::try_from(c).unwrap_or(u32::MAX)));
+        extend_le_u32(
+            &mut out,
+            &section.counts.map(|c| u32::try_from(c).unwrap_or(u32::MAX)),
+        );
         extend_le_u64(&mut out, &[section.raw.len() as u64]);
         extend_le_u64(&mut out, &[stored.len() as u64]);
         extend_le_u64(&mut out, &[section.payload_offset]);
@@ -197,7 +203,10 @@ pub fn write_dgc(dag: &MeshletDag, options: &DgcWriteOptions) -> DagResult<Vec<u
         extend_le_u32(&mut out, &[0]);
         extend_le_u32(&mut out, &[0]);
         extend_le_u32(&mut out, &[0]);
-        debug_assert_eq!(out.len(), FILE_HEADER_SIZE + (index + 1) * SECTION_HEADER_SIZE);
+        debug_assert_eq!(
+            out.len(),
+            FILE_HEADER_SIZE + (index + 1) * SECTION_HEADER_SIZE
+        );
     }
     debug_assert_eq!(out.len(), header_span);
 
@@ -221,11 +230,15 @@ pub fn read_dgc(bytes: &[u8]) -> DagResult<MeshletDag> {
     let mut magic = [0u8; 4];
     cursor.read_exact_into(&mut magic)?;
     if magic != MAGIC {
-        return Err(DagError::dgc_format(format!("bad magic {magic:?}, expected {MAGIC:?}")));
+        return Err(DagError::dgc_format(format!(
+            "bad magic {magic:?}, expected {MAGIC:?}"
+        )));
     }
     let version = cursor.read_u32()?;
     if version != FORMAT_VERSION {
-        return Err(DagError::dgc_format(format!("unsupported version {version}, expected {FORMAT_VERSION}")));
+        return Err(DagError::dgc_format(format!(
+            "unsupported version {version}, expected {FORMAT_VERSION}"
+        )));
     }
     let flags = cursor.read_u32()?;
     if flags & !FLAG_ZLIB != 0 {
@@ -295,9 +308,14 @@ pub fn read_dgc(bytes: &[u8]) -> DagResult<MeshletDag> {
             return Err(DagError::dgc_format("section reserved bytes must be zero"));
         }
         if !payload_offset.is_multiple_of(PAYLOAD_ALIGNMENT) {
-            return Err(DagError::dgc_format("payload offset must be 8-byte aligned"));
+            return Err(DagError::dgc_format(
+                "payload offset must be 8-byte aligned",
+            ));
         }
-        if payload_offset.checked_add(stored_size).is_none_or(|end| end > bytes.len()) {
+        if payload_offset
+            .checked_add(stored_size)
+            .is_none_or(|end| end > bytes.len())
+        {
             return Err(DagError::dgc_format(format!(
                 "section {index} payload [{payload_offset}, {} ) exceeds file size {}",
                 payload_offset + stored_size,
@@ -331,11 +349,25 @@ pub fn read_dgc(bytes: &[u8]) -> DagResult<MeshletDag> {
         match kind {
             SECTION_KIND_LEVEL => {
                 let mut payload = Reader::new(&raw);
-                let [position_count, index_count, descriptor_count, remap_count, local_tri_count, bounds_count, source_tri_count, span_count] =
-                    counts;
-                let expected_raw = 4 * (position_count + index_count + descriptor_count + remap_count
-                    + local_tri_count + bounds_count + source_tri_count + span_count)
-                    as u64;
+                let [
+                    position_count,
+                    index_count,
+                    descriptor_count,
+                    remap_count,
+                    local_tri_count,
+                    bounds_count,
+                    source_tri_count,
+                    span_count,
+                ] = counts;
+                let expected_raw = 4
+                    * (position_count
+                        + index_count
+                        + descriptor_count
+                        + remap_count
+                        + local_tri_count
+                        + bounds_count
+                        + source_tri_count
+                        + span_count) as u64;
                 if expected_raw != raw_size as u64 {
                     return Err(DagError::dgc_format(format!(
                         "level section {level_index}: counts imply {expected_raw} bytes, header says {raw_size}"
@@ -444,7 +476,9 @@ pub fn read_dgc(bytes: &[u8]) -> DagResult<MeshletDag> {
                 parents_by_level.push(parents);
             }
             other => {
-                return Err(DagError::dgc_format(format!("unknown section kind {other}")));
+                return Err(DagError::dgc_format(format!(
+                    "unknown section kind {other}"
+                )));
             }
         }
     }
@@ -459,7 +493,10 @@ pub fn read_dgc(bytes: &[u8]) -> DagResult<MeshletDag> {
             "level 0 geometry size disagrees with file header",
         ));
     }
-    Ok(MeshletDag { levels, parents_by_level })
+    Ok(MeshletDag {
+        levels,
+        parents_by_level,
+    })
 }
 
 // —— 内部工具 ——
@@ -513,7 +550,10 @@ impl<'a> Reader<'a> {
     }
 
     fn read_bytes(&mut self, len: usize) -> DagResult<&'a [u8]> {
-        let end = self.pos.checked_add(len).ok_or_else(|| DagError::dgc_format("size overflow"))?;
+        let end = self
+            .pos
+            .checked_add(len)
+            .ok_or_else(|| DagError::dgc_format("size overflow"))?;
         if end > self.bytes.len() {
             return Err(DagError::dgc_format(format!(
                 "truncated: need {len} bytes at offset {}, only {} remain",
@@ -595,7 +635,11 @@ pub fn crc32c(data: &[u8]) -> u32 {
         for (i, entry) in table.iter_mut().enumerate() {
             let mut crc = i as u32;
             for _ in 0..8 {
-                crc = if crc & 1 != 0 { (crc >> 1) ^ POLY } else { crc >> 1 };
+                crc = if crc & 1 != 0 {
+                    (crc >> 1) ^ POLY
+                } else {
+                    crc >> 1
+                };
             }
             *entry = crc;
         }
@@ -625,7 +669,7 @@ impl DagLevel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dag::{build_meshlet_dag, DagOptions};
+    use crate::dag::{DagOptions, build_meshlet_dag};
     use crate::types::IndexedGeometry;
 
     fn sphere_geometry(segments: usize, rings: usize) -> IndexedGeometry {
@@ -634,8 +678,14 @@ mod tests {
     }
 
     fn sample_dag() -> MeshletDag {
-        build_meshlet_dag(&sphere_geometry(24, 12), &DagOptions { levels: Some(4), ..Default::default() })
-            .expect("dag")
+        build_meshlet_dag(
+            &sphere_geometry(24, 12),
+            &DagOptions {
+                levels: Some(4),
+                ..Default::default()
+            },
+        )
+        .expect("dag")
     }
 
     #[test]
@@ -694,7 +744,10 @@ mod tests {
 
     #[test]
     fn empty_dag_rejected() {
-        let empty = MeshletDag { levels: vec![], parents_by_level: vec![] };
+        let empty = MeshletDag {
+            levels: vec![],
+            parents_by_level: vec![],
+        };
         assert!(write_dgc(&empty, &DgcWriteOptions::default()).is_err());
     }
 
@@ -703,7 +756,10 @@ mod tests {
         let dag = sample_dag();
         let raw = write_dgc(&dag, &DgcWriteOptions { compress: false }).expect("raw");
         let zipped = write_dgc(&dag, &DgcWriteOptions { compress: true }).expect("zip");
-        assert!(zipped.len() <= raw.len(), "zlib should not inflate this payload");
+        assert!(
+            zipped.len() <= raw.len(),
+            "zlib should not inflate this payload"
+        );
     }
 
     #[test]

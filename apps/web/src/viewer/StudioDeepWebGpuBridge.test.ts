@@ -8,7 +8,7 @@ import type { PresentationPerformanceSource } from "./viewerPresentationPerforma
 import { DEFAULT_POST_PROCESSING } from "../appDefaults";
 import { readStudioFrameCaptureSnapshot, setStudioFrameCaptureRequested } from "./studioFrameCaptureDiagnostics";
 import { renderViewFingerprint } from "./studioDeepWebGpuBridgeSceneHelpers";
-import { resolvePbrMsaaSampleCount } from "../../../../packages/deep-engine/src/webgpu/renderTargets";
+import { resolvePbrMsaaSampleCount } from "@bim-studio/deep-engine/webgpu";
 import { DeepCameraController } from "./deepCameraController";
 
 type BridgeModule = typeof import("@bim-studio/deep-engine/three-bridge");

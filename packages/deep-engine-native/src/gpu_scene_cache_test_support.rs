@@ -1,6 +1,9 @@
 //! Shared real-GPU test support for the scene cache unit modules. Everything here
 //! requires a physical adapter, so callers must gate themselves behind `#[ignore]`.
 
+use crate::gpu_texture_upload::test_device as device;
+pub(crate) use device::{clean_scopes, high_performance_device, push_scopes};
+
 use std::sync::{Arc, Mutex, mpsc};
 
 use deep_engine_native::{
@@ -68,7 +71,7 @@ pub(crate) fn with_lod_profile(packet: &RenderPacket) -> RenderPacket {
     next
 }
 
-pub(crate) fn prepare(packet: &RenderPacket) -> (PreparedScene, PreparedPbrResources) {
+pub(crate) fn prepare(packet: &RenderPacket) -> (PreparedScene, PreparedPbrResources<'_>) {
     (
         prepare_scene(packet).unwrap(),
         prepare_pbr_resources(packet).unwrap(),
@@ -121,46 +124,6 @@ pub(crate) fn read_instances(
     let result = output.get_mapped_range(..).unwrap().to_vec();
     output.unmap();
     result
-}
-
-pub(crate) fn push_scopes(device: &wgpu::Device) -> [wgpu::ErrorScopeGuard; 3] {
-    [
-        device.push_error_scope(wgpu::ErrorFilter::Validation),
-        device.push_error_scope(wgpu::ErrorFilter::OutOfMemory),
-        device.push_error_scope(wgpu::ErrorFilter::Internal),
-    ]
-}
-
-pub(crate) async fn clean_scopes(scopes: [wgpu::ErrorScopeGuard; 3], label: &str) {
-    let [validation, memory, internal] = scopes;
-    for error in [
-        internal.pop().await,
-        memory.pop().await,
-        validation.pop().await,
-    ] {
-        assert!(error.is_none(), "{label} GPU error: {error:?}");
-    }
-}
-
-/// Real adapter + device shared by every ignored scene-cache test. Fails when only a
-/// software adapter is available so CI never silently exercises the fallback renderer.
-pub(crate) async fn high_performance_device() -> (wgpu::Device, wgpu::Queue) {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            force_fallback_adapter: false,
-            ..Default::default()
-        })
-        .await
-        .expect("real GPU adapter");
-    let info = adapter.get_info();
-    assert_ne!(info.device_type, wgpu::DeviceType::Cpu, "software adapter");
-    println!("native scene cache adapter: {info:?}");
-    adapter
-        .request_device(&wgpu::DeviceDescriptor::default())
-        .await
-        .unwrap()
 }
 
 /// Captures uncaptured GPU errors so a test can assert none escaped its scopes.

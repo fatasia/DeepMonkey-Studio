@@ -71,7 +71,10 @@ pub fn collect_clip_events<'a>(
     let Some(active) = active_clip_id else {
         return batch;
     };
-    if !(to > from) || !(duration > 0.0) || markers.is_empty() {
+    if to.partial_cmp(&from) != Some(std::cmp::Ordering::Greater)
+        || duration.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater)
+        || markers.is_empty()
+    {
         return batch;
     }
     let mut collected: Vec<(NativeAnimationEvent<'a>, usize)> = Vec::new();

@@ -74,8 +74,11 @@ fn layered_clearcoat_main_light_matches_closed_response_and_zero_identity() {
         view,
     );
     let pixels = render_material_frame(&device, &queue, &active, "coat active", true, frame, view);
-    println!("legacy_coat_stock_hdr_sha256={} legacy_coat_active_hdr_sha256={}",
-      super::metal_reflection_gpu_tests::hash(&stock), super::metal_reflection_gpu_tests::hash(&pixels));
+    println!(
+        "legacy_coat_stock_hdr_sha256={} legacy_coat_active_hdr_sha256={}",
+        super::metal_reflection_gpu_tests::hash(&stock),
+        super::metal_reflection_gpu_tests::hash(&pixels)
+    );
     assert_eq!(stock, zero, "factor0 must preserve stock pixels");
     assert_eq!(stock, pruned, "coverage0 must preserve ordinary pixels");
     let mut auxiliary = plain.clone();

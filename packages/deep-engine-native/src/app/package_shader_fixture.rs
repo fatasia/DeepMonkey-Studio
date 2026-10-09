@@ -2,8 +2,7 @@
 use deep_engine_native::shader_package::*;
 use serde_json::{Value, json};
 
-#[path = "../shader_package/hash.rs"]
-mod hash;
+use deep_engine_native::shader_package::hash;
 #[path = "../shader_package/pipeline.rs"]
 mod pipeline;
 

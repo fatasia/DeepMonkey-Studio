@@ -21,7 +21,10 @@ pub(super) async fn gpu_device() -> (wgpu::Device, wgpu::Queue) {
 }
 
 /// 斜面光栅化管线(clip 坐标直传;depth compare always + write;4x MSAA)。
-pub(super) fn plane_depth_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> (wgpu::RenderPipeline, wgpu::Buffer) {
+pub(super) fn plane_depth_pipeline(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+) -> (wgpu::RenderPipeline, wgpu::Buffer) {
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("megalights probe plane raster"),
         source: wgpu::ShaderSource::Wgsl(
@@ -39,45 +42,44 @@ fn fs(_out: PlaneVertexOutput) {}
             .into(),
         ),
     });
-    let pipeline = device
-        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("megalights probe plane raster pipeline"),
-            layout: None,
-            vertex: wgpu::VertexState {
-                module: &module,
-                entry_point: Some("vs"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: 16,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[wgpu::VertexAttribute {
-                        format: wgpu::VertexFormat::Float32x4,
-                        offset: 0,
-                        shader_location: 0,
-                    }],
-                })],
-            },
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format,
-                depth_compare: Some(wgpu::CompareFunction::Always),
-                depth_write_enabled: Some(true),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: FORWARD_SAMPLE_COUNT,
-                ..Default::default()
-            },
-            multiview_mask: None,
-            cache: None,
-            fragment: Some(wgpu::FragmentState {
-                module: &module,
-                entry_point: Some("fs"),
-                compilation_options: Default::default(),
-                targets: &[],
-            }),
-        });
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("megalights probe plane raster pipeline"),
+        layout: None,
+        vertex: wgpu::VertexState {
+            module: &module,
+            entry_point: Some("vs"),
+            compilation_options: Default::default(),
+            buffers: &[Some(wgpu::VertexBufferLayout {
+                array_stride: 16,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &[wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
+                    offset: 0,
+                    shader_location: 0,
+                }],
+            })],
+        },
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format,
+            depth_compare: Some(wgpu::CompareFunction::Always),
+            depth_write_enabled: Some(true),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState {
+            count: FORWARD_SAMPLE_COUNT,
+            ..Default::default()
+        },
+        multiview_mask: None,
+        cache: None,
+        fragment: Some(wgpu::FragmentState {
+            module: &module,
+            entry_point: Some("fs"),
+            compilation_options: Default::default(),
+            targets: &[],
+        }),
+    });
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("megalights probe plane vertices"),
         size: 6 * 16,
@@ -87,7 +89,12 @@ fn fs(_out: PlaneVertexOutput) {}
     (pipeline, buffer)
 }
 
-pub(super) fn readback_buffer(device: &wgpu::Device, queue: &wgpu::Queue, buffer: &wgpu::Buffer, words: usize) -> Vec<f32> {
+pub(super) fn readback_buffer(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    buffer: &wgpu::Buffer,
+    words: usize,
+) -> Vec<f32> {
     let staging = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("megalights production readback"),
         size: (words * 4) as u64,
@@ -101,7 +108,9 @@ pub(super) fn readback_buffer(device: &wgpu::Device, queue: &wgpu::Queue, buffer
     staging.map_async(wgpu::MapMode::Read, .., move |result| {
         let _ = sender.send(result);
     });
-    device.poll(wgpu::PollType::wait_indefinitely()).expect("poll");
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("poll");
     receiver.recv().expect("map callback").expect("map");
     let mapped = staging.get_mapped_range(..).expect("mapped");
     mapped
@@ -111,7 +120,11 @@ pub(super) fn readback_buffer(device: &wgpu::Device, queue: &wgpu::Queue, buffer
 }
 
 /// rgba16float 纹理读回(行距 256B 对齐;f16 → f32)。
-pub(super) fn readback_hdr(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture) -> Vec<f32> {
+pub(super) fn readback_hdr(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+) -> Vec<f32> {
     let bytes_per_row = (WIDTH * 8).next_multiple_of(256);
     let staging = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("megalights production hdr readback"),
@@ -135,14 +148,20 @@ pub(super) fn readback_hdr(device: &wgpu::Device, queue: &wgpu::Queue, texture: 
                 rows_per_image: Some(HEIGHT),
             },
         },
-        wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
     );
     queue.submit(Some(encoder.finish()));
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     staging.map_async(wgpu::MapMode::Read, .., move |result| {
         let _ = sender.send(result);
     });
-    device.poll(wgpu::PollType::wait_indefinitely()).expect("poll");
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("poll");
     receiver.recv().expect("map callback").expect("map");
     let mapped = staging.get_mapped_range(..).expect("mapped");
     let mut words = Vec::with_capacity(PIXELS * 4);
@@ -154,7 +173,6 @@ pub(super) fn readback_hdr(device: &wgpu::Device, queue: &wgpu::Queue, texture: 
     }
     words
 }
-
 
 pub(super) fn f32_to_f16_bits(value: f32) -> u16 {
     let bits = value.to_bits();

@@ -5,17 +5,18 @@
 //! 选层(批 A 权威)→ indirect 计划(批 B 镜像)全链绿;反例注入证明门咬人。
 
 use crate::gpu_cluster_lod_dag::{
-    validate_cluster_lod_runtime_dag, ClusterLodDagRuntime, ClusterLodDagRuntimeError,
-    CLUSTER_LOD_MAX_NODES,
+    CLUSTER_LOD_MAX_NODES, ClusterLodDagRuntime, ClusterLodDagRuntimeError,
+    validate_cluster_lod_runtime_dag,
 };
-use crate::gpu_cluster_lod_indirect::{plan_cluster_lod_indirect, ClusterLodLevelGeometrySummary};
+use crate::gpu_cluster_lod_indirect::{ClusterLodLevelGeometrySummary, plan_cluster_lod_indirect};
 use crate::gpu_cluster_lod_selection::{
-    select_cluster_lod, unpack_cluster_lod_nodes, ClusterLodCamera, ClusterLodNode,
-    CLUSTER_LOD_REFINE_SENTINEL,
+    CLUSTER_LOD_REFINE_SENTINEL, ClusterLodCamera, ClusterLodNode, select_cluster_lod,
+    unpack_cluster_lod_nodes,
 };
-use geometry_dag::{build_meshlet_dag, parse_obj, write_dgc, DagOptions, DgcWriteOptions};
+use geometry_dag::{DagOptions, DgcWriteOptions, build_meshlet_dag, parse_obj, write_dgc};
 
-const GOLDEN_JSON: &str = include_str!("../geometry_dag/tests/fixtures/quick_sphere.dgc.golden.json");
+const GOLDEN_JSON: &str =
+    include_str!("../geometry_dag/tests/fixtures/quick_sphere.dgc.golden.json");
 const GOLDEN_OBJ: &str = include_str!("../geometry_dag/tests/fixtures/quick_sphere.obj");
 
 /// 标准 alphabet base64 解码(测试本地零依赖;输入来自入库 fixture,损坏即 panic)。
@@ -57,9 +58,15 @@ pub(crate) fn golden_variant(name: &str) -> Vec<u8> {
     let bytes_b64 = json["variants"][name]["bytesB64"]
         .as_str()
         .unwrap_or_else(|| panic!("variant {name} bytesB64 missing"));
-    let declared_count = json["variants"][name]["byteCount"].as_u64().expect("byteCount") as usize;
+    let declared_count = json["variants"][name]["byteCount"]
+        .as_u64()
+        .expect("byteCount") as usize;
     let bytes = decode_base64(bytes_b64);
-    assert_eq!(bytes.len(), declared_count, "variant {name} byteCount drift");
+    assert_eq!(
+        bytes.len(),
+        declared_count,
+        "variant {name} byteCount drift"
+    );
     bytes
 }
 
@@ -73,7 +80,11 @@ pub(crate) fn camera_for(runtime: &ClusterLodDagRuntime, pixel_threshold: f64) -
             max[axis] = max[axis].max(node.bounds_max[axis]);
         }
     }
-    let center = [(min[0] + max[0]) * 0.5, (min[1] + max[1]) * 0.5, (min[2] + max[2]) * 0.5];
+    let center = [
+        (min[0] + max[0]) * 0.5,
+        (min[1] + max[1]) * 0.5,
+        (min[2] + max[2]) * 0.5,
+    ];
     ClusterLodCamera {
         position: [center[0], center[1], max[2] + 6.0],
         forward: [0.0, 0.0, -1.0],
@@ -108,7 +119,10 @@ fn golden_bytes_build_valid_and_mapping_matches_independent_read() {
         let runtime = ClusterLodDagRuntime::from_dgc(&bytes, "quick_sphere-golden")
             .unwrap_or_else(|error| panic!("{variant}: build rejected: {error}"));
         assert_eq!(runtime.geometry_id, "quick_sphere-golden");
-        assert_eq!(runtime.level_count, 2, "{variant}: quick_sphere compiles 2 levels");
+        assert_eq!(
+            runtime.level_count, 2,
+            "{variant}: quick_sphere compiles 2 levels"
+        );
         assert!(!runtime.nodes.is_empty(), "{variant}: nodes present");
         assert_eq!(
             runtime.node_storage.len(),
@@ -129,29 +143,40 @@ fn golden_bytes_build_valid_and_mapping_matches_independent_read() {
                 cursor += 1;
                 assert_eq!(node.id, format!("l{k}-c{c}"), "{variant}: node id formula");
                 assert_eq!(node.level, k as u32, "{variant}: level");
-                assert_eq!(node.error, level.error, "{variant}: level error passthrough");
                 assert_eq!(
-                    node.first_triangle, level.descriptors[c * 4 + 2],
+                    node.error, level.error,
+                    "{variant}: level error passthrough"
+                );
+                assert_eq!(
+                    node.first_triangle,
+                    level.descriptors[c * 4 + 2],
                     "{variant}: firstTriangle = descriptors[c*4+2]"
                 );
                 assert_eq!(
-                    node.triangle_count, level.descriptors[c * 4 + 3],
+                    node.triangle_count,
+                    level.descriptors[c * 4 + 3],
                     "{variant}: triangleCount = descriptors[c*4+3]"
                 );
                 let base = c * 16;
                 for axis in 0..3 {
                     assert_eq!(
-                        node.bounds_min[axis], f64::from(level.bounds[base + 4 + axis]),
+                        node.bounds_min[axis],
+                        f64::from(level.bounds[base + 4 + axis]),
                         "{variant}: boundsMin word 4..6"
                     );
                     assert_eq!(
-                        node.bounds_max[axis], f64::from(level.bounds[base + 8 + axis]),
+                        node.bounds_max[axis],
+                        f64::from(level.bounds[base + 8 + axis]),
                         "{variant}: boundsMax word 8..10"
                     );
                 }
             }
         }
-        assert_eq!(cursor, runtime.nodes.len(), "{variant}: all clusters mapped");
+        assert_eq!(
+            cursor,
+            runtime.nodes.len(),
+            "{variant}: all clusters mapped"
+        );
         assert_eq!(
             runtime.leaf_triangle_total,
             dag.levels[0].indices.len() / 3,
@@ -163,15 +188,24 @@ fn golden_bytes_build_valid_and_mapping_matches_independent_read() {
         let mut per_level: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
         for (node, slot) in runtime.nodes.iter().zip(&serialized) {
             let index = per_level.entry(node.level).or_insert(0);
-            assert_eq!(slot.cluster_index, *index, "{variant}: cluster_index = per-level rank");
+            assert_eq!(
+                slot.cluster_index, *index,
+                "{variant}: cluster_index = per-level rank"
+            );
             *index += 1;
             assert_eq!(slot.lod_level, node.level);
             assert_eq!(slot.first_triangle, node.first_triangle);
             assert_eq!(slot.triangle_count, node.triangle_count);
             assert_eq!(slot.error_scalar.to_bits(), (node.error as f32).to_bits());
             for axis in 0..3 {
-                assert_eq!(slot.min[axis].to_bits(), (node.bounds_min[axis] as f32).to_bits());
-                assert_eq!(slot.max[axis].to_bits(), (node.bounds_max[axis] as f32).to_bits());
+                assert_eq!(
+                    slot.min[axis].to_bits(),
+                    (node.bounds_min[axis] as f32).to_bits()
+                );
+                assert_eq!(
+                    slot.max[axis].to_bits(),
+                    (node.bounds_max[axis] as f32).to_bits()
+                );
             }
         }
     }
@@ -188,7 +222,10 @@ fn golden_bytes_selection_and_plan_end_to_end() {
     // 细化臂:阈值取极小 → 全部未选中 → 前沿 = 全部叶簇。
     let camera = camera_for(&runtime, 1e-9);
     let selection = select_cluster_lod(&runtime.nodes, &camera).expect("CPU authority");
-    assert_eq!(selection.frontier, leaves, "refine arm: frontier = all leaves");
+    assert_eq!(
+        selection.frontier, leaves,
+        "refine arm: frontier = all leaves"
+    );
     let plan = plan_cluster_lod_indirect(
         &runtime.plan_nodes,
         &selection.selection,
@@ -229,11 +266,16 @@ fn golden_bytes_selection_and_plan_end_to_end() {
     // 粗化臂:阈值取极大 → 全部选中 → 前沿 = 全部根区域。
     let camera = camera_for(&runtime, 1e12);
     let selection = select_cluster_lod(&runtime.nodes, &camera).expect("CPU authority");
-    assert_eq!(selection.frontier, roots, "coarse arm: frontier = all roots");
-    assert!(selection
-        .selection
-        .iter()
-        .all(|slot| *slot != CLUSTER_LOD_REFINE_SENTINEL));
+    assert_eq!(
+        selection.frontier, roots,
+        "coarse arm: frontier = all roots"
+    );
+    assert!(
+        selection
+            .selection
+            .iter()
+            .all(|slot| *slot != CLUSTER_LOD_REFINE_SENTINEL)
+    );
     let plan = plan_cluster_lod_indirect(
         &runtime.plan_nodes,
         &selection.selection,
@@ -241,15 +283,21 @@ fn golden_bytes_selection_and_plan_end_to_end() {
     )
     .expect("plan accepts coarse-arm selection");
     assert_eq!(plan.draw_count, roots.len());
-    assert_eq!(plan.covered_leaf_clusters, leaves.len(), "closure holds via roots");
+    assert_eq!(
+        plan.covered_leaf_clusters,
+        leaves.len(),
+        "closure holds via roots"
+    );
     // select.frontier 与 derive(frontier) 互验(批 B 一先例)。
     let derived = crate::gpu_cluster_lod_indirect::derive_cluster_lod_frontier(
         &runtime.plan_nodes,
         &selection.selection,
     )
     .expect("derive");
-    let derived_ids: Vec<String> =
-        derived.iter().map(|index| runtime.plan_nodes[*index].id.clone()).collect();
+    let derived_ids: Vec<String> = derived
+        .iter()
+        .map(|index| runtime.plan_nodes[*index].id.clone())
+        .collect();
     assert_eq!(derived_ids, selection.frontier);
 }
 
@@ -259,7 +307,10 @@ fn toolchain_round_trip_obj_build_write_read_builds() {
     let geometry = parse_obj(GOLDEN_OBJ).expect("obj parses");
     let dag = build_meshlet_dag(
         &geometry,
-        &DagOptions { levels: Some(2), ..Default::default() },
+        &DagOptions {
+            levels: Some(2),
+            ..Default::default()
+        },
     )
     .expect("golden obj builds");
     let bytes = write_dgc(&dag, &DgcWriteOptions { compress: true }).expect("write");
@@ -413,7 +464,10 @@ fn coverage_gap_rejected() {
     nodes[2].triangle_count = 1;
     assert!(matches!(
         validate_cluster_lod_runtime_dag(&nodes, 4),
-        Err(ClusterLodDagRuntimeError::LeafCoverageMismatch { covered: 3, declared: 4 })
+        Err(ClusterLodDagRuntimeError::LeafCoverageMismatch {
+            covered: 3,
+            declared: 4
+        })
     ));
 }
 
@@ -459,12 +513,16 @@ fn truncated_bytes_fail_closed_with_parse_reason() {
 fn level_summary_guard_surfaces_through_plan() {
     // 摘要层数不足 → 计划侧 fail-closed(运行时产物直接喂计划,错误面可观察)。
     let bytes = golden_variant("compressed");
-    let runtime =
-        ClusterLodDagRuntime::from_dgc(&bytes, "quick_sphere-golden").expect("builds");
+    let runtime = ClusterLodDagRuntime::from_dgc(&bytes, "quick_sphere-golden").expect("builds");
     let camera = camera_for(&runtime, 1e12);
     let selection = select_cluster_lod(&runtime.nodes, &camera).expect("select");
-    let summaries = vec![ClusterLodLevelGeometrySummary { vertex_count: 1, index_count: 3 }];
-    assert!(plan_cluster_lod_indirect(&runtime.plan_nodes, &selection.selection, &summaries).is_err());
+    let summaries = vec![ClusterLodLevelGeometrySummary {
+        vertex_count: 1,
+        index_count: 3,
+    }];
+    assert!(
+        plan_cluster_lod_indirect(&runtime.plan_nodes, &selection.selection, &summaries).is_err()
+    );
 }
 
 /// Display 稳定性:错误面文案与 TS 理由同语义(词级断言,防漂移)。
@@ -483,11 +541,18 @@ fn cluster_lod_dag_error_display_is_stable() {
         format!("DAG node budget exceeded (5 > {CLUSTER_LOD_MAX_NODES}).")
     );
     assert_eq!(
-        ClusterLodDagRuntimeError::LeafCoverageMismatch { covered: 2, declared: 4 }.to_string(),
+        ClusterLodDagRuntimeError::LeafCoverageMismatch {
+            covered: 2,
+            declared: 4
+        }
+        .to_string(),
         "DAG leaves cover 2 triangles but the geometry declares 4."
     );
     assert_eq!(
-        ClusterLodDagRuntimeError::ChildrenAtLeafLevel { node: "l0-c0".into() }.to_string(),
+        ClusterLodDagRuntimeError::ChildrenAtLeafLevel {
+            node: "l0-c0".into()
+        }
+        .to_string(),
         "Node l0-c0 has children at the leaf level."
     );
 }

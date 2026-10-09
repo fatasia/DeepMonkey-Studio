@@ -3,7 +3,7 @@
 //! 运行:`cargo test --release --test perf -- --ignored --nocapture`
 //! M2 预算:编译 100 万三角形 ≤ 数秒量级(量级合理即可,实测数字写入交付报告)。
 
-use geometry_dag::{build_meshlet_dag, write_dgc, DagOptions, DgcWriteOptions, IndexedGeometry};
+use geometry_dag::{DagOptions, DgcWriteOptions, IndexedGeometry, build_meshlet_dag, write_dgc};
 use std::time::Instant;
 
 /// 确定性经纬球(细分到 ~1M 三角形):segments×rings×2 - 极点修正。
@@ -46,7 +46,10 @@ fn compile_1m_triangles_under_seconds() {
     // 1000 x 500 网格:2*1000*499 = 998_000 三角形(≈1M)。
     let geometry = big_sphere(1000, 500);
     let triangles = geometry.triangle_count();
-    println!("input: {triangles} triangles, {} vertices", geometry.vertex_count());
+    println!(
+        "input: {triangles} triangles, {} vertices",
+        geometry.vertex_count()
+    );
 
     let t0 = Instant::now();
     let dag = build_meshlet_dag(&geometry, &DagOptions::default()).expect("dag build");
@@ -68,8 +71,15 @@ fn compile_1m_triangles_under_seconds() {
         );
     }
     println!("total clusters: {total_clusters}");
-    println!("dgc size: {} bytes ({} MiB)", bytes.len(), bytes.len() / 1024 / 1024);
-    println!("build:      {build_elapsed:8.1?} ({} tri/s)", (triangles as f64 / build_elapsed.as_secs_f64()) as usize);
+    println!(
+        "dgc size: {} bytes ({} MiB)",
+        bytes.len(),
+        bytes.len() / 1024 / 1024
+    );
+    println!(
+        "build:      {build_elapsed:8.1?} ({} tri/s)",
+        (triangles as f64 / build_elapsed.as_secs_f64()) as usize
+    );
     println!("serialize:  {serialize_elapsed:8.1?}");
 
     // 量级断言(软门,防回归到分钟级):3 秒内完成 1M 三角形编译。

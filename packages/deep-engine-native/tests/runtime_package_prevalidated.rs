@@ -25,9 +25,8 @@ fn prevalidated_path_accepts_the_worker_hash_and_matches_full_validation() {
     let bytes = package_bytes();
     let expected = compute_runtime_package_canonical_hash(&bytes).expect("compute");
     let full = parse_and_validate_runtime_package(&bytes).expect("full validation");
-    let prevalidated =
-        parse_and_validate_runtime_package_with_expected_hash(&bytes, &expected)
-            .expect("prevalidated");
+    let prevalidated = parse_and_validate_runtime_package_with_expected_hash(&bytes, &expected)
+        .expect("prevalidated");
     assert_eq!(full.package_hash, prevalidated.package_hash);
     assert_eq!(full.resource_index.len(), prevalidated.resource_index.len());
 }
@@ -44,7 +43,10 @@ fn prevalidated_path_rejects_a_stale_or_forged_expected_hash() {
 
     let tampered = package_bytes();
     let mut tweaked = tampered.clone();
-    let position = tweaked.iter().position(|byte| *byte == b':').expect("colon");
+    let position = tweaked
+        .iter()
+        .position(|byte| *byte == b':')
+        .expect("colon");
     tweaked[position + 1] = b' ';
     let stale = compute_runtime_package_canonical_hash(&tampered).unwrap();
     assert!(parse_and_validate_runtime_package_with_expected_hash(&tweaked, &stale).is_err());

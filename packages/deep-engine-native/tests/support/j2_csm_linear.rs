@@ -3,8 +3,7 @@ mod sampling;
 use serde_json::{Value, json};
 
 #[allow(dead_code)]
-#[path = "../../src/shader_package/hash.rs"]
-mod hash;
+use deep_engine_native::shader_package::hash;
 #[path = "j2_csm_oracle.rs"]
 mod oracle;
 const NATIVE: &str = include_str!("../../assets/shaders/native_cascaded_shadow_v1.wgsl");

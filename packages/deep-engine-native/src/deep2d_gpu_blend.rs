@@ -8,14 +8,16 @@
 //! - darken    `{One, One, Min}`,`fragment_main`
 //! - lighten   `{One, One, Max}`,`fragment_main`
 //! - overwrite `{One, Zero, Add}`,`fragment_main`(rgb 与 alpha 全替换)
+//!
 //! alpha 除 overwrite(`{One, Zero, Add}`)外全部 `{One, OneMinusSrcAlpha, Add}`。
+//!
 //! 未知模式回落 normal(fail-closed,不放大)。
 
 use std::sync::Arc;
 
 use deep_engine_native::deep2d::{
-    DEEP2D_BLEND_DARKEN, DEEP2D_BLEND_LIGHTEN, DEEP2D_BLEND_MULTIPLY, DEEP2D_BLEND_NORMAL,
-    DEEP2D_BLEND_OVERWRITE, DEEP2D_BLEND_SCREEN,
+    DEEP2D_BLEND_DARKEN, DEEP2D_BLEND_LIGHTEN, DEEP2D_BLEND_MULTIPLY, DEEP2D_BLEND_OVERWRITE,
+    DEEP2D_BLEND_SCREEN,
 };
 
 /// 模式是否要求 premultiplied 片元入口(与 `blend_premultiplies` 同口径)。
@@ -72,10 +74,7 @@ fn blend_state(blend: u32) -> wgpu::BlendState {
             },
             over_alpha,
         ),
-        DEEP2D_BLEND_OVERWRITE => (
-            wgpu::BlendComponent::REPLACE,
-            wgpu::BlendComponent::REPLACE,
-        ),
+        DEEP2D_BLEND_OVERWRITE => (wgpu::BlendComponent::REPLACE, wgpu::BlendComponent::REPLACE),
         // normal(含未知模式回落):与 legacy 主管线逐参一致。
         _ => (
             wgpu::BlendComponent {

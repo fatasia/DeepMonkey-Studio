@@ -9,8 +9,8 @@ use serde::{
     ser::SerializeMap,
 };
 
-use super::non_null_option;
 use super::super::types::Deep2dColor;
+use super::non_null_option;
 
 /// GPUI-aligned paint model. Solid keeps the historical wire shape
 /// (`[r, g, b, a]`) so legacy display lists are byte-compatible; gradients
@@ -183,16 +183,17 @@ impl<'de> Deserialize<'de> for Deep2dPaint {
                         "radius" => radius = Some(map.next_value::<f64>()?),
                         "stops" => stops = Some(map.next_value::<Vec<GradientStop>>()?),
                         other => {
-                            return Err(de::Error::unknown_field(other, &[
-                                "kind", "color", "start", "end", "center", "radius", "stops",
-                            ]));
+                            return Err(de::Error::unknown_field(
+                                other,
+                                &["kind", "color", "start", "end", "center", "radius", "stops"],
+                            ));
                         }
                     }
                 }
                 match kind.as_deref() {
-                    Some("solid") => Ok(Deep2dPaint::Solid(color.ok_or_else(|| {
-                        de::Error::missing_field("color")
-                    })?)),
+                    Some("solid") => Ok(Deep2dPaint::Solid(
+                        color.ok_or_else(|| de::Error::missing_field("color"))?,
+                    )),
                     Some("linear") => Ok(Deep2dPaint::LinearGradient(LinearGradientPaint {
                         start: start.ok_or_else(|| de::Error::missing_field("start"))?,
                         end: end.ok_or_else(|| de::Error::missing_field("end"))?,
@@ -241,7 +242,6 @@ impl Serialize for Deep2dPaint {
         }
     }
 }
-
 
 #[cfg(test)]
 mod paint_serde_tests {
@@ -337,8 +337,10 @@ mod paint_serde_tests {
             shadow
         );
         assert!(
-            serde_json::from_str::<BoxShadow>(r#"{"offsetX":0,"offsetY":0,"blurRadius":0,"spread":0,"color":[0,0,0,1],"bogus":1}"#)
-                .is_err()
+            serde_json::from_str::<BoxShadow>(
+                r#"{"offsetX":0,"offsetY":0,"blurRadius":0,"spread":0,"color":[0,0,0,1],"bogus":1}"#
+            )
+            .is_err()
         );
     }
 

@@ -52,6 +52,7 @@ pub struct GpuScene {
 
 impl GpuScene {
     #[allow(dead_code)] // Direct builder remains the independent GPU-test entrypoint.
+    #[allow(clippy::too_many_arguments)] // Device, resources and draw policy form the scene creation boundary.
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -128,7 +129,9 @@ impl GpuScene {
         self.shader_scene_key = scene_content_key;
     }
 
-    pub(crate) fn scene_content_key(&self) -> u64 { self.shader_scene_key }
+    pub(crate) fn scene_content_key(&self) -> u64 {
+        self.shader_scene_key
+    }
 
     /// C3 transform-only 快路径:对受影响行重算词 0..24(模型列主序 + 逆转置法线)
     /// 与镜像符号词 30,材质词(24..36 除 30)保持不变;随后按升序连续段合并
@@ -266,7 +269,12 @@ impl GpuScene {
             .iter()
             .any(|batch| batch.alpha_mode == AlphaMode::Blend)
     }
-    pub fn has_transmission(&self)->bool { self.pbr.materials.iter().any(|material|material.transmission) }
+    pub fn has_transmission(&self) -> bool {
+        self.pbr
+            .materials
+            .iter()
+            .any(|material| material.transmission)
+    }
 
     pub fn matches_content(&self, scene_key: u64, shader_signature: Option<&str>) -> bool {
         let active_signature = self

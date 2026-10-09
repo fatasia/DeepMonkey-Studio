@@ -15,7 +15,7 @@ import {
   type UvRepairOptions,
 } from "./uvRepair.js";
 
-const FACTORY_ZIP = path.resolve(import.meta.dirname, "../../../data/external-assets/open-packs/factory.zip");
+const FACTORY_ZIP = path.resolve(import.meta.dirname, "../../../test-fixtures/kenney-factory/factory.zip");
 const FACTORY_GLB_ENTRY = "Models/GLB format/robot-arm-a.glb";
 const TINY_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=",

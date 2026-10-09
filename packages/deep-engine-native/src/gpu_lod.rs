@@ -102,21 +102,25 @@ impl GpuLod {
 
     /// 批 C 接线:挂载簇 LOD GPU 运行时(挂载后 `needs_encode`/`encode` 由帧循环
     /// 自动驱动;readback 提交走 [`GpuLod::commit_cluster_lod`])。
+    #[allow(dead_code)]
     pub fn attach_cluster_lod(&mut self, runtime: ClusterLodGpuRuntime) {
         self.cluster = Some(runtime);
     }
 
     /// 簇 LOD 运行时只读访问(渲染 pass 消费面:`encode_draws`)。
+    #[allow(dead_code)]
     pub fn cluster_lod(&self) -> Option<&ClusterLodGpuRuntime> {
         self.cluster.as_ref()
     }
 
     /// 簇 LOD 运行时可变访问(相机更新与 readback 提交)。
+    #[allow(dead_code)]
     pub fn cluster_lod_mut(&mut self) -> Option<&mut ClusterLodGpuRuntime> {
         self.cluster.as_mut()
     }
 
     /// 簇 LOD readback 提交(faults 零门 → 计划 → 命令字写入;见 runtime 文档)。
+    #[allow(dead_code)]
     pub fn commit_cluster_lod(
         &mut self,
         device: &wgpu::Device,
@@ -148,7 +152,11 @@ impl GpuLod {
     }
 
     pub fn needs_encode(&self) -> bool {
-        self.dirty || self.cluster.as_ref().is_some_and(|cluster| cluster.needs_encode())
+        self.dirty
+            || self
+                .cluster
+                .as_ref()
+                .is_some_and(|cluster| cluster.needs_encode())
     }
 
     pub fn reset_history(&mut self, queue: &wgpu::Queue) {

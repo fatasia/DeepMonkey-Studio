@@ -13,9 +13,9 @@
 use std::sync::mpsc;
 
 use deep_engine_native::deep2d::{
-    compare, prepare_display_list, rasterize_prepared, BackdropBlur, Deep2dCommand,
-    Deep2dDisplayList, Deep2dPaint, Deep2dPathVerb, Deep2dResource, Deep2dRuntimeContent,
-    PathCommand, PathResource,
+    BackdropBlur, Deep2dCommand, Deep2dDisplayList, Deep2dPaint, Deep2dPathVerb, Deep2dResource,
+    Deep2dRuntimeContent, PathCommand, PathResource, compare, prepare_display_list,
+    rasterize_prepared,
 };
 
 use crate::deep2d_gpu::Deep2dGpuPainter;
@@ -29,10 +29,22 @@ fn rect_resource(id: &str, min: [f64; 2], max: [f64; 2]) -> Deep2dResource {
         id: id.into(),
         revision: 1,
         verbs: vec![
-            Deep2dPathVerb::Move { x: min[0], y: min[1] },
-            Deep2dPathVerb::Line { x: max[0], y: min[1] },
-            Deep2dPathVerb::Line { x: max[0], y: max[1] },
-            Deep2dPathVerb::Line { x: min[0], y: max[1] },
+            Deep2dPathVerb::Move {
+                x: min[0],
+                y: min[1],
+            },
+            Deep2dPathVerb::Line {
+                x: max[0],
+                y: min[1],
+            },
+            Deep2dPathVerb::Line {
+                x: max[0],
+                y: max[1],
+            },
+            Deep2dPathVerb::Line {
+                x: min[0],
+                y: max[1],
+            },
             Deep2dPathVerb::Close,
         ],
     })
@@ -165,8 +177,7 @@ fn draw_and_compare(
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8Unorm,
         // COPY_SRC is required for the backdrop capture chain AND the readback.
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-            | wgpu::TextureUsages::COPY_SRC,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
     let view = target.create_view(&Default::default());
@@ -276,9 +287,14 @@ fn frosted_glass_matches_cpu_blur_oracle() {
     let list = glass_frame(8.0);
     let content = Deep2dRuntimeContent::DisplayList(list.clone());
     let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
-    let painter =
-        Deep2dGpuPainter::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &content, &cache)
-            .expect("backdrop painter");
+    let painter = Deep2dGpuPainter::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &content,
+        &cache,
+    )
+    .expect("backdrop painter");
     assert_eq!(painter.summary.path.backdrop_commands, 1);
     let gpu = draw_and_compare(&device, &queue, &painter, &list, "glass r8", 8);
     // The glass covers the red/blue seam: the blurred center must be a MIX
@@ -312,9 +328,14 @@ fn single_sweep_glass_matches_cpu_blur_oracle() {
     let list = glass_frame(2.0);
     let content = Deep2dRuntimeContent::DisplayList(list.clone());
     let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
-    let painter =
-        Deep2dGpuPainter::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &content, &cache)
-            .expect("backdrop painter");
+    let painter = Deep2dGpuPainter::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &content,
+        &cache,
+    )
+    .expect("backdrop painter");
     let gpu = draw_and_compare(&device, &queue, &painter, &list, "glass r2", 8);
     let center = pixel(&gpu, [4.0, 4.0]);
     assert!(
@@ -344,9 +365,14 @@ fn two_glass_panels_bracket_in_draw_order() {
     ));
     let content = Deep2dRuntimeContent::DisplayList(list.clone());
     let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
-    let painter =
-        Deep2dGpuPainter::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &content, &cache)
-            .expect("backdrop painter");
+    let painter = Deep2dGpuPainter::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &content,
+        &cache,
+    )
+    .expect("backdrop painter");
     assert_eq!(painter.summary.path.backdrop_commands, 2);
     draw_and_compare(&device, &queue, &painter, &list, "glass x2", 8);
     println!("adapter={adapter}");

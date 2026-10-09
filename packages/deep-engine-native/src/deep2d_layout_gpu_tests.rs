@@ -15,6 +15,8 @@
 
 use std::sync::mpsc;
 
+use crate::app::deep2d_context::layout_content;
+use crate::deep2d_gpu::Deep2dGpuPainter;
 use deep_engine_native::deep2d::layout::{
     LayoutAlign, LayoutBoxVisual, LayoutDirection, LayoutEdges, LayoutJustify, LayoutNode,
     LayoutStyle, LayoutTree, NodeId,
@@ -22,8 +24,6 @@ use deep_engine_native::deep2d::layout::{
 use deep_engine_native::deep2d::{
     BoxShadow, Deep2dPaint, Deep2dRuntimeContent, GradientStop, LinearGradientPaint,
 };
-use crate::app::deep2d_context::layout_content;
-use crate::deep2d_gpu::Deep2dGpuPainter;
 
 const WIDTH: u32 = 192;
 const HEIGHT: u32 = 128;
@@ -157,14 +157,27 @@ fn assert_near(actual: [u8; 4], expected: [f64; 4], context: &str) {
 #[ignore = "requires a real GPU; run explicitly with --ignored"]
 fn layout_card_sample_matches_cpu_reference_pixelwise() {
     let (device, queue, adapter) = real_gpu();
-    let content = layout_content(&golden_card(), [96.0, 64.0], "layout-gpu-card", 1, &[], None)
-        .expect("layout content");
+    let content = layout_content(
+        &golden_card(),
+        [96.0, 64.0],
+        "layout-gpu-card",
+        1,
+        &[],
+        None,
+    )
+    .expect("layout content");
     let Deep2dRuntimeContent::DisplayList(list) = &content else {
         panic!("layout content is a display list");
     };
     let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
-    let painter = Deep2dGpuPainter::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &content, &cache)
-        .expect("layout card painter");
+    let painter = Deep2dGpuPainter::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &content,
+        &cache,
+    )
+    .expect("layout card painter");
 
     // Render + readback (transparent clear, letterbox 1:1 at scale 2).
     let target = device.create_texture(&wgpu::TextureDescriptor {
@@ -247,7 +260,8 @@ fn layout_card_sample_matches_cpu_reference_pixelwise() {
 
     // CPU mirror oracle: identical letterbox, same prepared frame.
     let prepared = deep_engine_native::deep2d::prepare_display_list(list).expect("oracle prepare");
-    let reference = deep_engine_native::deep2d::rasterize_prepared([96.0, 64.0], [WIDTH, HEIGHT], &prepared);
+    let reference =
+        deep_engine_native::deep2d::rasterize_prepared([96.0, 64.0], [WIDTH, HEIGHT], &prepared);
     let report = deep_engine_native::deep2d::compare(&reference, &gpu, WIDTH, HEIGHT, 8);
     println!("layout card: report={report:?}");
     assert_eq!(report.divergent, 0, "interior divergence {report:?}");
@@ -276,12 +290,15 @@ fn layout_card_sample_matches_cpu_reference_pixelwise() {
     // (a failed corner cut would paint the solid card background alpha=255).
     let corner = pixel(&gpu, [0.25, 0.25]);
     assert!(
-        corner[3] < 255
-            && !(corner[0].abs_diff(20) <= 2 && corner[1].abs_diff(23) <= 2),
+        corner[3] < 255 && !(corner[0].abs_diff(20) <= 2 && corner[1].abs_diff(23) <= 2),
         "cut corner must not show opaque card fill: {corner:?}"
     );
     // Card body above the header (y<6): card solid background.
-    assert_near(pixel(&gpu, [48.0, 3.25]), [0.08, 0.09, 0.11, 1.0], "card body");
+    assert_near(
+        pixel(&gpu, [48.0, 3.25]),
+        [0.08, 0.09, 0.11, 1.0],
+        "card body",
+    );
     // Header gradient midpoint: t = (48-6)/84 = 0.5 on the ramp.
     assert_near(
         pixel(&gpu, [48.0, 14.25]),
@@ -291,7 +308,11 @@ fn layout_card_sample_matches_cpu_reference_pixelwise() {
     // Icon (fully rounded 12x12 → circle): interior keeps the solid orange.
     assert_near(pixel(&gpu, [11.25, 36.25]), [0.95, 0.62, 0.18, 1.0], "icon");
     // Text placeholder band.
-    assert_near(pixel(&gpu, [60.0, 36.25]), [0.22, 0.25, 0.3, 1.0], "text placeholder");
+    assert_near(
+        pixel(&gpu, [60.0, 36.25]),
+        [0.22, 0.25, 0.3, 1.0],
+        "text placeholder",
+    );
     println!("layout card readback OK: adapter={adapter}");
 }
 
@@ -304,11 +325,24 @@ fn layout_card_sample_matches_cpu_reference_pixelwise() {
 #[ignore = "requires a real GPU; run explicitly with --ignored"]
 fn layout_card_sample_writes_png_evidence() {
     let (device, queue, _adapter) = real_gpu();
-    let content = layout_content(&golden_card(), [96.0, 64.0], "layout-gpu-card", 1, &[], None)
-        .expect("layout content");
+    let content = layout_content(
+        &golden_card(),
+        [96.0, 64.0],
+        "layout-gpu-card",
+        1,
+        &[],
+        None,
+    )
+    .expect("layout content");
     let cache = std::sync::Arc::new(crate::deep2d_gpu_cache::Deep2dGpuAssetCache::new());
-    let painter = Deep2dGpuPainter::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, &content, &cache)
-        .expect("layout card painter");
+    let painter = Deep2dGpuPainter::new(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &content,
+        &cache,
+    )
+    .expect("layout card painter");
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Deep2d layout evidence target"),
         size: wgpu::Extent3d {
@@ -407,13 +441,22 @@ fn layout_card_sample_writes_png_evidence() {
 }
 
 /// 无依赖 PNG 编码器:RGBA8,zlib stored 块(无压缩),filter 0。
-fn write_rgba_png(path: &std::path::Path, width: u32, height: u32, rgba: &[u8]) -> std::io::Result<()> {
+fn write_rgba_png(
+    path: &std::path::Path,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+) -> std::io::Result<()> {
     fn crc32(data: &[u8]) -> u32 {
         let mut table = [0u32; 256];
         for (index, entry) in table.iter_mut().enumerate() {
             let mut value = index as u32;
             for _ in 0..8 {
-                value = if value & 1 != 0 { 0xEDB8_8320 ^ (value >> 1) } else { value >> 1 };
+                value = if value & 1 != 0 {
+                    0xEDB8_8320 ^ (value >> 1)
+                } else {
+                    value >> 1
+                };
             }
             *entry = value;
         }

@@ -262,14 +262,13 @@ impl DashboardRuntime {
                     Some(crate::deep2d::Deep2dPaint::Solid([0.0; 4]))
                 };
                 if self.keyboard_filter_focus && self.selected_filter == Some(index) {
-                    path.stroke =
-                        selected_color
-                            .as_ref()
-                            .and_then(crate::deep2d::Deep2dPaint::solid_color)
-                            .map(|mut color| {
-                                color[3] = 1.0;
-                                color
-                            });
+                    path.stroke = selected_color
+                        .as_ref()
+                        .and_then(crate::deep2d::Deep2dPaint::solid_color)
+                        .map(|mut color| {
+                            color[3] = 1.0;
+                            color
+                        });
                     path.stroke_width = Some(2.0);
                 }
             }
