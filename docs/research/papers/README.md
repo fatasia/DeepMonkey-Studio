@@ -4,7 +4,7 @@
 
 | 论文 | English | 中文 | LaTeX |
 | --- | --- | --- | --- |
-| Deep Monkey：引擎、工业数字孪生构建、执行与交付 | [PDF](deepmonkey-en.pdf) | [PDF](deepmonkey-zh.pdf) | [Source ZIP](deepmonkey-en-source.zip) |
+| Deep Monkey Studio：面向可编程三维世界的 AI 原生平台 | [PDF](deepmonkey-en.pdf) | [PDF](deepmonkey-zh.pdf) | [Source ZIP](deepmonkey-en-source.zip) |
 | PINN–PINO TwinMoE：电池物理约束与专家协调 | [PDF](battery-en.pdf) | [PDF](battery-zh.pdf) | [Source ZIP](battery-en-source.zip) |
 
 [平台代码](../../../README.md) · [引擎架构](../../../packages/deep-engine/README.md) · [AI 训练源码与运行命令](../../../research/battery-twin/README.md)
@@ -15,4 +15,4 @@
 
 当前仍需补充整体平台任务对照、共同参考下的专家路由评价和跨时间尺度耦合实验。稿件中的计划与已记录结果分别标明。
 
-本轮重写了摘要、贡献、架构与方法论证和结论，加入平台/专家架构图、物理损失及条件执行公式。英文分别 9 / 7 页，中文分别 8 / 6 页；两份英文源码包均已解压独立编译验证。现有实验数值保持原记录，未把后续实验写成已完成结果。
+Deep Monkey 稿以 AI 原生可编程三维世界为主线，描述引擎、模型与协议接入、创作工具、智能体和运行时如何共同工作，并讨论 AI for Science 与世界模型研究接口。英文 10 页，中文 8 页。电池稿英文 7 页，中文 6 页。英文源码包已独立编译验证。
