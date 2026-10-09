@@ -17,10 +17,10 @@ import { registerProvenanceRoutes } from "./provenanceRoutes.js";
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { await Promise.all(cleanups.splice(0).map((cleanup) => cleanup())); });
 
-async function createStore(): Promise<ProvenanceLedgerStore> {
+async function createStore(now?: () => Date): Promise<ProvenanceLedgerStore> {
   const directory = await mkdtemp(path.join(tmpdir(), "bim-decision-chain-"));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
-  const store = new ProvenanceLedgerStore(directory);
+  const store = new ProvenanceLedgerStore(directory, now ? { now } : {});
   await store.init();
   return store;
 }
@@ -193,7 +193,8 @@ describe("Semantica 刀1：决策链查询面（traceDecisionChain）", () => {
 
 describe("Semantica 刀1：先例检索（findSimilarDecisions）", () => {
   it("同 proposalFingerprint 与同理由码都能召回先例，时间倒序，limit 生效", async () => {
-    const store = await createStore();
+    let now = new Date("2026-10-05T08:00:00.000Z");
+    const store = await createStore(() => now);
     const fpA = proposalOf(HYPOTHESIS_A);
     const fpB = proposalOf(HYPOTHESIS_B);
     // 先旧后新落两条同理由码判定（不同提案）。
@@ -201,6 +202,7 @@ describe("Semantica 刀1：先例检索（findSimilarDecisions）", () => {
       envelope: envelopeOf(HYPOTHESIS_A, { generatedAt: "2026-10-05T08:00:00.000Z", resultFingerprint: "23456789abcdef01" }),
       contract: HYPOTHESIS_A,
     });
+    now = new Date("2026-10-05T09:00:00.000Z");
     await store.recordVerification("project-1", {
       envelope: envelopeOf(HYPOTHESIS_B, { generatedAt: "2026-10-05T09:00:00.000Z", resultFingerprint: "3456789abcdef012" }),
       contract: HYPOTHESIS_B,
@@ -213,7 +215,7 @@ describe("Semantica 刀1：先例检索（findSimilarDecisions）", () => {
 
     const byReasonCode = await store.findSimilarDecisions("project-1", { reasonCode: "prediction-within-tolerance" });
     expect(byReasonCode.hits.map((hit) => hit.verdictNodeId)).toEqual(["verdict:3456789abcdef012", "verdict:23456789abcdef01"]);
-    expect(byReasonCode.hits[0]).toMatchObject({ matchedBy: "reason-code", proposalFingerprint: fpB });
+    expect(byReasonCode.hits[0]).toMatchObject({ matchedBy: "reason-code", proposalFingerprint: fpB, judgedAt: "2026-10-05T09:00:00.000Z" });
 
     const limited = await store.findSimilarDecisions("project-1", { reasonCode: "prediction-within-tolerance" }, 1);
     expect(limited.query.limit).toBe(1);

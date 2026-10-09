@@ -22,6 +22,8 @@ auto.key
 .chrome-ui-check*/
 login-verification.png
 **/bin/
+# Cargo CLI source directories are not build output.
+!packages/deep-engine-native/geometry_dag/src/bin/
 **/obj/
 **/target/
 packages/deep-engine-native/target-native-packet-cache/

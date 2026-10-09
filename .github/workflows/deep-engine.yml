@@ -50,6 +50,10 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      # Hundreds of test binaries otherwise generate tens of GB of Windows PDBs.
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
     defaults:
       run:
         working-directory: packages/deep-engine-native
@@ -62,6 +66,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: packages/deep-engine-native
+          cache-on-failure: true
       - name: Set portable local app data (Unix)
         if: runner.os != 'Windows'
         run: echo "LOCALAPPDATA=$RUNNER_TEMP/deep-engine-local-app-data" >> "$GITHUB_ENV"
