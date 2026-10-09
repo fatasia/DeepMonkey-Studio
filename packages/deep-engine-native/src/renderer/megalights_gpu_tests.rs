@@ -1,7 +1,9 @@
 use deep_engine_native::mesh_abi::{CAMERA_FAR, CAMERA_FOCAL, CAMERA_NEAR};
 use deep_engine_native::player_view::PlayerView;
 
-use super::megalights_gpu::{combined_clip_to_view, invert4, multiply4, pack_ris_params, world_to_view};
+use super::megalights_gpu::{
+    combined_clip_to_view, invert4, multiply4, pack_ris_params, world_to_view,
+};
 use super::megalights_runtime::to_view;
 
 /// M·inv(M) = I(投影×视图组合矩阵量级下 1e-4;f32 余子母式落点)。
@@ -29,19 +31,22 @@ fn invert4_roundtrips_camera_matrix() {
             forward[axis],
         ];
     }
-    projection[3] =
-        std::array::from_fn(|row| -(0..3).map(|axis| projection[axis][row] * eye[axis]).sum::<f32>());
+    projection[3] = std::array::from_fn(|row| {
+        -(0..3)
+            .map(|axis| projection[axis][row] * eye[axis])
+            .sum::<f32>()
+    });
     projection[3][2] -= view.near * depth;
 
     let inverse = invert4(&projection).expect("camera projection must be invertible");
     let identity = multiply4(&projection, &inverse);
-    for col in 0..4 {
-        for row in 0..4 {
+    for (col, column) in identity.iter().enumerate() {
+        for (row, value) in column.iter().enumerate() {
             let expected = f32::from(col == row);
             assert!(
-                (identity[col][row] - expected).abs() <= 1e-4,
+                (*value - expected).abs() <= 1e-4,
                 "M·inv(M)[{col}][{row}] = {} != {expected}",
-                identity[col][row]
+                *value
             );
         }
     }
@@ -58,14 +63,10 @@ fn world_to_view_matches_pool_view_transform() {
         distance: 3.5,
         ..PlayerView::default()
     };
-    for world in [
-        [0.0, 0.0, 0.0],
-        [1.5, -0.7, 2.3],
-        [-2.0, 0.9, -1.1],
-    ] {
+    for world in [[0.0, 0.0, 0.0], [1.5, -0.7, 2.3], [-2.0, 0.9, -1.1]] {
         let matrix = world_to_view(view);
         let expected = to_view(view, world, true);
-        let mut point = [world[0] as f32, world[1] as f32, world[2] as f32, 1.0f32];
+        let point = [world[0], world[1], world[2], 1.0f32];
         let mut transformed = [0.0f64; 4];
         for row in 0..4 {
             transformed[row] = (0..4)
@@ -105,16 +106,15 @@ fn combined_clip_to_view_recovers_view_positions() {
             forward[axis],
         ];
     }
-    projection[3] =
-        std::array::from_fn(|row| -(0..3).map(|axis| projection[axis][row] * eye[axis]).sum::<f32>());
+    projection[3] = std::array::from_fn(|row| {
+        -(0..3)
+            .map(|axis| projection[axis][row] * eye[axis])
+            .sum::<f32>()
+    });
     projection[3][2] -= view.near * depth;
     let combined = combined_clip_to_view(view, &projection).expect("combined");
 
-    for view_point in [
-        [0.0f64, 0.0, -3.0],
-        [0.8, -0.5, -2.4],
-        [-1.1, 0.6, -4.5],
-    ] {
+    for view_point in [[0.0f64, 0.0, -3.0], [0.8, -0.5, -2.4], [-1.1, 0.6, -4.5]] {
         // 视空间 → 世界(R 行 = right/up/−forward;world = Rᵀ·v + eye)。
         let [r, u, f] = view.basis();
         let rows = [r, u, [-f[0], -f[1], -f[2]]];
@@ -132,12 +132,7 @@ fn combined_clip_to_view_recovers_view_positions() {
                 .sum::<f64>()
                 + f64::from(projection[3][row]);
         }
-        let ndc = [
-            clip[0] / clip[3],
-            clip[1] / clip[3],
-            clip[2] / clip[3],
-            1.0,
-        ];
+        let ndc = [clip[0] / clip[3], clip[1] / clip[3], clip[2] / clip[3], 1.0];
         // 组合矩阵重建(核内 clipped/w 同式)。
         let mut rebuilt = [0.0f64; 4];
         for row in 0..4 {

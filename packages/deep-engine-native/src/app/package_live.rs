@@ -169,7 +169,7 @@ fn apply_deep2d(app: &mut NativeApp, generation: u64, candidate: WatchedPackage)
     // 而不是当前活动内容——否则新包条目会沿用旧代见证被误判命中。
     let context = candidate.content.deep2d.as_ref().and_then(|content| {
         let size = app.window.as_ref()?.inner_size();
-        Some(crate::deep2d_gpu::deep2d_frame_context(
+        Some(crate::deep2d_frame_context::deep2d_frame_context(
             content,
             [size.width, size.height],
             content_epoch(&candidate),

@@ -41,17 +41,14 @@ pub(crate) use content_profile::entry_bloom;
 mod content_profile_gpu_tests;
 #[cfg(all(test, target_os = "windows"))]
 mod coordinate_frame_gpu_tests;
+#[cfg(all(test, windows))]
+mod device_loss_probe;
 #[cfg(target_arch = "wasm32")]
 mod editor_overlay;
 #[cfg(all(test, windows))]
 mod environment_probe_tests;
 mod environment_update;
-#[cfg(all(test, windows))]
-mod device_loss_probe;
 mod frame;
-mod transmission;
-#[cfg(all(test, windows))]
-mod physical_material_gpu_tests;
 mod frame_probes;
 mod frame_target;
 mod hi_z_pyramid;
@@ -61,22 +58,26 @@ mod init;
 mod init_report;
 mod initial_preparation;
 mod material_resource_diff;
-mod megalights_gpu;
-mod megalights_gbuffer;
-mod megalights_inputs;
-mod megalights_composite;
-#[cfg(test)]
-mod megalights_gpu_tests;
-#[cfg(test)]
-mod megalights_material_gpu_tests;
-#[cfg(test)]
-mod megalights_full_hd_gpu_tests;
-#[cfg(all(test, target_os = "windows"))]
-mod megalights_gpu_probe_tests;
-mod megalights_runtime;
 #[cfg(all(test, target_os = "windows"))]
 mod material_uniform_fastpath_gpu_tests;
+mod megalights_composite;
+#[cfg(test)]
+mod megalights_full_hd_gpu_tests;
+mod megalights_gbuffer;
+mod megalights_gpu;
+#[cfg(all(test, target_os = "windows"))]
+mod megalights_gpu_probe_tests;
+#[cfg(test)]
+mod megalights_gpu_tests;
+mod megalights_inputs;
+#[cfg(test)]
+mod megalights_material_fixture;
+#[cfg(test)]
+mod megalights_material_gpu_tests;
+mod megalights_runtime;
 mod native_gi_producer;
+#[cfg(all(test, windows))]
+mod physical_material_gpu_tests;
 pub(crate) mod quality_profile;
 pub mod quality_telemetry;
 #[cfg(all(test, target_os = "windows"))]
@@ -94,7 +95,8 @@ mod scene_incremental_fastpath_gpu_tests;
 mod scene_instance_diff;
 pub(crate) mod scene_update;
 mod scene_update_stage;
-pub(crate) use scene_update_stage::StagedRenderPacketUpdate;
+mod transmission;
+
 mod sdf_gi_gpu;
 #[cfg(all(test, target_os = "windows"))]
 mod sdf_gi_gpu_probe_tests;
@@ -207,7 +209,8 @@ impl Renderer {
         vertices: &[f32],
         revision: u64,
     ) -> Result<(), String> {
-        self.editor_overlay.update(&self.device, &self.queue, vertices, revision)
+        self.editor_overlay
+            .update(&self.device, &self.queue, vertices, revision)
     }
     fn sync_outline_resources(&mut self) {
         self.forward_targets
@@ -320,7 +323,9 @@ impl Renderer {
             content_profile::forward_size(self.content_profile.compact_forward_targets, size),
             self.scene.has_outline(),
         );
-        if self.scene.has_transmission() { next_forward.enable_transmission(&self.device); }
+        if self.scene.has_transmission() {
+            next_forward.enable_transmission(&self.device);
+        }
         let next_bloom: Option<BloomTargets> = self
             .bloom
             .as_ref()

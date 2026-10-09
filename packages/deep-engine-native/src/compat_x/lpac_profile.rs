@@ -71,7 +71,8 @@ impl Profile {
         let setup = (|| {
             std::fs::copy(worker, &profile.executable)?;
             profile.grant_rx(&profile.directory)?;
-            profile.grant_rx(&profile.executable)
+            profile.grant_rx(&profile.executable)?;
+            profile.stage_runtime()
         })();
         if let Err(error) = setup {
             return Err(profile.cleanup_after_error(error));
@@ -83,6 +84,36 @@ impl Profile {
             Ok(()) => error,
             Err(cleanup) => io::Error::other(format!("{error}; LPAC cleanup failed: {cleanup}")),
         }
+    }
+    fn stage_runtime(&self) -> io::Result<()> {
+        use std::os::windows::ffi::OsStringExt;
+        use windows::Win32::System::LibraryLoader::{GetModuleFileNameW, GetModuleHandleW};
+
+        // The installed VC runtime need not grant LPAC read access. Stage only
+        // the host's already loaded runtime, with the same exact profile SID as
+        // worker.exe; never change system DLL ACLs or grant sandbox capabilities.
+        for name in [
+            windows::core::w!("vcruntime140.dll"),
+            windows::core::w!("vcruntime140_1.dll"),
+        ] {
+            let Ok(module) = (unsafe { GetModuleHandleW(name) }) else {
+                continue;
+            };
+            let mut buffer = [0u16; 32_768];
+            let length = unsafe { GetModuleFileNameW(Some(module), &mut buffer) } as usize;
+            if length == 0 || length >= buffer.len() {
+                return Err(io::Error::last_os_error());
+            }
+            let source = PathBuf::from(std::ffi::OsString::from_wide(&buffer[..length]));
+            let destination = self.directory.join(
+                source
+                    .file_name()
+                    .ok_or_else(|| io::Error::other("VC runtime filename missing"))?,
+            );
+            std::fs::copy(source, &destination)?;
+            self.grant_rx(&destination)?;
+        }
+        Ok(())
     }
     fn grant_rx(&self, path: &Path) -> io::Result<()> {
         let mut text = std::ptr::null_mut();

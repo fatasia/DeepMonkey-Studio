@@ -575,7 +575,10 @@ const selectedSource = process.argv.find(argument => argument.startsWith("--sour
 if (selectedSource && !SHARED_WGSL.some(entry => entry.source === selectedSource)) throw new Error(`Unknown WGSL family: ${selectedSource}`);
 for (const entry of SHARED_WGSL.filter(entry => !selectedSource || entry.source === selectedSource)) {
   const sourcePath = resolve(wgslRoot, entry.source);
-  const wgsl = await readFile(sourcePath, "utf8");
+  // Hash the LF bytes that Git delivers on every platform.
+  const source = await readFile(sourcePath, "utf8");
+  const wgsl = source.replaceAll("\r\n", "\n");
+  if (source !== wgsl) await writeFile(sourcePath, wgsl, "utf8");
   const bytes = Buffer.byteLength(wgsl, "utf8");
   const checksum = createHash("sha256").update(wgsl, "utf8").digest("hex");
   const moduleText = `// GENERATED FILE — DO NOT EDIT BY HAND(全文件生成物,手改会在字节门禁处被打回)。

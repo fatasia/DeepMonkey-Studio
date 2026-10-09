@@ -5,6 +5,8 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { gzipSync } from "node:zlib";
 
+import { bundledInputBytes } from "./labIsolationPolicy.mjs";
+
 const root = fileURLToPath(new URL("../", import.meta.url));
 const output = path.join(root, "dist/lab");
 await rm(output, { recursive: true, force: true });
@@ -62,15 +64,15 @@ if (sourceDateEpoch !== undefined && !/^(0|[1-9]\d*)$/.test(sourceDateEpoch)) {
 }
 const created = sourceDateEpoch === undefined ? undefined : new Date(Number(sourceDateEpoch) * 1_000).toISOString();
 const manifest = { schema: 1, ...(created ? { created } : {}), entry: "lab/main.ts", runtimeEngineDependencies: [],
-  javascriptBytes: artifact.length, gzipBytes: gzipSync(artifact).length, sha256: createHash("sha256").update(JSON.stringify(assets)).digest("hex"), assets, inputs,
-  migrationSwitchLab: { entry: "lab/switchMain.ts", runtimeEngineDependencies: ["three"], inputs: switchInputs },
-  competitiveBenchmarkLab: { entry: "lab/benchmarkMain.ts", runtimeEngineDependencies: ["three"], inputs: benchmarkInputs },
+  javascriptBytes: artifact.length, gzipBytes: gzipSync(artifact).length, sha256: createHash("sha256").update(JSON.stringify(assets)).digest("hex"), assets, inputs, outputInputBytes: bundledInputBytes(result.metafile),
+  migrationSwitchLab: { entry: "lab/switchMain.ts", runtimeEngineDependencies: ["three"], inputs: switchInputs, outputInputBytes: bundledInputBytes(switchResult.metafile) },
+  competitiveBenchmarkLab: { entry: "lab/benchmarkMain.ts", runtimeEngineDependencies: ["three"], inputs: benchmarkInputs, outputInputBytes: bundledInputBytes(benchmarkResult.metafile) },
   // Babylon stays outside the workspace dependency graph: the pairing entry loads an injected
   // vendor module at runtime. The only node_modules inputs it shares with the Deep/Three entry
   // are three's math classes inside benchmarkPacketBounds (same frozen bounding sphere for both
   // engines); Babylon itself is never a build input.
   babylonPairingLab: { entry: "lab/babylonPairingMain.ts", runtimeEngineDependencies: ["three"],
     threeUsage: "shared benchmark bounding-sphere math only; not a rendering path",
-    inputs: babylonPairingInputs } };
+    inputs: babylonPairingInputs, outputInputBytes: bundledInputBytes(babylonPairingResult.metafile) } };
 await writeFile(path.join(output, "manifest.json"), JSON.stringify(manifest, null, 2));
 console.log(JSON.stringify({ output, javascriptBytes: manifest.javascriptBytes, gzipBytes: manifest.gzipBytes, sha256: manifest.sha256 }));

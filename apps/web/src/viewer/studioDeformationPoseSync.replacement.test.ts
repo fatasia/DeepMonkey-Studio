@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { expect, it } from "vitest";
 import { ThreeProjectionBridge } from "@bim-studio/deep-engine/three-bridge";
 import type { RenderPacket } from "@bim-studio/deep-engine";
-import { assertSnapshotRevisions } from "../../../../packages/deep-engine/src/webgpu/packetDeformationRevision";
+import { assertSnapshotRevisions } from "@bim-studio/deep-engine/webgpu";
 import { StudioDeformationPoseSync } from "./studioDeformationPoseSync";
 import { threePrototypeHooks } from "./studioDeepWebGpuBridgeSceneHelpers";
 

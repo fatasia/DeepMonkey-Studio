@@ -7,7 +7,7 @@ import type { ViewerEngine } from "./ViewerEngine";
 import { DEFAULT_POST_PROCESSING } from "../appDefaults";
 import { StudioDeepWebGpuBridge } from "./StudioDeepWebGpuBridge";
 import { threePrototypeHooks } from "./studioDeepWebGpuBridgeSceneHelpers";
-import { assertSnapshotRevisions } from "../../../../packages/deep-engine/src/webgpu/packetDeformationRevision";
+import { assertSnapshotRevisions } from "@bim-studio/deep-engine/webgpu";
 
 // Studio、Three投影和Deep backend均真实执行；仅GPU runtime以可控边界替代。
 describe("Studio author animation integration", () => {

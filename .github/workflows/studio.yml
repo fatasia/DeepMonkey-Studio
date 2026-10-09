@@ -73,19 +73,9 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Web/API consumers resolve the package export map in production mode.
-      # Build the workspace package before tests so dist/runtimePackage exists
-      # on a clean checkout (development exports intentionally point at src).
-      - run: pnpm --filter @bim-studio/deep-engine build
-      - run: pnpm --filter @bim-studio/contracts build
-      - run: pnpm --filter @bim-studio/studio-core build
-      - run: pnpm --filter @bim-studio/server-sdk build
-      - run: pnpm --filter @bim-studio/scene-sdk build
-      - run: pnpm --filter @bim-studio/docs-runtime build
-      - run: pnpm --filter @bim-studio/data-runtime build
-      - run: pnpm --filter @bim-studio/plant-lite-simulation build
-      - run: pnpm --filter @bim-studio/ppr-lite-engine build
-      - run: pnpm --filter @bim-studio/industrial-agent-orchestrator build
+      # Production exports resolve dist files. Build the complete workspace
+      # dependency graph in order so new Web dependencies work on clean checkouts.
+      - run: pnpm --filter '@bim-studio/web^...' -r build
       - run: pnpm --filter @bim-studio/web typecheck
       - run: pnpm --filter @bim-studio/web test
       - run: pnpm --filter @bim-studio/web build

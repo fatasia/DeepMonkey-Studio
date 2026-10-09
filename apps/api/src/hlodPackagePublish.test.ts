@@ -12,7 +12,7 @@ import { buildCadCompatibilityProfile, publishModelDeepAssetPackage } from "./de
 import { createFileSystemDeepAssetPackageStore } from "./deepAssetPackageStore.js";
 import { parseHlodPackageManifest } from "./hlodPackageManifest.js";
 
-const zipPath = path.resolve(import.meta.dirname, "../../../data/external-assets/open-packs/factory.zip");
+const zipPath = path.resolve(import.meta.dirname, "../../../test-fixtures/kenney-factory/factory.zip");
 const sourceEntry = "Models/GLB format/machine.glb";
 const expectedHash = "a39e3042bcb7789274428357383317d70e1c31906e5301c99e7d9e90ac584863";
 const dirs: string[] = [];

@@ -30,17 +30,36 @@ impl GpuScene {
     /// Prepare used variants inside the caller's GPU error scope, before publication.
     pub(crate) fn prepare_color_pipelines(&self, pipelines: &MeshPipelines) {
         for batch in &self.batches {
-            if self.shader_materials.as_ref()
-                .and_then(|set| set.materials[batch.material_index].as_ref()).is_some() {
+            if self
+                .shader_materials
+                .as_ref()
+                .and_then(|set| set.materials[batch.material_index].as_ref())
+                .is_some()
+            {
                 continue;
             }
             let material = &self.pbr.materials[batch.material_index];
-            if material.layered.is_some() && pipelines.select_layered(
-                batch.alpha_mode, batch.premultiplied, batch.mirrored,
-                batch.double_sided, material.normal_mapped,
-            ).is_some() { continue; }
-            pipelines.select_profile(batch.alpha_mode, batch.premultiplied, batch.mirrored,
-                batch.double_sided, material.normal_mapped, material.extended);
+            if material.layered.is_some()
+                && pipelines
+                    .select_layered(
+                        batch.alpha_mode,
+                        batch.premultiplied,
+                        batch.mirrored,
+                        batch.double_sided,
+                        material.normal_mapped,
+                    )
+                    .is_some()
+            {
+                continue;
+            }
+            pipelines.select_profile(
+                batch.alpha_mode,
+                batch.premultiplied,
+                batch.mirrored,
+                batch.double_sided,
+                material.normal_mapped,
+                material.extended,
+            );
         }
     }
 
@@ -307,13 +326,15 @@ impl GpuScene {
             custom.tangent
         } else if let (Some(layered), Some(pipeline)) = (
             material.layered.as_ref(),
-            material.layered.as_ref().and_then(|_| pipelines.select_layered(
-                batch.alpha_mode,
-                batch.premultiplied,
-                batch.mirrored,
-                batch.double_sided,
-                material.normal_mapped,
-            )),
+            material.layered.as_ref().and_then(|_| {
+                pipelines.select_layered(
+                    batch.alpha_mode,
+                    batch.premultiplied,
+                    batch.mirrored,
+                    batch.double_sided,
+                    material.normal_mapped,
+                )
+            }),
         ) {
             // I-C23:分层批次走 fragment_*_layered 管线族 + 0..19 扩展绑定;
             // 选择轴与普通族同构,层混合在光照响应级完成。

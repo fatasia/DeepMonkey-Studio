@@ -10,8 +10,7 @@ use std::{
 };
 
 #[allow(dead_code)]
-#[path = "../../src/shader_package/hash.rs"]
-mod hash;
+use deep_engine_native::shader_package::hash;
 
 const MANIFEST: &str = include_str!("../../../deep-engine/fixtures/j3-device-recovery-v1.json");
 const PACKAGE: &str = include_str!("../fixtures/runtime-package-shader-v2.json");

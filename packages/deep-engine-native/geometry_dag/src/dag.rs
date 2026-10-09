@@ -7,16 +7,13 @@
 //! - 误差场逐层累加(f64);父子归属按源三角形覆盖投票,平票取最小父索引。
 
 use crate::error::DagResult;
-use crate::meshlet_builder::{build_meshlets, MeshletBuildResult};
+use crate::meshlet_builder::{MeshletBuildResult, build_meshlets};
 use crate::simplify::cluster_simplify;
-use crate::types::{
-    IndexedGeometry, OUTPUT_TRIANGLE_BUDGET_DEFAULT,
-};
+use crate::types::{IndexedGeometry, OUTPUT_TRIANGLE_BUDGET_DEFAULT};
 use crate::validation::{budget, validate_input};
 
 /// DAG 构建选项(与 TS `MeshletDagOptions` 对应)。
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct DagOptions {
     /// 层级数(含原始层),钳制到 `1..=8`;缺省 4。
     pub levels: Option<u32>,
@@ -27,7 +24,6 @@ pub struct DagOptions {
     /// 输出三角总量预算,防失控;缺省 8,000,000。
     pub output_triangle_budget: Option<u64>,
 }
-
 
 /// 单层 DAG(与 TS `MeshletDagLevel` 同构)。
 #[derive(Debug, Clone)]
@@ -73,9 +69,14 @@ pub struct MeshletDag {
 ///
 /// # Errors
 /// 输入非法或单层三角形超出 `output_triangle_budget` 时返回错误。
-pub fn build_meshlet_dag(geometry: &IndexedGeometry, options: &DagOptions) -> DagResult<MeshletDag> {
+pub fn build_meshlet_dag(
+    geometry: &IndexedGeometry,
+    options: &DagOptions,
+) -> DagResult<MeshletDag> {
     let level_count = (options.levels.unwrap_or(4)).clamp(1, 8);
-    let output_triangle_budget = options.output_triangle_budget.unwrap_or(OUTPUT_TRIANGLE_BUDGET_DEFAULT);
+    let output_triangle_budget = options
+        .output_triangle_budget
+        .unwrap_or(OUTPUT_TRIANGLE_BUDGET_DEFAULT);
     // TS `buildMeshletDag` 语义:DAG 层的簇三角形缺省是 64(MeshletDagOptions 注释),
     // 与 buildMeshlets 直接调用的缺省 126 不同;透传前在此落定缺省值。
     let max_triangles = Some(options.max_triangles.unwrap_or(64));
@@ -149,8 +150,11 @@ pub fn build_meshlet_dag(geometry: &IndexedGeometry, options: &DagOptions) -> Da
 
         // 父子回填:level k(细,=上一轮 current* 状态)的每个簇,按其输入三角形被本层
         // (level k+1)哪些簇覆盖投票,取占比最大者为父(fine→coarse 单射,平票取最小索引)。
-        let parents =
-            assign_parents(&current_cluster_spans, &coarse_spans, &quantized.source_triangles);
+        let parents = assign_parents(
+            &current_cluster_spans,
+            &coarse_spans,
+            &quantized.source_triangles,
+        );
         parents_by_level.push(parents);
 
         // 下一轮的"当前层"状态:move 接管 quantized(每层一次 clone 付出在 level 快照上,
@@ -160,7 +164,10 @@ pub fn build_meshlet_dag(geometry: &IndexedGeometry, options: &DagOptions) -> Da
         current_cluster_spans = coarse_spans;
     }
 
-    Ok(MeshletDag { levels, parents_by_level })
+    Ok(MeshletDag {
+        levels,
+        parents_by_level,
+    })
 }
 
 /// 细层簇 → 粗层簇投票。`fine_spans` 为细层簇的输入三角形段,`coarse_spans` 为粗层簇
@@ -170,7 +177,8 @@ pub fn build_meshlet_dag(geometry: &IndexedGeometry, options: &DagOptions) -> Da
 fn assign_parents(fine_spans: &[u32], coarse_spans: &[u32], source_triangles: &[u32]) -> Vec<u32> {
     let fine_count = fine_spans.len() / 2;
     let coarse_count = coarse_spans.len() / 2;
-    let mut votes: Vec<std::collections::HashMap<u32, u64>> = vec![std::collections::HashMap::new(); fine_count];
+    let mut votes: Vec<std::collections::HashMap<u32, u64>> =
+        vec![std::collections::HashMap::new(); fine_count];
 
     for p in 0..coarse_count {
         let start = coarse_spans[p * 2] as usize;
@@ -228,23 +236,42 @@ mod tests {
 
     #[test]
     fn monotone_levels() {
-        let dag = build_meshlet_dag(&sphere_geometry(24, 12), &DagOptions { levels: Some(4), ..Default::default() })
-            .expect("dag");
+        let dag = build_meshlet_dag(
+            &sphere_geometry(24, 12),
+            &DagOptions {
+                levels: Some(4),
+                ..Default::default()
+            },
+        )
+        .expect("dag");
         assert!(dag.levels.len() >= 2);
         assert_eq!(dag.levels[0].level, 0);
         assert_eq!(dag.levels[0].error, 0.0);
         for i in 1..dag.levels.len() {
             let (prev, cur) = (&dag.levels[i - 1], &dag.levels[i]);
-            assert!(cur.indices.len() < prev.indices.len(), "triangles must shrink");
+            assert!(
+                cur.indices.len() < prev.indices.len(),
+                "triangles must shrink"
+            );
             assert!(cur.error > prev.error, "error must grow");
-            assert!(cur.meshlet_count < prev.meshlet_count, "cluster count must shrink");
+            assert!(
+                cur.meshlet_count < prev.meshlet_count,
+                "cluster count must shrink"
+            );
         }
     }
 
     #[test]
     fn level0_matches_direct_build() {
         let g = sphere_geometry(16, 8);
-        let dag = build_meshlet_dag(&g, &DagOptions { levels: Some(3), ..Default::default() }).expect("dag");
+        let dag = build_meshlet_dag(
+            &g,
+            &DagOptions {
+                levels: Some(3),
+                ..Default::default()
+            },
+        )
+        .expect("dag");
         // DAG 层簇参数缺省(64/64),与直接 build_meshlets 的显式 64 对齐。
         let direct = build_meshlets(&g, None, Some(64)).expect("build");
         assert_eq!(dag.levels[0].meshlet_count, direct.meshlet_count);
@@ -253,8 +280,14 @@ mod tests {
 
     #[test]
     fn parents_are_surjective_single_parent() {
-        let dag = build_meshlet_dag(&sphere_geometry(24, 12), &DagOptions { levels: Some(4), ..Default::default() })
-            .expect("dag");
+        let dag = build_meshlet_dag(
+            &sphere_geometry(24, 12),
+            &DagOptions {
+                levels: Some(4),
+                ..Default::default()
+            },
+        )
+        .expect("dag");
         for (k, parents) in dag.parents_by_level.iter().enumerate() {
             let fine = dag.levels[k].meshlet_count;
             let coarse = dag.levels[k + 1].meshlet_count;
@@ -264,14 +297,23 @@ mod tests {
                 assert!(parent < coarse as u32, "parent out of range");
                 covered[parent as usize] = true;
             }
-            assert!(covered.iter().all(|&c| c), "every coarse cluster must have children");
+            assert!(
+                covered.iter().all(|&c| c),
+                "every coarse cluster must have children"
+            );
         }
     }
 
     #[test]
     fn empty_mesh_produces_single_level() {
-        let dag = build_meshlet_dag(&IndexedGeometry { positions: vec![], indices: vec![] }, &DagOptions::default())
-            .expect("empty dag");
+        let dag = build_meshlet_dag(
+            &IndexedGeometry {
+                positions: vec![],
+                indices: vec![],
+            },
+            &DagOptions::default(),
+        )
+        .expect("empty dag");
         assert_eq!(dag.levels.len(), 1);
         assert_eq!(dag.levels[0].meshlet_count, 0);
         assert!(dag.parents_by_level.is_empty());
@@ -282,7 +324,9 @@ mod tests {
         // 全共线三角形:level 0 可分簇,但简化无法减少(退化剔除后为 0 → 0 >= 3 不成立,
         // 实际 0 < 3 会下降一层;空层簇数 0,父子表为空)。验证不 panic 且结构自洽。
         let g = IndexedGeometry {
-            positions: vec![0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 0.0, 0.0],
+            positions: vec![
+                0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 0.0, 0.0,
+            ],
             indices: vec![0, 1, 2, 1, 2, 3],
         };
         let dag = build_meshlet_dag(&g, &DagOptions::default()).expect("dag");
@@ -293,8 +337,14 @@ mod tests {
 
     #[test]
     fn level_clamped_to_eight() {
-        let dag = build_meshlet_dag(&sphere_geometry(64, 32), &DagOptions { levels: Some(99), ..Default::default() })
-            .expect("dag");
+        let dag = build_meshlet_dag(
+            &sphere_geometry(64, 32),
+            &DagOptions {
+                levels: Some(99),
+                ..Default::default()
+            },
+        )
+        .expect("dag");
         assert!(dag.levels.len() <= 8);
     }
 

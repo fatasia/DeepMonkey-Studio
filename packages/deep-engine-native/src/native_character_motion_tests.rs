@@ -16,8 +16,8 @@ use crate::contract::RenderPacket;
 mod support;
 
 use self::support::{
+    CHARACTER_GAP, CHARACTER_HALF_Y, SPAWN_Y, Scene, TICK_DT, WALK_SPEED_MPS, WALK_TICKS,
     box_obstacle, character_config, flat_world, ground_obstacle, ramp_obstacle, translation_of,
-    Scene, CHARACTER_GAP, CHARACTER_HALF_Y, SPAWN_Y, TICK_DT, WALK_SPEED_MPS, WALK_TICKS,
 };
 
 // ─── 贯通:平面速度 + 根运动 + 实例位姿回写 ─────────────────────────────────
@@ -62,15 +62,9 @@ fn kinematic_without_character_config_stays_put() {
         .remove("character");
     let (mut host, mut packet) = scene.mount();
     assert_eq!(host.character_phase("body-char"), None);
-    assert_eq!(
-        host.set_character_planar_velocity("body-char", [1.0, 0.0]),
-        false
-    );
-    assert_eq!(
-        host.queue_character_root_motion("body-char", [1.0; 3], [0.0, 0.0, 0.0, 1.0]),
-        false
-    );
-    assert_eq!(host.request_character_jump("body-char"), false);
+    assert!(!host.set_character_planar_velocity("body-char", [1.0, 0.0]));
+    assert!(!host.queue_character_root_motion("body-char", [1.0; 3], [0.0, 0.0, 0.0, 1.0]));
+    assert!(!host.request_character_jump("body-char"));
     assert_eq!(host.advance(TICK_DT, &mut packet).unwrap(), 0);
     assert_eq!(
         translation_of(&packet, "inst-body-char"),
@@ -541,7 +535,7 @@ fn run_scripted(
         }
         completed = host.fixed_step_count();
         apply_script(&mut host, completed);
-        if completed % 2 == 0 && completed > last_recorded {
+        if completed.is_multiple_of(2) && completed > last_recorded {
             trajectory.push(translation_of(&packet, "inst-body-char"));
             last_recorded = completed;
         }

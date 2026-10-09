@@ -101,12 +101,14 @@ pub(super) fn build_chunks(
             candidate.kind,
             PreparedDeep2dChunkKind::DynamicPath { .. } | PreparedDeep2dChunkKind::Backdrop { .. }
         );
-        if mergeable && let Some(chunk) = chunks.last_mut().filter(|chunk| {
-            chunk.kind == candidate.kind
-                && chunk.clip_rect == candidate.clip_rect
-                && chunk.blend == candidate.blend
-                && chunk.first_vertex + chunk.vertex_count == candidate.first_vertex
-        }) {
+        if mergeable
+            && let Some(chunk) = chunks.last_mut().filter(|chunk| {
+                chunk.kind == candidate.kind
+                    && chunk.clip_rect == candidate.clip_rect
+                    && chunk.blend == candidate.blend
+                    && chunk.first_vertex + chunk.vertex_count == candidate.first_vertex
+            })
+        {
             chunk.vertex_count += candidate.vertex_count;
         } else {
             chunks.push(PreparedDeep2dChunk {

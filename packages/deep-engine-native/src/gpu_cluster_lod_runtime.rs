@@ -19,14 +19,14 @@
 //!    返回 Err,绝不静默降级;驻留预检任一违规拒绝创建 GPU 资源。
 //! 5. 空 cluster(triangleCount=0)按计划合同保留 indexCount=0 的 no-op 绘制槽位。
 
-use crate::gpu_cluster_lod_dag::{ClusterLodDagRuntime, CLUSTER_LOD_MAX_NODES};
+use crate::gpu_cluster_lod_dag::{CLUSTER_LOD_MAX_NODES, ClusterLodDagRuntime};
 use crate::gpu_cluster_lod_gpu::ClusterLodSelectionPipeline;
 use crate::gpu_cluster_lod_indirect::{
-    plan_cluster_lod_indirect, ClusterLodIndirectPlan, ClusterLodLevelSpan,
-    CLUSTER_LOD_INDIRECT_COMMAND_STRIDE_BYTES,
+    CLUSTER_LOD_INDIRECT_COMMAND_STRIDE_BYTES, ClusterLodIndirectPlan, ClusterLodLevelSpan,
+    plan_cluster_lod_indirect,
 };
 use crate::gpu_cluster_lod_selection::{
-    validate_camera, ClusterLodCamera, CLUSTER_LOD_CAMERA_UNIFORM_BYTES,
+    CLUSTER_LOD_CAMERA_UNIFORM_BYTES, ClusterLodCamera, validate_camera,
 };
 
 /// TS `packClusterLodCamera` 同构:相机 + 节点数 → 48B uniform 字节
@@ -57,8 +57,7 @@ pub fn pack_cluster_lod_camera_uniform(
     .into_iter()
     .enumerate()
     {
-        uniform[word * 4..word * 4 + 4]
-            .copy_from_slice(&(value as f32).to_bits().to_le_bytes());
+        uniform[word * 4..word * 4 + 4].copy_from_slice(&(value as f32).to_bits().to_le_bytes());
     }
     Ok(uniform)
 }
@@ -100,19 +99,27 @@ pub fn validate_cluster_lod_residency(dag: &ClusterLodDagRuntime) -> Result<(), 
     if dag.level_summaries.is_empty() {
         return Err("Cluster LOD residency requires at least one level geometry.".into());
     }
-    if dag.nodes.iter().any(|node| node.level as usize >= dag.level_summaries.len()) {
+    if dag
+        .nodes
+        .iter()
+        .any(|node| node.level as usize >= dag.level_summaries.len())
+    {
         return Err("Cluster LOD node level exceeds residency levels.".into());
     }
     let mut index_total = 0usize;
     let mut vertex_total = 0usize;
     for (level, summary) in dag.level_summaries.iter().enumerate() {
         if summary.index_count % 3 != 0 {
-            return Err(format!("Cluster LOD level {level} index table must be triangle triples."));
+            return Err(format!(
+                "Cluster LOD level {level} index table must be triangle triples."
+            ));
         }
         if summary.index_count > dag.index_buffer.len() - index_total
             || summary.vertex_count * 3 > dag.vertex_buffer.len() - vertex_total * 3
         {
-            return Err(format!("Cluster LOD level {level} summary exceeds stitched tables."));
+            return Err(format!(
+                "Cluster LOD level {level} summary exceeds stitched tables."
+            ));
         }
         index_total += summary.index_count;
         vertex_total += summary.vertex_count;
@@ -157,7 +164,7 @@ pub struct ClusterLodGpuRuntime {
     summaries: Vec<crate::gpu_cluster_lod_indirect::ClusterLodLevelGeometrySummary>,
     node_count: u32,
     // GPU 驻留 buffer 族。
-    node_buffer: wgpu::Buffer,
+    _node_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     selection_buffer: wgpu::Buffer,
@@ -278,7 +285,7 @@ impl ClusterLodGpuRuntime {
             plan_nodes: dag.plan_nodes.clone(),
             summaries: dag.level_summaries.clone(),
             node_count,
-            node_buffer,
+            _node_buffer: node_buffer,
             vertex_buffer,
             index_buffer,
             selection_buffer,
@@ -294,7 +301,11 @@ impl ClusterLodGpuRuntime {
             plan: None,
         };
         // 初始命令字全零(indexCount=0 no-op 槽):首帧计划提交前任何误消费都画不出东西。
-        queue.write_buffer(&runtime.indirect_buffer, 0, &vec![0u8; indirect_bytes as usize]);
+        queue.write_buffer(
+            &runtime.indirect_buffer,
+            0,
+            &vec![0u8; indirect_bytes as usize],
+        );
         Ok(runtime)
     }
 
@@ -310,7 +321,8 @@ impl ClusterLodGpuRuntime {
             return Err("cluster LOD selection dispatch exceeds device workgroup limit".into());
         }
         let node_bytes = dag.node_storage.len() as u64;
-        if node_bytes > limits.max_storage_buffer_binding_size || node_bytes > limits.max_buffer_size
+        if node_bytes > limits.max_storage_buffer_binding_size
+            || node_bytes > limits.max_buffer_size
         {
             return Err(format!(
                 "cluster LOD resident nodes exceed device storage buffer limit ({node_bytes} bytes)"
@@ -325,7 +337,9 @@ impl ClusterLodGpuRuntime {
             ),
         ] {
             if bytes > limits.max_buffer_size {
-                return Err(format!("cluster LOD {label} exceed device buffer limit ({bytes} bytes)"));
+                return Err(format!(
+                    "cluster LOD {label} exceed device buffer limit ({bytes} bytes)"
+                ));
             }
         }
         Ok(())
@@ -367,7 +381,8 @@ impl ClusterLodGpuRuntime {
             label: Some("cluster LOD selection dispatch"),
             ..Default::default()
         });
-        self.selection_pipeline.encode_selection(&mut pass, &self.bind_group, self.node_count);
+        self.selection_pipeline
+            .encode_selection(&mut pass, &self.bind_group, self.node_count);
         drop(pass);
         encoder.copy_buffer_to_buffer(
             &self.selection_buffer,
@@ -377,8 +392,10 @@ impl ClusterLodGpuRuntime {
             4 * self.node_count as u64,
         );
         encoder.copy_buffer_to_buffer(&self.faults_buffer, 0, &self.faults_staging, 0, 4);
-        self.dirty.store(false, std::sync::atomic::Ordering::Relaxed);
-        self.pending.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.dirty
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.pending
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// 最近一次成功提交的计划(无提交/faults 拒绝时 None)。
@@ -406,7 +423,8 @@ impl ClusterLodGpuRuntime {
         if !self.pending.load(std::sync::atomic::Ordering::Relaxed) {
             return Ok(self.plan.as_ref().map(|plan| plan.draw_count).unwrap_or(0));
         }
-        self.pending.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.pending
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         let selection = readback_words(device, &self.selection_staging, self.node_count as usize)?;
         let faults = readback_words(device, &self.faults_staging, 1)?;
         if faults[0] != 0 {

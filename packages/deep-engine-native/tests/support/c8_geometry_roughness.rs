@@ -4,14 +4,13 @@ use crate::{
     player_content::PlayerContent,
     shader_material_renderer::{FrameObservation, render_with_frame_observation},
 };
+use deep_engine_native::shader_package::hash;
 use deep_engine_native::{
     contract::validate_packet, player_view::PlayerView,
     runtime_package::parse_and_validate_runtime_package, scene_lighting::DirectionalLighting,
 };
 use serde_json::{Value, json};
 use winit::dpi::PhysicalSize;
-#[path = "../../src/shader_package/hash.rs"]
-mod hash;
 
 pub(super) fn fixture(smooth: bool, mapped: bool) -> (PlayerContent, Value) {
     let mut vertices = Vec::new();

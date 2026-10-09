@@ -30,13 +30,13 @@ pub mod simplify;
 pub mod types;
 pub mod validation;
 
-pub use dag::{build_meshlet_dag, DagLevel, DagOptions, MeshletDag};
-pub use dgc::{crc32c, read_dgc, write_dgc, DgcWriteOptions, FLAG_ZLIB, NO_PARENT};
+pub use dag::{DagLevel, DagOptions, MeshletDag, build_meshlet_dag};
+pub use dgc::{DgcWriteOptions, FLAG_ZLIB, NO_PARENT, crc32c, read_dgc, write_dgc};
 pub use error::{DagError, DagResult};
 pub use local_triangle::{pack_local_triangle, unpack_local_triangle};
-pub use meshlet_builder::{build_meshlets, MeshletBuildResult};
+pub use meshlet_builder::{MeshletBuildResult, build_meshlets};
 pub use obj::{parse_obj, write_obj};
-pub use simplify::{cluster_simplify, ClusterSimplifyResult};
+pub use simplify::{ClusterSimplifyResult, cluster_simplify};
 pub use types::{
     IndexedGeometry, MESHLET_BOUNDS_STRIDE, MESHLET_DESCRIPTOR_STRIDE, MESHLET_SCHEMA_VERSION,
 };

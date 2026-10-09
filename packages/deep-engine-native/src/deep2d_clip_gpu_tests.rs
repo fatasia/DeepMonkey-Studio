@@ -60,7 +60,7 @@ fn clipped_fill(
         shadow: None,
         blend: None,
         backdrop_blur: None,
-        })
+    })
 }
 
 fn display_list() -> Deep2dDisplayList {

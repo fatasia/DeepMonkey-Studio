@@ -10,8 +10,8 @@
 //! collider 沿 z 错层与 Web 端逐项一致(相邻杆件在关节销处体积重叠,保留杆间
 //! 接触会把机构内部炸开;z 错层与 z 轴旋转正交,分离永久成立)。
 
-use super::mechanism_golden_support::*;
 use super::NativePhysicsHost;
+use super::mechanism_golden_support::*;
 use crate::contract::RenderPacket;
 use crate::runtime_package::parse_and_validate_dynamic_scene_runtime;
 

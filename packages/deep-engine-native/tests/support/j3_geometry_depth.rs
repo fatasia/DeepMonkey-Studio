@@ -1,19 +1,16 @@
+use crate::j3_geometry_depth_readback as depth_readback;
+use crate::j3_hdr_frame as hdr_frame;
 use crate::{
     player_content::PlayerContent,
     shader_material_renderer::{FrameObservation, render_with_frame_observation},
 };
+use deep_engine_native::shader_package::hash;
 use deep_engine_native::{
     half_decode::half_to_f32, player_view::PlayerView,
     runtime_package::parse_and_validate_runtime_package,
 };
 use serde_json::{Value, json};
 use winit::dpi::PhysicalSize;
-#[path = "j3_geometry_depth_readback.rs"]
-mod depth_readback;
-#[path = "../../src/shader_package/hash.rs"]
-mod hash;
-#[path = "j3_hdr_frame.rs"]
-mod hdr_frame;
 const MANIFEST: &str = include_str!("../../../deep-engine/fixtures/j3-geometry-depth-v1.json");
 const HDR_MANIFEST: &str = include_str!("../../../deep-engine/fixtures/j3-hdr-flat-normal-v1.json");
 const PACKAGE: &[u8] = include_bytes!("../fixtures/runtime-package-v1.json");

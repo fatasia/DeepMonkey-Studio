@@ -1,7 +1,6 @@
 #[path = "../src/half_float.rs"]
 mod half_float;
-#[path = "../src/shader_package/hash.rs"]
-mod hash;
+use deep_engine_native::shader_package::hash;
 #[path = "../src/output_pass.rs"]
 mod output_pass;
 use deep_engine_native::{

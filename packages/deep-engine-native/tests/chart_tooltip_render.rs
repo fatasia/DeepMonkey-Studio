@@ -65,7 +65,10 @@ fn actual_tooltip_pixels_compose_in_both_themes_without_changing_hit_geometry() 
             panic!("panel")
         };
         assert_eq!(
-            panel.fill.as_ref().and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color),
+            panel
+                .fill
+                .as_ref()
+                .and_then(deep_engine_native::deep2d::Deep2dPaint::solid_color),
             theme.colors.surface1
         );
         assert!(panel.hit_id.is_none());

@@ -19,8 +19,8 @@
 mod common;
 
 use base64::Engine as _;
-use common::{load_fixture, sha256_hex, B64};
-use geometry_dag::{build_meshlet_dag, write_dgc, DagOptions, DgcWriteOptions};
+use common::{B64, load_fixture, sha256_hex};
+use geometry_dag::{DagOptions, DgcWriteOptions, build_meshlet_dag, write_dgc};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
@@ -41,7 +41,10 @@ fn golden_dag() -> geometry_dag::MeshletDag {
     };
     build_meshlet_dag(
         &geometry,
-        &DagOptions { levels: Some(fixture.levels_option), ..Default::default() },
+        &DagOptions {
+            levels: Some(fixture.levels_option),
+            ..Default::default()
+        },
     )
     .expect("build golden dag")
 }
@@ -107,7 +110,10 @@ fn regenerate_fixture() {
     let path = format!("{}/{FIXTURE_PATH}", env!("CARGO_MANIFEST_DIR"));
     std::fs::write(&path, &json).unwrap_or_else(|e| panic!("write fixture {path}: {e}"));
     for (name, variant) in compute_variants() {
-        println!("{name}: sha256={} bytes={}", variant.sha256, variant.byte_count);
+        println!(
+            "{name}: sha256={} bytes={}",
+            variant.sha256, variant.byte_count
+        );
     }
     println!("fixture written: {path}");
 }
@@ -135,14 +141,28 @@ fn load_byte_fixture() -> BTreeMap<String, ByteVariant> {
             },
         );
     }
-    assert_eq!(variants.len(), 2, "fixture must carry both compression variants");
+    assert_eq!(
+        variants.len(),
+        2,
+        "fixture must carry both compression variants"
+    );
     variants
 }
 
 fn decode_variant(variant: &ByteVariant) -> Vec<u8> {
-    let bytes = B64.decode(variant.bytes_b64.as_bytes()).expect("fixture b64");
-    assert_eq!(bytes.len(), variant.byte_count, "byteCount declaration drift");
-    assert_eq!(sha256_hex(&bytes), variant.sha256, "sha256 declaration drift");
+    let bytes = B64
+        .decode(variant.bytes_b64.as_bytes())
+        .expect("fixture b64");
+    assert_eq!(
+        bytes.len(),
+        variant.byte_count,
+        "byteCount declaration drift"
+    );
+    assert_eq!(
+        sha256_hex(&bytes),
+        variant.sha256,
+        "sha256 declaration drift"
+    );
     bytes
 }
 
@@ -153,7 +173,10 @@ fn fixture_variants_self_consistent() {
         assert_eq!(&bytes[0..4], b"DGC1", "{name}: magic");
         let flags = u32::from_le_bytes(bytes[8..12].try_into().expect("4 bytes"));
         let expected_flag = u32::from(name == "compressed") * geometry_dag::FLAG_ZLIB;
-        assert_eq!(flags, expected_flag, "{name}: FLAG_ZLIB must match variant name");
+        assert_eq!(
+            flags, expected_flag,
+            "{name}: FLAG_ZLIB must match variant name"
+        );
     }
 }
 
@@ -162,7 +185,10 @@ fn write_compressed_bit_exact() {
     let dag = golden_dag();
     let bytes = write_dgc(&dag, &DgcWriteOptions { compress: true }).expect("write");
     let golden = decode_variant(&load_byte_fixture()["compressed"]);
-    assert_eq!(bytes, golden, "compressed write_dgc bytes drift from committed golden");
+    assert_eq!(
+        bytes, golden,
+        "compressed write_dgc bytes drift from committed golden"
+    );
 }
 
 #[test]
@@ -170,31 +196,60 @@ fn write_uncompressed_bit_exact() {
     let dag = golden_dag();
     let bytes = write_dgc(&dag, &DgcWriteOptions { compress: false }).expect("write");
     let golden = decode_variant(&load_byte_fixture()["uncompressed"]);
-    assert_eq!(bytes, golden, "uncompressed write_dgc bytes drift from committed golden");
+    assert_eq!(
+        bytes, golden,
+        "uncompressed write_dgc bytes drift from committed golden"
+    );
 }
 
 fn assert_roundtrip(bytes: &[u8], label: &str) {
     let dag = golden_dag();
-    let back = geometry_dag::read_dgc(bytes).unwrap_or_else(|e| panic!("{label}: read failed: {e}"));
+    let back =
+        geometry_dag::read_dgc(bytes).unwrap_or_else(|e| panic!("{label}: read failed: {e}"));
     assert_eq!(back.levels.len(), dag.levels.len(), "{label}: level count");
     for (index, (back_level, level)) in back.levels.iter().zip(&dag.levels).enumerate() {
-        assert_eq!(back_level.error.to_bits(), level.error.to_bits(), "{label} level {index}: error bits");
-        assert_eq!(back_level.positions, level.positions, "{label} level {index}: positions");
-        assert_eq!(back_level.indices, level.indices, "{label} level {index}: indices");
-        assert_eq!(back_level.descriptors, level.descriptors, "{label} level {index}: descriptors");
-        assert_eq!(back_level.vertex_remap, level.vertex_remap, "{label} level {index}: vertexRemap");
+        assert_eq!(
+            back_level.error.to_bits(),
+            level.error.to_bits(),
+            "{label} level {index}: error bits"
+        );
+        assert_eq!(
+            back_level.positions, level.positions,
+            "{label} level {index}: positions"
+        );
+        assert_eq!(
+            back_level.indices, level.indices,
+            "{label} level {index}: indices"
+        );
+        assert_eq!(
+            back_level.descriptors, level.descriptors,
+            "{label} level {index}: descriptors"
+        );
+        assert_eq!(
+            back_level.vertex_remap, level.vertex_remap,
+            "{label} level {index}: vertexRemap"
+        );
         assert_eq!(
             back_level.local_triangle_indices, level.local_triangle_indices,
             "{label} level {index}: localTriangleIndices"
         );
-        assert_eq!(back_level.bounds, level.bounds, "{label} level {index}: bounds");
-        assert_eq!(back_level.source_triangles, level.source_triangles, "{label} level {index}: sourceTriangles");
+        assert_eq!(
+            back_level.bounds, level.bounds,
+            "{label} level {index}: bounds"
+        );
+        assert_eq!(
+            back_level.source_triangles, level.source_triangles,
+            "{label} level {index}: sourceTriangles"
+        );
         assert_eq!(
             back_level.cluster_source_spans, level.cluster_source_spans,
             "{label} level {index}: clusterSourceSpans"
         );
     }
-    assert_eq!(back.parents_by_level, dag.parents_by_level, "{label}: parents");
+    assert_eq!(
+        back.parents_by_level, dag.parents_by_level,
+        "{label}: parents"
+    );
 }
 
 #[test]

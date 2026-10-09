@@ -8,7 +8,10 @@ thread_local! {
 }
 
 impl NativeApp {
-    pub(super) fn begin_wasm_package_stage(&mut self, content: PlayerContent) -> Result<(), PlayerContent> {
+    pub(super) fn begin_wasm_package_stage(
+        &mut self,
+        content: PlayerContent,
+    ) -> Result<(), PlayerContent> {
         let compatible = self.renderer.as_ref().is_some_and(|renderer| !renderer.requires_content_rebuild(&content))
             // Independently compiled snapshots can reuse revision 0/1. Prove
             // immutable resource equality before entering revision-based paths.
@@ -28,7 +31,9 @@ impl NativeApp {
                     &external(&before.resource_index), &external(&after.resource_index))
                     .is_ok_and(|plan| plan.is_empty())
             });
-        if !compatible { return Err(content); }
+        if !compatible {
+            return Err(content);
+        }
         let renderer = self.renderer.take().expect("compatible renderer");
         self.physics_stage_epoch = self.physics_stage_epoch.wrapping_add(1);
         let epoch = self.physics_stage_epoch;
@@ -37,9 +42,15 @@ impl NativeApp {
         let previous = self.content.snapshot();
         let proxy = self.proxy.clone();
         wasm_bindgen_futures::spawn_local(async move {
-            let staged = renderer.stage_render_packet_update(previous.packet(), &content).await;
+            let staged = renderer
+                .stage_render_packet_update(previous.packet(), &content)
+                .await;
             drop(previous);
-            RESULTS.with(|results| { results.borrow_mut().insert(epoch, (renderer, staged, Some(content))); });
+            RESULTS.with(|results| {
+                results
+                    .borrow_mut()
+                    .insert(epoch, (renderer, staged, Some(content)));
+            });
             wasm_bindgen_futures::spawn_local(async move {
                 let _ = proxy.send_event(GpuEvent::WasmPhysicsFrameReady { epoch });
             });
@@ -86,7 +97,10 @@ impl NativeApp {
                 if let Err(error) = renderer.publish_render_packet_update(staged) {
                     self.renderer = Some(renderer);
                     crate::app_startup::mark_wasm_renderer_failed(error.clone());
-                    if content.is_some() { self.request_redraw(); return; }
+                    if content.is_some() {
+                        self.request_redraw();
+                        return;
+                    }
                     self.state.failed(error);
                     event_loop.exit();
                     return;
@@ -94,7 +108,8 @@ impl NativeApp {
                 if let Some(content) = content {
                     let view = content.view_after_reload(self.content.active(), self.state.view);
                     let controls = content.camera_controls();
-                    self.product_physics_playback = super::dynamic_playback::ProductPhysicsPlayback::for_content(&content);
+                    self.product_physics_playback =
+                        super::dynamic_playback::ProductPhysicsPlayback::for_content(&content);
                     self.content = PublishedState::new(content);
                     self.state.set_camera(view, controls);
                     renderer.set_view(self.state.view);
@@ -107,7 +122,10 @@ impl NativeApp {
             Some((renderer, Err(error), content)) => {
                 self.renderer = Some(renderer);
                 crate::app_startup::mark_wasm_renderer_failed(error.clone());
-                if content.is_some() { self.request_redraw(); return; }
+                if content.is_some() {
+                    self.request_redraw();
+                    return;
+                }
                 self.state.failed(error);
                 event_loop.exit();
             }

@@ -37,11 +37,13 @@ describe("J3-D-full 层目录与门绑定", () => {
     expect(DISPLAY_BYTE_LSB).toBeCloseTo(0.00392156862745098, 12);
   });
 
-  it("已验证层指向的证据目录当前存在(引用完整性,不读内容)", () => {
+  it("各层引用已提交的 fixture 与比较器，GPU 证据由独立聚合门验证", () => {
     for (const layer of J3_D_FULL_LAYERS) {
-      if (layer.status === "cpu-prep-only") continue;
-      expect(existsSync(path.join(root, layer.evidenceDir, "evidence.json")),
-        `${layer.id} 声称已验证但缺 evidence.json`).toBe(true);
+      expect(layer.scopePrefixes.length, layer.id).toBeGreaterThan(0);
+      expect(existsSync(path.join(root, layer.fixtureFile!)), layer.id).toBe(true);
+      for (const comparator of J3_D_FULL_GATES[layer.gateId].comparators) {
+        expect(existsSync(path.join(root, comparator)), `${layer.id}: ${comparator}`).toBe(true);
+      }
     }
   });
 

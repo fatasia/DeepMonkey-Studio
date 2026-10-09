@@ -376,7 +376,7 @@ impl NativePhysicsHost {
             let movement = &movements[cursor];
             let ground_normal = ground_normals[cursor];
             cursor += 1;
-            character.finish_tick(body, &plan, &movement, ground_normal, dt, tick);
+            character.finish_tick(body, &plan, movement, ground_normal, dt, tick);
         }
 
         self.pipeline.step(
@@ -457,13 +457,12 @@ impl NativePhysicsHost {
                 collider
                     .shape()
                     .cast_ray_and_get_normal(collider.position(), &ray, max_toi, true);
-            if let Some(hit) = hit {
-                if best
+            if let Some(hit) = hit
+                && best
                     .as_ref()
                     .is_none_or(|(_, previous)| hit.time_of_impact < previous.time_of_impact)
-                {
-                    best = Some((handle, hit));
-                }
+            {
+                best = Some((handle, hit));
             }
         }
         let (collider_handle, hit) = best?;
@@ -593,7 +592,6 @@ fn vec3(value: [f64; 3]) -> Result<Vec3, String> {
 fn wrap_angle(delta: f32) -> f32 {
     delta - std::f32::consts::TAU * (delta / std::f32::consts::TAU).round()
 }
-
 
 #[cfg(test)]
 mod tests {

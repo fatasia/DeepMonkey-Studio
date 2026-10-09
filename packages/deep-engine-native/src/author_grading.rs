@@ -134,7 +134,11 @@ impl AuthorGrading {
     pub fn pack(self) -> [f32; 12] {
         [
             1.0,
-            if self.vignette_darkness.is_some() { 1.0 } else { 0.0 },
+            if self.vignette_darkness.is_some() {
+                1.0
+            } else {
+                0.0
+            },
             1.0,
             self.vignette_darkness.unwrap_or(0.0),
             self.hue,
@@ -280,16 +284,16 @@ mod tests {
         let grading = AuthorGrading::new(30.0, 0.5, -0.25, 0.1, 0.8, -0.4).unwrap();
         assert_eq!(grading.pack()[0..4], [1.0, 0.0, 1.0, 0.0]);
         let with_vignette =
-            AuthorGrading::new_with_vignette(30.0, 0.5, -0.25, 0.1, 0.8, -0.4, Some(1.5))
-                .unwrap();
-        assert_eq!(with_vignette.pack(), [
-            1.0, 1.0, 1.0, 1.5, 30.0, 0.5, -0.25, 0.1, 0.8, -0.4, 0.0, 0.0
-        ]);
+            AuthorGrading::new_with_vignette(30.0, 0.5, -0.25, 0.1, 0.8, -0.4, Some(1.5)).unwrap();
+        assert_eq!(
+            with_vignette.pack(),
+            [
+                1.0, 1.0, 1.0, 1.5, 30.0, 0.5, -0.25, 0.1, 0.8, -0.4, 0.0, 0.0
+            ]
+        );
         // 仅渐晕(六通道全零):非中性,pack switches=[1,1,1,darkness,...]。
-        let vignette_only = AuthorGrading::new_with_vignette(
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Some(0.0),
-        )
-        .unwrap();
+        let vignette_only =
+            AuthorGrading::new_with_vignette(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Some(0.0)).unwrap();
         assert!(!vignette_only.is_neutral());
         assert_eq!(vignette_only.pack()[0..4], [1.0, 1.0, 1.0, 0.0]);
     }
@@ -305,7 +309,9 @@ mod tests {
             Some(f32::NAN),
             Some(f32::INFINITY),
         ] {
-            assert!(AuthorGrading::new_with_vignette(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, invalid).is_err());
+            assert!(
+                AuthorGrading::new_with_vignette(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, invalid).is_err()
+            );
         }
     }
 
@@ -313,15 +319,19 @@ mod tests {
     /// (f64 域),按 f32 精度容差对拍。覆盖:仅渐晕/渐晕+分级叠加/角落
     /// 全暗/中心恒等。
     #[test]
+    #[allow(clippy::type_complexity)] // Golden cases keep all input and expected lanes together.
     fn vignette_math_matches_web_reference_within_f32_tolerance() {
-        let grading = AuthorGrading::new(30.0, 0.5, -0.25, 0.1, 0.8, -0.4).unwrap();
         let cases: &[([f32; 3], [f32; 2], AuthorGrading, [f64; 3])] = &[
             // 仅渐晕 d=1.5, uv=(0.9,0.1) → TS [0.384, 0.18, -0.024]
             (
                 [0.8, 0.5, 0.2],
                 [0.9, 0.1],
                 AuthorGrading::new_with_vignette(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Some(1.5)).unwrap(),
-                [0.3839999999999999, 0.17999999999999994, -0.02400000000000005],
+                [
+                    0.3839999999999999,
+                    0.17999999999999994,
+                    -0.02400000000000005,
+                ],
             ),
             // 渐晕 d=0.8 + 分级叠加(渐晕先于分级,TS 分支次序)。
             (
@@ -329,7 +339,11 @@ mod tests {
                 [0.9, 0.1],
                 AuthorGrading::new_with_vignette(30.0, 0.5, -0.25, 0.1, 0.8, -0.4, Some(0.8))
                     .unwrap(),
-                [0.38160437927435964, 0.36893117040925877, -0.3186053248549768],
+                [
+                    0.38160437927435964,
+                    0.36893117040925877,
+                    -0.3186053248549768,
+                ],
             ),
             // 角落 uv=(0,0) d=3:radial=0.5 → c*0.5 + (1-3)*0.5。
             (

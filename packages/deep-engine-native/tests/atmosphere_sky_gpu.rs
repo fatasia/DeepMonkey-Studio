@@ -40,7 +40,11 @@ fn request_device() -> Option<(wgpu::Device, wgpu::Queue, String)> {
 fn camera_basis() -> ([f64; 3], [f64; 3], [f64; 3]) {
     let forward = SUN;
     let cross = |a: [f64; 3], b: [f64; 3]| {
-        [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
     };
     let normalize = |v: [f64; 3]| {
         let length = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
@@ -75,7 +79,11 @@ fn atmosphere_sky_pass_matches_cpu_mirror() {
     });
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("atmosphere sky target"),
-        size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -129,14 +137,20 @@ fn atmosphere_sky_pass_matches_cpu_mirror() {
                 rows_per_image: None,
             },
         },
-        wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
     );
     queue.submit(Some(encoder.finish()));
     let (sender, receiver) = std::sync::mpsc::channel();
     staging.map_async(wgpu::MapMode::Read, .., move |result| {
         sender.send(result).unwrap();
     });
-    device.poll(wgpu::PollType::wait_indefinitely()).expect("poll device");
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("poll device");
     receiver
         .recv_timeout(std::time::Duration::from_secs(10))
         .unwrap()
@@ -159,7 +173,7 @@ fn atmosphere_sky_pass_matches_cpu_mirror() {
     let parameters = AtmosphereSkyParameters {
         turbidity: TURBIDITY,
         sun_direction_enu: SUN,
-        mie_anisotropy: Some(f64::from(DEFAULT_MIE_ANISOTROPY)),
+        mie_anisotropy: Some(DEFAULT_MIE_ANISOTROPY),
     };
     let tolerance = 2e-3;
     let mut worst = 0.0f64;
@@ -194,9 +208,14 @@ fn atmosphere_sky_pass_matches_cpu_mirror() {
     // (1+γ²) 在 γ=0 峰值);边缘像素的蓝红比高于中心(Rayleigh 蓝移随角度增强)。
     let center = &gpu_pixels[((HEIGHT / 2) * WIDTH + WIDTH / 2) as usize];
     let corner = &gpu_pixels[0];
-    let center_luma = f64::from(center[0]) * 0.3 + f64::from(center[1]) * 0.59 + f64::from(center[2]) * 0.11;
-    let corner_luma = f64::from(corner[0]) * 0.3 + f64::from(corner[1]) * 0.59 + f64::from(corner[2]) * 0.11;
-    assert!(center_luma > corner_luma, "circumsolar center must dominate: {center_luma} vs {corner_luma}");
+    let center_luma =
+        f64::from(center[0]) * 0.3 + f64::from(center[1]) * 0.59 + f64::from(center[2]) * 0.11;
+    let corner_luma =
+        f64::from(corner[0]) * 0.3 + f64::from(corner[1]) * 0.59 + f64::from(corner[2]) * 0.11;
+    assert!(
+        center_luma > corner_luma,
+        "circumsolar center must dominate: {center_luma} vs {corner_luma}"
+    );
     let center_ratio = f64::from(center[2]) / f64::from(center[0]);
     let corner_ratio = f64::from(corner[2]) / f64::from(corner[0]);
     assert!(

@@ -56,7 +56,7 @@ impl Renderer {
         // 换包重建已经按 (package_id, package_hash) 给出了 document_revision,
         // 直接把它作为资源代次:同包重复发布幂等,不同包整批失效。
         let context = content.deep2d.as_ref().map(|deep2d| {
-            crate::deep2d_gpu::deep2d_frame_context(
+            crate::deep2d_frame_context::deep2d_frame_context(
                 deep2d,
                 [self.size.width, self.size.height],
                 content.epoch.document_revision,

@@ -357,4 +357,3 @@ pub fn run_cloth(config: &Value, pinned: &Value, ticks: u64) -> (String, String,
     );
     (initial, fingerprint, solver.rest.len())
 }
-

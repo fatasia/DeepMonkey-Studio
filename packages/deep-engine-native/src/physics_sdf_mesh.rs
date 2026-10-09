@@ -96,7 +96,12 @@ pub struct SdfCollisionMesh {
 pub fn extract_sdf_collision_mesh(grid: &SdfMeshInput) -> Result<SdfCollisionMesh, String> {
     let [nx, ny, nz] = grid.dimensions;
     let cells = nx * ny * nz;
-    if nx < 2 || ny < 2 || nz < 2 || nx > 128 || ny > 128 || nz > 128
+    if nx < 2
+        || ny < 2
+        || nz < 2
+        || nx > 128
+        || ny > 128
+        || nz > 128
         || cells > MAX_SDF_MESH_CELLS
         || grid.distances.len() != cells
     {
@@ -104,7 +109,10 @@ pub fn extract_sdf_collision_mesh(grid: &SdfMeshInput) -> Result<SdfCollisionMes
             "SDF 碰撞提取要求有界网格(每维 2..128、cells ≤ {MAX_SDF_MESH_CELLS}),实测 {nx}×{ny}×{nz}"
         ));
     }
-    if !grid.cell_size.is_finite() || grid.cell_size <= 0.0 || grid.origin.iter().any(|v| !v.is_finite()) {
+    if !grid.cell_size.is_finite()
+        || grid.cell_size <= 0.0
+        || grid.origin.iter().any(|v| !v.is_finite())
+    {
         return Err("SDF 碰撞提取要求有限正 cellSize 与有限 origin".into());
     }
     if grid.distances.iter().any(|value| !value.is_finite()) {
@@ -123,14 +131,19 @@ pub fn extract_sdf_collision_mesh(grid: &SdfMeshInput) -> Result<SdfCollisionMes
             for x in 0..=nx {
                 let point = z * stride_z + y * stride_y + x;
                 // f64 求值后收敛 f32,与 TS `Math.fround(ox + x*cs)` 逐位一致。
-                px[point] = (f64::from(grid.origin[0]) + f64::from(x as f32) * f64::from(grid.cell_size)) as f32;
-                py[point] = (f64::from(grid.origin[1]) + f64::from(y as f32) * f64::from(grid.cell_size)) as f32;
-                pz[point] = (f64::from(grid.origin[2]) + f64::from(z as f32) * f64::from(grid.cell_size)) as f32;
+                px[point] = (f64::from(grid.origin[0])
+                    + f64::from(x as f32) * f64::from(grid.cell_size))
+                    as f32;
+                py[point] = (f64::from(grid.origin[1])
+                    + f64::from(y as f32) * f64::from(grid.cell_size))
+                    as f32;
+                pz[point] = (f64::from(grid.origin[2])
+                    + f64::from(z as f32) * f64::from(grid.cell_size))
+                    as f32;
                 pd[point] = if x < nx && y < ny && z < nz {
                     grid.distances[z * ny * nx + y * nx + x]
                 } else {
-                    grid.distances
-                        [z.min(nz - 1) * ny * nx + y.min(ny - 1) * nx + x.min(nx - 1)]
+                    grid.distances[z.min(nz - 1) * ny * nx + y.min(ny - 1) * nx + x.min(nx - 1)]
                 };
             }
         }
@@ -149,7 +162,12 @@ pub fn extract_sdf_collision_mesh(grid: &SdfMeshInput) -> Result<SdfCollisionMes
                     pd[base + dz * stride_z + dy * stride_y + dx]
                 });
                 for tet in &KUHN_TETS {
-                    let d: [f32; 4] = [cube_d[tet[0]], cube_d[tet[1]], cube_d[tet[2]], cube_d[tet[3]]];
+                    let d: [f32; 4] = [
+                        cube_d[tet[0]],
+                        cube_d[tet[1]],
+                        cube_d[tet[2]],
+                        cube_d[tet[3]],
+                    ];
                     let mut mask = 0usize;
                     for (i, value) in d.iter().enumerate() {
                         if *value < 0.0 {
@@ -195,7 +213,11 @@ pub fn extract_sdf_collision_mesh(grid: &SdfMeshInput) -> Result<SdfCollisionMes
                     for vertex in 0..4 {
                         let [dx, dy, dz] = CUBE_CORNERS[tet[vertex]];
                         let point = base + dz * stride_z + dy * stride_y + dx;
-                        let coords = [f64::from(px[point]), f64::from(py[point]), f64::from(pz[point])];
+                        let coords = [
+                            f64::from(px[point]),
+                            f64::from(py[point]),
+                            f64::from(pz[point]),
+                        ];
                         if cube_d[tet[vertex]] < 0.0 {
                             first_in.get_or_insert(coords);
                         } else {
@@ -205,9 +227,7 @@ pub fn extract_sdf_collision_mesh(grid: &SdfMeshInput) -> Result<SdfCollisionMes
                     let out = first_out.expect("tet with a crossing has an outside vertex");
                     let inside = first_in.expect("tet with a crossing has an inside vertex");
                     let reference = [out[0] - inside[0], out[1] - inside[1], out[2] - inside[2]];
-                    emit_triangle(
-                        &positions, &mut indices, crossings, unique_edges, reference,
-                    );
+                    emit_triangle(&positions, &mut indices, crossings, unique_edges, reference);
                 }
             }
         }
@@ -252,7 +272,9 @@ fn edge_vertex(
         .map_err(|_| "SDF 等值面顶点数超出 u32 索引域".to_string())?;
     let t = da / (da - db);
     for axis_positions in [px, py, pz] {
-        positions.push(axis_positions[point_a] + t * (axis_positions[point_b] - axis_positions[point_a]));
+        positions.push(
+            axis_positions[point_a] + t * (axis_positions[point_b] - axis_positions[point_a]),
+        );
     }
     edge_vertices.insert(key, index);
     Ok(index)
@@ -271,7 +293,11 @@ fn emit_triangle(
 ) {
     let emit = |indices: &mut Vec<u32>, a: u32, b: u32, c: u32| {
         let at = a as usize * 3;
-        let (ax, ay, az) = (f64::from(positions[at]), f64::from(positions[at + 1]), f64::from(positions[at + 2]));
+        let (ax, ay, az) = (
+            f64::from(positions[at]),
+            f64::from(positions[at + 1]),
+            f64::from(positions[at + 2]),
+        );
         let bt = b as usize * 3;
         let e1 = [
             f64::from(positions[bt]) - ax,
@@ -306,7 +332,7 @@ fn emit_triangle(
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_sdf_collision_mesh, SdfCollisionMesh, SdfMeshInput};
+    use super::{SdfCollisionMesh, SdfMeshInput, extract_sdf_collision_mesh};
     use std::collections::HashMap;
 
     /// 与 TS fixture 同源凹 L 棱柱解析 SDF:x∈[0,1]×y∈[0,3] ∪ x∈[0,3]×y∈[0,1],
@@ -340,7 +366,12 @@ mod tests {
                 }
             }
         }
-        SdfMeshInput { origin, cell_size: cell, dimensions: [nx, ny, nz], distances: Box::leak(distances.into_boxed_slice()) }
+        SdfMeshInput {
+            origin,
+            cell_size: cell,
+            dimensions: [nx, ny, nz],
+            distances: Box::leak(distances.into_boxed_slice()),
+        }
     }
 
     fn edge_use(mesh: &SdfCollisionMesh) -> HashMap<(u32, u32), usize> {
@@ -358,7 +389,11 @@ mod tests {
     #[test]
     fn concave_l_surface_is_closed_and_deterministic() {
         let first = extract_sdf_collision_mesh(&l_grid()).expect("extraction succeeds");
-        assert!(first.triangle_count > 100, "triangle count {}", first.triangle_count);
+        assert!(
+            first.triangle_count > 100,
+            "triangle count {}",
+            first.triangle_count
+        );
         for (edge, count) in edge_use(&first) {
             assert_eq!(count, 2, "edge {edge:?} used {count} times");
         }
@@ -371,22 +406,40 @@ mod tests {
     fn payload_violations_fail_closed() {
         let grid = l_grid();
         let flat = SdfMeshInput {
-            origin: grid.origin, cell_size: grid.cell_size, dimensions: grid.dimensions,
+            origin: grid.origin,
+            cell_size: grid.cell_size,
+            dimensions: grid.dimensions,
             distances: Box::leak(vec![1.0f32; 16 * 16 * 8].into_boxed_slice()),
         };
-        assert!(extract_sdf_collision_mesh(&flat).unwrap_err().contains("全场同号"));
+        assert!(
+            extract_sdf_collision_mesh(&flat)
+                .unwrap_err()
+                .contains("全场同号")
+        );
         let bad_dims = SdfMeshInput {
-            origin: grid.origin, cell_size: grid.cell_size, dimensions: [1, 16, 8],
+            origin: grid.origin,
+            cell_size: grid.cell_size,
+            dimensions: [1, 16, 8],
             distances: Box::leak(vec![0.0f32; 16 * 8].into_boxed_slice()),
         };
-        assert!(extract_sdf_collision_mesh(&bad_dims).unwrap_err().contains("有界网格"));
+        assert!(
+            extract_sdf_collision_mesh(&bad_dims)
+                .unwrap_err()
+                .contains("有界网格")
+        );
         let mut nan_distances = grid.distances.to_vec();
         nan_distances[0] = f32::NAN;
         let nan_grid = SdfMeshInput {
-            origin: grid.origin, cell_size: grid.cell_size, dimensions: grid.dimensions,
+            origin: grid.origin,
+            cell_size: grid.cell_size,
+            dimensions: grid.dimensions,
             distances: Box::leak(nan_distances.into_boxed_slice()),
         };
-        assert!(extract_sdf_collision_mesh(&nan_grid).unwrap_err().contains("非有限"));
+        assert!(
+            extract_sdf_collision_mesh(&nan_grid)
+                .unwrap_err()
+                .contains("非有限")
+        );
     }
 
     /// 跨端逐位对拍:TS(vitest,buildSdfGrid × concavePrism)生成
@@ -415,20 +468,34 @@ mod tests {
         let origin: [f64; 3] = serde_json::from_value(meta["origin"].clone()).unwrap();
         let cell_size = meta["cellSize"].as_f64().unwrap();
         let dimensions: [u64; 3] = serde_json::from_value(meta["dimensions"].clone()).unwrap();
-        let distances: Vec<f32> = fixture.distances.iter().map(|value| *value as f32).collect();
+        let distances: Vec<f32> = fixture
+            .distances
+            .iter()
+            .map(|value| *value as f32)
+            .collect();
         let mesh = extract_sdf_collision_mesh(&SdfMeshInput {
             origin: [origin[0] as f32, origin[1] as f32, origin[2] as f32],
             cell_size: cell_size as f32,
-            dimensions: [dimensions[0] as usize, dimensions[1] as usize, dimensions[2] as usize],
+            dimensions: [
+                dimensions[0] as usize,
+                dimensions[1] as usize,
+                dimensions[2] as usize,
+            ],
             distances: &distances,
         })
         .expect("fixture grid extracts");
         assert_eq!(mesh.triangle_count, fixture.expect.triangle_count);
         assert_eq!(mesh.vertex_count, fixture.expect.vertex_count);
-        let positions_bytes: Vec<u8> =
-            mesh.positions.iter().flat_map(|value| value.to_le_bytes()).collect();
-        let indices_bytes: Vec<u8> =
-            mesh.indices.iter().flat_map(|value| value.to_le_bytes()).collect();
+        let positions_bytes: Vec<u8> = mesh
+            .positions
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect();
+        let indices_bytes: Vec<u8> = mesh
+            .indices
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect();
         assert_eq!(
             crate::shader_package::hash::sha256(&positions_bytes),
             fixture.expect.positions_sha256,

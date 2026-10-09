@@ -61,11 +61,9 @@ pub fn resolve_auto_exposure_config(
     scene_exposure_bias: Option<f64>,
 ) -> AutoExposureConfig {
     let defaults = AutoExposureConfig::default();
-    let finite_positive = |value: Option<f64>, fallback: f64, ceiling: f64| {
-        match value {
-            Some(value) if value.is_finite() && value > 0.0 && value <= ceiling => value,
-            _ => fallback,
-        }
+    let finite_positive = |value: Option<f64>, fallback: f64, ceiling: f64| match value {
+        Some(value) if value.is_finite() && value > 0.0 && value <= ceiling => value,
+        _ => fallback,
     };
     AutoExposureConfig {
         adaptation_time_constant_seconds: finite_positive(
@@ -121,8 +119,13 @@ impl AutoExposureProvenance {
 /// 亮度估计结果(fail-closed:不可估计时带记录式原因)。
 #[derive(Debug, Clone, PartialEq)]
 pub enum LuminanceEstimateOutcome {
-    Estimated { luminance: f64, provenance: AutoExposureProvenance },
-    Unavailable { reason: String },
+    Estimated {
+        luminance: f64,
+        provenance: AutoExposureProvenance,
+    },
+    Unavailable {
+        reason: String,
+    },
 }
 
 /// 等距柱状全景(RadianceHdrImage 同形:线性 RGB 行主序)。
@@ -144,7 +147,7 @@ fn luminance_outcome(
     weight: f64,
     provenance: AutoExposureProvenance,
 ) -> LuminanceEstimateOutcome {
-    if !(weight > 0.0) {
+    if weight.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
         return LuminanceEstimateOutcome::Unavailable {
             reason: format!("{}:no-samples", provenance.as_str()),
         };
@@ -155,7 +158,10 @@ fn luminance_outcome(
             reason: format!("{}:luminance-not-positive", provenance.as_str()),
         };
     }
-    LuminanceEstimateOutcome::Estimated { luminance, provenance }
+    LuminanceEstimateOutcome::Estimated {
+        luminance,
+        provenance,
+    }
 }
 
 /// 等距柱全景:纬度立体角 ∝ sin(纬度),按行加权;抽样上限约 64×128。
@@ -176,18 +182,24 @@ pub fn estimate_luminance_from_equirect(
     let mut sum = 0.0f64;
     let mut y = step_y >> 1;
     while y < height {
-        let latitude_weight = (std::f64::consts::PI * (f64::from(y) + 0.5) / f64::from(height)).sin();
+        let latitude_weight =
+            (std::f64::consts::PI * (f64::from(y) + 0.5) / f64::from(height)).sin();
         let mut x = step_x >> 1;
         while x < width {
             let offset = (y as usize * width as usize + x as usize) * 3;
-            let texel = [image.data[offset], image.data[offset + 1], image.data[offset + 2]];
-            if !texel.iter().all(|value| value.is_finite()) || texel.iter().any(|value| *value < 0.0) {
+            let texel = [
+                image.data[offset],
+                image.data[offset + 1],
+                image.data[offset + 2],
+            ];
+            if !texel.iter().all(|value| value.is_finite())
+                || texel.iter().any(|value| *value < 0.0)
+            {
                 return LuminanceEstimateOutcome::Unavailable {
                     reason: "environment-texel-invalid".to_string(),
                 };
             }
-            sum += latitude_weight
-                * (LUMA[0] * texel[0] + LUMA[1] * texel[1] + LUMA[2] * texel[2]);
+            sum += latitude_weight * (LUMA[0] * texel[0] + LUMA[1] * texel[1] + LUMA[2] * texel[2]);
             weight += latitude_weight;
             x += step_x;
         }
@@ -209,8 +221,7 @@ pub fn estimate_luminance_from_prefiltered_mip(
             reason: "prefiltered-ibl:mip-size-invalid".to_string(),
         };
     }
-    let words: Vec<u16> = mip
-        .rgba16float_bytes[..expected]
+    let words: Vec<u16> = mip.rgba16float_bytes[..expected]
         .chunks_exact(2)
         .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
         .collect();
@@ -241,8 +252,8 @@ pub fn estimate_luminance_from_prefiltered_mip(
                         reason: "environment-texel-invalid".to_string(),
                     };
                 }
-                sum += texel_weight
-                    * (LUMA[0] * texel[0] + LUMA[1] * texel[1] + LUMA[2] * texel[2]);
+                sum +=
+                    texel_weight * (LUMA[0] * texel[0] + LUMA[1] * texel[1] + LUMA[2] * texel[2]);
                 weight += texel_weight;
                 x += stride;
             }
@@ -289,7 +300,10 @@ impl PbrAutoExposureRuntime {
     /// 环境每次 stage 时观察新源;估计失败即落回 fail-closed 原因,不抛。
     pub fn observe_estimate(&mut self, outcome: LuminanceEstimateOutcome) {
         match outcome {
-            LuminanceEstimateOutcome::Estimated { luminance, provenance } => {
+            LuminanceEstimateOutcome::Estimated {
+                luminance,
+                provenance,
+            } => {
                 self.luminance = Some((luminance, provenance));
             }
             LuminanceEstimateOutcome::Unavailable { reason } => {
@@ -317,11 +331,9 @@ impl PbrAutoExposureRuntime {
             self.current_ev = target_ev;
             self.seeded = true;
         } else {
-            let delta_seconds = Self::clamp_seconds(
-                (now_ms - self.last_now_ms.unwrap_or(f64::NAN)) / 1000.0,
-            );
-            let alpha =
-                1.0 - (-delta_seconds / self.config.adaptation_time_constant_seconds).exp();
+            let delta_seconds =
+                Self::clamp_seconds((now_ms - self.last_now_ms.unwrap_or(f64::NAN)) / 1000.0);
+            let alpha = 1.0 - (-delta_seconds / self.config.adaptation_time_constant_seconds).exp();
             let max_step = self.config.max_ev_per_second * delta_seconds;
             let smooth_step = (target_ev - self.current_ev) * alpha;
             self.current_ev += smooth_step.clamp(-max_step, max_step);
@@ -359,12 +371,7 @@ mod tests {
     #[test]
     fn target_exposure_matches_ts_reference() {
         let config = AutoExposureConfig::default();
-        let cases: &[(f64, f64)] = &[
-            (0.18, 0.6),
-            (1.0, 0.25),
-            (1e-7, 4.0),
-            (100.0, 0.25),
-        ];
+        let cases: &[(f64, f64)] = &[(0.18, 0.6), (1.0, 0.25), (1e-7, 4.0), (100.0, 0.25)];
         for (luminance, expected) in cases {
             let actual = target_exposure_from_luminance(*luminance, &config);
             assert!(
@@ -516,7 +523,10 @@ mod tests {
             rgba16float_bytes: &bytes,
         });
         match outcome {
-            LuminanceEstimateOutcome::Estimated { luminance, provenance } => {
+            LuminanceEstimateOutcome::Estimated {
+                luminance,
+                provenance,
+            } => {
                 assert_eq!(provenance, AutoExposureProvenance::PrefilteredIblMip);
                 // half(0x345C) 的 f32 值 ≈ 0.17993164,f64 亮度与该值一致。
                 let half_value = f64::from(crate::half_decode::half_to_f32(0x345C));

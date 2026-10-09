@@ -36,8 +36,13 @@ pub fn upload_texture(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST
-            | if source.generate_mipmaps { wgpu::TextureUsages::RENDER_ATTACHMENT } else { wgpu::TextureUsages::empty() },
+        usage: wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | if source.generate_mipmaps {
+                wgpu::TextureUsages::RENDER_ATTACHMENT
+            } else {
+                wgpu::TextureUsages::empty()
+            },
         view_formats: &[],
     });
     for (mip_level, level) in source.levels.iter().enumerate() {
@@ -61,7 +66,9 @@ pub fn upload_texture(
             },
         );
     }
-    if source.generate_mipmaps { mips.generate(device, queue, &texture, format, source.mip_level_count()); }
+    if source.generate_mipmaps {
+        mips.generate(device, queue, &texture, format, source.mip_level_count());
+    }
     let view = texture.create_view(&Default::default());
     let sampler = create_sampler(device, &source.sampler, source.mip_level_count() as usize);
     Ok(GpuTexture {
@@ -102,7 +109,8 @@ pub fn create_fallbacks(
                         height: 1,
                         data: std::borrow::Cow::Owned(data.to_vec()),
                     }],
-                }, &mips,
+                },
+                &mips,
             )
         })
         .collect()
@@ -128,3 +136,8 @@ fn create_sampler(
         border_color: None,
     })
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+// Reused by scene-cache tests; standalone texture harnesses load only upload helpers.
+#[allow(unused_imports)]
+pub(crate) use mips::test_device;

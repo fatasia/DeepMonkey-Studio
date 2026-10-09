@@ -4,6 +4,12 @@
 mod j3_device_recovery;
 #[path = "support/j3_geometry_depth.rs"]
 mod j3_geometry_depth;
+#[path = "support/j3_geometry_depth_readback.rs"]
+mod j3_geometry_depth_readback;
+#[path = "support/j3_hdr_frame.rs"]
+mod j3_hdr_frame;
+#[path = "../src/output_pass.rs"]
+mod output_pass;
 // J3-E 窗口事件/present 计时 support 骨架（CPU 结构；接线点见文件头，规格 j3-e-gpu-runner-prep-20261001.md）。
 #[path = "support/j3_window_events.rs"]
 mod j3_window_events;
@@ -93,14 +99,14 @@ mod player_annotations;
 mod dashboard_video_gpu;
 #[path = "../src/deep2d_atlas_gpu.rs"]
 mod deep2d_atlas_gpu; // deep2d_atlas_gpu.rs 被 player_picking/publication_verification 等引用
-#[path = "../src/deep2d_frame_context.rs"]
-mod deep2d_frame_context; // deep2d_gpu.rs 的宿主帧上下文再导出源
 #[path = "../src/deep2d_backdrop_gpu.rs"]
 mod deep2d_backdrop_gpu; // deep2d_gpu.rs 的刀4 backdrop 捕获链
-#[path = "../src/deep2d_gpu.rs"]
-mod deep2d_gpu; // deep2d_gpu.rs 被 player_picking/publication_verification 等引用
 #[path = "../src/deep2d_dynamic_gpu.rs"]
 mod deep2d_dynamic_gpu; // 刀 3:deep2d_gpu.rs 引用
+#[path = "../src/deep2d_frame_context.rs"]
+mod deep2d_frame_context; // deep2d_gpu.rs 的宿主帧上下文再导出源
+#[path = "../src/deep2d_gpu.rs"]
+mod deep2d_gpu; // deep2d_gpu.rs 被 player_picking/publication_verification 等引用
 #[path = "../src/deep2d_gpu_cache.rs"]
 mod deep2d_gpu_cache; // deep2d_gpu_cache.rs 被 player_picking/publication_verification 等引用
 #[path = "../src/deep2d_scissor.rs"]
@@ -363,30 +369,30 @@ mod j3_shadow_visibility;
 
 #[path = "support/c8_direct_multiscattering.rs"]
 mod c8_direct_multiscattering;
-#[path = "support/j3_author_fog.rs"]
-mod j3_author_fog;
-#[path = "support/c8_local_direct_multiscattering.rs"]
-mod c8_local_direct_multiscattering;
 #[path = "support/c8_geometry_basis.rs"]
 mod c8_geometry_basis;
 #[path = "support/c8_geometry_roughness.rs"]
 mod c8_geometry_roughness;
+#[path = "support/c8_local_direct_multiscattering.rs"]
+mod c8_local_direct_multiscattering;
 #[path = "support/c8_unlit_lighting_skip.rs"]
 mod c8_unlit_lighting_skip;
 #[path = "support/j2_probe_gi_actual.rs"]
 mod j2_probe_gi_actual;
-#[path = "support/j3_texture_coverage.rs"]
-mod j3_texture_coverage;
 #[path = "support/j2_probe_gi_aniso.rs"]
 mod j2_probe_gi_aniso;
+#[path = "support/j3_author_fog.rs"]
+mod j3_author_fog;
+#[path = "support/j3_texture_coverage.rs"]
+mod j3_texture_coverage;
 
 #[path = "support/j3_fullscene.rs"]
 mod j3_fullscene;
 
-#[path = "../src/bloom_pipeline.rs"]
-mod bloom_pipeline;
 #[path = "../src/bloom_pass.rs"]
 mod bloom_pass;
+#[path = "../src/bloom_pipeline.rs"]
+mod bloom_pipeline;
 #[path = "support/j3_industrial_effects.rs"]
 mod j3_industrial_effects;
 

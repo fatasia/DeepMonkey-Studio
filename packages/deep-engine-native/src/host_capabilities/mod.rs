@@ -5,7 +5,7 @@
 pub mod rt_probe;
 
 pub use rt_probe::{
-    RT_ACCELERATION_STRUCTURE_BUDGET_MIB, RT_CAPABILITY_CONTRACT_VERSION, RAY_QUERY_FEATURE,
+    RAY_QUERY_FEATURE, RT_ACCELERATION_STRUCTURE_BUDGET_MIB, RT_CAPABILITY_CONTRACT_VERSION,
     RtAdapterCapability, RtCapabilityMatrix, RtFallback, RtSupport, RtUnsupportedReason, RtVendor,
     decide_feature_flag, default_matrix, measured_matrix, probe_adapter,
 };

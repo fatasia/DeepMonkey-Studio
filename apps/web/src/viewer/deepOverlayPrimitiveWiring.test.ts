@@ -6,7 +6,8 @@ import { DEFAULT_POST_PROCESSING } from "../appDefaults";
 import { projectDeepSelectionBox } from "./deepOverlayPrimitives";
 import { collectDeepOverlayPrimitives, type DeepOverlayPrimitiveViewer } from "./deepOverlayPrimitiveSource";
 
-vi.mock("./studioDeepEnvironmentLights", () => ({
+vi.mock("./studioDeepEnvironmentLights", async importOriginal => ({
+  ...await importOriginal<typeof import("./studioDeepEnvironmentLights")>(),
   projectStudioDeepLights: () => ({ lights: { directional: [], points: [], spots: [] }, issues: [] }),
 }));
 

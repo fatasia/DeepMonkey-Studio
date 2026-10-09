@@ -10,7 +10,9 @@ pub const NORMAL_CAPTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba
 pub struct NormalCaptureTargets {
     resolved: wgpu::Texture,
     _msaa: wgpu::Texture,
+    #[allow(dead_code)]
     pub resolved_view: wgpu::TextureView,
+    #[allow(dead_code)]
     pub msaa_view: wgpu::TextureView,
 }
 
@@ -163,17 +165,30 @@ impl ForwardTargets {
             .map(|targets| &targets.resolved)
     }
 
-    pub fn enable_transmission(&mut self, device:&wgpu::Device) {
-        if self.scene_opaque.is_some() { return; }
-        let texture=device.create_texture(&wgpu::TextureDescriptor {label:Some("Native transmission opaque scene"),
-            size:self.hdr.size(),mip_level_count:1,sample_count:1,dimension:wgpu::TextureDimension::D2,
-            format:FORWARD_COLOR_FORMAT,usage:wgpu::TextureUsages::COPY_DST|wgpu::TextureUsages::TEXTURE_BINDING,view_formats:&[]});
-        self.scene_opaque_view=Some(texture.create_view(&Default::default()));
-        self.scene_opaque=Some(texture);
+    pub fn enable_transmission(&mut self, device: &wgpu::Device) {
+        if self.scene_opaque.is_some() {
+            return;
+        }
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Native transmission opaque scene"),
+            size: self.hdr.size(),
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: FORWARD_COLOR_FORMAT,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        self.scene_opaque_view = Some(texture.create_view(&Default::default()));
+        self.scene_opaque = Some(texture);
     }
-    pub fn copy_opaque_for_transmission(&self,encoder:&mut wgpu::CommandEncoder) {
-        if let Some(target)=&self.scene_opaque {
-            encoder.copy_texture_to_texture(self.hdr.as_image_copy(),target.as_image_copy(),self.hdr.size());
+    pub fn copy_opaque_for_transmission(&self, encoder: &mut wgpu::CommandEncoder) {
+        if let Some(target) = &self.scene_opaque {
+            encoder.copy_texture_to_texture(
+                self.hdr.as_image_copy(),
+                target.as_image_copy(),
+                self.hdr.size(),
+            );
         }
     }
 

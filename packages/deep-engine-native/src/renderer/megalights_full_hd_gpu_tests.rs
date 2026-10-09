@@ -1,6 +1,5 @@
 //! Full-resolution material/depth, half-resolution RIS and bounded scratch on hardware.
-#[path = "megalights_material_fixture.rs"]
-mod fixture;
+use super::megalights_material_fixture as fixture;
 use super::{
     megalights_runtime::{MegaLightsFrameRuntime, MegaLightsGate},
     rt_residency::RtSceneResidency,

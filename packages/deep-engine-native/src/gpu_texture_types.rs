@@ -27,8 +27,16 @@ pub const FALLBACK_TEXTURE_SPECS: [(TextureSemantic, TextureEncoding, [u8; 4]); 
         TextureEncoding::Srgb,
         [255, 255, 255, 255],
     ),
-    (TextureSemantic::Specular,TextureEncoding::Linear,[255,255,255,255]),
-    (TextureSemantic::SpecularColor,TextureEncoding::Srgb,[255,255,255,255]),
+    (
+        TextureSemantic::Specular,
+        TextureEncoding::Linear,
+        [255, 255, 255, 255],
+    ),
+    (
+        TextureSemantic::SpecularColor,
+        TextureEncoding::Srgb,
+        [255, 255, 255, 255],
+    ),
 ];
 
 pub fn texture_format(encoding: TextureEncoding) -> wgpu::TextureFormat {

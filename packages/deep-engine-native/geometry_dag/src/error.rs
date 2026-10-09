@@ -61,7 +61,10 @@ impl DagError {
 
     /// 构造 [`DagError::BudgetExceeded`] 的便捷入口。
     pub(crate) fn budget_exceeded(label: impl Into<String>, limit: u64) -> Self {
-        Self::BudgetExceeded { label: label.into(), limit }
+        Self::BudgetExceeded {
+            label: label.into(),
+            limit,
+        }
     }
 
     /// 构造 [`DagError::Overflow`] 的便捷入口。

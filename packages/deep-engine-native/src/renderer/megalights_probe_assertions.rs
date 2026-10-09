@@ -2,12 +2,20 @@
 use super::*;
 
 pub(super) fn decoded_surfaces(words: &[f32]) -> Vec<MegaSurfaceRow> {
-    words.chunks_exact(12).map(|row| {
-        std::array::from_fn(|vec4| std::array::from_fn(|slot| f64::from(row[vec4 * 4 + slot])))
-    }).collect()
+    words
+        .chunks_exact(12)
+        .map(|row| {
+            std::array::from_fn(|vec4| std::array::from_fn(|slot| f64::from(row[vec4 * 4 + slot])))
+        })
+        .collect()
 }
 
-pub(super) fn assert_surfaces(zones: &[Zone], surfaces_out: &[f32], mirror_surfaces: &[MegaSurfaceRow], depth: &[f32]) -> f64 {
+pub(super) fn assert_surfaces(
+    zones: &[Zone],
+    surfaces_out: &[f32],
+    mirror_surfaces: &[MegaSurfaceRow],
+    depth: &[f32],
+) -> f64 {
     // 对拍 1:重建表面 vs 镜像(词 ≤0.002;背景零表面全零;边缘带豁免)。
     let surfaces_budget = 0.002f64;
     let mut worst_surface = 0.0f64;
@@ -30,17 +38,38 @@ pub(super) fn assert_surfaces(zones: &[Zone], surfaces_out: &[f32], mirror_surfa
     }
     #[allow(clippy::match_like_matches_macro)]
     for probe_pixel in 0..PIXELS {
-        if zones[probe_pixel] != Zone::Covered { continue; }
+        if zones[probe_pixel] != Zone::Covered {
+            continue;
+        }
         let px = probe_pixel as u32 % WIDTH;
         let py = probe_pixel as u32 / WIDTH;
         eprintln!(
             "pixel({px},{py}) zones_row={:?}",
-            ((py.saturating_sub(1))..=(py+1).min(HEIGHT-1)).map(|y| (y*WIDTH+px) as usize).map(|i| match zones[i] { Zone::Covered=>'C', Zone::Skip=>'S', Zone::Background=>'.' }).collect::<String>()
+            ((py.saturating_sub(1))..=(py + 1).min(HEIGHT - 1))
+                .map(|y| (y * WIDTH + px) as usize)
+                .map(|i| match zones[i] {
+                    Zone::Covered => 'C',
+                    Zone::Skip => 'S',
+                    Zone::Background => '.',
+                })
+                .collect::<String>()
         );
-        eprintln!("  gpu  = {:?}", &surfaces_out[probe_pixel*12..probe_pixel*12+12]);
-        eprintln!("  mir  = {:?}", mirror_surfaces[probe_pixel].map(|v| v.map(|w| w as f32)));
-        eprintln!("  depth neighborhood = {:?}",
-            ((py.saturating_sub(1))..=(py+1).min(HEIGHT-1)).map(|y| ((px.saturating_sub(1))..=(px+1).min(WIDTH-1)).map(|x| depth[(y*WIDTH+x) as usize]).collect::<Vec<_>>()).collect::<Vec<_>>());
+        eprintln!(
+            "  gpu  = {:?}",
+            &surfaces_out[probe_pixel * 12..probe_pixel * 12 + 12]
+        );
+        eprintln!(
+            "  mir  = {:?}",
+            mirror_surfaces[probe_pixel].map(|v| v.map(|w| w as f32))
+        );
+        eprintln!(
+            "  depth neighborhood = {:?}",
+            ((py.saturating_sub(1))..=(py + 1).min(HEIGHT - 1))
+                .map(|y| ((px.saturating_sub(1))..=(px + 1).min(WIDTH - 1))
+                    .map(|x| depth[(y * WIDTH + x) as usize])
+                    .collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        );
         break;
     }
 
@@ -51,7 +80,12 @@ pub(super) fn assert_surfaces(zones: &[Zone], surfaces_out: &[f32], mirror_surfa
     worst_surface
 }
 
-pub(super) fn assert_composite(composited: &[f32], seed_words: &[f32], frame1_out: &[f32], frame2_out: &[f32]) -> f64 {
+pub(super) fn assert_composite(
+    composited: &[f32],
+    seed_words: &[f32],
+    frame1_out: &[f32],
+    frame2_out: &[f32],
+) -> f64 {
     let composite_budget = 0.01f64;
     let mut worst_composite = 0.0f64;
     for pixel in 0..PIXELS {

@@ -143,10 +143,7 @@ impl GpuSceneCache {
 
     /// I-C23:注入分层材质 layout(builder 式)。None 表示分层能力未启用;
     /// 分层材质进包由 renderer init 门先行 fail-closed。
-    pub fn with_layered_material_layout(
-        mut self,
-        layout: Option<wgpu::BindGroupLayout>,
-    ) -> Self {
+    pub fn with_layered_material_layout(mut self, layout: Option<wgpu::BindGroupLayout>) -> Self {
         self.layered_material_layout = layout;
         self
     }

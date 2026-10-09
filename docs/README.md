@@ -29,7 +29,7 @@
 | 在自己的网页里接入引擎 | [Deep Engine 独立 SDK](../apps/web/src/docs/deep-engine-sdk.md) |
 | 用 Codex / Claude 开发、连接 MCP | [Skill、MCP 与 SDK 接入教程](ai-development.md) |
 | 脚本与 HTTP API | [SDK 与 API 总览](../apps/web/src/docs/sdk-api-overview.md) |
-| 性能与画质结论、Three 与 Deep 一致性门 | [引擎性能与画质基准](../apps/web/src/docs/engine-benchmarks.md) |
+| 定位帧时间、加载和资源瓶颈 | [渲染性能诊断](../apps/web/src/docs/engine-performance.md) |
 
 ## 三维格式与插件
 

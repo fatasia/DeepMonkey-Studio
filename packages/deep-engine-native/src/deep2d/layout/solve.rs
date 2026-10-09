@@ -8,12 +8,12 @@
 //! 偏移;taffy 的子节点 location 相对父 border box 原点,这里逐层累加成绝对
 //! 坐标(padding 语义由黄金用例钉住)。
 
-use taffy::prelude::{AvailableSpace, Size as TaffySize, TaffyTree};
 use taffy::NodeId as TaffyNodeId;
+use taffy::prelude::{AvailableSpace, Size as TaffySize, TaffyTree};
 
+use super::MAX_LAYOUT_VALUE;
 use super::style::LayoutEdges;
 use super::tree::{LayoutLeaf, LayoutTextSpec, LayoutTree, NodeId};
-use super::MAX_LAYOUT_VALUE;
 
 /// 求解后的节点矩形(绝对坐标,已取整)。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -116,14 +116,14 @@ pub fn solve<'a>(
         &taffy_ids,
         &mut rects,
     )?;
-    Ok(LayoutSolution {
-        root_size,
-        rects,
-    })
+    Ok(LayoutSolution { root_size, rects })
 }
 
 fn validate_viewport(viewport: [f32; 2]) -> Result<(), String> {
-    if viewport.iter().any(|value| !value.is_finite() || *value < 0.0) {
+    if viewport
+        .iter()
+        .any(|value| !value.is_finite() || *value < 0.0)
+    {
         return Err(format!(
             "layout solve: viewport must be finite and non-negative, got {viewport:?}"
         ));
@@ -177,7 +177,11 @@ fn validate_edges(
     allow_negative: bool,
     where_: &str,
 ) -> Result<(), String> {
-    let min = if allow_negative { -MAX_LAYOUT_VALUE } else { 0.0 };
+    let min = if allow_negative {
+        -MAX_LAYOUT_VALUE
+    } else {
+        0.0
+    };
     for (name, value) in [
         ("top", edges.top),
         ("right", edges.right),

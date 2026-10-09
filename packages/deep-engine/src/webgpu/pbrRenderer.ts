@@ -438,8 +438,8 @@ export class PbrRenderer {
   }
   setInstances(data: Float32Array<ArrayBuffer>): void { this.setPacket(spherePacket(data)); }
   setPacket(packet: RenderPacket): void {
-    assertAdvancedMaterialFeatures(packet.materials, this.advancedMaterialFeatures);
     this.deviceEpoch?.assertCurrent(this.session.device);
+    assertAdvancedMaterialFeatures(packet.materials, this.advancedMaterialFeatures);
     if (this.packets.set(packet)) { this.sceneChanged(); this.syncProbeClipmapSurfaces(packet);
       if (this.clusterLodEnabled) this.packets.stageClusterLodProduction(); }
     // F4 虚拟纹理目录全量同步:opt-in 才有 bridge;包内 RGBA8 纹理按需分页,压缩纹理
@@ -447,8 +447,8 @@ export class PbrRenderer {
     this.virtualTextures?.syncTextures(packet.textures ?? []);
   }
   async setPacketValidated(packet: RenderPacket, signal?: AbortSignal): Promise<void> {
-    assertAdvancedMaterialFeatures(packet.materials, this.advancedMaterialFeatures);
     this.deviceEpoch?.assertCurrent(this.session.device);
+    assertAdvancedMaterialFeatures(packet.materials, this.advancedMaterialFeatures);
     // 旧 SDK 全量变形集合仍需提前放行；子集模式按实际 packet 启动关键变体，
     // 保留背景管线门直到真实首帧验证完成，避免无用编译抢占初始化。
     if (this.deformationNeedsEarlyRelease && (packet.deformation !== undefined || packet.instances.some(instance => instance.pose !== undefined))) this.releasePipelines?.();
@@ -457,22 +457,23 @@ export class PbrRenderer {
     this.virtualTextures?.syncTextures(packet.textures ?? []);
   }
   stageResidentPacket(projection: ResidentPacketProjection): void {
-    assertResidentMaterialFeatures(projection, this.advancedMaterialFeatures);
     this.deviceEpoch?.assertCurrent(this.session.device);
+    assertResidentMaterialFeatures(projection, this.advancedMaterialFeatures);
     this.packets.stageResidentProjection(projection);
   }
   async stageResidentPacketValidated(projection: ResidentPacketProjection,
     signal?: AbortSignal): Promise<void> {
-    assertResidentMaterialFeatures(projection, this.advancedMaterialFeatures);
     this.deviceEpoch?.assertCurrent(this.session.device);
+    assertResidentMaterialFeatures(projection, this.advancedMaterialFeatures);
     if (this.deformationNeedsEarlyRelease && projection.batches.some(batch => batch.source.pose !== undefined)) this.releasePipelines?.();
     await this.packets.stageResidentProjectionValidated(projection, signal);
   }
   cancelResidentPacketStage(): void { this.packets.cancelPendingPacketStage(); }
   async setInstancesValidated(data: Float32Array<ArrayBuffer>, signal?: AbortSignal): Promise<void> { await this.setPacketValidated(spherePacket(data), signal); }
   setDiagnosticsSampling(enabled: boolean): void { this.diagnostics.setEnabled(enabled); } updateInstances(update: InstanceUpdate): void {
+    this.deviceEpoch?.assertCurrent(this.session.device);
     assertAdvancedMaterialFeatures(update.materials, this.advancedMaterialFeatures);
-    this.deviceEpoch?.assertCurrent(this.session.device); if (this.packets.updateInstances(update)) this.shadowDirty = true;
+    if (this.packets.updateInstances(update)) this.shadowDirty = true;
   }
   /**
    * 第 3 条权威路径:CPU 拾取查询(同步)。遍历当前发布实例并用几何球体宽相位筛选,

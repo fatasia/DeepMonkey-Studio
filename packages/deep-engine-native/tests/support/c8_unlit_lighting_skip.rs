@@ -4,13 +4,12 @@ use crate::{
     player_content::PlayerContent,
     shader_material_renderer::{FrameObservation, render_with_frame_observation},
 };
+use deep_engine_native::shader_package::hash;
 use deep_engine_native::{
     contract::validate_packet, player_view::PlayerView, scene_lighting::DirectionalLighting,
 };
 use serde_json::{Value, json};
 use winit::dpi::PhysicalSize;
-#[path = "../../src/shader_package/hash.rs"]
-mod hash;
 
 fn content(id: &str) -> (PlayerContent, Value) {
     let (mut content, mut packet) = fixture(true, id == "mapped");
@@ -83,12 +82,14 @@ fn native_unlit_lighting_work_is_guarded_and_output_semantics_remain_outside() {
             "RT fragment must consume the shared response core, not a text copy: {call}"
         );
     }
+    assert!(mesh.contains("let original = native_lit_response("));
+    assert!(mesh.contains("if (legacy) {\n    return original;"));
     let stripped_mesh: String = mesh.chars().filter(|c| !c.is_whitespace()).collect();
     for semantic in [
         "native_view_geometry_roughness(geometry_normal)",
         "mapped_normal(input,front_facing)",
         "letauthored_light=",
-        "surface_color=native_lit_response(",
+        "surface_color=native_extended_shade(",
         "letoutput_alpha=",
     ] {
         assert!(
@@ -133,7 +134,7 @@ fn c8_actual_native_unlit_lighting_skip() {
             wgpu::DeviceType::DiscreteGpu | wgpu::DeviceType::IntegratedGpu
         ));
         let mut rounds = Vec::new();
-        for round in 0..2 {
+        for _round in 0..2 {
             let (device, queue) = adapter.request_device(&Default::default()).await.unwrap();
             let mut cases = Vec::new();
             for id in [

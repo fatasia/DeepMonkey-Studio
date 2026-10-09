@@ -51,6 +51,7 @@ impl Renderer {
 
     /// T01 质量诊断独立读取口(未来消费方/WASM 镜像入口);诊断关闭或
     /// 尚无落账帧时返回 None。
+    #[allow(dead_code)]
     pub fn quality_report(&self) -> Option<serde_json::Value> {
         let quality = self.quality.as_ref()?;
         (quality.last_frame()).map(|_| quality.report())

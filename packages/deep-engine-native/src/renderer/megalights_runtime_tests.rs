@@ -20,7 +20,8 @@ fn first_frame_camera_and_light_changes_replace_history() {
     runtime.advance(view(), Some(&lighting), true);
     assert_eq!(runtime.gpu_alpha_blend(), 1.0);
     runtime.history_valid = true;
-    let mut moved = view(); moved.yaw += 0.1;
+    let mut moved = view();
+    moved.yaw += 0.1;
     runtime.advance(moved, Some(&lighting), true);
     assert_eq!(runtime.gpu_alpha_blend(), 1.0);
     runtime.history_valid = true;
@@ -264,7 +265,7 @@ fn ies_remap_rebases_metadata_and_tables() {
     let reference = MegaLightsIesPacking::new(&reference_words, 1);
     for probe_direction in [
         [0.0f64, 0.0, -1.0],
-        [0.5, -0.5, -0.7071067811865476],
+        [0.5, -0.5, -std::f64::consts::FRAC_1_SQRT_2],
         [-0.3, 0.2, -0.9327379053088816],
     ] {
         let surface_to_light = [0.0, 1.0, 0.0];

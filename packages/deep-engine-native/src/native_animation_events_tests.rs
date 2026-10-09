@@ -78,9 +78,7 @@ fn one_large_delta_emits_one_event_per_crossed_loop() {
     let mut clock = loop_clock("walk", 1.0);
     assert_eq!(
         drive(&mut clock, &markers, &[3.5]),
-        [format!(
-            "walk/half@0.5#0,walk/half@1.5#1,walk/half@2.5#2,walk/half@3.5#3"
-        )]
+        ["walk/half@0.5#0,walk/half@1.5#1,walk/half@2.5#2,walk/half@3.5#3".to_string()]
     );
     assert!((clock.unwrapped_time() - 3.5).abs() <= TIME_EPSILON);
     assert_eq!(drive(&mut clock, &markers, &[0.25]), [""]);

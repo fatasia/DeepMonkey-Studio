@@ -15,7 +15,7 @@ const HEIGHT: u32 = 2;
 
 fn edge_pattern() -> Vec<f32> {
     let mut color = Vec::new();
-    for y in 0..HEIGHT {
+    for _y in 0..HEIGHT {
         for x in 0..WIDTH {
             let value = if x < 2 { 0.25f32 } else { 0.75f32 };
             color.extend_from_slice(&[value, value, value, 1.0]);
@@ -51,7 +51,11 @@ fn fxaa_pass_matches_cpu_mirror_within_2_of_255() {
         &queue,
         &wgpu::TextureDescriptor {
             label: Some("spatial aa source"),
-            size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -61,7 +65,10 @@ fn fxaa_pass_matches_cpu_mirror_within_2_of_255() {
         },
         wgpu::util::TextureDataOrder::LayerMajor,
         // 显示编码 u8 载荷(与 f32 图案同值)。
-        &edge_pattern().iter().map(|v| (v * 255.0).round() as u8).collect::<Vec<u8>>(),
+        &edge_pattern()
+            .iter()
+            .map(|v| (v * 255.0).round() as u8)
+            .collect::<Vec<u8>>(),
     );
     let source_view = source.create_view(&Default::default());
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -72,7 +79,11 @@ fn fxaa_pass_matches_cpu_mirror_within_2_of_255() {
     });
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("spatial aa target"),
-        size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -87,8 +98,14 @@ fn fxaa_pass_matches_cpu_mirror_within_2_of_255() {
         label: Some("spatial aa bind"),
         layout: &pipeline_bind_layout,
         entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&source_view) },
-            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&source_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(&sampler),
+            },
         ],
     });
     let mut encoder = device.create_command_encoder(&Default::default());
@@ -99,7 +116,10 @@ fn fxaa_pass_matches_cpu_mirror_within_2_of_255() {
                 view: &target_view,
                 depth_slice: None,
                 resolve_target: None,
-                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
             })],
             ..Default::default()
         });
@@ -118,9 +138,17 @@ fn fxaa_pass_matches_cpu_mirror_within_2_of_255() {
         target.as_image_copy(),
         wgpu::TexelCopyBufferInfo {
             buffer: &staging,
-            layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(bytes_per_row), rows_per_image: None },
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(bytes_per_row),
+                rows_per_image: None,
+            },
         },
-        wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
     );
     queue.submit(Some(encoder.finish()));
     // wgpu 30:map_async(模式,范围,回调)+ get_mapped_range(..) → Result
@@ -153,8 +181,12 @@ fn fxaa_pass_matches_cpu_mirror_within_2_of_255() {
     staging.unmap();
 
     let pattern = edge_pattern();
-    let cpu = resolve_spatial_aa_cpu(&SpatialAaImage { width: WIDTH, height: HEIGHT, color: &pattern })
-        .expect("cpu mirror");
+    let cpu = resolve_spatial_aa_cpu(&SpatialAaImage {
+        width: WIDTH,
+        height: HEIGHT,
+        color: &pattern,
+    })
+    .expect("cpu mirror");
     let tolerance = 2.0 / 255.0;
     for (index, pixel) in gpu_pixels.iter().enumerate() {
         let y = index / WIDTH as usize;
@@ -173,7 +205,15 @@ fn fxaa_pass_matches_cpu_mirror_within_2_of_255() {
         let p = &gpu_pixels[(y * WIDTH + x) as usize];
         p[0] * 0.3 + p[1] * 0.59 + p[2] * 0.11
     };
-    assert!(gpu_luma(1, 0) > 0.25 + tolerance, "dark edge side must lift: {}", gpu_luma(1, 0));
-    assert!(gpu_luma(2, 0) < 0.75 - tolerance, "bright edge side must drop: {}", gpu_luma(2, 0));
+    assert!(
+        gpu_luma(1, 0) > 0.25 + tolerance,
+        "dark edge side must lift: {}",
+        gpu_luma(1, 0)
+    );
+    assert!(
+        gpu_luma(2, 0) < 0.75 - tolerance,
+        "bright edge side must drop: {}",
+        gpu_luma(2, 0)
+    );
     println!("spatial_aa_gpu: FXAA pass matches CPU mirror within {tolerance} (adapter {adapter})");
 }

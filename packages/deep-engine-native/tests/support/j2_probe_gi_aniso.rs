@@ -1,7 +1,9 @@
+use crate::j3_hdr_frame as hdr;
 use crate::{
     player_content::PlayerContent,
     shader_material_renderer::{FrameObservation, render_with_frame_observation},
 };
+use deep_engine_native::shader_package::hash;
 use deep_engine_native::{
     cascaded_shadow::CascadedShadowOptions, mesh_abi::FrameUniform, player_view::PlayerView,
     probe_gi_abi::IrradianceProbeRecord, probe_gi_grid::ProbeGiGridHeader,
@@ -9,10 +11,6 @@ use deep_engine_native::{
 };
 use serde_json::{Value, json};
 use winit::dpi::PhysicalSize;
-#[path = "../../src/shader_package/hash.rs"]
-mod hash;
-#[path = "j3_hdr_frame.rs"]
-mod hdr;
 const MANIFEST: &str = include_str!("../../../deep-engine/fixtures/j3-hdr-flat-normal-v1.json");
 const FIXTURE: &str = include_str!("../../../deep-engine/fixtures/j2-probe-gi-aniso-v1.json");
 const PACKAGE: &[u8] = include_bytes!("../fixtures/runtime-package-v1.json");
@@ -27,7 +25,7 @@ fn cell_irradiance(linear: usize, scenario: &str) -> [f32; 3] {
         "zero" => [0.0, 0.0, 0.0],
         "z-ramp" => [[0.25, 0.5, 1.0], [0.5, 1.0, 2.0], [1.0, 2.0, 4.0]][cell[2]],
         _ => {
-            if (cell[0] + cell[1] + cell[2]) % 2 == 0 {
+            if (cell[0] + cell[1] + cell[2]).is_multiple_of(2) {
                 [0.25, 0.5, 1.0]
             } else {
                 [1.0, 2.0, 4.0]
@@ -206,14 +204,15 @@ fn j2_b5_aniso_probe_gi() {
                         let pixels = hdr::rgb(&snapshot.hdr);
                         let tolerance = f["absoluteTolerance"].as_f64().unwrap() as f32;
                         for point in &plan_camera.points {
-                            let sampled = deep_engine_native::probe_gi_grid::sample_probe_grid_irradiance(
-                                content.probe_grid_records.as_ref().unwrap(),
-                                point.world,
-                                point.normal,
-                            );
+                            let sampled =
+                                deep_engine_native::probe_gi_grid::sample_probe_grid_irradiance(
+                                    content.probe_grid_records.as_ref().unwrap(),
+                                    point.world,
+                                    point.normal,
+                                );
                             for lane in 0..3 {
-                                let expected = point.base[lane] * sampled[lane]
-                                    / std::f32::consts::PI;
+                                let expected =
+                                    point.base[lane] * sampled[lane] / std::f32::consts::PI;
                                 let observed = pixels[point.pixel * 3 + lane];
                                 assert!(
                                     (observed - expected).abs() <= tolerance,

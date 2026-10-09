@@ -5,8 +5,8 @@
 use super::types::Deep2dIssueCode;
 use super::validate::{MAX_DRAW_VALUE, Validator};
 use super::{
-    BackdropBlur, BoxShadow, DEEP2D_MAX_BACKDROP_RADIUS, DEEP_2D_DISPLAY_LIST_BUDGETS,
-    Deep2dPaint, GradientStop, LinearGradientPaint, RadialGradientPaint,
+    BackdropBlur, BoxShadow, DEEP_2D_DISPLAY_LIST_BUDGETS, DEEP2D_MAX_BACKDROP_RADIUS, Deep2dPaint,
+    GradientStop, LinearGradientPaint, RadialGradientPaint,
 };
 
 impl Validator {
@@ -41,8 +41,7 @@ impl Validator {
     }
 
     fn stops(&mut self, stops: &[GradientStop], path: &str) {
-        if stops.is_empty() || stops.len() > DEEP_2D_DISPLAY_LIST_BUDGETS.gradient_stops_per_paint
-        {
+        if stops.is_empty() || stops.len() > DEEP_2D_DISPLAY_LIST_BUDGETS.gradient_stops_per_paint {
             self.add(
                 Deep2dIssueCode::InvalidStructure,
                 format!("{path}.stops"),
@@ -95,8 +94,9 @@ impl Validator {
 
     pub(super) fn backdrop_blur(&mut self, blur: &BackdropBlur, path: &str) {
         // radius=0 是无效命令(零半径模糊无意义),与 command_types 注释 "must be positive" 同口径。
-        if !blur.radius.is_finite()
-            || !(0.0 < blur.radius && blur.radius <= DEEP2D_MAX_BACKDROP_RADIUS)
+        if !(blur.radius.is_finite()
+            && 0.0 < blur.radius
+            && blur.radius <= DEEP2D_MAX_BACKDROP_RADIUS)
         {
             self.add(
                 Deep2dIssueCode::InvalidNumber,
@@ -195,7 +195,8 @@ mod tests {
     fn empty_and_oversized_stops_fail_closed() {
         let result = validate_display_list(&list_with(base_command(Some(linear(Vec::new())))));
         assert_eq!(result.issues[0].code, Deep2dIssueCode::InvalidStructure);
-        let oversized: Vec<GradientStop> = (0..=super::super::DEEP_2D_DISPLAY_LIST_BUDGETS.gradient_stops_per_paint)
+        let oversized: Vec<GradientStop> = (0..=super::super::DEEP_2D_DISPLAY_LIST_BUDGETS
+            .gradient_stops_per_paint)
             .map(|index| stop(f64::from(index as u32), [0.0; 4]))
             .collect();
         let result = validate_display_list(&list_with(base_command(Some(linear(oversized)))));
@@ -273,10 +274,12 @@ mod tests {
         let mut command = base_command(Some(Deep2dPaint::Solid([1.0, 0.0, 0.0, 1.0])));
         command.backdrop_blur = Some(BackdropBlur { radius: 8.0 });
         let result = validate_display_list(&list_with(command));
-        assert!(result
-            .issues
-            .iter()
-            .any(|issue| issue.code == Deep2dIssueCode::InvalidStructure));
+        assert!(
+            result
+                .issues
+                .iter()
+                .any(|issue| issue.code == Deep2dIssueCode::InvalidStructure)
+        );
 
         // Negative / zero / oversized radius fails closed.
         for radius in [-1.0, 0.0, DEEP2D_MAX_BACKDROP_RADIUS * 2.0, f64::NAN] {
@@ -314,9 +317,11 @@ mod tests {
             commands,
         };
         let result = validate_display_list(&list);
-        assert!(result
-            .issues
-            .iter()
-            .any(|issue| issue.code == Deep2dIssueCode::BudgetExceeded));
+        assert!(
+            result
+                .issues
+                .iter()
+                .any(|issue| issue.code == Deep2dIssueCode::BudgetExceeded)
+        );
     }
 }

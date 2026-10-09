@@ -286,13 +286,13 @@ fn exhaustive_gpu_output_tracks_cpu_mirror() {
         width,
         height,
         lights.len() as u32,
-        44,               // frameSeed = fixture 穷举帧
-        1,                // spatialEnabled
-        1,                // temporalEnabled(穷举趟二不消费 EMA,与 CPU exhaustive 分支同)
-        1,                // exhaustive
+        44,                 // frameSeed = fixture 穷举帧
+        1,                  // spatialEnabled
+        1,                  // temporalEnabled(穷举趟二不消费 EMA,与 CPU exhaustive 分支同)
+        1,                  // exhaustive
         (1.0f32).to_bits(), // visibilitySlot
         (1.0f32).to_bits(), // alphaBlend(首帧全量替换;穷举腿无 EMA)
-        0,                // visibilityEnabled = 关
+        0,                  // visibilityEnabled = 关
         0,
         0,
         0,
@@ -591,7 +591,7 @@ fn random_gpu_output_tracks_cpu_mirror_statistically() {
         width,
         height,
         lights.len() as u32,
-        40,               // frameSeed = fixture 首帧
+        40, // frameSeed = fixture 首帧
         1,
         1,
         0, // 随机模式

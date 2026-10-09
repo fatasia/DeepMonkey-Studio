@@ -107,6 +107,8 @@ impl MegaLightsInputs {
         }
     }
 
+    // Explicit GPU binding and uniform ABI inputs.
+    #[allow(clippy::too_many_arguments)]
     pub fn update(
         &self,
         queue: &wgpu::Queue,

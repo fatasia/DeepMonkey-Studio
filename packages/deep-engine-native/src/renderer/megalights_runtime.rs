@@ -21,10 +21,10 @@
 //! Resources are created at the first RIS frame; rejected profiles retain clusters.
 //! 门关/auto-预算内帧零 dispatch 零字节变化。
 
-#[path = "megalights_runtime_gpu.rs"] mod gpu;
-#[path = "megalights_runtime_lights.rs"] mod lights;
-use lights::{count_pool_lights, build_view_space_pool, remap_ies_spot_rows};
-pub(crate) use lights::to_view;
+#[path = "megalights_runtime_gpu.rs"]
+mod gpu;
+#[path = "megalights_runtime_lights.rs"]
+mod lights;
 use deep_engine_native::local_lighting::{LocalLight, LocalLightKind, MAX_LOCAL_LIGHTS};
 use deep_engine_native::megalights_abi::{
     MegaLight, MegaLightKind, PackedMegaLights, pack_mega_lights,
@@ -35,6 +35,9 @@ use deep_engine_native::megalights_ris::{
 };
 use deep_engine_native::player_view::PlayerView;
 use deep_engine_native::scene_lighting::DirectionalLighting;
+#[cfg(test)]
+pub(crate) use lights::to_view;
+use lights::{build_view_space_pool, count_pool_lights, remap_ies_spot_rows};
 
 /// 门控词汇(缺省/未知值 = off,fail-closed)。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -172,13 +175,22 @@ impl MegaLightsFrameRuntime {
             resolve_direct_lighting_path(points, spots, 0, forced, Some(MAX_LOCAL_LIGHTS));
         self.pool = build_view_space_pool(lighting, view, self.ies_spot_ordinals());
         let packed = (!self.pool.is_empty()).then(|| pack_mega_lights(&self.pool));
-        if self.last_view != Some(view) || self.packed.as_ref().map(|p| &p.data) != packed.as_ref().map(|p| &p.data) {
+        if self.last_view != Some(view)
+            || self.packed.as_ref().map(|p| &p.data) != packed.as_ref().map(|p| &p.data)
+        {
             self.history_valid = false;
         }
-        let shadow_mask = lighting.local_lights.iter().filter(|light|
-            matches!(light.kind, LocalLightKind::Point | LocalLightKind::Spot)).enumerate()
-            .fold(0, |mask, (i, light)| mask | (u32::from(light.cast_shadow) << i));
-        if self.shadow_mask != shadow_mask { self.history_valid = false; }
+        let shadow_mask = lighting
+            .local_lights
+            .iter()
+            .filter(|light| matches!(light.kind, LocalLightKind::Point | LocalLightKind::Spot))
+            .enumerate()
+            .fold(0, |mask, (i, light)| {
+                mask | (u32::from(light.cast_shadow) << i)
+            });
+        if self.shadow_mask != shadow_mask {
+            self.history_valid = false;
+        }
         self.shadow_mask = shadow_mask;
         self.last_view = Some(view);
         self.packed = packed;
@@ -191,11 +203,14 @@ impl MegaLightsFrameRuntime {
     }
 
     pub(crate) fn note_scene_content(&mut self, key: u64) {
-        if self.last_scene_key != Some(key) { self.history_valid = false; }
+        if self.last_scene_key != Some(key) {
+            self.history_valid = false;
+        }
         self.last_scene_key = Some(key);
     }
 
     /// IES 档位在灯池内的行号视图(重映射载荷的 spot 序;None = 恒 1)。
+    #[allow(dead_code)]
     pub(crate) fn ies_packing(&self) -> Option<MegaLightsIesPacking<'_>> {
         let (words, spot_count) = self.ies.as_ref()?;
         Some(MegaLightsIesPacking::new(words, *spot_count))

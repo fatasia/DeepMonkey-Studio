@@ -45,7 +45,7 @@ fn path_command(clips: &[&str]) -> Deep2dCommand {
         shadow: None,
         blend: None,
         backdrop_blur: None,
-        })
+    })
 }
 
 fn path_list(clips: Vec<Deep2dResource>, ids: &[&str]) -> Deep2dDisplayList {

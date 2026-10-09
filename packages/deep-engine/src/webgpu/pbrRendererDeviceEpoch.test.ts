@@ -38,6 +38,6 @@ describe("PBR complete device ownership boundary", () => {
   });
   it("keeps same-device packet ownership usable", () => {
     const { renderer, touched } = fixture(false);
-    renderer.setPacket({} as never); expect(touched).toHaveBeenCalledOnce();
+    renderer.setPacket({ geometries: [], materials: [], instances: [] }); expect(touched).toHaveBeenCalledOnce();
   });
 });

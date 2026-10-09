@@ -108,11 +108,19 @@ pub(super) fn write_evidence(evidence: &Value, retry: bool, window_events: bool)
     if let Some(output) = std::env::var_os("J3_WINDOW_NATIVE_OUTPUT") {
         std::fs::create_dir_all(&output).unwrap();
         let prefix = match (retry, window_events) {
-            (false, false) => "", (true, false) => "retry-",
-            (false, true) => "events-", (true, true) => "events-retry-",
+            (false, false) => "",
+            (true, false) => "retry-",
+            (false, true) => "events-",
+            (true, true) => "events-retry-",
         };
-        std::fs::write(std::path::PathBuf::from(output).join(format!(
-            "{}round-{}.json", prefix, std::env::var("DEEP_WINDOW_LOSS_CHILD").unwrap()
-        )), evidence.to_string()).unwrap();
+        std::fs::write(
+            std::path::PathBuf::from(output).join(format!(
+                "{}round-{}.json",
+                prefix,
+                std::env::var("DEEP_WINDOW_LOSS_CHILD").unwrap()
+            )),
+            evidence.to_string(),
+        )
+        .unwrap();
     }
 }

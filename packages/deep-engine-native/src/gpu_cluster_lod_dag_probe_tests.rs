@@ -10,7 +10,7 @@ use crate::gpu_cluster_lod_dag_tests::{camera_for, golden_variant};
 use crate::gpu_cluster_lod_gpu::ClusterLodSelectionPipeline;
 use crate::gpu_cluster_lod_indirect::plan_cluster_lod_indirect;
 use crate::gpu_cluster_lod_selection::{
-    select_cluster_lod, ClusterLodCamera, CLUSTER_LOD_NODE_STRIDE_BYTES,
+    CLUSTER_LOD_NODE_STRIDE_BYTES, ClusterLodCamera, select_cluster_lod,
 };
 
 /// 打包相机 uniform(48B;与批 B 二探针同式,TS packClusterLodCamera 同构)。
@@ -51,33 +51,45 @@ fn dag_runtime_golden_bytes_gpu_selection_and_plan_end_to_end() {
             })
             .await
             .expect("real GPU adapter");
-        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor::default()).await.unwrap();
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor::default())
+            .await
+            .unwrap();
 
         // 金样字节 → 运行时构建(与 CPU 侧测试同一入库工件)。
         let bytes = golden_variant("compressed");
         let runtime = ClusterLodDagRuntime::from_dgc(&bytes, "quick_sphere-golden")
             .expect("golden .dgc builds");
-        assert_eq!(runtime.node_storage.len() % CLUSTER_LOD_NODE_STRIDE_BYTES, 0);
+        assert_eq!(
+            runtime.node_storage.len() % CLUSTER_LOD_NODE_STRIDE_BYTES,
+            0
+        );
         let node_count = runtime.nodes.len() as u32;
 
         let pipeline = ClusterLodSelectionPipeline::new(&device);
         let node_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cluster_dag_nodes"),
             size: runtime.node_storage.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         queue.write_buffer(&node_buffer, 0, &runtime.node_storage);
         let selection_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cluster_dag_selection"),
             size: 4 * runtime.nodes.len() as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let faults_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cluster_dag_selection_faults"),
             size: 4,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: true,
         });
         faults_buffer.unmap();
@@ -99,10 +111,22 @@ fn dag_runtime_golden_bytes_gpu_selection_and_plan_end_to_end() {
                 label: Some("cluster_lod_dag_probe_bg"),
                 layout: &pipeline.bind_group_layout,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: node_buffer.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: selection_buffer.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 2, resource: faults_buffer.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 3, resource: camera_buffer.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: node_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: selection_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: faults_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: camera_buffer.as_entire_binding(),
+                    },
                 ],
             });
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -127,17 +151,30 @@ fn dag_runtime_golden_bytes_gpu_selection_and_plan_end_to_end() {
                 usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            encoder.copy_buffer_to_buffer(&selection_buffer, 0, &selection_read, 0, 4 * runtime.nodes.len() as u64);
+            encoder.copy_buffer_to_buffer(
+                &selection_buffer,
+                0,
+                &selection_read,
+                0,
+                4 * runtime.nodes.len() as u64,
+            );
             encoder.copy_buffer_to_buffer(&faults_buffer, 0, &faults_read, 0, 4);
             queue.submit([encoder.finish()]);
 
             let read_back = |label: &'static str, staging: &wgpu::Buffer| -> Vec<u32> {
                 let (sender, receiver) = std::sync::mpsc::channel();
-                staging.slice(..).map_async(wgpu::MapMode::Read, move |result| {
-                    sender.send(result).unwrap();
-                });
-                device.poll(wgpu::PollType::wait_indefinitely()).expect("poll");
-                receiver.recv().unwrap().unwrap_or_else(|error| panic!("{label}: map failed: {error}"));
+                staging
+                    .slice(..)
+                    .map_async(wgpu::MapMode::Read, move |result| {
+                        sender.send(result).unwrap();
+                    });
+                device
+                    .poll(wgpu::PollType::wait_indefinitely())
+                    .expect("poll");
+                receiver
+                    .recv()
+                    .unwrap()
+                    .unwrap_or_else(|error| panic!("{label}: map failed: {error}"));
                 let words: Vec<u32> = staging
                     .slice(..)
                     .get_mapped_range()

@@ -155,30 +155,48 @@ pub fn disabled_probe_environment() -> PreparedIblEnvironment {
 /// Author Studio uses the actual canvas radiance, rather than the legacy demo softboxes.
 pub fn author_studio_environment() -> PreparedIblEnvironment {
     static ENVIRONMENT: std::sync::OnceLock<PreparedIblEnvironment> = std::sync::OnceLock::new();
-    ENVIRONMENT.get_or_init(|| {
-        let sample = |direction: [f32; 3]| {
-            let u = direction[2].atan2(direction[0]) / std::f32::consts::TAU + 0.5;
-            let v = direction[1].clamp(-1.0, 1.0).acos() / std::f32::consts::PI;
-            crate::studio_background::author_studio_srgb(u, v).map(|channel| {
-                if channel <= 0.04045 { channel / 12.92 } else { ((channel + 0.055) / 1.055).powf(2.4) }
-            })
-        };
-        let result = PreparedIblEnvironment {
-            id: "deep.builtin.author-studio-ibl.v1".into(), revision: 1, provenance: IblProvenance::BuiltInDefault,
-            specular: PreparedIblCube { mips: (0..BUILTIN_SPECULAR_MIPS).map(|level| {
-                generate_cube(BUILTIN_SPECULAR_SIZE >> level, |direction| {
-                    prefilter_specular_source(direction, level as f32 / (BUILTIN_SPECULAR_MIPS - 1) as f32,
-                        ENVIRONMENT_SAMPLES, &sample)
+    ENVIRONMENT
+        .get_or_init(|| {
+            let sample = |direction: [f32; 3]| {
+                let u = direction[2].atan2(direction[0]) / std::f32::consts::TAU + 0.5;
+                let v = direction[1].clamp(-1.0, 1.0).acos() / std::f32::consts::PI;
+                crate::studio_background::author_studio_srgb(u, v).map(|channel| {
+                    if channel <= 0.04045 {
+                        channel / 12.92
+                    } else {
+                        ((channel + 0.055) / 1.055).powf(2.4)
+                    }
                 })
-            }).collect() },
-            diffuse: PreparedIblCube { mips: vec![generate_cube(BUILTIN_DIFFUSE_SIZE, |direction| {
-                convolve_diffuse_source(direction, ENVIRONMENT_SAMPLES, &sample)
-            })] },
-            brdf_lut: generate_brdf_lut(BUILTIN_BRDF_SIZE),
-        };
-        validate_ibl_environment(&result).expect("author studio IBL must satisfy its contract");
-        result
-    }).clone()
+            };
+            let result = PreparedIblEnvironment {
+                id: "deep.builtin.author-studio-ibl.v1".into(),
+                revision: 1,
+                provenance: IblProvenance::BuiltInDefault,
+                specular: PreparedIblCube {
+                    mips: (0..BUILTIN_SPECULAR_MIPS)
+                        .map(|level| {
+                            generate_cube(BUILTIN_SPECULAR_SIZE >> level, |direction| {
+                                prefilter_specular_source(
+                                    direction,
+                                    level as f32 / (BUILTIN_SPECULAR_MIPS - 1) as f32,
+                                    ENVIRONMENT_SAMPLES,
+                                    &sample,
+                                )
+                            })
+                        })
+                        .collect(),
+                },
+                diffuse: PreparedIblCube {
+                    mips: vec![generate_cube(BUILTIN_DIFFUSE_SIZE, |direction| {
+                        convolve_diffuse_source(direction, ENVIRONMENT_SAMPLES, &sample)
+                    })],
+                },
+                brdf_lut: generate_brdf_lut(BUILTIN_BRDF_SIZE),
+            };
+            validate_ibl_environment(&result).expect("author studio IBL must satisfy its contract");
+            result
+        })
+        .clone()
 }
 
 pub fn split_sum_ibl(input: SplitSumIblInput) -> [f32; 3] {

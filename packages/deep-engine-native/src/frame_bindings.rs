@@ -56,9 +56,16 @@ fn section_layout() -> wgpu::BindGroupLayoutEntry {
 
 fn frame_layout_entries() -> Vec<wgpu::BindGroupLayoutEntry> {
     vec![
-        wgpu::BindGroupLayoutEntry { binding:13,visibility:wgpu::ShaderStages::FRAGMENT,
-            ty:wgpu::BindingType::Texture {sample_type:wgpu::TextureSampleType::Float {filterable:true},
-                view_dimension:wgpu::TextureViewDimension::D2,multisampled:false},count:None },
+        wgpu::BindGroupLayoutEntry {
+            binding: 13,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        },
         section_layout(),
         wgpu::BindGroupLayoutEntry {
             binding: 0,

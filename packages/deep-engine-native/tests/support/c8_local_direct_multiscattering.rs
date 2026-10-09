@@ -1,6 +1,6 @@
 use crate::c8_direct_multiscattering::{
-    BASE_COLOR, FROZEN_DFG_FILL, MANIFEST, METALLIC, PACKAGE, ROUGHNESS, ZERO_DFG_FILL,
-    hdr_frame, multiscattering_energy, vector,
+    BASE_COLOR, FROZEN_DFG_FILL, MANIFEST, METALLIC, PACKAGE, ROUGHNESS, ZERO_DFG_FILL, hdr_frame,
+    multiscattering_energy, vector,
 };
 use crate::{
     player_content::PlayerContent,
@@ -77,8 +77,7 @@ fn lighting_dark(case: &str) -> DirectionalLighting {
 fn expected_delta(case: &str, pixel: usize, focal: f32, lane: usize) -> f64 {
     if case == "hemisphere" {
         // Frozen normal and sky direction are both +Z: sky weight is exactly 1.
-        return RADIANCE[lane] * BASE_COLOR[lane] * (1.0 - METALLIC)
-            / std::f64::consts::PI;
+        return RADIANCE[lane] * BASE_COLOR[lane] * (1.0 - METALLIC) / std::f64::consts::PI;
     }
     if !DIRECTED_CASES.contains(&case) {
         return 0.0;
@@ -89,7 +88,11 @@ fn expected_delta(case: &str, pixel: usize, focal: f32, lane: usize) -> f64 {
     let world_x = x * 8.0 / f64::from(focal);
     let world_y = y * 8.0 / f64::from(focal);
     let eye_length = (world_x * world_x + world_y * world_y + 64.0).sqrt();
-    let view_direction = [-world_x / eye_length, -world_y / eye_length, 8.0 / eye_length];
+    let view_direction = [
+        -world_x / eye_length,
+        -world_y / eye_length,
+        8.0 / eye_length,
+    ];
     let nv = (8.0 / eye_length).clamp(0.001, 1.0);
     let (nl, attenuation, light_direction) = if case == "directional" {
         let nl = 0.55_f64.sqrt();
@@ -137,7 +140,10 @@ fn local_energy_fixture_has_primary_zero_author_mode_three() {
         for lane in 0..3 {
             let delta = expected_delta(case, 8000, 1.8304877, lane);
             assert!(delta.is_finite() && delta >= 0.0);
-            assert_eq!(delta > 0.0, DIRECTED_CASES.contains(&case));
+            assert_eq!(
+                delta > 0.0,
+                DIRECTED_CASES.contains(&case) || case == "hemisphere"
+            );
         }
     }
 }

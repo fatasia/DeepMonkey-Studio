@@ -505,7 +505,7 @@ impl PlayerContent {
             .as_ref()
             .is_some_and(|physics| physics.is_playing())
     }
-
+    #[allow(dead_code)]
     pub fn physics_instance_pose(&self, instance_id: &str) -> Option<(u64, [f32; 3])> {
         self.physics
             .as_ref()?

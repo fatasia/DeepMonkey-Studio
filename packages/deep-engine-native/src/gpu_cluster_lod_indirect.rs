@@ -13,7 +13,8 @@
 /// draw-indexed-indirect 记录字节数(5×u32)。
 pub const CLUSTER_LOD_INDIRECT_COMMAND_STRIDE_BYTES: usize = 20;
 /// 未选中哨兵(re-export 语义;与 selection 模块同源)。
-pub const CLUSTER_LOD_REFINE_SENTINEL: u32 = super::gpu_cluster_lod_selection::CLUSTER_LOD_REFINE_SENTINEL;
+pub const CLUSTER_LOD_REFINE_SENTINEL: u32 =
+    super::gpu_cluster_lod_selection::CLUSTER_LOD_REFINE_SENTINEL;
 
 /// 层几何规模摘要(调用方从 { vertices, indices } 映射)。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,13 +79,35 @@ pub struct ClusterLodIndirectPlan {
 /// fail-closed 错误族(TS 抛错文本同语义)。
 #[derive(Clone, Debug, PartialEq)]
 pub enum ClusterLodPlanError {
-    SelectionLengthMismatch { selection: usize, nodes: usize },
-    InvalidLevel { node: String, level: isize },
-    SlotInvalid { slot: usize, value: u32, level: usize },
-    ChildClaimedTwice { child: String, first: String, second: String },
-    LevelSummaryMissing { summaries: usize, max_level: usize },
-    LevelSummaryInvalid { level: usize },
-    FrontierClosureBroken { leaf: String, covered: usize },
+    SelectionLengthMismatch {
+        selection: usize,
+        nodes: usize,
+    },
+    InvalidLevel {
+        node: String,
+        level: isize,
+    },
+    SlotInvalid {
+        slot: usize,
+        value: u32,
+        level: usize,
+    },
+    ChildClaimedTwice {
+        child: String,
+        first: String,
+        second: String,
+    },
+    LevelSummaryMissing {
+        summaries: usize,
+        max_level: usize,
+    },
+    LevelSummaryInvalid {
+        level: usize,
+    },
+    FrontierClosureBroken {
+        leaf: String,
+        covered: usize,
+    },
 }
 
 impl core::fmt::Display for ClusterLodPlanError {
@@ -95,17 +118,27 @@ impl core::fmt::Display for ClusterLodPlanError {
                 "Cluster LOD selection length {selection} does not match DAG node count {nodes}."
             ),
             Self::InvalidLevel { node, level } => {
-                write!(f, "Cluster LOD node {node} carries an invalid level {level}.")
+                write!(
+                    f,
+                    "Cluster LOD node {node} carries an invalid level {level}."
+                )
             }
             Self::SlotInvalid { slot, value, level } => write!(
                 f,
                 "Cluster LOD selection slot {slot} carries {value}, expected sentinel or node level {level}."
             ),
-            Self::ChildClaimedTwice { child, first, second } => write!(
+            Self::ChildClaimedTwice {
+                child,
+                first,
+                second,
+            } => write!(
                 f,
                 "Cluster LOD DAG child {child} is claimed by both {first} and {second}."
             ),
-            Self::LevelSummaryMissing { summaries, max_level } => write!(
+            Self::LevelSummaryMissing {
+                summaries,
+                max_level,
+            } => write!(
                 f,
                 "Cluster LOD level summaries ({summaries}) do not cover DAG level {max_level}."
             ),
@@ -121,7 +154,9 @@ impl core::fmt::Display for ClusterLodPlanError {
     }
 }
 
-fn build_parent_of(nodes: &[ClusterLodPlanNode]) -> Result<std::collections::HashMap<String, String>, ClusterLodPlanError> {
+fn build_parent_of(
+    nodes: &[ClusterLodPlanNode],
+) -> Result<std::collections::HashMap<String, String>, ClusterLodPlanError> {
     let mut parent_of: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for node in nodes {
         for child in &node.children {
@@ -171,7 +206,7 @@ pub fn derive_cluster_lod_frontier(
 ) -> Result<Vec<usize>, ClusterLodPlanError> {
     validate_selection(nodes, selection)?;
     let parent_of = build_parent_of(nodes)?;
-    let index_of: std::collections::HashMap<&str, usize> = nodes
+    let _index_of: std::collections::HashMap<&str, usize> = nodes
         .iter()
         .enumerate()
         .map(|(index, node)| (node.id.as_str(), index))
@@ -223,7 +258,10 @@ pub fn plan_cluster_lod_indirect(
     }
     for (level, summary) in levels.iter().enumerate() {
         // usize 溢出在 Rust 层不可达(分配器上限先触发);保留负数/越界校验于 TS 侧。
-        if summary.index_count == 0 && summary.vertex_count == 0 && nodes.iter().any(|n| n.triangle_count > 0) {
+        if summary.index_count == 0
+            && summary.vertex_count == 0
+            && nodes.iter().any(|n| n.triangle_count > 0)
+        {
             return Err(ClusterLodPlanError::LevelSummaryInvalid { level });
         }
     }
@@ -244,7 +282,8 @@ pub fn plan_cluster_lod_indirect(
     let frontier = derive_cluster_lod_frontier(nodes, selection)?;
     let parent_of = build_parent_of(nodes)?;
     let mut per_level: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
-    let mut cluster_index_of: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut cluster_index_of: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     for node in nodes {
         let next = per_level.get(&node.level).copied().unwrap_or(0);
         per_level.insert(node.level, next + 1);
@@ -275,8 +314,10 @@ pub fn plan_cluster_lod_indirect(
         });
     }
     // 前沿闭合校验:每个叶子沿父链到根恰有一个前沿绘制。
-    let drawn: std::collections::HashSet<&str> =
-        draws.iter().map(|draw| nodes[draw.node_index].id.as_str()).collect();
+    let drawn: std::collections::HashSet<&str> = draws
+        .iter()
+        .map(|draw| nodes[draw.node_index].id.as_str())
+        .collect();
     let mut covered_leaf_clusters = 0usize;
     for leaf in nodes {
         if !leaf.children.is_empty() {
@@ -298,9 +339,10 @@ pub fn plan_cluster_lod_indirect(
         }
         covered_leaf_clusters += 1;
     }
-    let covered_regions = nodes.iter().filter(|node| {
-        !parent_of.contains_key(&node.id)
-    }).count();
+    let covered_regions = nodes
+        .iter()
+        .filter(|node| !parent_of.contains_key(&node.id))
+        .count();
     Ok(ClusterLodIndirectPlan {
         draw_count: draws.len(),
         commands_byte_length: draws.len() * CLUSTER_LOD_INDIRECT_COMMAND_STRIDE_BYTES,

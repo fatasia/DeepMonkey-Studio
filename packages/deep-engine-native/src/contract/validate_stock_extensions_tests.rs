@@ -22,8 +22,10 @@ fn base_material() -> PbrMaterial {
         occlusion_texture: None,
         emissive_factor: None,
         emissive_texture: None,
-            specular_factor: None, specular_color_factor: None,
-            specular_texture: None, specular_color_texture: None,
+        specular_factor: None,
+        specular_color_factor: None,
+        specular_texture: None,
+        specular_color_texture: None,
         base_color_alpha: None,
         alpha_mode: None,
         alpha_cutoff: None,
@@ -50,8 +52,14 @@ fn packet_of(material: PbrMaterial) -> RenderPacket {
 fn extended(ior: Option<f32>, factor: f32, roughness: f32) -> LayerMaterialParams {
     LayerMaterialParams {
         ior,
-        clearcoat: Some(LayerClearcoatParams { factor: Some(factor), roughness: Some(roughness) }),
-        anisotropy: Some(LayerAnisotropyParams { strength: Some(0.0), rotation: Some(0.0) }),
+        clearcoat: Some(LayerClearcoatParams {
+            factor: Some(factor),
+            roughness: Some(roughness),
+        }),
+        anisotropy: Some(LayerAnisotropyParams {
+            strength: Some(0.0),
+            rotation: Some(0.0),
+        }),
         transmission: Some(LayerTransmissionParams { factor: Some(0.0) }),
     }
 }
@@ -61,7 +69,10 @@ fn stock_clearcoat_within_subset_passes() {
     let mut material = base_material();
     material.extended_parameters = Some(extended(Some(1.5), 0.9, 0.35));
     material.advanced_parameters = Some(StockAdvancedParameters {
-        sheen: Some(StockSheenParameters { color: Some([0.35, 0.3, 0.25]), roughness: Some(0.6) }),
+        sheen: Some(StockSheenParameters {
+            color: Some([0.35, 0.3, 0.25]),
+            roughness: Some(0.6),
+        }),
         iridescence: None,
         volume: None,
     });
@@ -72,10 +83,16 @@ fn stock_clearcoat_within_subset_passes() {
 fn nonzero_anisotropy_is_rejected_and_screen_transmission_is_accepted() {
     let mut material = base_material();
     let mut params = extended(None, 0.0, 0.0);
-    params.anisotropy = Some(LayerAnisotropyParams { strength: Some(0.4), rotation: Some(0.0) });
+    params.anisotropy = Some(LayerAnisotropyParams {
+        strength: Some(0.4),
+        rotation: Some(0.0),
+    });
     material.extended_parameters = Some(params);
     let error = validate_packet(&packet_of(material)).unwrap_err();
-    assert!(error.contains("anisotropy.strength"), "unexpected error: {error}");
+    assert!(
+        error.contains("anisotropy.strength"),
+        "unexpected error: {error}"
+    );
 
     let mut material = base_material();
     let mut params = extended(None, 0.0, 0.0);
@@ -90,11 +107,18 @@ fn nonzero_iridescence_and_volume_are_rejected() {
     let mut material = base_material();
     material.advanced_parameters = Some(StockAdvancedParameters {
         sheen: None,
-        iridescence: Some(StockIridescenceParameters { factor: Some(0.5), ior: Some(1.3), thickness: Some(400.0) }),
+        iridescence: Some(StockIridescenceParameters {
+            factor: Some(0.5),
+            ior: Some(1.3),
+            thickness: Some(400.0),
+        }),
         volume: None,
     });
     let error = validate_packet(&packet_of(material)).unwrap_err();
-    assert!(error.contains("iridescence.factor"), "unexpected error: {error}");
+    assert!(
+        error.contains("iridescence.factor"),
+        "unexpected error: {error}"
+    );
 
     let mut material = base_material();
     material.advanced_parameters = Some(StockAdvancedParameters {
@@ -107,30 +131,44 @@ fn nonzero_iridescence_and_volume_are_rejected() {
         }),
     });
     let error = validate_packet(&packet_of(material)).unwrap_err();
-    assert!(error.contains("volume.thickness"), "unexpected error: {error}");
+    assert!(
+        error.contains("volume.thickness"),
+        "unexpected error: {error}"
+    );
 }
 
 #[test]
 fn advanced_numeric_ranges_stay_fail_closed() {
     let mut material = base_material();
     material.advanced_parameters = Some(StockAdvancedParameters {
-        sheen: Some(StockSheenParameters { color: Some([0.1, 1.2, 0.1]), roughness: None }),
+        sheen: Some(StockSheenParameters {
+            color: Some([0.1, 1.2, 0.1]),
+            roughness: None,
+        }),
         iridescence: None,
         volume: None,
     });
-    assert!(validate_packet(&packet_of(material))
-        .unwrap_err()
-        .contains("sheen.color"));
+    assert!(
+        validate_packet(&packet_of(material))
+            .unwrap_err()
+            .contains("sheen.color")
+    );
 
     let mut material = base_material();
     material.advanced_parameters = Some(StockAdvancedParameters {
         sheen: None,
-        iridescence: Some(StockIridescenceParameters { factor: None, ior: Some(0.5), thickness: None }),
+        iridescence: Some(StockIridescenceParameters {
+            factor: None,
+            ior: Some(0.5),
+            thickness: None,
+        }),
         volume: None,
     });
-    assert!(validate_packet(&packet_of(material))
-        .unwrap_err()
-        .contains("iridescence.ior"));
+    assert!(
+        validate_packet(&packet_of(material))
+            .unwrap_err()
+            .contains("iridescence.ior")
+    );
 }
 
 #[test]
@@ -139,7 +177,10 @@ fn extended_ior_must_match_instance_field() {
     material.ior = Some(1.5);
     material.extended_parameters = Some(extended(Some(1.52), 0.0, 0.0));
     let error = validate_packet(&packet_of(material)).unwrap_err();
-    assert!(error.contains("must match the v5 instance IOR field"), "unexpected error: {error}");
+    assert!(
+        error.contains("must match the v5 instance IOR field"),
+        "unexpected error: {error}"
+    );
 }
 
 #[test]
@@ -148,20 +189,27 @@ fn unlit_rejects_extension_lobes() {
     let mut material = base_material();
     material.shading_model = Some(ShadingModel::Unlit);
     material.extended_parameters = Some(extended(None, 0.5, 0.2));
-    assert!(validate_packet(&packet_of(material))
-        .unwrap_err()
-        .contains("Unlit materials cannot consume PBR extension lobes"));
+    assert!(
+        validate_packet(&packet_of(material))
+            .unwrap_err()
+            .contains("Unlit materials cannot consume PBR extension lobes")
+    );
 
     let mut material = base_material();
     material.shading_model = Some(ShadingModel::Unlit);
     material.advanced_parameters = Some(StockAdvancedParameters {
-        sheen: Some(StockSheenParameters { color: Some([0.1, 0.1, 0.1]), roughness: None }),
+        sheen: Some(StockSheenParameters {
+            color: Some([0.1, 0.1, 0.1]),
+            roughness: None,
+        }),
         iridescence: None,
         volume: None,
     });
-    assert!(validate_packet(&packet_of(material))
-        .unwrap_err()
-        .contains("Unlit materials cannot consume PBR extension lobes"));
+    assert!(
+        validate_packet(&packet_of(material))
+            .unwrap_err()
+            .contains("Unlit materials cannot consume PBR extension lobes")
+    );
 }
 
 /// 旧包 wire 兼容:不带扩展/advanced 字段的 JSON 反序列化与校验不受影响;
@@ -193,13 +241,18 @@ fn legacy_wire_without_extension_fields_still_validates() {
         "textures": []
     }))
     .unwrap_err();
-    assert!(error.to_string().contains("unknown field"), "unexpected error: {error}");
+    assert!(
+        error.to_string().contains("unknown field"),
+        "unexpected error: {error}"
+    );
 }
 
 /// native 子集 wire 端到端:clearcoat+sheen 反序列化 → 校验 → uniform 打包带。
 #[test]
 fn wire_subset_roundtrip_packs_expected_bands() {
-    use crate::mesh_abi::{MATERIAL_ADVANCED_BAND_FLOAT_OFFSET, MATERIAL_EXTENDED_BAND_FLOAT_OFFSET};
+    use crate::mesh_abi::{
+        MATERIAL_ADVANCED_BAND_FLOAT_OFFSET, MATERIAL_EXTENDED_BAND_FLOAT_OFFSET,
+    };
     use crate::pbr_texture::prepare_material_uniform;
     let packet: RenderPacket = serde_json::from_value(serde_json::json!({
         "schema": "deep-engine.render-packet",
@@ -216,12 +269,17 @@ fn wire_subset_roundtrip_packs_expected_bands() {
     .expect("subset wire must deserialize");
     validate_packet(&packet).expect("subset wire must validate");
     let uniform = prepare_material_uniform(&packet.materials[0]).unwrap();
-    assert_eq!(uniform[MATERIAL_EXTENDED_BAND_FLOAT_OFFSET..MATERIAL_EXTENDED_BAND_FLOAT_OFFSET + 6], {
-        [1.5f32, 0.9, 0.35, 0.0, 0.0, 0.0]
-    });
+    assert_eq!(
+        uniform[MATERIAL_EXTENDED_BAND_FLOAT_OFFSET..MATERIAL_EXTENDED_BAND_FLOAT_OFFSET + 6],
+        { [1.5f32, 0.9, 0.35, 0.0, 0.0, 0.0] }
+    );
     assert_eq!(
         uniform[MATERIAL_ADVANCED_BAND_FLOAT_OFFSET..MATERIAL_ADVANCED_BAND_FLOAT_OFFSET + 4],
         [0.35f32, 0.3, 0.25, 0.6]
     );
-    assert!(uniform[MATERIAL_ADVANCED_BAND_FLOAT_OFFSET + 4..60].iter().all(|value| *value == 0.0));
+    assert!(
+        uniform[MATERIAL_ADVANCED_BAND_FLOAT_OFFSET + 4..60]
+            .iter()
+            .all(|value| *value == 0.0)
+    );
 }

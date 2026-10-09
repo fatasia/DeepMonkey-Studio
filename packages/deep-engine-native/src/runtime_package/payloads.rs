@@ -44,22 +44,30 @@ pub(super) fn decode(
     decode_prepared(package, None)
 }
 
-pub(super) fn validate_render_environment(package: &RuntimePackageEnvelope) -> Result<(), RuntimePackageError> {
+pub(super) fn validate_render_environment(
+    package: &RuntimePackageEnvelope,
+) -> Result<(), RuntimePackageError> {
     solid_environment::validate_static_lightmap(
         payload(package, &package.entrypoints.environment)?,
         payload(package, &package.entrypoints.render_packet)?,
-    ).map_err(RuntimePackageError)?;
+    )
+    .map_err(RuntimePackageError)?;
     Ok(())
 }
 
 pub(super) fn decode_prepared(
     package: RuntimePackageEnvelope,
-    prepared_render: Option<(crate::contract::RenderPacket, crate::contract::ContractSummary)>,
+    prepared_render: Option<(
+        crate::contract::RenderPacket,
+        crate::contract::ContractSummary,
+    )>,
 ) -> Result<LoadedRuntimePackage, RuntimePackageError> {
     let render_id = package.entrypoints.render_packet.as_str();
     descriptor(&package, render_id, RuntimeResourceKind::RenderPacket)?;
     validate_object_bindings(&package.object_bindings)?;
-    if prepared_render.is_none() { validate_render_environment(&package)?; }
+    if prepared_render.is_none() {
+        validate_render_environment(&package)?;
+    }
     let (render_packet, render_summary) = match prepared_render {
         Some(prepared) => prepared,
         None => render_packet::decode(render_id, payload(&package, render_id)?)?,
@@ -94,8 +102,9 @@ pub(super) fn decode_prepared(
             .map_err(RuntimePackageError)?;
     let solid_environment = decode_background(&package, &package.entrypoints.environment)?;
     let background = solid_environment.as_ref().map(|decoded| decoded.background);
-    let studio_background_gradient =
-        solid_environment.as_ref().is_some_and(|decoded| decoded.studio_gradient);
+    let studio_background_gradient = solid_environment
+        .as_ref()
+        .is_some_and(|decoded| decoded.studio_gradient);
     let fog = solid_environment.as_ref().and_then(|decoded| decoded.fog);
     // v9 作者色彩分级：仅纯色环境 v9 档声明时存在，旧包恒 None（精确中性）。
     let author_grading = solid_environment
@@ -194,7 +203,11 @@ fn decode_environment(
         if payload(package, id)?.get("kind").and_then(Value::as_str)
             == Some("solid-background-builtin-ibl")
         {
-            if payload(package, id)?.get("schemaVersion").and_then(Value::as_u64) == Some(10) {
+            if payload(package, id)?
+                .get("schemaVersion")
+                .and_then(Value::as_u64)
+                == Some(10)
+            {
                 return Ok(crate::ibl::author_studio_environment());
             }
             return Ok(builtin_default_environment());
@@ -294,13 +307,18 @@ mod environment_consumption_tests {
     use super::*;
 
     fn environment(version: u32, kind: &str) -> RuntimePackageEnvelope {
-        let mut package: RuntimePackageEnvelope = serde_json::from_str(include_str!(
-            "../../tests/fixtures/runtime-package-v1.json"
-        )).unwrap();
+        let mut package: RuntimePackageEnvelope =
+            serde_json::from_str(include_str!("../../tests/fixtures/runtime-package-v1.json"))
+                .unwrap();
         let previous = package.entrypoints.environment.clone();
         let id = "scene.environment".to_owned();
         package.payloads.remove(&previous);
-        package.resources.iter_mut().find(|entry| entry.id == previous).unwrap().id = id.clone();
+        package
+            .resources
+            .iter_mut()
+            .find(|entry| entry.id == previous)
+            .unwrap()
+            .id = id.clone();
         package.entrypoints.environment = id.clone();
         let mut source = serde_json::json!({"schema":"deep-engine.solid-environment",
             "schemaVersion":version,"id":id,"revision":1,"kind":kind,
@@ -320,8 +338,14 @@ mod environment_consumption_tests {
         let package = environment(10, "solid-background-builtin-ibl");
         let loaded = decode_environment(&package, &package.entrypoints.environment).unwrap();
         assert_eq!(loaded.provenance, crate::ibl::IblProvenance::BuiltInDefault);
-        assert!(loaded.specular.mips.iter().flat_map(|mip| &mip.texels)
-            .any(|pixel| pixel[0] > 0.001));
+        assert!(
+            loaded
+                .specular
+                .mips
+                .iter()
+                .flat_map(|mip| &mip.texels)
+                .any(|pixel| pixel[0] > 0.001)
+        );
         assert_eq!(loaded.id, "deep.builtin.author-studio-ibl.v1");
     }
 
@@ -330,8 +354,14 @@ mod environment_consumption_tests {
         let package = environment(9, "solid-background-no-ibl");
         let loaded = decode_environment(&package, &package.entrypoints.environment).unwrap();
         assert_eq!(loaded.provenance, crate::ibl::IblProvenance::DisabledProbe);
-        assert!(loaded.specular.mips.iter().flat_map(|mip| &mip.texels)
-            .all(|pixel| pixel[..3] == [0.0, 0.0, 0.0]));
+        assert!(
+            loaded
+                .specular
+                .mips
+                .iter()
+                .flat_map(|mip| &mip.texels)
+                .all(|pixel| pixel[..3] == [0.0, 0.0, 0.0])
+        );
     }
 }
 

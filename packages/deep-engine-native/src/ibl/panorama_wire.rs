@@ -1,9 +1,8 @@
 //! Bounded trusted-worker wire for offline panorama prefiltering.
 use super::{PreparedIblCube, panorama};
+use crate::half_float as half;
 use serde::Deserialize;
 use serde_json::{Value, json};
-#[path = "../half_float.rs"]
-mod half;
 pub const MAX_REQUEST_BYTES: usize = 40 * 1024 * 1024;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]

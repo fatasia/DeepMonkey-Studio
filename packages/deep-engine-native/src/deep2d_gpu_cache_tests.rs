@@ -75,7 +75,7 @@ fn path_command(id: &str, x: f64) -> Deep2dCommand {
         shadow: None,
         blend: None,
         backdrop_blur: None,
-        })
+    })
 }
 
 fn display_list(image_x: f64, with_path: bool) -> Deep2dDisplayList {

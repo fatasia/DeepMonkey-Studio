@@ -15,7 +15,8 @@ fn plan(width: u32, height: u32, budget: u64) -> Option<Resolution> {
     }
     for divisor in [1, 2] {
         let ris = (width.div_ceil(divisor), height.div_ceil(divisor));
-        let bytes = (u64::from(width) * u64::from(height)).checked_mul(60)?
+        let bytes = (u64::from(width) * u64::from(height))
+            .checked_mul(60)?
             .checked_add((u64::from(ris.0) * u64::from(ris.1)).checked_mul(132)?)?
             .checked_add(4096)?;
         if bytes <= budget {

@@ -28,8 +28,7 @@
 
 #[path = "support/r2_hiz_native_wgpu.rs"]
 mod native_wgpu;
-#[path = "../src/shader_package/hash.rs"]
-mod sha256_impl;
+use deep_engine_native::shader_package::hash as sha256_impl;
 
 use native_wgpu::{
     Kind, Mode, NativeHarness, ReduceLevel, WGSL_ANCHORED_MAX, WGSL_ANCHORED_MIN,

@@ -68,7 +68,10 @@ pub enum ClusterLodSceneRuntimeError {
     GeometryIdRequired,
     MaterialIdRequired,
     /// 同一 (geometry, material) 节重复;同 geometry 不同 material 分节合法(分节本意)。
-    DuplicateSection { geometry_id: String, material_id: String },
+    DuplicateSection {
+        geometry_id: String,
+        material_id: String,
+    },
     EmptyScene,
 }
 
@@ -106,7 +109,10 @@ impl ClusterLodSceneRuntime {
         if ingested.is_empty() && fallbacks.is_empty() {
             return Err(ClusterLodSceneRuntimeError::EmptyScene);
         }
-        Ok(Self { sections: ingested, fallbacks })
+        Ok(Self {
+            sections: ingested,
+            fallbacks,
+        })
     }
 
     /// 成功摄入节集(顺序 = 输入序;pass 消费面逐节构造 GPU 驻留)。
@@ -120,7 +126,11 @@ impl ClusterLodSceneRuntime {
     }
 
     /// 材质绑定查找:pass 侧按 (geometry, material) 取节(节内簇顶点绑定该材质实例)。
-    pub fn section_for(&self, geometry_id: &str, material_id: &str) -> Option<&ClusterLodSceneSection> {
+    pub fn section_for(
+        &self,
+        geometry_id: &str,
+        material_id: &str,
+    ) -> Option<&ClusterLodSceneSection> {
         self.sections.iter().find(|section| {
             section.geometry_id == geometry_id && section.material_id == material_id
         })
@@ -128,7 +138,10 @@ impl ClusterLodSceneRuntime {
 
     /// 节点总量(全部节之和;驻留预算证据)。
     pub fn total_node_count(&self) -> usize {
-        self.sections.iter().map(|section| section.dag.nodes.len()).sum()
+        self.sections
+            .iter()
+            .map(|section| section.dag.nodes.len())
+            .sum()
     }
 }
 
@@ -138,17 +151,17 @@ fn ingest_section(
     material_id: &str,
     dgc: &[u8],
 ) -> Result<ClusterLodSceneSection, ClusterLodSceneFallback> {
-    let fallback = |reason: ClusterLodSceneFallbackReason, detail: String| ClusterLodSceneFallback {
-        geometry_id: geometry_id.to_string(),
-        material_id: material_id.to_string(),
-        reason,
-        detail,
-    };
+    let fallback =
+        |reason: ClusterLodSceneFallbackReason, detail: String| ClusterLodSceneFallback {
+            geometry_id: geometry_id.to_string(),
+            material_id: material_id.to_string(),
+            reason,
+            detail,
+        };
     let dag = ClusterLodDagRuntime::from_dgc(dgc, geometry_id)
         .map_err(|error| fallback(ClusterLodSceneFallbackReason::DgcParse, error.to_string()))?;
-    validate_cluster_lod_residency(&dag).map_err(|detail| {
-        fallback(ClusterLodSceneFallbackReason::ResidencyPrecheck, detail)
-    })?;
+    validate_cluster_lod_residency(&dag)
+        .map_err(|detail| fallback(ClusterLodSceneFallbackReason::ResidencyPrecheck, detail))?;
     Ok(ClusterLodSceneSection {
         geometry_id: geometry_id.to_string(),
         material_id: material_id.to_string(),

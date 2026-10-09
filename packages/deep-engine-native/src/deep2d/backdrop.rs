@@ -28,15 +28,11 @@ pub fn backdrop_capture_region(
     let y0 = f64::from(rect[1]) * scale + offset[1] - pad;
     let x1 = (f64::from(rect[0]) + f64::from(rect[2])) * scale + offset[0] + pad;
     let y1 = (f64::from(rect[1]) + f64::from(rect[3])) * scale + offset[1] + pad;
-    let clamp_axis = |value: f64, extent: u32| -> u32 {
-        value.floor().clamp(0.0, f64::from(extent)) as u32
-    };
+    let clamp_axis =
+        |value: f64, extent: u32| -> u32 { value.floor().clamp(0.0, f64::from(extent)) as u32 };
     let origin = [clamp_axis(x0, physical[0]), clamp_axis(y0, physical[1])];
     let end = [clamp_axis(x1, physical[0]), clamp_axis(y1, physical[1])];
-    let size = [
-        (end[0] - origin[0]).max(1),
-        (end[1] - origin[1]).max(1),
-    ];
+    let size = [(end[0] - origin[0]).max(1), (end[1] - origin[1]).max(1)];
     (origin, size)
 }
 
@@ -47,7 +43,7 @@ pub fn backdrop_downsample(
     source_size: [u32; 2],
     out: &mut [[u8; 4]],
 ) -> [u32; 2] {
-    let half = [(source_size[0] + 1) / 2, (source_size[1] + 1) / 2];
+    let half = [source_size[0].div_ceil(2), source_size[1].div_ceil(2)];
     let at = |x: u32, y: u32| -> [f32; 4] {
         let x = x.min(source_size[0] - 1);
         let y = y.min(source_size[1] - 1);
@@ -66,7 +62,10 @@ pub fn backdrop_downsample(
             let c = at(2 * x, 2 * y + 1);
             let d = at(2 * x + 1, 2 * y + 1);
             let mean = [0.0f32, 1.0, 2.0, 3.0].map(|channel| {
-                (a[channel as usize] + b[channel as usize] + c[channel as usize] + d[channel as usize])
+                (a[channel as usize]
+                    + b[channel as usize]
+                    + c[channel as usize]
+                    + d[channel as usize])
                     / 4.0
             });
             out[(y * half[0] + x) as usize] = to_u8_rgba(mean);
@@ -120,15 +119,14 @@ pub fn backdrop_blur_sweep(
 /// Bilinear sample of a texture at a fractional texel coordinate, matching
 /// wgpu's linear filtering: `t = coord - 0.5`, weights `floor`/`frac`, both
 /// axes clamped to the border texel. `coord` is in texel units of `size`.
-pub fn backdrop_sample_bilinear(
-    texture: &[[u8; 4]],
-    size: [u32; 2],
-    coord: [f32; 2],
-) -> [f32; 4] {
+pub fn backdrop_sample_bilinear(texture: &[[u8; 4]], size: [u32; 2], coord: [f32; 2]) -> [f32; 4] {
     let clamp_coord = |axis: usize, value: f32| -> f32 {
         value.clamp(0.0, (size[axis].saturating_sub(1)) as f32)
     };
-    let t = [clamp_coord(0, coord[0] - 0.5), clamp_coord(1, coord[1] - 0.5)];
+    let t = [
+        clamp_coord(0, coord[0] - 0.5),
+        clamp_coord(1, coord[1] - 0.5),
+    ];
     let i0 = [t[0].floor(), t[1].floor()];
     let frac = [t[0] - i0[0], t[1] - i0[1]];
     let tap = |x: u32, y: u32| -> [f32; 4] {
@@ -191,7 +189,11 @@ mod tests {
         let mut out = vec![[0u8, 0, 0, 0]; 1];
         let half = backdrop_downsample(&source, [2, 2], &mut out);
         assert_eq!(half, [1, 1]);
-        assert_eq!(out[0], [139, 0, 0, 255], "(0+100+200+255)/4 = 138.75 -> 139");
+        assert_eq!(
+            out[0],
+            [139, 0, 0, 255],
+            "(0+100+200+255)/4 = 138.75 -> 139"
+        );
     }
 
     #[test]
@@ -208,9 +210,21 @@ mod tests {
             spiked[(y * size[0] + 4) as usize] = [255, 255, 255, 255];
         }
         backdrop_blur_sweep(&spiked, size, true, &mut out);
-        assert_eq!(out[(2 * size[0] + 4) as usize][0], 96, "center = 6/16*255 = 95.625, to_u8_rgba rounds half-up");
-        assert_eq!(out[(2 * size[0] + 3) as usize][0], 64, "left tap = 4/16*255");
-        assert_eq!(out[(2 * size[0] + 1) as usize][0], 0, "outside the 5-tap reach");
+        assert_eq!(
+            out[(2 * size[0] + 4) as usize][0],
+            96,
+            "center = 6/16*255 = 95.625, to_u8_rgba rounds half-up"
+        );
+        assert_eq!(
+            out[(2 * size[0] + 3) as usize][0],
+            64,
+            "left tap = 4/16*255"
+        );
+        assert_eq!(
+            out[(2 * size[0] + 1) as usize][0],
+            0,
+            "outside the 5-tap reach"
+        );
     }
 
     #[test]

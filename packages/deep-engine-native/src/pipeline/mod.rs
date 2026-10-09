@@ -73,7 +73,9 @@ impl PipelineSlot {
     }
 }
 impl From<wgpu::RenderPipeline> for PipelineSlot {
-    fn from(pipeline: wgpu::RenderPipeline) -> Self { Self::Ready(pipeline) }
+    fn from(pipeline: wgpu::RenderPipeline) -> Self {
+        Self::Ready(pipeline)
+    }
 }
 
 struct ShadowPipelines {
@@ -83,8 +85,19 @@ struct ShadowPipelines {
 }
 
 impl RasterPipelines {
-    fn select_profile(&self, mirrored: bool, double_sided: bool, extended: bool) -> &wgpu::RenderPipeline {
-        let slot = if double_sided { &self.double_sided } else if mirrored { &self.mirrored } else { &self.regular };
+    fn select_profile(
+        &self,
+        mirrored: bool,
+        double_sided: bool,
+        extended: bool,
+    ) -> &wgpu::RenderPipeline {
+        let slot = if double_sided {
+            &self.double_sided
+        } else if mirrored {
+            &self.mirrored
+        } else {
+            &self.regular
+        };
         slot.get_profile(extended)
     }
     fn select(&self, mirrored: bool, double_sided: bool) -> &wgpu::RenderPipeline {
@@ -111,12 +124,14 @@ impl MeshPipelines {
         if self.active.is_some() {
             if self.active.as_ref().is_some_and(|p| p.shadow.is_some()) {
                 (MESH_PIPELINE_VARIANTS, SHADOW_PIPELINE_VARIANTS)
-            } else { (6, 0) }
+            } else {
+                (6, 0)
+            }
         } else {
             (0, 0)
         }
     }
-
+    #[allow(dead_code)]
     pub fn select(
         &self,
         alpha_mode: AlphaMode,
@@ -125,12 +140,24 @@ impl MeshPipelines {
         double_sided: bool,
         normal_mapped: bool,
     ) -> &wgpu::RenderPipeline {
-        self.select_profile(alpha_mode, premultiplied, mirrored, double_sided, normal_mapped, true)
+        self.select_profile(
+            alpha_mode,
+            premultiplied,
+            mirrored,
+            double_sided,
+            normal_mapped,
+            true,
+        )
     }
 
     pub fn select_profile(
-        &self, alpha_mode: AlphaMode, premultiplied: bool, mirrored: bool,
-        double_sided: bool, normal_mapped: bool, extended: bool,
+        &self,
+        alpha_mode: AlphaMode,
+        premultiplied: bool,
+        mirrored: bool,
+        double_sided: bool,
+        normal_mapped: bool,
+        extended: bool,
     ) -> &wgpu::RenderPipeline {
         let active = self
             .active
@@ -193,7 +220,9 @@ impl MeshPipelines {
             .active
             .as_ref()
             .expect("shadow draws require material pipelines")
-            .shadow.as_ref().expect("GBuffer pipelines do not draw shadow passes");
+            .shadow
+            .as_ref()
+            .expect("GBuffer pipelines do not draw shadow passes");
         match mode {
             ShadowCasterMode::Solid => (shadow.solid.select(mirrored, double_sided), false),
             ShadowCasterMode::MaskPlain => {
@@ -271,13 +300,22 @@ pub fn create_mesh_pipelines_with_normal_capture(
 
 /// Six opaque/MASK raster variants; shares the normal material/instance ABI.
 pub(crate) fn create_megalights_gbuffer_pipelines(
-    device: &wgpu::Device, frame_layout: &wgpu::BindGroupLayout,
-    material_layout: &wgpu::BindGroupLayout, shader: &wgpu::ShaderModule,
+    device: &wgpu::Device,
+    frame_layout: &wgpu::BindGroupLayout,
+    material_layout: &wgpu::BindGroupLayout,
+    shader: &wgpu::ShaderModule,
 ) -> MeshPipelines {
-    let solid = mesh::create_megalights_material_pipelines(device, frame_layout, material_layout, shader);
-    MeshPipelines { active: Some(ActiveMeshPipelines {
-        blend: solid.clone(), blend_premultiplied: solid.clone(), solid, shadow: None,
-    }), layered: None }
+    let solid =
+        mesh::create_megalights_material_pipelines(device, frame_layout, material_layout, shader);
+    MeshPipelines {
+        active: Some(ActiveMeshPipelines {
+            blend: solid.clone(),
+            blend_premultiplied: solid.clone(),
+            solid,
+            shadow: None,
+        }),
+        layered: None,
+    }
 }
 
 /// I-C23:在普通管线族之上追加分层颜色管线族(fragment_*_layered 入口 +
@@ -333,26 +371,36 @@ mod demand_tests {
     #[ignore = "requires a real GPU"]
     fn color_variants_compile_once_and_share_cloned_slots() {
         pollster::block_on(async {
-            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+            let instance =
+                wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
             let adapter = instance.request_adapter(&Default::default()).await.unwrap();
             let (device, _) = adapter.request_device(&Default::default()).await.unwrap();
             let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
             let frame = crate::frame_bindings::create_frame_layouts(&device);
             let material = crate::gpu_textures::create_material_layout(&device);
             let shader = crate::frame_bindings::create_native_mesh_shader(&device);
-            let pipelines = create_mesh_pipelines(&device, &frame.frame, &frame.shadow, &material, &shader);
+            let pipelines =
+                create_mesh_pipelines(&device, &frame.frame, &frame.shadow, &material, &shader);
             let active = pipelines.active.as_ref().unwrap();
-            let PipelineSlot::Mesh(recipe) = &active.solid.standard.regular else { panic!("must defer") };
+            let PipelineSlot::Mesh(recipe) = &active.solid.standard.regular else {
+                panic!("must defer")
+            };
             assert!(!recipe.is_ready());
             let clone = active.solid.standard.regular.clone();
             let first = pipelines.select(AlphaMode::Opaque, false, false, false, false);
             assert!(recipe.is_ready());
             assert!(std::ptr::eq(first, clone.get()));
-            let ordinary = pipelines.select_profile(AlphaMode::Opaque, false, false, false, false, false);
+            let ordinary =
+                pipelines.select_profile(AlphaMode::Opaque, false, false, false, false, false);
             assert!(!std::ptr::eq(first, ordinary));
             assert!(std::ptr::eq(ordinary, clone.get_profile(false)));
-            let PipelineSlot::Mesh(unused) = &active.blend.normal_mapped.mirrored else { panic!("must defer") };
-            assert!(!unused.is_ready(), "unused material variants must stay uncompiled");
+            let PipelineSlot::Mesh(unused) = &active.blend.normal_mapped.mirrored else {
+                panic!("must defer")
+            };
+            assert!(
+                !unused.is_ready(),
+                "unused material variants must stay uncompiled"
+            );
             for alpha in [AlphaMode::Opaque, AlphaMode::Blend] {
                 for premultiplied in [false, true] {
                     for (mirrored, double_sided) in [(false, false), (true, false), (false, true)] {
@@ -362,7 +410,10 @@ mod demand_tests {
                     }
                 }
             }
-            assert!(scope.pop().await.is_none(), "all deferred variants must remain valid");
+            assert!(
+                scope.pop().await.is_none(),
+                "all deferred variants must remain valid"
+            );
         });
     }
 }

@@ -35,7 +35,9 @@ fn path_command(fill: bool) -> deep_engine_native::deep2d::PathCommand {
         clip_rect: None,
         hit_id: None,
         path_id: "shape".into(),
-        fill: fill.then_some([0.9, 0.2, 0.1, 1.0]).map(deep_engine_native::deep2d::Deep2dPaint::from),
+        fill: fill
+            .then_some([0.9, 0.2, 0.1, 1.0])
+            .map(deep_engine_native::deep2d::Deep2dPaint::from),
         fill_rule: None,
         stroke: (!fill).then_some([0.1, 0.1, 0.1, 1.0]),
         stroke_width: Some(2.0),

@@ -2,7 +2,9 @@ use super::*;
 
 pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
     #[cfg(target_arch = "wasm32")]
-    if app.presentation_paused_at.is_some() { return; }
+    if app.presentation_paused_at.is_some() {
+        return;
+    }
     #[cfg(target_arch = "wasm32")]
     if app.physics_stage_pending {
         return;

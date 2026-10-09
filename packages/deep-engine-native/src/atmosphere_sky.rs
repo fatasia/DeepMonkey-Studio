@@ -55,11 +55,10 @@ impl AtmosphereSkyParameters {
         if !self.turbidity.is_finite() || !(1.9..=10.0).contains(&self.turbidity) {
             return Err("Sky turbidity must be finite in [1.9, 10].".to_string());
         }
-        let sun_length =
-            (self.sun_direction_enu[0] * self.sun_direction_enu[0]
-                + self.sun_direction_enu[1] * self.sun_direction_enu[1]
-                + self.sun_direction_enu[2] * self.sun_direction_enu[2])
-                .sqrt();
+        let sun_length = (self.sun_direction_enu[0] * self.sun_direction_enu[0]
+            + self.sun_direction_enu[1] * self.sun_direction_enu[1]
+            + self.sun_direction_enu[2] * self.sun_direction_enu[2])
+            .sqrt();
         if !sun_length.is_finite() || (sun_length - 1.0).abs() > 1e-4 {
             return Err("Sky sunDirectionEnu must be a unit vector.".to_string());
         }
@@ -68,7 +67,11 @@ impl AtmosphereSkyParameters {
 }
 
 fn clamp_unit(value: f64) -> f64 {
-    value.max(-1.0).min(1.0)
+    // max/min retain the existing finite fallback for NaN inputs.
+    #[allow(clippy::manual_clamp)]
+    {
+        value.max(-1.0).min(1.0)
+    }
 }
 
 /// Rayleigh 相函数 `3/(16π)·(1+γ²)`(纯算术,与 TS 表达式顺序逐位同构)。
@@ -120,8 +123,11 @@ pub fn sample_analytic_sky_cpu(
     if !view_length.is_finite() || (view_length - 1.0).abs() > 1e-4 {
         return Err("Sky viewDirectionEnu must be a unit vector.".to_string());
     }
-    let cos_gamma =
-        clamp_unit(sun[0] * view_direction_enu[0] + sun[1] * view_direction_enu[1] + sun[2] * view_direction_enu[2]);
+    let cos_gamma = clamp_unit(
+        sun[0] * view_direction_enu[0]
+            + sun[1] * view_direction_enu[1]
+            + sun[2] * view_direction_enu[2],
+    );
     let cos_view = clamp_unit(view_direction_enu[2]);
     let cos_sun = clamp_unit(sun[2]);
     let visibility = solar_visibility(sun[2]);
@@ -133,8 +139,8 @@ pub fn sample_analytic_sky_cpu(
     let path_length = view_path_length_meters(cos_view);
     for (channel, &rayleigh) in RAYLEIGH_BETA_RGB.iter().enumerate() {
         let beta_total = rayleigh + mie_beta;
-        let scattering_coefficient =
-            rayleigh * rayleigh_phase(cos_gamma) + mie_beta * henyey_greenstein_phase(cos_gamma, anisotropy);
+        let scattering_coefficient = rayleigh * rayleigh_phase(cos_gamma)
+            + mie_beta * henyey_greenstein_phase(cos_gamma, anisotropy);
         let sun_optical_depth = beta_total * ATMOSPHERE_HEIGHT_M / cos_sun.max(1e-4);
         let sun_term = (-sun_optical_depth).exp() * visibility;
         let k = beta_total * (1.0 - cos_view / cos_sun.max(1e-4));
@@ -149,9 +155,7 @@ pub fn sample_analytic_sky_cpu(
 }
 
 /// 沿太阳方向到大气顶的通道透射率(含地平下熄灭;TS `solarTransmittance` 同构)。
-pub fn solar_transmittance_cpu(
-    parameters: AtmosphereSkyParameters,
-) -> Result<[f64; 3], String> {
+pub fn solar_transmittance_cpu(parameters: AtmosphereSkyParameters) -> Result<[f64; 3], String> {
     let (turbidity, sun, _anisotropy) = parameters.resolve()?;
     let cos_sun = clamp_unit(sun[2]);
     let visibility = solar_visibility(sun[2]);
@@ -159,8 +163,7 @@ pub fn solar_transmittance_cpu(
     let mut rgb = [0.0f64; 3];
     for (channel, &rayleigh) in RAYLEIGH_BETA_RGB.iter().enumerate() {
         let beta_total = rayleigh + mie_beta;
-        rgb[channel] =
-            (-beta_total * ATMOSPHERE_HEIGHT_M / cos_sun.max(1e-4)).exp() * visibility;
+        rgb[channel] = (-beta_total * ATMOSPHERE_HEIGHT_M / cos_sun.max(1e-4)).exp() * visibility;
     }
     Ok(rgb)
 }
@@ -273,10 +276,20 @@ pub fn pack_sky_draw_uniforms(
     mie_anisotropy: f32,
 ) -> SkyDrawUniforms {
     SkyDrawUniforms {
-        ray_right_scaled: [ray_right_scaled[0], ray_right_scaled[1], ray_right_scaled[2], 0.0],
+        ray_right_scaled: [
+            ray_right_scaled[0],
+            ray_right_scaled[1],
+            ray_right_scaled[2],
+            0.0,
+        ],
         ray_up_scaled: [ray_up_scaled[0], ray_up_scaled[1], ray_up_scaled[2], 0.0],
         cam_forward: [cam_forward[0], cam_forward[1], cam_forward[2], 0.0],
-        sun_params: [sun_direction_enu[0], sun_direction_enu[1], sun_direction_enu[2], turbidity],
+        sun_params: [
+            sun_direction_enu[0],
+            sun_direction_enu[1],
+            sun_direction_enu[2],
+            turbidity,
+        ],
         misc: [mie_anisotropy, 0.0, 0.0, 0.0],
     }
 }
@@ -298,10 +311,10 @@ pub fn create_atmosphere_sky_pipeline(
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Uniform,
                 has_dynamic_offset: false,
-                min_binding_size: Some(std::num::NonZeroU64::new(
-                    std::mem::size_of::<SkyDrawUniforms>() as u64,
-                )
-                .expect("non-zero uniform size")),
+                min_binding_size: Some(
+                    std::num::NonZeroU64::new(std::mem::size_of::<SkyDrawUniforms>() as u64)
+                        .expect("non-zero uniform size"),
+                ),
             },
             count: None,
         }],
@@ -387,8 +400,7 @@ mod tests {
             let value = {
                 let g2 = g * g;
                 let base = (1.0 - 2.0 * g * cos_theta + g2).max(HG_EPSILON);
-                let denominator =
-                    4.0 * core::f64::consts::PI * (base * base * base).sqrt();
+                let denominator = 4.0 * core::f64::consts::PI * (base * base * base).sqrt();
                 (1.0 - g2) / denominator
             };
             assert_close(value, golden, "hg({cos_theta},{g})");
@@ -404,9 +416,18 @@ mod tests {
     /// 单位矢量低太阳 [0.8,0,0.6](19.5° 高度角,t19 场景)。
     const SUN_LOW: [f64; 3] = [0.8, 0.0, 0.6];
 
-    fn analytic(turbidity: f64, sun: [f64; 3], view: [f64; 3], anisotropy: Option<f64>) -> [f64; 3] {
+    fn analytic(
+        turbidity: f64,
+        sun: [f64; 3],
+        view: [f64; 3],
+        anisotropy: Option<f64>,
+    ) -> [f64; 3] {
         sample_analytic_sky_cpu(
-            AtmosphereSkyParameters { turbidity, sun_direction_enu: sun, mie_anisotropy: anisotropy },
+            AtmosphereSkyParameters {
+                turbidity,
+                sun_direction_enu: sun,
+                mie_anisotropy: anisotropy,
+            },
             view,
         )
         .expect("valid sky sample")
@@ -415,36 +436,99 @@ mod tests {
     /// TS 金样场景族(单位矢量场景,1e-9 相对容差,exp/expm1/pow 跨 libm
     /// 哨兵如实;turbidity 4/1.9 × 天顶/地平/顺光/逆光/中天)。
     #[test]
+    #[allow(clippy::type_complexity)] // Golden cases keep all input and expected lanes together.
     fn analytic_sky_matches_ts_golden_scenes() {
         let mid = [0.3, 0.4, (1.0_f64 - 0.09 - 0.16).sqrt()];
         let scenes: [(&str, f64, [f64; 3], Option<f64>, [f64; 3], [&str; 3]); 10] = [
-            ("t4_zenith", 4.0, sun_t4(), None, [0.0, 0.0, 1.0],
-                ["3f77bde5ebceef5f", "3f7fff31719a67bd", "3f83c2ac0e81449a"]),
-            ("t4_horizon", 4.0, sun_t4(), None, [1.0, 0.0, 0.0],
-                ["3fa12aa45bfa7e43", "3fa051a05b7d3a31", "3f97b0e5c6b77b80"]),
-            ("t4_sun", 4.0, sun_t4(), None, sun_t4(),
-                ["3fd435c55b1111a0", "3fd0faeee76db687", "3fc74c174bfb8695"]),
-            ("t4_antisun", 4.0, sun_t4(), None,
+            (
+                "t4_zenith",
+                4.0,
+                sun_t4(),
+                None,
+                [0.0, 0.0, 1.0],
+                ["3f77bde5ebceef5f", "3f7fff31719a67bd", "3f83c2ac0e81449a"],
+            ),
+            (
+                "t4_horizon",
+                4.0,
+                sun_t4(),
+                None,
+                [1.0, 0.0, 0.0],
+                ["3fa12aa45bfa7e43", "3fa051a05b7d3a31", "3f97b0e5c6b77b80"],
+            ),
+            (
+                "t4_sun",
+                4.0,
+                sun_t4(),
+                None,
+                sun_t4(),
+                ["3fd435c55b1111a0", "3fd0faeee76db687", "3fc74c174bfb8695"],
+            ),
+            (
+                "t4_antisun",
+                4.0,
+                sun_t4(),
+                None,
                 [-sun_t4()[0], -sun_t4()[1], -sun_t4()[2]],
-                ["3f8f9ddebc3f53d6", "3f939929883a7742", "3f9074cf5a06fbfc"]),
-            ("t4_mid", 4.0, sun_t4(), None, mid,
-                ["3fa232302ee1e258", "3fa172e8bf9319bd", "3f9e2b7287cc2172"]),
-            ("t19_zenith", 1.9, SUN_LOW, Some(0.6), [0.0, 0.0, 1.0],
-                ["3f782a1eac1558d7", "3f80ab8b30c9ed45", "3f84c1e70521b293"]),
-            ("t19_horizon", 1.9, SUN_LOW, Some(0.6), [1.0, 0.0, 0.0],
-                ["3fbafe24d380d676", "3fb38bebd8e733f4", "3fa683e00e57c15d"]),
-            ("t19_sun", 1.9, SUN_LOW, Some(0.6), SUN_LOW,
-                ["3fa7540128e2e85b", "3fa6d6e1280c0870", "3fa3f7e80c827319"]),
-            ("t19_antisun", 1.9, SUN_LOW, Some(0.6),
+                ["3f8f9ddebc3f53d6", "3f939929883a7742", "3f9074cf5a06fbfc"],
+            ),
+            (
+                "t4_mid",
+                4.0,
+                sun_t4(),
+                None,
+                mid,
+                ["3fa232302ee1e258", "3fa172e8bf9319bd", "3f9e2b7287cc2172"],
+            ),
+            (
+                "t19_zenith",
+                1.9,
+                SUN_LOW,
+                Some(0.6),
+                [0.0, 0.0, 1.0],
+                ["3f782a1eac1558d7", "3f80ab8b30c9ed45", "3f84c1e70521b293"],
+            ),
+            (
+                "t19_horizon",
+                1.9,
+                SUN_LOW,
+                Some(0.6),
+                [1.0, 0.0, 0.0],
+                ["3fbafe24d380d676", "3fb38bebd8e733f4", "3fa683e00e57c15d"],
+            ),
+            (
+                "t19_sun",
+                1.9,
+                SUN_LOW,
+                Some(0.6),
+                SUN_LOW,
+                ["3fa7540128e2e85b", "3fa6d6e1280c0870", "3fa3f7e80c827319"],
+            ),
+            (
+                "t19_antisun",
+                1.9,
+                SUN_LOW,
+                Some(0.6),
                 [-SUN_LOW[0], -SUN_LOW[1], -SUN_LOW[2]],
-                ["3f9b434ee82c78a9", "3f9c9d8dbb014809", "3f9503ae067a3da8"]),
-            ("t19_mid", 1.9, SUN_LOW, Some(0.6), mid,
-                ["3f83e2fd97eadeee", "3f8937a347169872", "3f8d456dcd3327ff"]),
+                ["3f9b434ee82c78a9", "3f9c9d8dbb014809", "3f9503ae067a3da8"],
+            ),
+            (
+                "t19_mid",
+                1.9,
+                SUN_LOW,
+                Some(0.6),
+                mid,
+                ["3f83e2fd97eadeee", "3f8937a347169872", "3f8d456dcd3327ff"],
+            ),
         ];
         for (name, turbidity, sun, anisotropy, view, golden) in scenes {
             let rgb = analytic(turbidity, sun, view, anisotropy);
             for channel in 0..3 {
-                assert_close(rgb[channel], golden[channel], "{name} ch{channel}");
+                assert_close(
+                    rgb[channel],
+                    golden[channel],
+                    &format!("{name} ch{channel}"),
+                );
             }
         }
     }
@@ -455,17 +539,30 @@ mod tests {
         let mid = [0.3, 0.4, (1.0_f64 - 0.09 - 0.16).sqrt()];
         let sun = [0.2, 0.2, (1.0_f64 - 0.04 - 0.04).sqrt()];
         let scenes: [(&str, [f64; 3], [&str; 3]); 3] = [
-            ("t10_zenith", [0.0, 0.0, 1.0],
-                ["3fbadf41f9c86eb9", "3fb89901f6a393bd", "3fb43b6a6b1ffafa"]),
-            ("t10_horizon", [1.0, 0.0, 0.0],
-                ["3f905e120f47d44d", "3f921e66646b33c6", "3f9120c5646fb650"]),
-            ("t10_mid", mid,
-                ["3fc42571da8d66b4", "3fc22f4b6e107f25", "3fbd15c5cad1de08"]),
+            (
+                "t10_zenith",
+                [0.0, 0.0, 1.0],
+                ["3fbadf41f9c86eb9", "3fb89901f6a393bd", "3fb43b6a6b1ffafa"],
+            ),
+            (
+                "t10_horizon",
+                [1.0, 0.0, 0.0],
+                ["3f905e120f47d44d", "3f921e66646b33c6", "3f9120c5646fb650"],
+            ),
+            (
+                "t10_mid",
+                mid,
+                ["3fc42571da8d66b4", "3fc22f4b6e107f25", "3fbd15c5cad1de08"],
+            ),
         ];
         for (name, view, golden) in scenes {
             let rgb = analytic(10.0, sun, view, None);
             for channel in 0..3 {
-                assert_close(rgb[channel], golden[channel], "{name} ch{channel}");
+                assert_close(
+                    rgb[channel],
+                    golden[channel],
+                    &format!("{name} ch{channel}"),
+                );
             }
         }
     }
@@ -492,7 +589,12 @@ mod tests {
         let rgb = analytic(4.0, sun_t4(), [0.0, 0.0, 1.0], None);
         assert!(rgb[2] > rgb[0], "zenith must be blue-dominant: {rgb:?}");
         let sun_view = analytic(4.0, sun_t4(), sun_t4(), None);
-        let anti_view = analytic(4.0, sun_t4(), [-sun_t4()[0], -sun_t4()[1], -sun_t4()[2]], None);
+        let anti_view = analytic(
+            4.0,
+            sun_t4(),
+            [-sun_t4()[0], -sun_t4()[1], -sun_t4()[2]],
+            None,
+        );
         assert!(sun_view[0] > anti_view[0] * 5.0, "circumsolar brightening");
         // 太阳沉入熄灭窗口之下(−10°,单位矢量)→ 全零。
         let sunk = [0.984807753012208, 0.0, -0.17364817766693041];
@@ -528,29 +630,59 @@ mod tests {
         );
         // 同输入逐位同输出(确定性)。
         let again = analytic(4.0, sun_t4(), [0.0, 0.0, 1.0], None);
-        assert_eq!(format!("{:016x}", bits(rgb[0])), format!("{:016x}", bits(again[0])));
+        assert_eq!(
+            format!("{:016x}", bits(rgb[0])),
+            format!("{:016x}", bits(again[0]))
+        );
     }
 
     /// 参数合同 fail-closed(与 TS 同域:浊度 [1.9,10]、双单位矢量 ±1e-4)。
     #[test]
     fn parameter_contract_fails_closed() {
         let view = [0.0, 0.0, 1.0];
-        let low = AtmosphereSkyParameters { turbidity: 1.8, sun_direction_enu: sun_t4(), mie_anisotropy: None };
-        let high = AtmosphereSkyParameters { turbidity: 10.1, sun_direction_enu: sun_t4(), mie_anisotropy: None };
-        let nan = AtmosphereSkyParameters { turbidity: f64::NAN, sun_direction_enu: sun_t4(), mie_anisotropy: None };
-        let bad_sun = AtmosphereSkyParameters { turbidity: 4.0, sun_direction_enu: [1.0, 0.0, 0.5], mie_anisotropy: None };
+        let low = AtmosphereSkyParameters {
+            turbidity: 1.8,
+            sun_direction_enu: sun_t4(),
+            mie_anisotropy: None,
+        };
+        let high = AtmosphereSkyParameters {
+            turbidity: 10.1,
+            sun_direction_enu: sun_t4(),
+            mie_anisotropy: None,
+        };
+        let nan = AtmosphereSkyParameters {
+            turbidity: f64::NAN,
+            sun_direction_enu: sun_t4(),
+            mie_anisotropy: None,
+        };
+        let bad_sun = AtmosphereSkyParameters {
+            turbidity: 4.0,
+            sun_direction_enu: [1.0, 0.0, 0.5],
+            mie_anisotropy: None,
+        };
         assert!(sample_analytic_sky_cpu(low, view).is_err());
         assert!(sample_analytic_sky_cpu(high, view).is_err());
         assert!(sample_analytic_sky_cpu(nan, view).is_err());
         assert!(sample_analytic_sky_cpu(bad_sun, view).is_err());
         let bad_view = [0.5, 0.5, 0.5]; // 长度 0.866
-        let good = AtmosphereSkyParameters { turbidity: 4.0, sun_direction_enu: sun_t4(), mie_anisotropy: None };
+        let good = AtmosphereSkyParameters {
+            turbidity: 4.0,
+            sun_direction_enu: sun_t4(),
+            mie_anisotropy: None,
+        };
         assert!(sample_analytic_sky_cpu(good, bad_view).is_err());
         // 边界值 1.9/10 合法。
-        assert!(sample_analytic_sky_cpu(
-            AtmosphereSkyParameters { turbidity: 1.9, sun_direction_enu: sun_t4(), mie_anisotropy: None }, view
-        )
-        .is_ok());
+        assert!(
+            sample_analytic_sky_cpu(
+                AtmosphereSkyParameters {
+                    turbidity: 1.9,
+                    sun_direction_enu: sun_t4(),
+                    mie_anisotropy: None
+                },
+                view
+            )
+            .is_ok()
+        );
     }
 
     /// uniform 打包布局槽位核对(80 B,通道顺序与 WGSL 逐槽一致)。
@@ -578,13 +710,31 @@ mod tests {
     #[test]
     fn wgsl_core_mirrors_cpu_branches() {
         let core = ATMOSPHERE_SKY_WGSL;
-        assert!(core.contains("1e-8") && core.contains("abs(kl) < 1e-8"), "k→0 limit branch");
-        assert!(core.contains("cosSun <= 0.0 && visibility <= 0.0"), "twilight early-out");
-        assert!(core.contains("sqrt(2.0 * deepAtmosphereEarthRadius"), "horizon cap");
-        assert!(core.contains("1.0 - exp(-kl)"), "expm1 deviation is the documented one");
+        assert!(
+            core.contains("1e-8") && core.contains("abs(kl) < 1e-8"),
+            "k→0 limit branch"
+        );
+        assert!(
+            core.contains("cosSun <= 0.0 && visibility <= 0.0"),
+            "twilight early-out"
+        );
+        assert!(
+            core.contains("sqrt(2.0 * deepAtmosphereEarthRadius"),
+            "horizon cap"
+        );
+        assert!(
+            core.contains("1.0 - exp(-kl)"),
+            "expm1 deviation is the documented one"
+        );
         assert!(core.contains("(turbidity / 4.0)"), "turbidity scaling");
         let shader = atmosphere_sky_shader();
-        assert!(shader.contains("normalize(sky.camForward.xyz"), "ray reconstruction");
-        assert!(shader.contains("@fragment fn fragment_main"), "entry points");
+        assert!(
+            shader.contains("normalize(sky.camForward.xyz"),
+            "ray reconstruction"
+        );
+        assert!(
+            shader.contains("@fragment fn fragment_main"),
+            "entry points"
+        );
     }
 }

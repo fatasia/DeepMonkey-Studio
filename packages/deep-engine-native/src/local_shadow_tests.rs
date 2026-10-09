@@ -65,7 +65,9 @@ fn accepts_sixteen_spot_views_before_gpu_allocation() {
     let mut frame = crate::mesh_abi::frame_uniform(1.0, 0.0);
     valid.apply(&mut frame);
     assert_eq!(frame_matrices(&frame).len(), 16);
-    assert!(serde_json::from_value::<crate::scene_lighting::DirectionalLighting>(lighting(17)).is_err());
+    assert!(
+        serde_json::from_value::<crate::scene_lighting::DirectionalLighting>(lighting(17)).is_err()
+    );
 }
 
 /// Cross-host ABI pin: Web and Native both expose sixteen spot-shadow entries. Native

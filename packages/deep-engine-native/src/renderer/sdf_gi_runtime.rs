@@ -48,9 +48,8 @@ use deep_engine_native::sdf_gi_scene_compose::{
     resolve_sdf_gi_bake_cell_size,
 };
 use deep_engine_native::sdf_gi_trace::{
-    SDF_SKY_VISIBILITY_MIN_STEPS, SdfSkyVisibilityTraceConfig, SdfSkyVisibilityTraceOptions,
-    default_cone_tan, probe_occlusion_direction, resolve_sdf_sky_visibility_trace_config,
-    trace_sdf_sky_visibility_with_hits,
+    SdfSkyVisibilityTraceConfig, SdfSkyVisibilityTraceOptions, probe_occlusion_direction,
+    resolve_sdf_sky_visibility_trace_config, trace_sdf_sky_visibility_with_hits,
 };
 
 /// 门控解析(与 hi_z 同族 env 约定;缺省/未知值 = 关,fail-closed)。
@@ -210,6 +209,7 @@ fn fibonacci_directions(count: u32) -> Vec<[f64; 3]> {
 pub(crate) struct SdfGiFrameRuntime {
     pub(crate) leg: SdfGiLeg,
     /// 构建期跳过的实例数(几何缺席;诊断证据链)。
+    #[allow(dead_code)]
     skipped_instances: usize,
 }
 
@@ -290,11 +290,8 @@ pub(crate) fn plan_sdf_gi_gpu(
     .map_err(|error| reject_bake(&error))?;
     // 探针 lattice:与 CPU 腿同式(间距 = max(cellSize×4, 0.25),域 = 网格内缩
     // 半格);GPU 腿只持格几何,走显式字段形(bounds 推导单一实现点)。
-    let (bounds_min, bounds_max) = probe_lattice_bounds_for(
-        grid_plan.scene_min,
-        cell_size,
-        grid_plan.dimensions,
-    );
+    let (bounds_min, bounds_max) =
+        probe_lattice_bounds_for(grid_plan.scene_min, cell_size, grid_plan.dimensions);
     let spacing = (cell_size * 4.0).max(0.25);
     let lattice = derive_sdf_gi_probe_lattice(bounds_min, bounds_max, spacing, SDF_GI_MAX_PROBES)
         .map_err(|_| SdfGiReject::ProbeLattice)?;
@@ -347,11 +344,14 @@ fn reject_bake(error: &SdfSceneBakeError) -> SdfGiReject {
 }
 
 /// 帧内重烘焙评估输入(stage 阶段随 Replace 载荷携带;publish 唯一提交点消费)。
+// Inline rebake staging keeps the existing allocation and ownership behavior.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum SdfGiRebakeInput {
     /// 新内容规划成功(哈希/格几何/lattice 就绪;GPU 腿评估用)。
     Ready {
         plan: SdfGiGpuPlan,
         sources: Vec<SdfGiBakeSource>,
+        #[allow(dead_code)]
         skipped: usize,
     },
     /// 新内容不可烘(同款封闭拒因;GPU 腿维持旧静态层,诊断披露)。
@@ -373,9 +373,9 @@ impl SdfGiFrameRuntime {
             return; // CPU 权威腿:静态层假设照旧(模块头边界,如实)。
         };
         let outcome = match input {
-            SdfGiRebakeInput::Ready { plan, sources, .. } => chain.evaluate_scene_change(
-                &plan, &sources, device, queue, storage_buffer,
-            ),
+            SdfGiRebakeInput::Ready { plan, sources, .. } => {
+                chain.evaluate_scene_change(&plan, &sources, device, queue, storage_buffer)
+            }
             SdfGiRebakeInput::Rejected(reject) => {
                 diagnostics.note_sdf_gi_rebake(reject.reason());
                 return;
@@ -513,6 +513,7 @@ impl SdfGiFrameRuntime {
     }
 
     /// 探针 lattice 访问(诊断/测试面;两腿同合同)。
+    #[allow(dead_code)]
     pub(crate) fn lattice(&self) -> &deep_engine_native::sdf_gi_scene_compose::SdfGiProbeLattice {
         match &self.leg {
             SdfGiLeg::Cpu(leg) => &leg.lattice,
@@ -521,6 +522,7 @@ impl SdfGiFrameRuntime {
     }
 
     /// 天光方向集访问(诊断/测试面)。
+    #[allow(dead_code)]
     pub(crate) fn directions(&self) -> &[[f64; 3]] {
         match &self.leg {
             SdfGiLeg::Cpu(leg) => &leg.directions,
@@ -529,6 +531,7 @@ impl SdfGiFrameRuntime {
     }
 
     /// 探针数(lattice 总格数;两腿同合同)。
+    #[allow(dead_code)]
     pub(crate) fn probe_count(&self) -> usize {
         match &self.leg {
             SdfGiLeg::Cpu(leg) => leg.lattice.positions.len(),
@@ -567,6 +570,7 @@ impl SdfGiFrameRuntime {
 
     /// 窗口计算(CPU 权威腿;GPU 腿恒 None —— 窗口在 GPU advance 内编码)。
     /// 返回 `Some((窗口探针偏移, 更新后 ABI 记录))`,预算/计数为零时 None。
+    #[allow(dead_code)]
     pub(crate) fn compute_window(&mut self) -> Option<(usize, Vec<IrradianceProbeRecord>)> {
         match &mut self.leg {
             SdfGiLeg::Cpu(leg) => compute_cpu_window(leg),
@@ -575,6 +579,7 @@ impl SdfGiFrameRuntime {
     }
 
     /// 诊断面:探针数/已派发窗口/跳过实例(遥测与验收证据链)。
+    #[allow(dead_code)]
     pub(crate) fn telemetry(&self) -> (usize, usize, usize) {
         (
             self.probe_count(),
@@ -610,7 +615,10 @@ impl SdfGiFrameRuntime {
     }
 
     /// 组装 GPU 腿运行时(chain 已就绪;skipped 计数与 CPU 腿同口径)。
-    pub(crate) fn from_gpu_chain(chain: super::sdf_gi_gpu::SdfGiGpuChain, skipped_instances: usize) -> Self {
+    pub(crate) fn from_gpu_chain(
+        chain: super::sdf_gi_gpu::SdfGiGpuChain,
+        skipped_instances: usize,
+    ) -> Self {
         Self {
             leg: SdfGiLeg::Gpu(chain),
             skipped_instances,

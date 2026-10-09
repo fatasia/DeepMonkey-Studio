@@ -75,18 +75,27 @@ fn mega_lights_ris_wgsl_contracts_stay_aligned() {
     assert!(wgsl.contains("struct DeepMegaReservoir"));
     assert!(wgsl.contains("fn deepMegaReservoirMerge("));
     assert!(wgsl.contains("if (uniform * total < added) { (*reservoir).winner = winner; }"));
-    assert!(wgsl.contains("f32(reservoir.winner + 1u)"), "winner 打包为 +1 的 f32(0=无效)");
+    assert!(
+        wgsl.contains("f32(reservoir.winner + 1u)"),
+        "winner 打包为 +1 的 f32(0=无效)"
+    );
     // 两趟入口与穷举分支(⑤ 退化一致性腿)。
     assert!(wgsl.contains(concat!("fn ", "deepMegaBuildReservoir", "(")));
     assert!(wgsl.contains(concat!("fn ", "deepMegaReuseAndShade", "(")));
     assert!(wgsl.contains("if (params.exhaustive != 0u)"));
-    assert!(wgsl.contains("let candidates = select(DEEP_MEGA_RIS_CANDIDATES, lightCount, params.exhaustive != 0u);"));
+    assert!(wgsl.contains(
+        "let candidates = select(DEEP_MEGA_RIS_CANDIDATES, lightCount, params.exhaustive != 0u);"
+    ));
     // 空间值域无偏平均(源像素评价 W_src;越界槽跳过)。
-    assert!(wgsl.contains("let sourceWeight = f32(lightCount) * source.weightSum / (f32(source.m) * sourceTarget);"));
+    assert!(wgsl.contains(
+        "let sourceWeight = f32(lightCount) * source.weightSum / (f32(source.m) * sourceTarget);"
+    ));
     assert!(wgsl.contains("deepMegaVisibilityAt(sourceIndex)"));
     // 胜者可见性与 IES 为宿主注入符号(模板组合;核内只消费)。
     assert!(wgsl.contains("deepMegaVisibilityAt(pixelIndex)"));
-    assert!(wgsl.contains("deepSpotIesFactor(record.iesRow - 1u, surfaceToLight, record.direction)"));
+    assert!(
+        wgsl.contains("deepSpotIesFactor(record.iesRow - 1u, surfaceToLight, record.direction)")
+    );
     // 相似门/蓄水池打包的视深口径 = -z(surfaceA.w 是 metallic;2026-10-07 真机
     // 探针逐源对拍抓出的单源分歧,与 TS 半同款防回归钉)。
     assert!(wgsl.contains("deepMegaDepthGate(-surfaceA.z, previous.w)"));

@@ -15,7 +15,9 @@
 //! 粗糙度。基材清漆及各向异性/透射由发布合同拒绝。factor0 原样返回 stock;
 //! 原白炉 fixture 的扩展词全零,双端旧响应逐位保持。
 
-use crate::contract::{LayerBlendMode, LayerResponseModel, MaterialLayer, PbrMaterial, TextureSlot};
+use crate::contract::{
+    LayerBlendMode, LayerResponseModel, MaterialLayer, PbrMaterial, TextureSlot,
+};
 
 /// 304B 层块(header 16B + 2×144B 行,16B 对齐 uniform)。
 pub const LAYERED_SURFACE_BLOCK_BYTES: usize = 304;
@@ -137,7 +139,8 @@ pub fn layered_block_rows(
             params: layer_params(layer),
             coverage,
             overlay: layer.mode == Some(LayerBlendMode::Overlay),
-            metal_reflection: layer.response_model == Some(LayerResponseModel::MicrofacetMetalReflection),
+            metal_reflection: layer.response_model
+                == Some(LayerResponseModel::MicrofacetMetalReflection),
             color: layer.surface.as_ref().and_then(|s| s.base_color),
             metallic: layer.surface.as_ref().and_then(|s| s.metallic),
             roughness: layer.surface.as_ref().and_then(|s| s.roughness),
@@ -163,10 +166,20 @@ fn layer_params(layer: &MaterialLayer) -> [f32; 6] {
     let Some(params) = &layer.params else {
         return DEFAULT_LAYER_PARAMS;
     };
-    let rotation = params.anisotropy.as_ref().and_then(|a| a.rotation).unwrap_or(0.0);
+    let rotation = params
+        .anisotropy
+        .as_ref()
+        .and_then(|a| a.rotation)
+        .unwrap_or(0.0);
     let rotation = if layer.response_model == Some(LayerResponseModel::MicrofacetMetalReflection) {
-        if rotation == -std::f32::consts::PI { std::f32::consts::PI } else { rotation }
-    } else { rotation };
+        if rotation == -std::f32::consts::PI {
+            std::f32::consts::PI
+        } else {
+            rotation
+        }
+    } else {
+        rotation
+    };
     [
         params.ior.unwrap_or(DEFAULT_LAYER_PARAMS[0]),
         params
@@ -200,12 +213,7 @@ pub fn blend_channel(underlying: f32, layer: f32, weight_layer: f32) -> f32 {
     (1.0 - weight_layer) * underlying + weight_layer * layer
 }
 
-pub fn blend_rgb(
-    underlying: [f32; 3],
-    layer: [f32; 3],
-    coverage: f32,
-    overlay: bool,
-) -> [f32; 3] {
+pub fn blend_rgb(underlying: [f32; 3], layer: [f32; 3], coverage: f32, overlay: bool) -> [f32; 3] {
     let weights = if overlay {
         [
             coverage * layer[0].clamp(0.0, 1.0),
@@ -223,10 +231,7 @@ pub fn blend_rgb(
 }
 
 /// 层栈响应混合 CPU 参考(应用序 = 数组序;零覆盖层剪枝)。
-pub fn blend_layer_stack(
-    base: [f32; 3],
-    layers: &[([f32; 3], LayerResponse)],
-) -> [f32; 3] {
+pub fn blend_layer_stack(base: [f32; 3], layers: &[([f32; 3], LayerResponse)]) -> [f32; 3] {
     let mut result = base;
     for (layer_rgb, response) in layers {
         if response.coverage == 0.0 {
@@ -311,11 +316,7 @@ mod tests {
                     params: Some(params(1.5)),
                     coverage: Some(0.75),
                     mode: Some(LayerBlendMode::Overlay),
-                    surface: Some(surface(
-                        Some([0.8, 0.2, 0.1]),
-                        Some(slot(1)),
-                        Some(slot(0)),
-                    )),
+                    surface: Some(surface(Some([0.8, 0.2, 0.1]), Some(slot(1)), Some(slot(0)))),
                 },
                 MaterialLayer {
                     response_model: None,
@@ -342,8 +343,10 @@ mod tests {
             occlusion_texture: None,
             emissive_factor: None,
             emissive_texture: None,
-            specular_factor: None, specular_color_factor: None,
-            specular_texture: None, specular_color_texture: None,
+            specular_factor: None,
+            specular_color_factor: None,
+            specular_texture: None,
+            specular_color_texture: None,
             base_color_alpha: None,
             alpha_mode: None,
             alpha_cutoff: None,
@@ -369,7 +372,10 @@ mod tests {
     fn zero_coverage_layers_are_pruned_from_block() {
         let mut material = layered_material();
         material.layers[0].coverage = Some(0.0);
-        let rows = layered_block_rows(&material_with_layers(Some(material.clone())), |_| identity(0)).unwrap();
+        let rows = layered_block_rows(&material_with_layers(Some(material.clone())), |_| {
+            identity(0)
+        })
+        .unwrap();
         assert_eq!(rows.len(), 1);
         let block = pack_layered_surface_block(&rows);
         assert_eq!(f32::to_bits(block[0]), 1);
@@ -407,7 +413,10 @@ mod tests {
         // 行 1:replace、无纹理槽,selector 恒 0。
         let base1 = 4 + LAYERED_SURFACE_ROW_FLOATS;
         assert_eq!(&block[base1 + 12..base1 + 16], &[0.25, 0.5, 0.0, 7.0]);
-        assert_eq!(block[base1 + 16..base1 + 24], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+        assert_eq!(
+            block[base1 + 16..base1 + 24],
+            [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+        );
     }
 
     /// 纹理槽 UV set 域兜底(>1 在 validate 已拦,此处防御 prepare 误用)。
@@ -434,7 +443,10 @@ mod tests {
         assert_eq!(weak, [0.9804, 1.0, 0.75]);
         let saturated = blend_rgb([1.0, 0.5, 0.0], [2.0, 1.0, 4.0], 0.5, true);
         // 层响应饱和(L≥1)逐通道收敛于 replace(w=coverage)。
-        assert_eq!(saturated, blend_rgb([1.0, 0.5, 0.0], [2.0, 1.0, 4.0], 0.5, false));
+        assert_eq!(
+            saturated,
+            blend_rgb([1.0, 0.5, 0.0], [2.0, 1.0, 4.0], 0.5, false)
+        );
         // 权重是逐通道的:混合通道权重不同。
         let mixed = blend_rgb([1.0, 1.0, 1.0], [0.5, 0.0, 1.0], 1.0, true);
         assert_eq!(mixed, [0.75, 1.0, 1.0]);
@@ -444,16 +456,34 @@ mod tests {
     #[test]
     fn furnace_bound_holds_for_both_modes() {
         for overlay in [false, true] {
-            let response = LayerResponse { coverage: 0.75, overlay };
-            assert!(furnace_bound_holds([0.9, 0.9, 0.9], &[([1.0, 0.4, 0.2], response)]));
+            let response = LayerResponse {
+                coverage: 0.75,
+                overlay,
+            };
+            assert!(furnace_bound_holds(
+                [0.9, 0.9, 0.9],
+                &[([1.0, 0.4, 0.2], response)]
+            ));
         }
     }
 
     /// 层栈应用序合同:层 0 先混合,层 1 作用于层 0 的结果;交换次序结果不同。
     #[test]
     fn layer_application_order_is_array_order() {
-        let l0 = ([0.0, 0.0, 0.0], LayerResponse { coverage: 0.5, overlay: false });
-        let l1 = ([1.0, 1.0, 1.0], LayerResponse { coverage: 0.5, overlay: false });
+        let l0 = (
+            [0.0, 0.0, 0.0],
+            LayerResponse {
+                coverage: 0.5,
+                overlay: false,
+            },
+        );
+        let l1 = (
+            [1.0, 1.0, 1.0],
+            LayerResponse {
+                coverage: 0.5,
+                overlay: false,
+            },
+        );
         let forward = blend_layer_stack([0.5, 0.5, 0.5], &[l0, l1]);
         let backward = blend_layer_stack([0.5, 0.5, 0.5], &[l1, l0]);
         assert_eq!(forward, [0.625, 0.625, 0.625]);
@@ -464,7 +494,13 @@ mod tests {
     #[test]
     fn zero_coverage_response_is_bitwise_pruned() {
         let base = [0.3, 0.6, 0.9];
-        let layer = ([1.0, 1.0, 1.0], LayerResponse { coverage: 0.0, overlay: false });
+        let layer = (
+            [1.0, 1.0, 1.0],
+            LayerResponse {
+                coverage: 0.0,
+                overlay: false,
+            },
+        );
         assert_eq!(blend_layer_stack(base, &[layer]), base);
     }
 
@@ -492,7 +528,7 @@ mod tests {
         for (index, value) in expected.iter().enumerate() {
             assert_eq!(
                 block[index].to_bits(),
-                f32::from(*value as f32).to_bits(),
+                (*value as f32).to_bits(),
                 "block word {index} drifts from the TS authority"
             );
         }
@@ -562,8 +598,12 @@ mod tests {
                             values[2].as_f64().unwrap() as f32,
                         ]
                     }),
-                    metallic: layer["surface"]["metallic"].as_f64().map(|value| value as f32),
-                    roughness: layer["surface"]["roughness"].as_f64().map(|value| value as f32),
+                    metallic: layer["surface"]["metallic"]
+                        .as_f64()
+                        .map(|value| value as f32),
+                    roughness: layer["surface"]["roughness"]
+                        .as_f64()
+                        .map(|value| value as f32),
                     base_color_texture: layer["surface"]["baseColorTexture"]
                         .as_object()
                         .map(fixture_binding),
@@ -579,7 +619,12 @@ mod tests {
         let pair = |name: &str, fallback: [f64; 2]| -> [f32; 2] {
             slot.get(name)
                 .and_then(|value| value.as_array())
-                .map(|values| [values[0].as_f64().unwrap() as f32, values[1].as_f64().unwrap() as f32])
+                .map(|values| {
+                    [
+                        values[0].as_f64().unwrap() as f32,
+                        values[1].as_f64().unwrap() as f32,
+                    ]
+                })
                 .unwrap_or(fallback.map(|value| value as f32))
         };
         let [tx, ty] = pair("offset", [0.0, 0.0]);
@@ -595,7 +640,10 @@ mod tests {
                 normalize(sy),
                 normalize(ty),
             ],
-            tex_coord: slot.get("texCoord").and_then(|value| value.as_u64()).unwrap_or(0) as u8,
+            tex_coord: slot
+                .get("texCoord")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(0) as u8,
             array_layer: 0,
         }
     }

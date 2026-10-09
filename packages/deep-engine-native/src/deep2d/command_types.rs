@@ -1,8 +1,4 @@
-use serde::{
-    Deserialize, Deserializer, Serialize, Serializer,
-    de::{self, MapAccess, SeqAccess, Visitor},
-    ser::SerializeMap,
-};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::types::{Deep2dColor, Deep2dMatrix, Deep2dRect};
 
@@ -436,16 +432,16 @@ mod paint_serde_tests {
         // absent optional fields are skipped, so the round trip is exact.
         let legacy = r#"{"kind":"path","id":"p","zOrder":0,"transform":[1.0,0.0,0.0,1.0,0.0,0.0],"pathId":"rect","fill":[1.0,0.0,0.0,1.0]}"#;
         // tag=kind 在 Deep2dCommand 层消费(PathCommand deny_unknown_fields)。
-        let command: PathCommand = match serde_json::from_str::<Deep2dCommand>(legacy)
-            .expect("legacy path")
-        {
-            Deep2dCommand::Path(path) => path,
-            other => panic!("expected path command, got {:?}", other),
-        };
+        let command: PathCommand =
+            match serde_json::from_str::<Deep2dCommand>(legacy).expect("legacy path") {
+                Deep2dCommand::Path(path) => path,
+                other => panic!("expected path command, got {:?}", other),
+            };
         assert_eq!(command.blend, None);
         assert_eq!(command.backdrop_blur, None);
         // 逐字节往返以 wire 类型为准(tag=kind 在枚举层)。
-        let wire = serde_json::to_string(&Deep2dCommand::Path(command.clone())).expect("re-serialize");
+        let wire =
+            serde_json::to_string(&Deep2dCommand::Path(command.clone())).expect("re-serialize");
         assert_eq!(wire, legacy);
     }
 
@@ -462,10 +458,7 @@ mod paint_serde_tests {
         let json = r#"{"kind":"path","id":"p","zOrder":0,"transform":[1.0,0.0,0.0,1.0,0.0,0.0],"pathId":"rect","fill":[1.0,0.0,0.0,1.0],"blend":"multiply","backdropBlur":{"radius":8.0}}"#;
         let command = parse_path(json);
         assert_eq!(command.blend, Some(Deep2dBlendMode::Multiply));
-        assert_eq!(
-            command.backdrop_blur,
-            Some(BackdropBlur { radius: 8.0 })
-        );
+        assert_eq!(command.backdrop_blur, Some(BackdropBlur { radius: 8.0 }));
         let serialized = serde_json::to_string(&command).expect("serialize");
         assert!(serialized.contains(r#""blend":"multiply""#));
         assert!(serialized.contains(r#""backdropBlur":{"radius":8.0}"#));
@@ -486,6 +479,10 @@ mod paint_serde_tests {
         assert_eq!(backdrop_blur_iterations(4.0), 2);
         assert_eq!(backdrop_blur_iterations(7.9), 4);
         assert_eq!(backdrop_blur_iterations(64.0), 4);
-        assert_eq!(backdrop_blur_iterations(1_000.0), 4, "clamped, never unbounded");
+        assert_eq!(
+            backdrop_blur_iterations(1_000.0),
+            4,
+            "clamped, never unbounded"
+        );
     }
 }

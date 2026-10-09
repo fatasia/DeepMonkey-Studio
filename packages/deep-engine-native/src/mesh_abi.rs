@@ -221,7 +221,10 @@ mod tests {
         assert_eq!(FRAME_FOG_PROJECTION_ROW * 16, 2288);
         assert_eq!(FRAME_LOCAL_SOFTNESS_ROW * 16, 2304);
         let mut frame = frame_uniform(1.0, 0.0);
-        assert_eq!(&frame[FRAME_LOCAL_SOFTNESS_ROW..FRAME_LOCAL_SOFTNESS_ROW + 4], &[[0.0; 4]; 4]);
+        assert_eq!(
+            &frame[FRAME_LOCAL_SOFTNESS_ROW..FRAME_LOCAL_SOFTNESS_ROW + 4],
+            &[[0.0; 4]; 4]
+        );
         let lights: Vec<_> = (0..16)
             .map(|index| {
                 serde_json::json!({
@@ -272,7 +275,7 @@ mod tests {
         // WGSL MaterialTextures is 20 aligned vec4 rows.
         assert_eq!(MATERIAL_UNIFORM_BYTES % 16, 0);
         // 扩展带与 advanced 带不重叠,advanced 带不越行界。
-        assert!(MATERIAL_ADVANCED_BAND_FLOAT_OFFSET >= MATERIAL_UNIFORM_FLOATS);
+        const { assert!(MATERIAL_ADVANCED_BAND_FLOAT_OFFSET >= MATERIAL_UNIFORM_FLOATS) };
         assert_eq!(
             MATERIAL_ADVANCED_BAND_FLOAT_OFFSET + MATERIAL_ADVANCED_BAND_FLOATS,
             60

@@ -10,10 +10,10 @@
 //! 域合同:输入/输出都是**显示编码(display-encoded)premultiplied RGBA**,
 //! 本模块不做色调映射或传递函数——调用方必须先把 ACES/编码链做完(生产接线
 //! 属 OutputPass 后继切片:中间 LDR 纹理 + resize rebind 合同)。当前对外提供:
-//! - [`spatial_aa_shader`]:present 着色器(binding 0 显示域纹理 + binding 1
+//! - [`spatial_aa_shader`][]:present 着色器(binding 0 显示域纹理 + binding 1
 //!   filtering sampler;`fragment_main` 写出编码值,面向 unorm 目标);
-//! - [`create_spatial_aa_pipeline`]:全屏三角渲染管线;
-//! - [`resolve_spatial_aa_cpu`]:CPU 参考(金样与 GPU 对拍基线)。
+//! - [`create_spatial_aa_pipeline`][]:全屏三角渲染管线;
+//! - [`resolve_spatial_aa_cpu`][]:CPU 参考(金样与 GPU 对拍基线)。
 //!
 //! 登记口径(J4):native spatial-aa = supported/harness-only——pass 经真机
 //! GPU readback 对拍验证(tests/spatial_aa_gpu.rs),但生产出片链尚未接线。
@@ -163,15 +163,21 @@ pub struct SpatialAaImage<'a> {
 /// CPU 镜像(f64 中间域、f32 输出):与 TS `resolveSpatialAaCpu` 逐式同构——
 /// 输入校验(尺寸/长度/有限 [0,1])、双线性钳位采样、luma 0.3/0.59/0.11、
 /// 6 步搜索阶梯、edge/pixel blend 与方向判定全部按 TS 表达式顺序。
-pub fn resolve_spatial_aa_cpu(
-    image: &SpatialAaImage<'_>,
-) -> Result<Vec<f32>, String> {
+pub fn resolve_spatial_aa_cpu(image: &SpatialAaImage<'_>) -> Result<Vec<f32>, String> {
     let width = image.width as usize;
     let height = image.height as usize;
-    if width < 1 || height < 1 || width * height > 16_777_216 || image.color.len() != width * height * 4 {
+    if width < 1
+        || height < 1
+        || width * height > 16_777_216
+        || image.color.len() != width * height * 4
+    {
         return Err("Invalid spatial AA image dimensions.".to_string());
     }
-    if image.color.iter().any(|&value| !value.is_finite() || !(0.0..=1.0).contains(&value)) {
+    if image
+        .color
+        .iter()
+        .any(|&value| !value.is_finite() || !(0.0..=1.0).contains(&value))
+    {
         return Err("Spatial AA requires finite display-encoded RGBA inside [0, 1].".to_string());
     }
     let clamp = |n: isize, lo: isize, hi: isize| n.max(lo).min(hi);
@@ -187,9 +193,10 @@ pub fn resolve_spatial_aa_cpu(
                 let px = clamp(bx as isize + i as isize, 0, width as isize - 1) as usize;
                 let py = clamp(by as isize + j as isize, 0, height as isize - 1) as usize;
                 let p = (py * width + px) * 4;
-                let weight = (if i != 0 { fx } else { 1.0 - fx }) * (if j != 0 { fy } else { 1.0 - fy });
-                for c in 0..4 {
-                    result[c] += f64::from(image.color[p + c]) * weight;
+                let weight =
+                    (if i != 0 { fx } else { 1.0 - fx }) * (if j != 0 { fy } else { 1.0 - fy });
+                for (c, channel) in result.iter_mut().enumerate() {
+                    *channel += f64::from(image.color[p + c]) * weight;
                 }
             }
         }
@@ -226,12 +233,18 @@ pub fn resolve_spatial_aa_cpu(
                 .clamp(0.0, 1.0);
             let smooth = f * f * (3.0 - 2.0 * f);
             let pixel_blend = smooth * smooth;
-            let horizontal = (n + s - 2.0 * m).abs() * 2.0 + (ne + se - 2.0 * e).abs()
+            let horizontal = (n + s - 2.0 * m).abs() * 2.0
+                + (ne + se - 2.0 * e).abs()
                 + (nw + sw - 2.0 * w).abs()
-                >= (e + w - 2.0 * m).abs() * 2.0 + (ne + nw - 2.0 * n).abs()
+                >= (e + w - 2.0 * m).abs() * 2.0
+                    + (ne + nw - 2.0 * n).abs()
                     + (se + sw - 2.0 * s).abs();
             let (positive, negative) = if horizontal { (n, s) } else { (e, w) };
-            let sign: f64 = if (positive - m).abs() < (negative - m).abs() { -1.0 } else { 1.0 };
+            let sign: f64 = if (positive - m).abs() < (negative - m).abs() {
+                -1.0
+            } else {
+                1.0
+            };
             let opposite = if sign < 0.0 { negative } else { positive };
             let threshold = (opposite - m).abs() * 0.25;
             let edge_luma = (m + opposite) * 0.5;
@@ -244,8 +257,18 @@ pub fn resolve_spatial_aa_cpu(
                 for step in steps {
                     distance += step;
                     delta = luma(
-                        edge_x + if horizontal { direction * distance } else { 0.0 },
-                        edge_y + if horizontal { 0.0 } else { direction * distance },
+                        edge_x
+                            + if horizontal {
+                                direction * distance
+                            } else {
+                                0.0
+                            },
+                        edge_y
+                            + if horizontal {
+                                0.0
+                            } else {
+                                direction * distance
+                            },
                     ) - edge_luma;
                     if delta.abs() >= threshold {
                         found = true;
@@ -285,7 +308,7 @@ mod tests {
     /// 合成边缘图(4 宽 2 高):左半暗右半亮,触发 FXAA 边缘分支。
     fn edge_image() -> Vec<f32> {
         let mut color = Vec::new();
-        for y in 0..2u32 {
+        for _y in 0..2u32 {
             for x in 0..4u32 {
                 let value = if x < 2 { 0.25f32 } else { 0.75f32 };
                 color.extend_from_slice(&[value, value, value, 1.0]);
@@ -298,14 +321,42 @@ mod tests {
     #[test]
     fn rejects_invalid_images() {
         let color = edge_image();
-        assert!(resolve_spatial_aa_cpu(&SpatialAaImage { width: 0, height: 2, color: &color }).is_err());
-        assert!(resolve_spatial_aa_cpu(&SpatialAaImage { width: 4, height: 2, color: &color[..7] }).is_err());
+        assert!(
+            resolve_spatial_aa_cpu(&SpatialAaImage {
+                width: 0,
+                height: 2,
+                color: &color
+            })
+            .is_err()
+        );
+        assert!(
+            resolve_spatial_aa_cpu(&SpatialAaImage {
+                width: 4,
+                height: 2,
+                color: &color[..7]
+            })
+            .is_err()
+        );
         let mut nan = color.clone();
         nan[0] = f32::NAN;
-        assert!(resolve_spatial_aa_cpu(&SpatialAaImage { width: 4, height: 2, color: &nan }).is_err());
+        assert!(
+            resolve_spatial_aa_cpu(&SpatialAaImage {
+                width: 4,
+                height: 2,
+                color: &nan
+            })
+            .is_err()
+        );
         let mut over = color.clone();
         over[1] = 1.5;
-        assert!(resolve_spatial_aa_cpu(&SpatialAaImage { width: 4, height: 2, color: &over }).is_err());
+        assert!(
+            resolve_spatial_aa_cpu(&SpatialAaImage {
+                width: 4,
+                height: 2,
+                color: &over
+            })
+            .is_err()
+        );
     }
 
     /// 边缘行做 FXAA 混合(过渡像素被推向均值),非边缘像素与输入一致;
@@ -313,25 +364,40 @@ mod tests {
     #[test]
     fn blends_edge_transition_and_keeps_uniform_regions() {
         let color = edge_image();
-        let output = resolve_spatial_aa_cpu(&SpatialAaImage { width: 4, height: 2, color: &color }).unwrap();
+        let output = resolve_spatial_aa_cpu(&SpatialAaImage {
+            width: 4,
+            height: 2,
+            color: &color,
+        })
+        .unwrap();
         assert_eq!(output.len(), color.len());
         // 均匀内部像素(x=0、x=3)无边缘 → 原样。
         for x in [0usize, 3] {
             for y in 0..2usize {
                 let i = (y * 4 + x) * 4;
                 for c in 0..4 {
-                    assert!((output[i + c] - color[i + c]).abs() < 1e-6, "px({x},{y}) ch{c}");
+                    assert!(
+                        (output[i + c] - color[i + c]).abs() < 1e-6,
+                        "px({x},{y}) ch{c}"
+                    );
                 }
             }
         }
         // 过渡像素(x=1/x=2)的 luma 被拉向边缘两侧均值(混合幅度 > 0)。
         let luma = |px: usize| {
             let i = px * 4;
-            f64::from(output[i]) * 0.3 + f64::from(output[i + 1]) * 0.59 + f64::from(output[i + 2]) * 0.11
+            f64::from(output[i]) * 0.3
+                + f64::from(output[i + 1]) * 0.59
+                + f64::from(output[i + 2]) * 0.11
         };
         assert!(luma(1) > 0.25, "dark side of edge must lift: {}", luma(1));
         assert!(luma(2) < 0.75, "bright side of edge must drop: {}", luma(2));
-        let again = resolve_spatial_aa_cpu(&SpatialAaImage { width: 4, height: 2, color: &color }).unwrap();
+        let again = resolve_spatial_aa_cpu(&SpatialAaImage {
+            width: 4,
+            height: 2,
+            color: &color,
+        })
+        .unwrap();
         assert_eq!(output, again);
     }
 
@@ -341,17 +407,23 @@ mod tests {
     #[test]
     fn matches_ts_reference_bit_exact() {
         let color = edge_image();
-        let output =
-            resolve_spatial_aa_cpu(&SpatialAaImage { width: 4, height: 2, color: &color }).unwrap();
+        let output = resolve_spatial_aa_cpu(&SpatialAaImage {
+            width: 4,
+            height: 2,
+            color: &color,
+        })
+        .unwrap();
         // TS 输出(两行同):[0.25×4, blend_dark×4, blend_bright×4, 0.75×4];
         // blend_dark = 0x3e913507, blend_bright = 0x3f37657d, alpha = 0x3f800000。
         let expected_bits: [u32; 16] = [
-            0x3e800000, 0x3e800000, 0x3e800000, 0x3f800000,
-            0x3e913507, 0x3e913507, 0x3e913507, 0x3f800000,
-            0x3f37657d, 0x3f37657d, 0x3f37657d, 0x3f800000,
-            0x3f400000, 0x3f400000, 0x3f400000, 0x3f800000,
+            0x3e800000, 0x3e800000, 0x3e800000, 0x3f800000, 0x3e913507, 0x3e913507, 0x3e913507,
+            0x3f800000, 0x3f37657d, 0x3f37657d, 0x3f37657d, 0x3f800000, 0x3f400000, 0x3f400000,
+            0x3f400000, 0x3f800000,
         ];
         let output_bits: Vec<u32> = output.iter().map(|v| v.to_bits()).collect();
-        assert_eq!(output_bits, [expected_bits.as_slice(), expected_bits.as_slice()].concat());
+        assert_eq!(
+            output_bits,
+            [expected_bits.as_slice(), expected_bits.as_slice()].concat()
+        );
     }
 }

@@ -12,9 +12,9 @@ use super::{
         DEEP2D_MAX_GRADIENT_STOPS, DEEP2D_PAINT_KIND_QUAD, Deep2dPaintData, Deep2dPaintStop,
         clamp_corner_radius,
     },
+    paint_registry::PaintRegistry,
     painter::{Deep2dPainterIssue, Deep2dPainterIssueCode, PreparedDeep2d, issue},
     painter_math::{Point, transform_point},
-    paint_registry::PaintRegistry,
 };
 
 /// One closed, axis-aligned rectangle from the flattened path. Exactly two
@@ -39,15 +39,10 @@ pub(super) fn rect_of_flatten(
     let distinct_y = distinct_values(&ys, EPSILON);
     let on_grid = distinct_x.len() == 2
         && distinct_y.len() == 2
-        && xs
-            .iter()
-            .zip(ys.iter())
-            .all(|(x, y)| {
-                distinct_x
-                    .iter()
-                    .any(|value| (value - x).abs() <= EPSILON)
-                    && distinct_y.iter().any(|value| (value - y).abs() <= EPSILON)
-            });
+        && xs.iter().zip(ys.iter()).all(|(x, y)| {
+            distinct_x.iter().any(|value| (value - x).abs() <= EPSILON)
+                && distinct_y.iter().any(|value| (value - y).abs() <= EPSILON)
+        });
     if !on_grid {
         return Err(issue(
             Deep2dPainterIssueCode::UnsupportedGeometry,
@@ -93,7 +88,10 @@ pub(super) fn append_quad(
 ) -> Result<(), Deep2dPainterIssue> {
     let corner_radius = command.corner_radius.unwrap_or(0.0);
     let shadow = command.shadow;
-    let fill_color = command.fill.as_ref().and_then(super::Deep2dPaint::solid_color);
+    let fill_color = command
+        .fill
+        .as_ref()
+        .and_then(super::Deep2dPaint::solid_color);
     let stroke_color = command.stroke;
     if command.fill.is_none() && stroke_color.is_none() && shadow.is_none() {
         // 刀 4:纯 backdrop 命令(毛玻璃)没有 fill/stroke/shadow,底色由
@@ -154,7 +152,14 @@ pub(super) fn append_quad(
             .map(|color| color.map(|channel| channel as f32))
             .unwrap_or([0.0; 4]),
         stroke_color: stroke_color
-            .map(|color| [color[0] as f32, color[1] as f32, color[2] as f32, color[3] as f32])
+            .map(|color| {
+                [
+                    color[0] as f32,
+                    color[1] as f32,
+                    color[2] as f32,
+                    color[3] as f32,
+                ]
+            })
             .unwrap_or([0.0; 4]),
         shadow_offset: shadow
             .map(|shadow| [shadow.offset_x as f32, shadow.offset_y as f32])
@@ -174,10 +179,7 @@ pub(super) fn append_quad(
         reach[1] + stroke_width as f64 * 0.5 + 1.0,
     ];
     let min = [origin[0] - pad[0], origin[1] - pad[1]];
-    let max = [
-        origin[0] + size[0] + pad[0],
-        origin[1] + size[1] + pad[1],
-    ];
+    let max = [origin[0] + size[0] + pad[0], origin[1] + size[1] + pad[1]];
     let corners = [
         [min[0], min[1]],
         [max[0], min[1]],

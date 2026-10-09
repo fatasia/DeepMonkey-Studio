@@ -443,8 +443,11 @@ fn scenario_partial_occluder_preserves_visible_instance() {
     let near = standard_depth(1.0);
     let mut level0 = [near; 16];
     level0[5] = 1.0;
-    let (_texture, hiz_view) = hiz_pyramid(&bench.device, &bench.queue,
-        &[&level0, &[1.0, near, near, near], &[1.0]]);
+    let (_texture, hiz_view) = hiz_pyramid(
+        &bench.device,
+        &bench.queue,
+        &[&level0, &[1.0, near, near, near], &[1.0]],
+    );
     let mut culling = build_culling(&bench, &scene, Some((&hiz_view, 4, 4, 2)), true);
     let (frustum_visible, occlusion_visible) = run_once(&mut culling, &bench, &scene.frame);
     assert_eq!(frustum_visible, 1);

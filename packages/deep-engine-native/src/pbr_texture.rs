@@ -72,13 +72,19 @@ impl PreparedTexture<'_> {
     pub fn mip_level_count(&self) -> u32 {
         if self.generate_mipmaps {
             self.levels[0].width.max(self.levels[0].height).ilog2() + 1
-        } else { self.levels.len() as u32 }
+        } else {
+            self.levels.len() as u32
+        }
     }
     pub fn gpu_bytes(&self) -> u64 {
         let base = &self.levels[0];
-        (0..self.mip_level_count()).map(|level|
-            u64::from((base.width >> level).max(1)) * u64::from((base.height >> level).max(1)) * 4
-        ).sum()
+        (0..self.mip_level_count())
+            .map(|level| {
+                u64::from((base.width >> level).max(1))
+                    * u64::from((base.height >> level).max(1))
+                    * 4
+            })
+            .sum()
     }
 }
 
@@ -95,7 +101,9 @@ pub struct PreparedMaterial {
 
 impl PreparedMaterial {
     pub fn uses_extended_response(&self) -> bool {
-        [41, 43, 45, 48, 49, 50].iter().any(|&i| self.uniform[i] != 0.0)
+        [41, 43, 45, 48, 49, 50]
+            .iter()
+            .any(|&i| self.uniform[i] != 0.0)
     }
 }
 
@@ -141,7 +149,7 @@ impl PreparedPbrResources<'_> {
     }
 }
 
-pub fn prepare_pbr_resources(packet: &RenderPacket) -> Result<PreparedPbrResources, String> {
+pub fn prepare_pbr_resources(packet: &RenderPacket) -> Result<PreparedPbrResources<'_>, String> {
     validate_packet(packet)?;
     let textures = packet
         .textures
@@ -198,8 +206,20 @@ fn prepare_material_rows_with(
                     lookup(normal.map(|slot| slot.texture.as_str()), indices)?,
                     lookup(ao.map(|slot| slot.texture.as_str()), indices)?,
                     lookup(emissive.map(|slot| slot.texture.as_str()), indices)?,
-                    lookup(material.specular_texture.as_ref().map(|slot|slot.texture.as_str()),indices)?,
-                    lookup(material.specular_color_texture.as_ref().map(|slot|slot.texture.as_str()),indices)?,
+                    lookup(
+                        material
+                            .specular_texture
+                            .as_ref()
+                            .map(|slot| slot.texture.as_str()),
+                        indices,
+                    )?,
+                    lookup(
+                        material
+                            .specular_color_texture
+                            .as_ref()
+                            .map(|slot| slot.texture.as_str()),
+                        indices,
+                    )?,
                 ],
                 uniform,
                 layered,
@@ -315,10 +335,25 @@ pub fn prepare_material_uniform(material: &PbrMaterial) -> Result<MaterialUnifor
         uniform[MATERIAL_ADVANCED_BAND_FLOAT_OFFSET..MATERIAL_ADVANCED_BAND_FLOAT_OFFSET + 4]
             .copy_from_slice(&sheen_band_words(advanced));
     }
-    write_transform(&mut uniform,60,material.specular_texture.as_ref(),material.specular_texture.is_some())?;
-    write_transform(&mut uniform,68,material.specular_color_texture.as_ref(),material.specular_color_texture.is_some())?;
-    let color=material.specular_color_factor.unwrap_or([1.0;3]);
-    uniform[76..80].copy_from_slice(&[color[0],color[1],color[2],material.specular_factor.unwrap_or(1.0)]);
+    write_transform(
+        &mut uniform,
+        60,
+        material.specular_texture.as_ref(),
+        material.specular_texture.is_some(),
+    )?;
+    write_transform(
+        &mut uniform,
+        68,
+        material.specular_color_texture.as_ref(),
+        material.specular_color_texture.is_some(),
+    )?;
+    let color = material.specular_color_factor.unwrap_or([1.0; 3]);
+    uniform[76..80].copy_from_slice(&[
+        color[0],
+        color[1],
+        color[2],
+        material.specular_factor.unwrap_or(1.0),
+    ]);
     Ok(uniform)
 }
 
@@ -328,11 +363,31 @@ pub fn prepare_material_uniform(material: &PbrMaterial) -> Result<MaterialUnifor
 fn extended_band_words(params: &LayerMaterialParams) -> [f32; 6] {
     [
         params.ior.unwrap_or(1.5),
-        params.clearcoat.as_ref().and_then(|value| value.factor).unwrap_or(0.0),
-        params.clearcoat.as_ref().and_then(|value| value.roughness).unwrap_or(0.0),
-        params.anisotropy.as_ref().and_then(|value| value.strength).unwrap_or(0.0),
-        params.anisotropy.as_ref().and_then(|value| value.rotation).unwrap_or(0.0),
-        params.transmission.as_ref().and_then(|value| value.factor).unwrap_or(0.0),
+        params
+            .clearcoat
+            .as_ref()
+            .and_then(|value| value.factor)
+            .unwrap_or(0.0),
+        params
+            .clearcoat
+            .as_ref()
+            .and_then(|value| value.roughness)
+            .unwrap_or(0.0),
+        params
+            .anisotropy
+            .as_ref()
+            .and_then(|value| value.strength)
+            .unwrap_or(0.0),
+        params
+            .anisotropy
+            .as_ref()
+            .and_then(|value| value.rotation)
+            .unwrap_or(0.0),
+        params
+            .transmission
+            .as_ref()
+            .and_then(|value| value.factor)
+            .unwrap_or(0.0),
     ]
 }
 
@@ -341,14 +396,23 @@ fn extended_band_words(params: &LayerMaterialParams) -> [f32; 6] {
 fn sheen_band_words(params: &StockAdvancedParameters) -> [f32; 4] {
     let sheen = params.sheen.as_ref();
     [
-        sheen.and_then(|value| value.color).map(|color| color[0]).unwrap_or(0.0),
-        sheen.and_then(|value| value.color).map(|color| color[1]).unwrap_or(0.0),
-        sheen.and_then(|value| value.color).map(|color| color[2]).unwrap_or(0.0),
+        sheen
+            .and_then(|value| value.color)
+            .map(|color| color[0])
+            .unwrap_or(0.0),
+        sheen
+            .and_then(|value| value.color)
+            .map(|color| color[1])
+            .unwrap_or(0.0),
+        sheen
+            .and_then(|value| value.color)
+            .map(|color| color[2])
+            .unwrap_or(0.0),
         sheen.and_then(|value| value.roughness).unwrap_or(1.0),
     ]
 }
 
-fn prepare_texture(texture: &TextureResource) -> Result<PreparedTexture, String> {
+fn prepare_texture(texture: &TextureResource) -> Result<PreparedTexture<'_>, String> {
     let mut levels = Vec::with_capacity(texture.mipmaps.len() + 1);
     levels.push(compact_level(
         texture.width,
@@ -363,10 +427,13 @@ fn prepare_texture(texture: &TextureResource) -> Result<PreparedTexture, String>
             .map(|mip| compact_level(mip.width, mip.height, mip.bytes_per_row, &mip.data)),
     );
     let encoding = match texture.semantic {
-        TextureSemantic::BaseColor | TextureSemantic::Emissive | TextureSemantic::SpecularColor => TextureEncoding::Srgb,
+        TextureSemantic::BaseColor | TextureSemantic::Emissive | TextureSemantic::SpecularColor => {
+            TextureEncoding::Srgb
+        }
         TextureSemantic::MetallicRoughness
         | TextureSemantic::Normal
-        | TextureSemantic::Occlusion | TextureSemantic::Specular => TextureEncoding::Linear,
+        | TextureSemantic::Occlusion
+        | TextureSemantic::Specular => TextureEncoding::Linear,
     };
     Ok(PreparedTexture {
         id: texture.id.clone(),
@@ -384,11 +451,15 @@ fn compact_level(
     height: u32,
     pitch: Option<u32>,
     source: &[u8],
-) -> PreparedTextureLevel {
+) -> PreparedTextureLevel<'_> {
     let row = width as usize * 4;
     let pitch = pitch.unwrap_or(width * 4) as usize;
     if pitch == row {
-        return PreparedTextureLevel { width, height, data: Cow::Borrowed(&source[..row * height as usize]) };
+        return PreparedTextureLevel {
+            width,
+            height,
+            data: Cow::Borrowed(&source[..row * height as usize]),
+        };
     }
     let mut data = vec![0; row * height as usize];
     for y in 0..height as usize {
@@ -596,8 +667,10 @@ mod tests {
             occlusion_texture: None,
             emissive_factor: None,
             emissive_texture: None,
-            specular_factor: None, specular_color_factor: None,
-            specular_texture: None, specular_color_texture: None,
+            specular_factor: None,
+            specular_color_factor: None,
+            specular_texture: None,
+            specular_color_texture: None,
             base_color_alpha: None,
             alpha_mode: None,
             alpha_cutoff: None,
@@ -636,12 +709,16 @@ mod tests {
         let rows = prepare_material_uniform_rows(&packet).unwrap();
         for row in &rows {
             assert!(
-                row.uniform[MATERIAL_EXTENDED_BAND_FLOAT_OFFSET..60].iter().all(|value| *value == 0.0),
+                row.uniform[MATERIAL_EXTENDED_BAND_FLOAT_OFFSET..60]
+                    .iter()
+                    .all(|value| *value == 0.0),
                 "material {} extension band must stay zero without extendedParameters",
                 row.id
             );
             assert!(
-                row.uniform[MATERIAL_ADVANCED_BAND_FLOAT_OFFSET..60].iter().all(|value| *value == 0.0),
+                row.uniform[MATERIAL_ADVANCED_BAND_FLOAT_OFFSET..60]
+                    .iter()
+                    .all(|value| *value == 0.0),
                 "material {} advanced band must stay zero without advancedParameters",
                 row.id
             );
@@ -672,8 +749,10 @@ mod tests {
             occlusion_texture: None,
             emissive_factor: None,
             emissive_texture: None,
-            specular_factor: None, specular_color_factor: None,
-            specular_texture: None, specular_color_texture: None,
+            specular_factor: None,
+            specular_color_factor: None,
+            specular_texture: None,
+            specular_color_texture: None,
             base_color_alpha: None,
             alpha_mode: None,
             alpha_cutoff: None,
@@ -683,21 +762,27 @@ mod tests {
             layered: None,
             extended_parameters: Some(LayerMaterialParams {
                 ior: Some(1.52),
-                clearcoat: Some(LayerClearcoatParams { factor: Some(0.9), roughness: Some(0.3) }),
-                anisotropy: Some(LayerAnisotropyParams { strength: Some(0.0), rotation: Some(0.0) }),
+                clearcoat: Some(LayerClearcoatParams {
+                    factor: Some(0.9),
+                    roughness: Some(0.3),
+                }),
+                anisotropy: Some(LayerAnisotropyParams {
+                    strength: Some(0.0),
+                    rotation: Some(0.0),
+                }),
                 transmission: Some(LayerTransmissionParams { factor: Some(0.0) }),
             }),
             advanced_parameters: Some(StockAdvancedParameters {
-                sheen: Some(StockSheenParameters { color: Some([0.25, 0.5, 0.75]), roughness: Some(0.4) }),
+                sheen: Some(StockSheenParameters {
+                    color: Some([0.25, 0.5, 0.75]),
+                    roughness: Some(0.4),
+                }),
                 iridescence: None,
                 volume: None,
             }),
         };
         let uniform = prepare_material_uniform(&material).unwrap();
-        assert_eq!(
-            uniform[40..46],
-            [1.52, 0.9, 0.3, 0.0, 0.0, 0.0]
-        );
+        assert_eq!(uniform[40..46], [1.52, 0.9, 0.3, 0.0, 0.0, 0.0]);
         assert_eq!(uniform[48..52], [0.25, 0.5, 0.75, 0.4]);
         // iridescence/volume 槽保持零(native 子集合同)。
         assert!(uniform[52..60].iter().all(|value| *value == 0.0));

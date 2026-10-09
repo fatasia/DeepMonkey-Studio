@@ -1,7 +1,9 @@
 //! The exact source used by production mesh modules and evidence identities.
 
 pub fn native_mesh_shader_source() -> String {
-    let mut source = crate::native_material_source::compose(include_str!("../assets/shaders/native_mesh_v1.wgsl"));
+    let mut source = crate::native_material_source::compose(include_str!(
+        "../assets/shaders/native_mesh_v1.wgsl"
+    ));
     source.push_str(concat!(
         "\n",
         include_str!("../assets/shaders/native_cascaded_shadow_v1.wgsl"),
@@ -23,8 +25,11 @@ pub fn native_mesh_shader_source() -> String {
         // 同一常量)。文件本体是裸数组字面量 + deepDirectDfg185 采样函数,
         // 宿主在此补 var<private> 声明头(与 Web 模板的 `var<private> = ${数组};`
         // 拼接同构);checksum 门登记在 lighting_math_wgsl。
-        concat!("var<private> DEEP_DIRECT_DFG_185 = ",
-            include_str!("../../deep-engine/wgsl/directDfgLut185.wgsl"), "\n"),
+        concat!(
+            "var<private> DEEP_DIRECT_DFG_185 = ",
+            include_str!("../../deep-engine/wgsl/directDfgLut185.wgsl"),
+            "\n"
+        ),
         include_str!("../../deep-engine/wgsl/iesSampling.wgsl"),
         "\n",
         include_str!("../assets/shaders/native_material_specular_v1.wgsl"),

@@ -1,0 +1,17 @@
+{
+  "commit": "cbce805ac291c2f929b03c352ad2d5951d1a9b08",
+  "repository": "https://github.com/fatasia/DeepMonkey-Studio",
+  "purpose": "Frozen production formulas before soft-knee extraction, readable from shallow checkouts.",
+  "files": [
+    {
+      "file": "bloomWgsl.ts.txt",
+      "sourcePath": "packages/deep-engine/src/postprocess/bloomWgsl.ts",
+      "sha256": "558b3ed1a833ee3d7d36dd595d88404dfb8cc564b900adbaa85804da514c4d1b"
+    },
+    {
+      "file": "native_bloom_v1.wgsl",
+      "sourcePath": "packages/deep-engine-native/assets/shaders/native_bloom_v1.wgsl",
+      "sha256": "397d539e983cebeedde79e1663113c3624bfb43f62fd9e94e57cb6d558372001"
+    }
+  ]
+}

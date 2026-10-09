@@ -502,6 +502,7 @@ impl CharacterDriver {
 /// 1. [`Self::begin_tick`]——消费待入队输入并求期望位移;
 /// 2. [`Self::solve`]——纯 Rapier 世界查询(宿主构造排除角色自身刚体的查询);
 /// 3. [`Self::finish_tick`]——写回 kinematic 位姿并演进状态机。
+///
 /// 三段合起来才是一个 tick;顺序固定保证同一输入序列逐位复现。
 #[derive(Debug, Clone)]
 pub struct CharacterDriver {

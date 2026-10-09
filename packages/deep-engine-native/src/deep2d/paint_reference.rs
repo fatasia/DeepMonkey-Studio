@@ -11,7 +11,7 @@ use crate::deep2d::backdrop::{
 };
 use crate::deep2d::paint_data::{
     DEEP2D_BLEND_NORMAL, DEEP2D_PAINT_KIND_QUAD, blend_composite, paint_color, quad_fragment,
-    sdf_coverage, sd_rounded_box,
+    sd_rounded_box, sdf_coverage,
 };
 use crate::deep2d::{
     FillRule, LetterboxMapping, PathVertex, PreparedBackdropChunk, PreparedDeep2d,
@@ -65,11 +65,16 @@ pub fn rasterize_prepared(
                 vertex_count: chunk.vertex_count,
             },
         }))
-        .chain(prepared.dynamic_chunks.iter().map(|chunk| DrawItem::Dynamic {
-            z_order: chunk.z_order,
-            source_index: chunk.source_index,
-            chunk,
-        }))
+        .chain(
+            prepared
+                .dynamic_chunks
+                .iter()
+                .map(|chunk| DrawItem::Dynamic {
+                    z_order: chunk.z_order,
+                    source_index: chunk.source_index,
+                    chunk,
+                }),
+        )
         .collect();
     if prepared.chunks.is_empty()
         && prepared.dynamic_chunks.is_empty()
@@ -96,9 +101,14 @@ pub fn rasterize_prepared(
             source_index,
             ..
         }
-        | DrawItem::Backdrop { chunk: PreparedBackdropChunk { z_order, source_index, .. } } => {
-            (*z_order, *source_index)
-        }
+        | DrawItem::Backdrop {
+            chunk:
+                PreparedBackdropChunk {
+                    z_order,
+                    source_index,
+                    ..
+                },
+        } => (*z_order, *source_index),
     });
     for item in &sequence {
         // Adjacent triangles within one command share edges; a pixel center
@@ -112,7 +122,14 @@ pub fn rasterize_prepared(
                 if chunk.vertex_count == 0 {
                     continue;
                 }
-                rasterize_static_chunk(prepared, chunk, *blend, &mapping, &mut pixels, &mut written);
+                rasterize_static_chunk(
+                    prepared,
+                    chunk,
+                    *blend,
+                    &mapping,
+                    &mut pixels,
+                    &mut written,
+                );
             }
             DrawItem::Dynamic { chunk, .. } => {
                 rasterize_dynamic_chunk(prepared, chunk, &mapping, &mut pixels, &mut written);
@@ -139,9 +156,7 @@ enum DrawItem<'a> {
         chunk: &'a PreparedDynamicPathChunk,
     },
     /// 刀 4 毛玻璃 bracket:capture→blur→底色(SDF 掩罩,normal 混合)。
-    Backdrop {
-        chunk: &'a PreparedBackdropChunk,
-    },
+    Backdrop { chunk: &'a PreparedBackdropChunk },
 }
 
 fn rasterize_static_chunk(
@@ -165,14 +180,24 @@ fn rasterize_static_chunk(
         }
         let xs = [corners[0][0], corners[1][0], corners[2][0]];
         let ys = [corners[0][1], corners[1][1], corners[2][1]];
-        let min_x = xs.iter().cloned().fold(f64::INFINITY, f64::min).floor().max(0.0) as u32;
+        let min_x = xs
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min)
+            .floor()
+            .max(0.0) as u32;
         let max_x = xs
             .iter()
             .cloned()
             .fold(f64::NEG_INFINITY, f64::max)
             .ceil()
             .min(f64::from(width - 1)) as u32;
-        let min_y = ys.iter().cloned().fold(f64::INFINITY, f64::min).floor().max(0.0) as u32;
+        let min_y = ys
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min)
+            .floor()
+            .max(0.0) as u32;
         let max_y = ys
             .iter()
             .cloned()
@@ -191,9 +216,7 @@ fn rasterize_static_chunk(
                 }
                 written[index] = true;
                 let (local, slot, color) = interpolate(
-                    triangle
-                        .try_into()
-                        .expect("triangles are triplets"),
+                    triangle.try_into().expect("triangles are triplets"),
                     weights,
                 );
                 let shaded = shade(prepared, slot, local, color);
@@ -230,8 +253,8 @@ fn blend_pixel(destination: [u8; 4], source: [f32; 4], blend: u32) -> [u8; 4] {
 /// paint 求值。半开区间规则与 GPU 光栅化的中心采样对齐:
 /// - 穿越判定 `(a.y <= cy) != (b.y <= cy)`(顶点落在扫描线上算下方),
 /// - 交叉点严格在中心右侧 `x_int > cx`。
-/// nonzero:|winding| != 0;evenodd:穿越数为奇。朝向约定在两侧一致地
-/// 不影响判定(nonzero 测试对全局符号翻转不变)。
+///   nonzero:|winding| != 0;evenodd:穿越数为奇。朝向约定在两侧一致地
+///   不影响判定(nonzero 测试对全局符号翻转不变)。
 fn rasterize_dynamic_chunk(
     prepared: &PreparedDeep2d,
     chunk: &PreparedDynamicPathChunk,
@@ -278,12 +301,20 @@ fn rasterize_dynamic_chunk(
     }
     let first_cover = cover[0];
     let slot = (first_cover[8].round().max(0.0)) as u32;
-    let color = [first_cover[2], first_cover[3], first_cover[4], first_cover[5]];
+    let color = [
+        first_cover[2],
+        first_cover[3],
+        first_cover[4],
+        first_cover[5],
+    ];
     // cover quad 的局部坐标端点:顶点 0 = bbox 最小角,顶点 2 = 最大角
     // (cover_vertices 的发射顺序)。bbox 内线性插值 = 逆变换精确值。
     let local_min = [f64::from(first_cover[6]), f64::from(first_cover[7])];
     let local_max_corner = cover[2];
-    let local_max = [f64::from(local_max_corner[6]), f64::from(local_max_corner[7])];
+    let local_max = [
+        f64::from(local_max_corner[6]),
+        f64::from(local_max_corner[7]),
+    ];
     let canvas_min = [f64::from(first_cover[0]), f64::from(first_cover[1])];
     let canvas_max_corner = cover[2];
     let canvas_max = [
@@ -328,8 +359,8 @@ fn rasterize_dynamic_chunk(
                 } else {
                     0.0
                 };
-                local[axis] = (local_min[axis] + (local_max[axis] - local_min[axis]) * fraction)
-                    as f32;
+                local[axis] =
+                    (local_min[axis] + (local_max[axis] - local_min[axis]) * fraction) as f32;
             }
             let shaded = shade(prepared, slot, local, color);
             pixels[index] = blend_over(pixels[index], shaded);
@@ -340,12 +371,7 @@ fn rasterize_dynamic_chunk(
 /// Evaluates one fragment exactly like the WGSL: slot 0 returns the vertex
 /// color; gradients scale their stop alpha by the entry opacity; quads run
 /// the analytic shadow/fill/stroke composite.
-fn shade(
-    prepared: &PreparedDeep2d,
-    slot: u32,
-    local: [f32; 2],
-    color: [f32; 4],
-) -> [f32; 4] {
+fn shade(prepared: &PreparedDeep2d, slot: u32, local: [f32; 2], color: [f32; 4]) -> [f32; 4] {
     if slot == 0 {
         return color;
     }
@@ -421,7 +447,6 @@ fn blend_over(destination: [u8; 4], source: [f32; 4]) -> [u8; 4] {
     ]
 }
 
-
 /// 刀 4 毛玻璃 backdrop 块的 CPU 镜像:取当前像素缓冲为捕获源(与 GPU
 /// copy_texture_to_texture 同语义),共享 `backdrop_capture_region` 定区域,
 /// 半分辨率下采样 + `iterations` 次可分离扫,再以圆角盒 SDF 掩罩逐像素
@@ -449,7 +474,7 @@ fn rasterize_backdrop_chunk(
                 pixels[((origin[1] + y) * width + origin[0] + x) as usize];
         }
     }
-    let half = [(region[0] + 1) / 2, (region[1] + 1) / 2];
+    let half = [region[0].div_ceil(2), region[1].div_ceil(2)];
     let mut ping = vec![[0u8; 4]; (half[0] * half[1]) as usize];
     let mut pong = vec![[0u8; 4]; (half[0] * half[1]) as usize];
     let half_size = backdrop_downsample(&source, region, &mut pong);
@@ -471,17 +496,23 @@ fn rasterize_backdrop_chunk(
     let feather = 0.5 * scale;
     let min_x = ((rect_x0 - feather).floor().max(0.0) as u32).min(width.saturating_sub(1));
     let min_y = ((rect_y0 - feather).floor().max(0.0) as u32).min(height.saturating_sub(1));
-    let max_x = ((rect_x1 + feather).ceil().min(f64::from(width - 1)).max(0.0)) as u32;
-    let max_y = ((rect_y1 + feather).ceil().min(f64::from(height - 1)).max(0.0)) as u32;
+    let max_x = ((rect_x1 + feather)
+        .ceil()
+        .min(f64::from(width - 1))
+        .max(0.0)) as u32;
+    let max_y = ((rect_y1 + feather)
+        .ceil()
+        .min(f64::from(height - 1))
+        .max(0.0)) as u32;
     // 块级 scissor(GPU 走 set_scissor_rect,同一 clip_rect)。
     let clip = chunk.clip_rect.map(|clip| {
         [
-            (f64::from(clip.x) * scale + mapping.offset[0]).floor().max(0.0),
-            (f64::from(clip.y) * scale + mapping.offset[1]).floor().max(0.0),
-            ((f64::from(clip.x) + f64::from(clip.width)) * scale + mapping.offset[0])
+            (clip.x * scale + mapping.offset[0]).floor().max(0.0),
+            (clip.y * scale + mapping.offset[1]).floor().max(0.0),
+            ((clip.x + clip.width) * scale + mapping.offset[0])
                 .ceil()
                 .min(f64::from(width)),
-            ((f64::from(clip.y) + f64::from(clip.height)) * scale + mapping.offset[1])
+            ((clip.y + clip.height) * scale + mapping.offset[1])
                 .ceil()
                 .min(f64::from(height)),
         ]
@@ -536,14 +567,21 @@ fn rasterize_backdrop_chunk(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::deep2d::PreparedDeep2dSummary;
     use crate::deep2d::paint_data::{
         DEEP2D_MAX_GRADIENT_STOPS, DEEP2D_PAINT_KIND_LINEAR, Deep2dPaintData, Deep2dPaintStop,
     };
-    use crate::deep2d::PreparedDeep2dSummary;
 
     fn vertex(canvas: [f32; 2], color: [f32; 4], local: [f32; 2], slot: u32) -> PathVertex {
         [
-            canvas[0], canvas[1], color[0], color[1], color[2], color[3], local[0], local[1],
+            canvas[0],
+            canvas[1],
+            color[0],
+            color[1],
+            color[2],
+            color[3],
+            local[0],
+            local[1],
             slot as f32,
         ]
     }

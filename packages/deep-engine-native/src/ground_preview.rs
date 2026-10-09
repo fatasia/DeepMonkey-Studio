@@ -91,12 +91,7 @@ pub struct GroundPreviewUniforms {
 
 /// 网格因子 CPU 镜像(TS `pbrShader.ts` ground 分支逐式同构,f64 域;
 /// `footprint` 即 TS 侧 `fwidth(world.xz/2.4)` 的显式化)。
-pub fn ground_grid_factor_cpu(
-    world_x: f64,
-    world_z: f64,
-    intensity: f64,
-    footprint: f64,
-) -> f64 {
+pub fn ground_grid_factor_cpu(world_x: f64, world_z: f64, intensity: f64, footprint: f64) -> f64 {
     if intensity <= 0.0 {
         return 0.0;
     }
@@ -111,12 +106,11 @@ pub fn ground_grid_factor_cpu(
 }
 
 /// 网格反照率 CPU 镜像(TS `groundGridAlbedo` 逐式同构,纯算术逐位)。
-pub fn ground_grid_albedo_cpu(
-    base: [f64; 3],
-    grid: f64,
-    ground: bool,
-) -> Result<[f64; 3], String> {
-    if ![base[0], base[1], base[2], grid].iter().all(|v| v.is_finite()) {
+pub fn ground_grid_albedo_cpu(base: [f64; 3], grid: f64, ground: bool) -> Result<[f64; 3], String> {
+    if ![base[0], base[1], base[2], grid]
+        .iter()
+        .all(|v| v.is_finite())
+    {
         return Err("Ground albedo and grid must be finite.".to_string());
     }
     if !ground {
@@ -147,10 +141,10 @@ pub fn create_ground_preview_pipeline(
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Uniform,
                 has_dynamic_offset: false,
-                min_binding_size: Some(std::num::NonZeroU64::new(
-                    std::mem::size_of::<GroundPreviewUniforms>() as u64,
-                )
-                .expect("non-zero uniform size")),
+                min_binding_size: Some(
+                    std::num::NonZeroU64::new(std::mem::size_of::<GroundPreviewUniforms>() as u64)
+                        .expect("non-zero uniform size"),
+                ),
             },
             count: None,
         }],
@@ -199,7 +193,11 @@ mod tests {
     }
 
     fn assert_bit(value: f64, expected_hex: &str, what: &str) {
-        assert_eq!(format!("{:016x}", bits(value)), expected_hex, "bit drift on {what}");
+        assert_eq!(
+            format!("{:016x}", bits(value)),
+            expected_hex,
+            "bit drift on {what}"
+        );
     }
 
     /// 反照率调制纯算术逐位(TS vitest 金样;采集场景写死在断言里)。
@@ -216,7 +214,10 @@ mod tests {
         // f32 词与 TS Float32Array 舍入一致(0.54 → 3f0a3d71)。
         assert_eq!((mid[0] as f32).to_bits(), 0x3f0a3d71, "f32 rounding parity");
         // ground=false 直通;NaN fail-closed。
-        assert_eq!(ground_grid_albedo_cpu([0.3, 0.6, 0.9], 0.9, false).expect("valid"), [0.3, 0.6, 0.9]);
+        assert_eq!(
+            ground_grid_albedo_cpu([0.3, 0.6, 0.9], 0.9, false).expect("valid"),
+            [0.3, 0.6, 0.9]
+        );
         assert!(ground_grid_albedo_cpu([f64::NAN, 0.5, 0.5], 0.5, true).is_err());
         assert!(ground_grid_albedo_cpu([0.5, 0.5, 0.5], f64::INFINITY, true).is_err());
     }
@@ -227,13 +228,22 @@ mod tests {
     fn grid_factor_matches_ts_golden() {
         let on_line = ground_grid_factor_cpu(2.4, 0.0, 1.0, 0.01);
         let expected = f64::from_bits(u64::from_str_radix("3febb55a38fd7be3", 16).unwrap());
-        assert!((on_line - expected).abs() / expected < 1e-9, "on_line {on_line}");
+        assert!(
+            (on_line - expected).abs() / expected < 1e-9,
+            "on_line {on_line}"
+        );
         let near_line = ground_grid_factor_cpu(0.02, 0.05, 1.0, 0.01);
         let expected = f64::from_bits(u64::from_str_radix("3fc543b7384c07db", 16).unwrap());
-        assert!((near_line - expected).abs() / expected < 1e-9, "near_line {near_line}");
+        assert!(
+            (near_line - expected).abs() / expected < 1e-9,
+            "near_line {near_line}"
+        );
         let half = ground_grid_factor_cpu(0.01, 0.0, 0.5, 0.05);
         let expected = f64::from_bits(u64::from_str_radix("3fdffb161611fb3b", 16).unwrap());
-        assert!((half - expected).abs() / expected < 1e-9, "half_intensity {half}");
+        assert!(
+            (half - expected).abs() / expected < 1e-9,
+            "half_intensity {half}"
+        );
         let center = ground_grid_factor_cpu(0.0, 0.0, 1.0, 0.02);
         assert_bit(center, "3ff0000000000000", "center peak");
         let off = ground_grid_factor_cpu(0.6, 1.2, 1.0, 0.01);
@@ -248,11 +258,21 @@ mod tests {
     fn grid_factor_physical_sentinels_hold() {
         let near = ground_grid_factor_cpu(0.005, 0.0, 1.0, 0.01);
         let far = ground_grid_factor_cpu(5.0, 5.0, 1.0, 0.01);
-        assert!(near > far, "radial falloff must be monotone: {near} vs {far}");
+        assert!(
+            near > far,
+            "radial falloff must be monotone: {near} vs {far}"
+        );
         let peak = ground_grid_factor_cpu(0.0, 2.4, 1.0, 1e-6);
         let expected = (-2.4_f64 * 0.06).exp();
-        assert!((peak - expected).abs() / expected < 1e-9, "peak = exp(-0.144): {peak}");
-        assert_eq!(near, ground_grid_factor_cpu(0.005, 0.0, 1.0, 0.01), "determinism");
+        assert!(
+            (peak - expected).abs() / expected < 1e-9,
+            "peak = exp(-0.144): {peak}"
+        );
+        assert_eq!(
+            near,
+            ground_grid_factor_cpu(0.005, 0.0, 1.0, 0.01),
+            "determinism"
+        );
     }
 
     /// 正交相机解析 footprint:顶视相机覆盖 extent·2、N 像素宽 →
@@ -265,7 +285,10 @@ mod tests {
         assert!((footprint - 0.10416666666666667).abs() < 1e-12);
         // 顶视格点中心(0,0)在解析 footprint 下仍为亮格点。
         let center = ground_grid_factor_cpu(0.0, 0.0, 1.0, footprint);
-        assert!((center - 1.0).abs() < 1e-9, "grid center stays bright: {center}");
+        assert!(
+            (center - 1.0).abs() < 1e-9,
+            "grid center stays bright: {center}"
+        );
     }
 
     /// uniform 打包布局槽位核对(96 B,与 WGSL GroundUniforms 逐槽一致)。
@@ -290,12 +313,33 @@ mod tests {
     fn wgsl_core_mirrors_ts_formula_shape() {
         let shader = ground_preview_shader();
         assert!(shader.contains("worldXZ / 2.4"), "grid spacing 2.4");
-        assert!(shader.contains("abs(fract(cell - 0.5) - 0.5)"), "triangular distance");
-        assert!(shader.contains("exp(-length(worldXZ) * 0.06)"), "radial falloff 0.06");
-        assert!(shader.contains("0.32 * clamp(grid, 0.0, 1.0)"), "albedo contrast 0.32");
-        assert!(shader.contains("base + base * (vec3f(1.0) - base) * contrast"), "modulation form");
-        assert!(shader.contains("vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0)"), "quad topology");
-        assert!(shader.contains("@fragment fn fragment_main"), "entry points");
-        assert!(GROUND_PREVIEW_WGSL.contains("max(vec2f(footprint), vec2f(0.0001))"), "footprint floor 1e-4");
+        assert!(
+            shader.contains("abs(fract(cell - 0.5) - 0.5)"),
+            "triangular distance"
+        );
+        assert!(
+            shader.contains("exp(-length(worldXZ) * 0.06)"),
+            "radial falloff 0.06"
+        );
+        assert!(
+            shader.contains("0.32 * clamp(grid, 0.0, 1.0)"),
+            "albedo contrast 0.32"
+        );
+        assert!(
+            shader.contains("base + base * (vec3f(1.0) - base) * contrast"),
+            "modulation form"
+        );
+        assert!(
+            shader.contains("vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0)"),
+            "quad topology"
+        );
+        assert!(
+            shader.contains("@fragment fn fragment_main"),
+            "entry points"
+        );
+        assert!(
+            GROUND_PREVIEW_WGSL.contains("max(vec2f(footprint), vec2f(0.0001))"),
+            "footprint floor 1e-4"
+        );
     }
 }

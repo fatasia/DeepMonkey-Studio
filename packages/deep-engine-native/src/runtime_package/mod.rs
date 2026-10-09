@@ -1,5 +1,5 @@
-mod content_payloads;
 mod binary;
+mod content_payloads;
 mod cooperative;
 mod cooperative_hash;
 mod dashboard;
@@ -48,6 +48,10 @@ use std::{fmt, path::Path};
 
 use serde_json::Value;
 
+pub use cooperative::{
+    parse_and_validate_runtime_package_cooperative,
+    parse_and_validate_runtime_package_owned_cooperative,
+};
 pub use dashboard_types::{
     DashboardFilterDataset, DashboardFilterUpdate, DashboardFrozenFilter, DashboardNode,
     DashboardPage, DashboardRuntimeV1, LoadedDashboard,
@@ -84,8 +88,6 @@ pub use types::{
     RuntimeResourceIndexEntry, RuntimeResourceKind,
 };
 pub use validate::{runtime_content_sha256, runtime_package_sha256};
-pub use cooperative::{parse_and_validate_runtime_package_cooperative,
-    parse_and_validate_runtime_package_owned_cooperative};
 
 pub const DEEP_RUNTIME_PACKAGE_SCHEMA: &str = "deep-engine.runtime-package";
 /// Shared duplicate-key/depth-bounded JSON reader for native content envelopes.
@@ -135,7 +137,9 @@ pub fn parse_and_validate_runtime_package(
     bytes: &[u8],
 ) -> Result<LoadedRuntimePackage, RuntimePackageError> {
     if bytes.starts_with(binary::MAGIC) {
-        return pollster::block_on(binary::parse_owned(bytes.to_vec(), None, || std::future::ready(false)));
+        return pollster::block_on(binary::parse_owned(bytes.to_vec(), None, || {
+            std::future::ready(false)
+        }));
     }
     let package = validated_envelope(bytes)?;
     finish_envelope(package)
@@ -148,14 +152,16 @@ pub fn parse_and_validate_runtime_package(
 /// what `parse_and_validate_runtime_package` would recompute for the same
 /// bytes. The main thread can then verify against this value instead of
 /// re-walking the whole tree a second time on the input thread.
-pub fn compute_runtime_package_canonical_hash(
-    bytes: &[u8],
-) -> Result<String, RuntimePackageError> {
+pub fn compute_runtime_package_canonical_hash(bytes: &[u8]) -> Result<String, RuntimePackageError> {
     if bytes.starts_with(binary::MAGIC) {
         validate::input_size(bytes)?;
-        if bytes.len() < 12 { return fail("invalid binary runtime header length"); }
+        if bytes.len() < 12 {
+            return fail("invalid binary runtime header length");
+        }
         let length = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
-        if length == 0 || length > 4 * 1024 * 1024 || length > bytes.len() - 12 { return fail("invalid binary runtime header length"); }
+        if length == 0 || length > 4 * 1024 * 1024 || length > bytes.len() - 12 {
+            return fail("invalid binary runtime header length");
+        }
         return Ok(crate::shader_package::hash::sha256(&bytes[..12 + length]));
     }
     validate::input_size(bytes)?;
@@ -187,7 +193,11 @@ pub fn parse_and_validate_runtime_package_with_expected_hash(
     expected_hash: &str,
 ) -> Result<LoadedRuntimePackage, RuntimePackageError> {
     if bytes.starts_with(binary::MAGIC) {
-        return pollster::block_on(binary::parse_owned(bytes.to_vec(), Some(expected_hash), || std::future::ready(false)));
+        return pollster::block_on(binary::parse_owned(
+            bytes.to_vec(),
+            Some(expected_hash),
+            || std::future::ready(false),
+        ));
     }
     validate::input_size(bytes)?;
     if !is_lowercase_sha256(expected_hash) {
@@ -222,7 +232,10 @@ pub fn parse_and_validate_runtime_package_with_expected_hash(
 }
 
 fn is_lowercase_sha256(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn validated_envelope(bytes: &[u8]) -> Result<RuntimePackageEnvelope, RuntimePackageError> {

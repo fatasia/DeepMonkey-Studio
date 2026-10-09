@@ -52,7 +52,11 @@ fn ts_dedup_key(a: u32, b: u32, c: u32) -> (u32, u32, u32) {
 ///
 /// # Errors
 /// 量化坐标超出 i64 安全范围(病态数值跨度)时返回 [`DagError::Overflow`]。
-pub fn cluster_simplify(positions: &[f32], indices: &[u32], factor: f64) -> DagResult<ClusterSimplifyResult> {
+pub fn cluster_simplify(
+    positions: &[f32],
+    indices: &[u32],
+    factor: f64,
+) -> DagResult<ClusterSimplifyResult> {
     if factor <= 1.0 {
         return Ok(ClusterSimplifyResult {
             positions: positions.to_vec(),
@@ -74,7 +78,11 @@ pub fn cluster_simplify(positions: &[f32], indices: &[u32], factor: f64) -> DagR
     }
     // JS `Math.max(...) || 1`:0 与 NaN 都回退为 1。
     let extent_raw = (max[0] - min[0]).max((max[1] - min[1]).max(max[2] - min[2]));
-    let extent = if extent_raw == 0.0 || extent_raw.is_nan() { 1.0 } else { extent_raw };
+    let extent = if extent_raw == 0.0 || extent_raw.is_nan() {
+        1.0
+    } else {
+        extent_raw
+    };
     let cell = extent / f64::max(4.0, 24.0 / factor);
 
     let cell_of = |x: f64, y: f64, z: f64| -> DagResult<(i64, i64, i64)> {
@@ -135,7 +143,11 @@ pub fn cluster_simplify(positions: &[f32], indices: &[u32], factor: f64) -> DagR
             let bucket = &rep[&key];
             // TS 语义:local = outPositions.length / 3(顶点号,不是元素槽位)。
             let local = (out_positions.len() / 3) as u32;
-            let (rx, ry, rz) = (bucket[0] / bucket[3], bucket[1] / bucket[3], bucket[2] / bucket[3]);
+            let (rx, ry, rz) = (
+                bucket[0] / bucket[3],
+                bucket[1] / bucket[3],
+                bucket[2] / bucket[3],
+            );
             out_positions_f64.extend_from_slice(&[rx, ry, rz]);
             out_positions.push(rx as f32);
             out_positions.push(ry as f32);
@@ -176,12 +188,18 @@ pub fn cluster_simplify(positions: &[f32], indices: &[u32], factor: f64) -> DagR
         let area2 = n1 * n1 + n2 * n2 + n3 * n3;
         if a == b || b == c || a == c || area2 <= 1e-24 {
             #[cfg(feature = "dbg_dropped")]
-            eprintln!("RUST drop face {source}: a={a} b={b} c={c} area2={area2:e} degenerateVtx={}", a == b || b == c || a == c);
+            eprintln!(
+                "RUST drop face {source}: a={a} b={b} c={c} area2={area2:e} degenerateVtx={}",
+                a == b || b == c || a == c
+            );
             continue; // 聚类合并出的退化/共线三角形剔除
         }
         #[cfg(feature = "dbg_dropped")]
         if seen.contains(&ts_dedup_key(a, b, c)) {
-            eprintln!("RUST drop face {source}: dup key {:?}", ts_dedup_key(a, b, c));
+            eprintln!(
+                "RUST drop face {source}: dup key {:?}",
+                ts_dedup_key(a, b, c)
+            );
         }
         // 去重键 = TS 字符串键的元组形态(生成逻辑见下方 ts_dedup_key 文档)。
         let key = ts_dedup_key(a, b, c);
@@ -271,10 +289,16 @@ mod tests {
     fn merging_cells_dedup_follows_ts_key_quirk() {
         // TS 键的 quirk 实证:(0,1,2)→(0,1,2)、(0,2,3)→(0,2,3)、(1,0,2)→(0,2,1),
         // 三键互不相同 → 三面全保留(完美排序键下第三面会与第一面撞键被剔)。
-        let positions = vec![0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0];
+        let positions = vec![
+            0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
+        ];
         let indices = vec![0, 1, 2, 0, 2, 3, 1, 0, 2];
         let r = cluster_simplify(&positions, &indices, 2.0).expect("simplify");
-        assert_eq!(r.indices.len() / 3, 3, "TS quirk keys differ for all three faces");
+        assert_eq!(
+            r.indices.len() / 3,
+            3,
+            "TS quirk keys differ for all three faces"
+        );
         assert_eq!(r.source_triangles, [0, 1, 2]);
         // 同键重复 (0,1,2)/(0,1,2) 仍然去重:键同 → 只留首份。
         let indices = vec![0, 1, 2, 0, 1, 2];
@@ -319,7 +343,9 @@ mod tests {
         let (positions, indices) = test_sphere(24, 12);
         let r = cluster_simplify(&positions, &indices, 2.0).expect("simplify");
         assert!(r.max_displacement > 0.0);
-        assert!(r.indices.len() / 3 < indices.len() / 3, "cluster must reduce triangles");
+        assert!(
+            r.indices.len() / 3 < indices.len() / 3,
+            "cluster must reduce triangles"
+        );
     }
-
 }

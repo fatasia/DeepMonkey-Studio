@@ -275,7 +275,8 @@ pub fn recompute_surface_flags(
         material.shading_model,
         material.fog,
     ) + if material.draw_alpha_mode() == AlphaMode::Blend
-        && (material.alpha_cutoff.is_some() || material.alpha_mode == Some(AlphaMode::Mask)) {
+        && (material.alpha_cutoff.is_some() || material.alpha_mode == Some(AlphaMode::Mask))
+    {
         2.0
     } else {
         0.0
@@ -343,8 +344,10 @@ mod transform_update_tests {
             occlusion_texture: None,
             emissive_factor: None,
             emissive_texture: None,
-            specular_factor: None, specular_color_factor: None,
-            specular_texture: None, specular_color_texture: None,
+            specular_factor: None,
+            specular_color_factor: None,
+            specular_texture: None,
+            specular_color_texture: None,
             base_color_alpha: None,
             alpha_mode: None,
             alpha_cutoff: None,
@@ -381,8 +384,10 @@ mod transform_update_tests {
             occlusion_texture: None,
             emissive_factor: None,
             emissive_texture: None,
-            specular_factor: None, specular_color_factor: None,
-            specular_texture: None, specular_color_texture: None,
+            specular_factor: None,
+            specular_color_factor: None,
+            specular_texture: None,
+            specular_color_texture: None,
             base_color_alpha: None,
             alpha_mode: None,
             alpha_cutoff: None,

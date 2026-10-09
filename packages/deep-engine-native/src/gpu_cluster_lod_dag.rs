@@ -28,11 +28,11 @@
 //! 误差单调与包围盒 sanity 是 TS 合同之外的本端消费前置(离线
 //! cluster_lod_contract 门同族措辞):选层 fail-closed 依赖它们,构建期提前拦截。
 
-use geometry_dag::{read_dgc, MeshletDag, NO_PARENT};
+use geometry_dag::{MeshletDag, NO_PARENT, read_dgc};
 
 use crate::gpu_cluster_lod_indirect::{ClusterLodLevelGeometrySummary, ClusterLodPlanNode};
 use crate::gpu_cluster_lod_selection::{
-    pack_cluster_lod_node, ClusterLodNode, CLUSTER_LOD_NODE_STRIDE_BYTES,
+    CLUSTER_LOD_NODE_STRIDE_BYTES, ClusterLodNode, pack_cluster_lod_node,
 };
 
 /// TS `RAY_BACKEND_LIMITS.maxBatchRays`(clusterLodDag.ts 节点预算同源)。
@@ -68,17 +68,42 @@ pub enum ClusterLodDagRuntimeError {
     /// read_dgc 解析链失败(透传 geometry_dag 理由;magic/CRC/尺寸锁等)。
     DgcParse(String),
     ZeroLevels,
-    ParentTableCountMismatch { tables: usize, levels: usize },
-    ParentOutOfRange { parent: u32, coarse_level: usize },
+    ParentTableCountMismatch {
+        tables: usize,
+        levels: usize,
+    },
+    ParentOutOfRange {
+        parent: u32,
+        coarse_level: usize,
+    },
     EmptyDag,
-    NodeBudgetExceeded { nodes: usize },
+    NodeBudgetExceeded {
+        nodes: usize,
+    },
     DuplicateNodeId,
-    ChildrenAtLeafLevel { node: String },
-    UnknownChild { parent: String, child: String },
-    ChildNotRefining { parent: String, child: String },
-    InvertedBounds { node: String, axis: usize },
-    ErrorNotStrictlyIncreasing { coarse: usize, fine: usize },
-    LeafCoverageMismatch { covered: usize, declared: usize },
+    ChildrenAtLeafLevel {
+        node: String,
+    },
+    UnknownChild {
+        parent: String,
+        child: String,
+    },
+    ChildNotRefining {
+        parent: String,
+        child: String,
+    },
+    InvertedBounds {
+        node: String,
+        axis: usize,
+    },
+    ErrorNotStrictlyIncreasing {
+        coarse: usize,
+        fine: usize,
+    },
+    LeafCoverageMismatch {
+        covered: usize,
+        declared: usize,
+    },
 }
 
 impl core::fmt::Display for ClusterLodDagRuntimeError {
@@ -91,13 +116,19 @@ impl core::fmt::Display for ClusterLodDagRuntimeError {
                 f,
                 "dgc cluster-lod bridge: {tables} parent tables for {levels} levels, expected levels-1"
             ),
-            Self::ParentOutOfRange { parent, coarse_level } => write!(
+            Self::ParentOutOfRange {
+                parent,
+                coarse_level,
+            } => write!(
                 f,
                 "dgc cluster-lod bridge: parent {parent} out of range for coarse level {coarse_level}"
             ),
             Self::EmptyDag => write!(f, "DAG must contain at least one node."),
             Self::NodeBudgetExceeded { nodes } => {
-                write!(f, "DAG node budget exceeded ({nodes} > {CLUSTER_LOD_MAX_NODES}).")
+                write!(
+                    f,
+                    "DAG node budget exceeded ({nodes} > {CLUSTER_LOD_MAX_NODES})."
+                )
             }
             Self::DuplicateNodeId => write!(f, "Duplicate DAG node id."),
             Self::ChildrenAtLeafLevel { node } => {
@@ -142,15 +173,20 @@ pub fn validate_cluster_lod_runtime_dag(
     if nodes.len() > CLUSTER_LOD_MAX_NODES {
         return Err(ClusterLodDagRuntimeError::NodeBudgetExceeded { nodes: nodes.len() });
     }
-    let ids: std::collections::HashSet<&str> =
-        nodes.iter().map(|node| node.id.as_str()).collect();
+    let ids: std::collections::HashSet<&str> = nodes.iter().map(|node| node.id.as_str()).collect();
     if ids.len() != nodes.len() {
         return Err(ClusterLodDagRuntimeError::DuplicateNodeId);
     }
-    let min_level = nodes.iter().map(|node| node.level).min().expect("non-empty");
+    let min_level = nodes
+        .iter()
+        .map(|node| node.level)
+        .min()
+        .expect("non-empty");
     for node in nodes {
         if !node.children.is_empty() && node.level <= min_level {
-            return Err(ClusterLodDagRuntimeError::ChildrenAtLeafLevel { node: node.id.clone() });
+            return Err(ClusterLodDagRuntimeError::ChildrenAtLeafLevel {
+                node: node.id.clone(),
+            });
         }
         for child in &node.children {
             let Some(child_node) = nodes.iter().find(|candidate| candidate.id == *child) else {
@@ -179,8 +215,10 @@ pub fn validate_cluster_lod_runtime_dag(
         }
     }
     // 逐层误差严格递增(单层 DAG 除外):同层节点共享 level.error,层间取每层误差比对。
-    let mut level_errors: Vec<(usize, f64)> =
-        nodes.iter().map(|node| (node.level as usize, node.error)).collect();
+    let mut level_errors: Vec<(usize, f64)> = nodes
+        .iter()
+        .map(|node| (node.level as usize, node.error))
+        .collect();
     level_errors.sort_by(|a, b| {
         a.0.cmp(&b.0)
             .then(a.1.partial_cmp(&b.1).unwrap_or(core::cmp::Ordering::Equal))
@@ -229,7 +267,10 @@ pub fn validate_cluster_lod_runtime_dag(
                 leaf_intervals_by_level
                     .entry(current.level as usize)
                     .or_default()
-                    .push((current.first_triangle, current.first_triangle + current.triangle_count));
+                    .push((
+                        current.first_triangle,
+                        current.first_triangle + current.triangle_count,
+                    ));
             }
             for child in &current.children {
                 stack.push(child.as_str());
@@ -268,7 +309,8 @@ fn invert_parents(dag: &MeshletDag) -> Result<Vec<Vec<Vec<usize>>>, ClusterLodDa
             levels: dag.levels.len(),
         });
     }
-    let mut children_by_level: Vec<Vec<Vec<usize>>> = Vec::with_capacity(dag.parents_by_level.len());
+    let mut children_by_level: Vec<Vec<Vec<usize>>> =
+        Vec::with_capacity(dag.parents_by_level.len());
     for (k, parents) in dag.parents_by_level.iter().enumerate() {
         if parents.len() != dag.levels[k].meshlet_count {
             return Err(ClusterLodDagRuntimeError::ParentTableCountMismatch {
@@ -298,13 +340,20 @@ fn map_nodes(dag: &MeshletDag) -> Result<Vec<ClusterLodNode>, ClusterLodDagRunti
     let children_by_level = invert_parents(dag)?;
     let mut nodes = Vec::new();
     for (k, level) in dag.levels.iter().enumerate() {
-        let children_of_level: &[Vec<usize>] =
-            if k > 0 { &children_by_level[k - 1] } else { &[] };
+        let children_of_level: &[Vec<usize>] = if k > 0 {
+            &children_by_level[k - 1]
+        } else {
+            &[]
+        };
         for c in 0..level.meshlet_count {
             let base = c * 16;
             let children: Vec<String> = children_of_level
                 .get(c)
-                .map(|fine| fine.iter().map(|child| format!("l{}-c{}", k - 1, child)).collect())
+                .map(|fine| {
+                    fine.iter()
+                        .map(|child| format!("l{}-c{}", k - 1, child))
+                        .collect()
+                })
                 .unwrap_or_default();
             nodes.push(ClusterLodNode {
                 id: format!("l{k}-c{c}"),
@@ -338,7 +387,8 @@ impl ClusterLodDagRuntime {
         if geometry_id.is_empty() {
             return Err(ClusterLodDagRuntimeError::GeometryIdRequired);
         }
-        let dag = read_dgc(bytes).map_err(|error| ClusterLodDagRuntimeError::DgcParse(error.to_string()))?;
+        let dag = read_dgc(bytes)
+            .map_err(|error| ClusterLodDagRuntimeError::DgcParse(error.to_string()))?;
         Self::from_parsed_dag(dag, geometry_id)
     }
 

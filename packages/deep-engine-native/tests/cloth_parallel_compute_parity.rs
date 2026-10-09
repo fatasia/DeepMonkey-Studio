@@ -32,7 +32,7 @@ const WGSL_SIDECAR: &str = include_str!("../../deep-engine/wgsl/clothSolver.wgsl
 // ─── f32 色序求解器(与 TS clothParallelSolver.ts 逐运算同构) ──────────────────
 
 struct ParallelSolverF32 {
-    columns: usize,
+    _columns: usize,
     particle_count: usize,
     state: Vec<f32>,
     /// 桶序约束:(a, b, rest)。
@@ -55,8 +55,7 @@ impl ParallelSolverF32 {
         let count = columns * rows;
         let mut state = vec![0f32; count * 12];
         // 扰动流:mulberry 按 (row,col) 序,全整型逐位;布局算术在 f64 后一次舍入入 f32。
-        let mut rng_state: i32 = int32(&config["seed"])
-            .wrapping_add(0x9e37_79b9_u32 as i32);
+        let mut rng_state: i32 = int32(&config["seed"]).wrapping_add(0x9e37_79b9_u32 as i32);
         let mut next_unit = || {
             rng_state = rng_state.wrapping_add(0x6d2b_79f5);
             let t0 = rng_state as u32;
@@ -133,7 +132,7 @@ impl ParallelSolverF32 {
             state[base + 6] = 0.0;
         }
         Self {
-            columns,
+            _columns: columns,
             particle_count: count,
             state,
             constraints,
@@ -187,7 +186,7 @@ impl ParallelSolverF32 {
             // pass C:速度回算 + 三级树归约动能。
             let workgroups = self.particle_count.div_ceil(64);
             let mut partials = vec![0f32; workgroups];
-            for w in 0..workgroups {
+            for (w, partial) in partials.iter_mut().enumerate() {
                 let mut lanes = vec![0f32; 64];
                 for (lane, slot) in lanes.iter_mut().enumerate() {
                     let i = w * 64 + lane;
@@ -209,9 +208,10 @@ impl ParallelSolverF32 {
                     let vz = self.state[base + 6];
                     *slot = tree_sum4(vx * vx, vy * vy, vz * vz, 0.0);
                 }
-                partials[w] = workgroup_tree_sum(&lanes);
+                *partial = workgroup_tree_sum(&lanes);
             }
-            self.kinetics_last_substep.push(host_merge_tree_sum(&partials));
+            self.kinetics_last_substep
+                .push(host_merge_tree_sum(&partials));
         }
         assert!(
             self.state.iter().all(|value| value.is_finite()),
@@ -448,7 +448,11 @@ impl GoldenSolverF64 {
             }
         }
         assert!(
-            self.px.iter().chain(&self.py).chain(&self.pz).all(|value| value.is_finite()),
+            self.px
+                .iter()
+                .chain(&self.py)
+                .chain(&self.pz)
+                .all(|value| value.is_finite()),
             "golden solver diverged"
         );
     }
@@ -496,9 +500,21 @@ fn wgsl_source_matches_pinned_sidecar_checksum() {
     let (expected_checksum, expected_len) = sidecar
         .split_once(' ')
         .expect("sidecar format '<hex> <byteLen>'");
-    assert_eq!(expected_checksum.len(), 64, "sidecar checksum must be sha256 hex");
-    assert_eq!(sha256_hex(WGSL.as_bytes()), expected_checksum, "WGSL content drifted from the pinned sidecar");
-    assert_eq!(WGSL.as_bytes().len().to_string(), expected_len, "WGSL byte length drifted");
+    assert_eq!(
+        expected_checksum.len(),
+        64,
+        "sidecar checksum must be sha256 hex"
+    );
+    assert_eq!(
+        sha256_hex(WGSL.as_bytes()),
+        expected_checksum,
+        "WGSL content drifted from the pinned sidecar"
+    );
+    assert_eq!(
+        WGSL.len().to_string(),
+        expected_len,
+        "WGSL byte length drifted"
+    );
 }
 
 /// 门 2:着色逐位(网格 + 非对称小拓扑)+ 独立正确性断言。
@@ -514,12 +530,19 @@ fn greedy_coloring_matches_fixture_bitwise_and_is_valid() {
     assert_coloring_valid(&coloring, &ca, &cb);
     assert_coloring_matches(&coloring, grid);
     assert_eq!(grid["constraintCount"].as_u64().unwrap() as usize, ca.len());
-    assert_eq!(grid["particleCount"].as_u64().unwrap() as usize, columns * rows);
+    assert_eq!(
+        grid["particleCount"].as_u64().unwrap() as usize,
+        columns * rows
+    );
 
     let small = &fixture["coloring"]["small"];
     let small_a = u32_list(&small["a"]);
     let small_b = u32_list(&small["b"]);
-    let small_coloring = color_constraints(&small_a, &small_b, small["particleCount"].as_u64().unwrap() as usize);
+    let small_coloring = color_constraints(
+        &small_a,
+        &small_b,
+        small["particleCount"].as_u64().unwrap() as usize,
+    );
     assert_coloring_valid(&small_coloring, &small_a, &small_b);
     assert_coloring_matches(&small_coloring, small);
     let _ = spacing;
@@ -552,12 +575,18 @@ fn f32_colored_solver_replays_fixture_bitwise() {
     );
     let kinetic = *solver.kinetics_last_substep.last().unwrap();
     let kinetic_expected = num(&fixture["replay"]["kineticLastSubstep"]) as f32;
-    assert_eq!(kinetic, kinetic_expected, "final-substep kinetic (fixed reduction tree) drifted bitwise");
+    assert_eq!(
+        kinetic, kinetic_expected,
+        "final-substep kinetic (fixed reduction tree) drifted bitwise"
+    );
     let (max_ratio, mean_ratio) = solver.measure_stretch();
     let expected_max = num(&fixture["replay"]["finalStretchMaxRatio"]) as f32;
     let expected_mean = num(&fixture["replay"]["finalStretchMeanRatio"]) as f32;
     assert_eq!(max_ratio, expected_max, "stretch maxRatio drifted bitwise");
-    assert_eq!(mean_ratio, expected_mean, "stretch meanRatio drifted bitwise");
+    assert_eq!(
+        mean_ratio, expected_mean,
+        "stretch meanRatio drifted bitwise"
+    );
 }
 
 /// 门 4:f32 色序 vs f64 黄金逐步位置误差对照表(240 ticks,容差 0.05 m)。
@@ -592,9 +621,18 @@ fn f32_colored_solver_stays_within_tolerance_of_f64_golden_stepwise() {
             sum += err;
         }
         let mean = sum / f32_solver.particle_count as f64;
-        println!("{t} | {} | {max:.3e} | {mean:.3e}", f32_solver.state_fingerprint32());
-        assert!(max <= tolerance, "tick {t}: max position error {max} exceeds {tolerance}");
-        assert!(mean <= tolerance / 5.0, "tick {t}: mean position error {mean} exceeds tolerance/5");
+        println!(
+            "{t} | {} | {max:.3e} | {mean:.3e}",
+            f32_solver.state_fingerprint32()
+        );
+        assert!(
+            max <= tolerance,
+            "tick {t}: max position error {max} exceeds {tolerance}"
+        );
+        assert!(
+            mean <= tolerance / 5.0,
+            "tick {t}: mean position error {mean} exceeds tolerance/5"
+        );
     }
     let (max_ratio, _) = f32_solver.measure_stretch();
     assert!(
@@ -614,7 +652,10 @@ fn f32_colored_solver_is_bit_exact_across_repetitions() {
         for _ in 0..64 {
             solver.step();
         }
-        (solver.state_fingerprint32(), solver.kinetics_last_substep.clone())
+        (
+            solver.state_fingerprint32(),
+            solver.kinetics_last_substep.clone(),
+        )
     };
     assert_eq!(run(), run(), "double run must be bitwise identical");
 }
@@ -637,7 +678,7 @@ fn fixed_reduction_trees_match_fixture_bitwise() {
     );
     let mut linear = 0f32;
     for &lane in &lanes {
-        linear = linear + lane;
+        linear += lane;
     }
     assert_ne!(
         tree_sum, linear,
@@ -660,7 +701,9 @@ fn fixed_reduction_trees_match_fixture_bitwise() {
 #[test]
 fn fingerprint32_matches_fixture_anchor() {
     let fixture = fixture();
-    let expected = fixture["replay"]["fingerprintOfEmptyState"].as_str().unwrap();
+    let expected = fixture["replay"]["fingerprintOfEmptyState"]
+        .as_str()
+        .unwrap();
     assert_eq!(fingerprint_float32(&[0.0f32; 6]), expected);
 }
 

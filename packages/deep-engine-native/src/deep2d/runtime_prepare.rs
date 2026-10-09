@@ -33,8 +33,12 @@ pub enum PreparedDeep2dChunkKind {
     /// 刀 4 毛玻璃 bracket 块:`index` 指 `path.backdrop_chunks`(绘制序
     /// capture→blur→底色 quad);first_vertex/vertex_count 不用(底色
     /// quad 由 backdrop 专用管线从自身资源发射)。永不参与 chunk 合并。
-    Backdrop { index: usize },
-    Atlas { atlas_index: usize },
+    Backdrop {
+        index: usize,
+    },
+    Atlas {
+        atlas_index: usize,
+    },
     /// 刀 3 stencil 动态块:first_vertex/vertex_count 指 cover 顶点区间
     /// (path 流),edge 区间在 `dynamic_edges`。永不参与 chunk 合并。
     DynamicPath {
@@ -191,12 +195,12 @@ pub(super) fn prepare_impl(
                 }
             }
             let chunks = build_chunks(
-        Deep2dComposition::ZOrdered,
-        &path.chunks,
-        &atlas_items,
-        &path.dynamic_chunks,
-        &path.backdrop_chunks,
-    );
+                Deep2dComposition::ZOrdered,
+                &path.chunks,
+                &atlas_items,
+                &path.dynamic_chunks,
+                &path.backdrop_chunks,
+            );
             let summary = PreparedDeep2dRuntimeSummary {
                 path: path.summary,
                 atlases: atlases.len(),
@@ -290,12 +294,12 @@ pub(super) fn prepare_impl(
                 }
             }
             let chunks = build_chunks(
-            package.composition,
-            &path.chunks,
-            &atlas_items,
-            &path.dynamic_chunks,
-            &path.backdrop_chunks,
-        );
+                package.composition,
+                &path.chunks,
+                &atlas_items,
+                &path.dynamic_chunks,
+                &path.backdrop_chunks,
+            );
             let atlas_batches = chunks
                 .iter()
                 .filter(|chunk| matches!(chunk.kind, PreparedDeep2dChunkKind::Atlas { .. }))

@@ -8,8 +8,8 @@
 //! - 含该特性位 → Supported(渲染器侧请求该特性并构建 ray-query 管线族,
 //!   失败 error-scope fail-closed 回退栅格);
 //! - 不含 → Unsupported(HardwareLacksRtUnits:API 存在,该适配器/驱动无 RT 单元)。
-//! The contract is adapter-driven and data-driven on purpose — 分类只在本模块
-//! 一处决策,渲染器不自行猜测。
+//!   The contract is adapter-driven and data-driven on purpose — 分类只在本模块
+//!   一处决策,渲染器不自行猜测。
 
 use serde::{Deserialize, Serialize};
 
@@ -235,10 +235,12 @@ mod tests {
     fn unprobed_matrix_is_not_measured_and_flag_stays_off() {
         let matrix = default_matrix();
         assert!(!matrix.feature_flag_default);
-        assert!(matrix
-            .adapters
-            .iter()
-            .all(|adapter| adapter.support == RtSupport::NotMeasured));
+        assert!(
+            matrix
+                .adapters
+                .iter()
+                .all(|adapter| adapter.support == RtSupport::NotMeasured)
+        );
         // 未实测不虚构理由:返回 None,渲染器依旧 fail-closed 走栅格。
         let (enabled, reason) = decide_feature_flag(&matrix, true);
         assert!(!enabled, "RT must not enable without a Supported adapter");

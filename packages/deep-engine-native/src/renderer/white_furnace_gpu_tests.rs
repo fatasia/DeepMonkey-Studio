@@ -263,6 +263,8 @@ fn render_material_frame(
     render_material_frame_with_shader(device, queue, packet, label, layered, frame, view, None)
 }
 
+// Explicit render resources and optional shader injection.
+#[allow(clippy::too_many_arguments)]
 fn render_material_frame_with_shader(
     device: &wgpu::Device,
     queue: &wgpu::Queue,

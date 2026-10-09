@@ -58,7 +58,8 @@ pub(super) fn emit_stroke(
     let dashed_storage;
     let stroked = match command.dash.as_deref() {
         Some(pattern) => {
-            dashed_storage = dash_subpaths(linear, pattern, command.dash_offset.unwrap_or(0.0), path)?;
+            dashed_storage =
+                dash_subpaths(linear, pattern, command.dash_offset.unwrap_or(0.0), path)?;
             &dashed_storage
         }
         None => linear,

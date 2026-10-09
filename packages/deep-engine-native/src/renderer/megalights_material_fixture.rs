@@ -106,9 +106,15 @@ impl Fixture {
         let packet = packet();
         Self::with_packet(device, queue, width, height, &packet)
     }
-    pub fn with_packet(device: &wgpu::Device, queue: &wgpu::Queue, width: u32, height: u32, packet: &RenderPacket) -> Self {
-        let prepared = prepare_scene(&packet).unwrap();
-        let pbr = prepare_pbr_resources(&packet).unwrap();
+    pub fn with_packet(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        width: u32,
+        height: u32,
+        packet: &RenderPacket,
+    ) -> Self {
+        let prepared = prepare_scene(packet).unwrap();
+        let pbr = prepare_pbr_resources(packet).unwrap();
         let layouts = create_frame_layouts(device);
         let material_layout = create_material_layout(device);
         let scene = GpuScene::new(
@@ -116,8 +122,8 @@ impl Fixture {
             queue,
             &material_layout,
             None,
-            &packet,
-            scene_content_key(&packet),
+            packet,
+            scene_content_key(packet),
             &prepared,
             &pbr,
         )
@@ -143,7 +149,7 @@ impl Fixture {
         let culling = GpuCulling::new(
             device,
             &scene.instance_buffer,
-            &prepare_gpu_culling(&packet, &prepared).unwrap(),
+            &prepare_gpu_culling(packet, &prepared).unwrap(),
             &frame,
             &shadow,
             false,

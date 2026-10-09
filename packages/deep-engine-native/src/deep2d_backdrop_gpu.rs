@@ -134,14 +134,16 @@ impl Deep2dBackdropGpuResources {
             },
         );
         let half = chain.half;
-        let stage_uniform = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Deep2d backdrop stage params"),
-            contents: bytemuck::bytes_of(&StageParams {
-                half_size: [half[0] as f32, half[1] as f32],
-                full_size: [region[0] as f32, region[1] as f32],
-            }),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let stage_uniform = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Deep2d backdrop stage params"),
+                contents: bytemuck::bytes_of(&StageParams {
+                    half_size: [half[0] as f32, half[1] as f32],
+                    full_size: [region[0] as f32, region[1] as f32],
+                }),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
         let make_stage_bind = |view: &wgpu::TextureView| {
             self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Deep2d backdrop stage bind"),
@@ -222,11 +224,13 @@ impl Deep2dBackdropGpuResources {
             physical_size: [target_size.0 as f32, target_size.1 as f32],
             pad: [0.0; 2],
         };
-        let uniform = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Deep2d backdrop base params"),
-            contents: bytemuck::bytes_of(&base_params),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let uniform = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Deep2d backdrop base params"),
+                contents: bytemuck::bytes_of(&base_params),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Deep2d backdrop base bind"),
             layout: &chain.base_bind_layout,
@@ -299,7 +303,7 @@ impl Deep2dBackdropGpuResources {
     }
 
     fn rebuild_chain(&mut self, region: [u32; 2]) {
-        let half = [(region[0] + 1) / 2, (region[1] + 1) / 2];
+        let half = [region[0].div_ceil(2), region[1].div_ceil(2)];
         let texture = |label: &'static str, size: [u32; 2], usage: wgpu::TextureUsages| {
             self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
@@ -337,72 +341,72 @@ impl Deep2dBackdropGpuResources {
                 label: Some("Deep Engine native Deep2d backdrop shader v1"),
                 source: wgpu::ShaderSource::Wgsl(SHADER.into()),
             });
-        let stage_bind_layout = self
-            .device
-            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Deep2d backdrop stage layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+        let stage_bind_layout =
+            self.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("Deep2d backdrop stage layout"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
                         },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
                         },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
-                        count: None,
-                    },
-                ],
-            });
-        let base_bind_layout = self
-            .device
-            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Deep2d backdrop base layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 2,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                            count: None,
                         },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
+                    ],
+                });
+        let base_bind_layout =
+            self.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("Deep2d backdrop base layout"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
                         },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-            });
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 2,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                    ],
+                });
         let pipeline_layout = self
             .device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -410,13 +414,13 @@ impl Deep2dBackdropGpuResources {
                 bind_group_layouts: &[Some(&stage_bind_layout)],
                 immediate_size: 0,
             });
-        let base_pipeline_layout = self
-            .device
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Deep2d backdrop base pipeline layout"),
-                bind_group_layouts: &[Some(&base_bind_layout)],
-                immediate_size: 0,
-            });
+        let base_pipeline_layout =
+            self.device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Deep2d backdrop base pipeline layout"),
+                    bind_group_layouts: &[Some(&base_bind_layout)],
+                    immediate_size: 0,
+                });
         let fullquad_attrs = wgpu::vertex_attr_array![0 => Float32x2];
         let fullquad_buffers = [Some(wgpu::VertexBufferLayout {
             array_stride: 8,

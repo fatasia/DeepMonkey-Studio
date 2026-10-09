@@ -1,4 +1,7 @@
-use serde::{Deserializer, de::{self, SeqAccess, Visitor}};
+use serde::{
+    Deserializer,
+    de::{self, SeqAccess, Visitor},
+};
 
 const MAX_BYTES: usize = 128 * 1024 * 1024;
 
@@ -22,12 +25,16 @@ pub(super) fn deserialize<'de, D: Deserializer<'de>>(input: D) -> Result<Vec<u8>
         }
         fn visit_seq<A: SeqAccess<'de>>(self, mut source: A) -> Result<Self::Value, A::Error> {
             if source.size_hint().is_some_and(|length| length > MAX_BYTES) {
-                return Err(de::Error::custom("texture data exceeds the 128 MiB packet budget"));
+                return Err(de::Error::custom(
+                    "texture data exceeds the 128 MiB packet budget",
+                ));
             }
             let mut bytes = Vec::with_capacity(source.size_hint().unwrap_or(0));
             while let Some(byte) = source.next_element::<u8>()? {
                 if bytes.len() == MAX_BYTES {
-                    return Err(de::Error::custom("texture data exceeds the 128 MiB packet budget"));
+                    return Err(de::Error::custom(
+                        "texture data exceeds the 128 MiB packet budget",
+                    ));
                 }
                 bytes.push(byte);
             }
@@ -45,15 +52,27 @@ mod tests {
     fn canonical_base64_and_legacy_arrays_restore_identical_bytes() {
         let base = r#"{"id":"color","revision":1,"semantic":"specularColor","width":1,"height":1,"data":"gED//w=="}"#;
         let compact: TextureResource = serde_json::from_str(base).unwrap();
-        let legacy: TextureResource = serde_json::from_str(&base.replace("\"gED//w==\"", "[128,64,255,255]")).unwrap();
+        let legacy: TextureResource =
+            serde_json::from_str(&base.replace("\"gED//w==\"", "[128,64,255,255]")).unwrap();
         assert_eq!(compact.data, legacy.data);
-        let mip: PixelLevel = serde_json::from_str(r#"{"width":1,"height":1,"data":"gED//w=="}"#).unwrap();
+        let mip: PixelLevel =
+            serde_json::from_str(r#"{"width":1,"height":1,"data":"gED//w=="}"#).unwrap();
         assert_eq!(mip.data, compact.data);
     }
 
     #[test]
     fn malformed_base64_and_non_byte_numeric_payloads_are_rejected() {
-        for data in [r#""AB==""#, r#""AQJ=""#, r#""AQI= ""#, r#""AA=A""#, r#""""#, "[256]", "[-1]", "[0.5]", "null"] {
+        for data in [
+            r#""AB==""#,
+            r#""AQJ=""#,
+            r#""AQI= ""#,
+            r#""AA=A""#,
+            r#""""#,
+            "[256]",
+            "[-1]",
+            "[0.5]",
+            "null",
+        ] {
             let json = format!(r#"{{"width":1,"height":1,"data":{data}}}"#);
             assert!(serde_json::from_str::<PixelLevel>(&json).is_err(), "{data}");
         }

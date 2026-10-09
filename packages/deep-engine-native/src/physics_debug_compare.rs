@@ -37,7 +37,8 @@ pub fn fnv1a_dual_lane_f32(values: &[f32]) -> (u32, u32) {
         let bytes = value.to_le_bytes();
         for index in 0..4 {
             forward = (forward ^ u32::from(bytes[index])).wrapping_mul(PHYSICS_DEBUG_FNV_PRIME);
-            backward = (backward ^ u32::from(bytes[3 - index])).wrapping_mul(PHYSICS_DEBUG_FNV_PRIME);
+            backward =
+                (backward ^ u32::from(bytes[3 - index])).wrapping_mul(PHYSICS_DEBUG_FNV_PRIME);
         }
     }
     (forward, backward)
@@ -78,9 +79,24 @@ pub struct ScenarioBody {
 
 pub fn scenario_initial_bodies() -> Vec<ScenarioBody> {
     vec![
-        ScenarioBody { p: [0.5, 2.0, 0.0], v: [0.25, 0.0, 0.1], w: [0.5, 0.75, 0.25], q: [0.0, 0.0, 0.0, 1.0] },
-        ScenarioBody { p: [1.0, 1.75, 0.0], v: [0.5, 0.0, 0.2], w: [0.75, 0.75, 0.25], q: [0.0, 0.0, 0.0, 1.0] },
-        ScenarioBody { p: [1.5, 1.5, 0.0], v: [0.75, 0.0, 0.3], w: [1.0, 0.75, 0.25], q: [0.0, 0.0, 0.0, 1.0] },
+        ScenarioBody {
+            p: [0.5, 2.0, 0.0],
+            v: [0.25, 0.0, 0.1],
+            w: [0.5, 0.75, 0.25],
+            q: [0.0, 0.0, 0.0, 1.0],
+        },
+        ScenarioBody {
+            p: [1.0, 1.75, 0.0],
+            v: [0.5, 0.0, 0.2],
+            w: [0.75, 0.75, 0.25],
+            q: [0.0, 0.0, 0.0, 1.0],
+        },
+        ScenarioBody {
+            p: [1.5, 1.5, 0.0],
+            v: [0.75, 0.0, 0.3],
+            w: [1.0, 0.75, 0.25],
+            q: [0.0, 0.0, 0.0, 1.0],
+        },
     ]
 }
 
@@ -183,7 +199,13 @@ pub fn compare_pose_recordings(
             first_hash_mismatch_tick = Some(*tick);
         }
         if hash_match && poses_a.len() == poses_b.len() {
-            rows.push(CompareTickRow { tick: *tick, hash_match: true, max_position: 0.0, max_rotation: 0.0, exceeded: false });
+            rows.push(CompareTickRow {
+                tick: *tick,
+                hash_match: true,
+                max_position: 0.0,
+                max_rotation: 0.0,
+                exceeded: false,
+            });
             continue;
         }
         let body_count = poses_a.len().min(poses_b.len()) / PHYSICS_DEBUG_POSE_STRIDE;
@@ -197,7 +219,8 @@ pub fn compare_pose_recordings(
             step_max_position = step_max_position.max((dx * dx + dy * dy + dz * dz).sqrt());
             step_max_rotation = step_max_rotation.max(quaternion_angle(poses_a, offset, poses_b));
         }
-        let exceeded = step_max_position > position_tolerance || step_max_rotation > rotation_tolerance;
+        let exceeded =
+            step_max_position > position_tolerance || step_max_rotation > rotation_tolerance;
         if exceeded {
             exceeded_tick_count += 1;
             if first_exceeded_tick.is_none() {
@@ -206,7 +229,13 @@ pub fn compare_pose_recordings(
         }
         max_position = max_position.max(step_max_position);
         max_rotation = max_rotation.max(step_max_rotation);
-        rows.push(CompareTickRow { tick: *tick, hash_match, max_position: step_max_position, max_rotation: step_max_rotation, exceeded });
+        rows.push(CompareTickRow {
+            tick: *tick,
+            hash_match,
+            max_position: step_max_position,
+            max_rotation: step_max_rotation,
+            exceeded,
+        });
     }
     CompareOutcome {
         rows,
@@ -244,11 +273,24 @@ mod physics_debug_compare_tests {
         let ticks_total = scenario["ticks"].as_u64().expect("fixture ticks") as u32;
         let dt = scenario["dtSeconds"].as_f64().expect("dtSeconds") as f32;
         let gravity_y = scenario["gravityY"].as_f64().expect("gravityY") as f32;
-        let expected_poses = &fixture_value[if deviate_tick.is_some() { "deviated" } else { "expected" }]["poses"];
-        let expected_hashes = &fixture_value[if deviate_tick.is_some() { "deviated" } else { "expected" }]["tickHashes"];
+        let expected_poses = &fixture_value[if deviate_tick.is_some() {
+            "deviated"
+        } else {
+            "expected"
+        }]["poses"];
+        let expected_hashes = &fixture_value[if deviate_tick.is_some() {
+            "deviated"
+        } else {
+            "expected"
+        }]["tickHashes"];
         let deviation_delta = fixture_value["deviated"]["delta"].as_f64().expect("delta") as f32;
         let mut bodies = scenario_initial_bodies();
-        let mut replay = FixtureReplay { ticks: Vec::new(), hashes: Vec::new(), poses: Vec::new(), lanes: Vec::new() };
+        let mut replay = FixtureReplay {
+            ticks: Vec::new(),
+            hashes: Vec::new(),
+            poses: Vec::new(),
+            lanes: Vec::new(),
+        };
         for tick in 1..=ticks_total {
             step_tick(&mut bodies, dt, gravity_y);
             let mut block = scenario_pose_block(&bodies);
@@ -256,15 +298,29 @@ mod physics_debug_compare_tests {
                 block[0] += deviation_delta;
             }
             // 位姿逐位:夹具十进制串 → f64 → f32,与本镜像 f32 位模式全等。
-            let expected_tick = expected_poses.as_array().expect("poses 数组").get((tick - 1) as usize).expect("tick 位姿行");
+            let expected_tick = expected_poses
+                .as_array()
+                .expect("poses 数组")
+                .get((tick - 1) as usize)
+                .expect("tick 位姿行");
             let expected = expected_tick.as_array().expect("位姿行数组");
             assert_eq!(expected.len(), block.len(), "tick {tick} 位姿长度不符");
             for (element, actual) in expected.iter().zip(&block) {
                 let wanted = element.as_f64().expect("位姿数字") as f32;
-                assert_eq!(wanted.to_bits(), actual.to_bits(), "tick {tick} 位姿位模式漂移");
+                assert_eq!(
+                    wanted.to_bits(),
+                    actual.to_bits(),
+                    "tick {tick} 位姿位模式漂移"
+                );
             }
             let hash = pose_tick_hash(&block);
-            let expected_hash = expected_hashes.as_array().expect("tickHashes").get((tick - 1) as usize).expect("tick 哈希").as_str().expect("哈希串");
+            let expected_hash = expected_hashes
+                .as_array()
+                .expect("tickHashes")
+                .get((tick - 1) as usize)
+                .expect("tick 哈希")
+                .as_str()
+                .expect("哈希串");
             assert_eq!(hash, expected_hash, "tick {tick} 哈希漂移");
             let (forward, backward) = fnv1a_dual_lane_f32(&block);
             replay.ticks.push(tick);
@@ -278,10 +334,19 @@ mod physics_debug_compare_tests {
     #[test]
     fn scenario_replays_bitwise_and_chain_hash_matches_fixture() {
         let fixture_value = fixture();
-        assert_eq!(fixture_value["schema"].as_str(), Some("deep-engine.physics-debug-recording-parity"));
+        assert_eq!(
+            fixture_value["schema"].as_str(),
+            Some("deep-engine.physics-debug-recording-parity")
+        );
         let replay = replay(None, &fixture_value);
-        let expected_chain = fixture_value["expected"]["chainHash"].as_str().expect("chainHash");
-        assert_eq!(pose_chain_hash(&replay.lanes), expected_chain, "链哈希漂移:TS 产品实现哈希链未被 Rust 镜像复现");
+        let expected_chain = fixture_value["expected"]["chainHash"]
+            .as_str()
+            .expect("chainHash");
+        assert_eq!(
+            pose_chain_hash(&replay.lanes),
+            expected_chain,
+            "链哈希漂移:TS 产品实现哈希链未被 Rust 镜像复现"
+        );
         // 场景合同自检:90 tick × 3 体 × 7 分量。
         assert_eq!(replay.ticks.len(), 90);
         assert_eq!(replay.poses[0].len(), 21);
@@ -292,8 +357,17 @@ mod physics_debug_compare_tests {
         let fixture_value = fixture();
         let first = replay(None, &fixture_value);
         let second = replay(None, &fixture_value);
-        assert_eq!(pose_chain_hash(&first.lanes), pose_chain_hash(&second.lanes));
-        assert!(first.poses.iter().zip(&second.poses).all(|(a, b)| a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits())));
+        assert_eq!(
+            pose_chain_hash(&first.lanes),
+            pose_chain_hash(&second.lanes)
+        );
+        assert!(
+            first
+                .poses
+                .iter()
+                .zip(&second.poses)
+                .all(|(a, b)| a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits()))
+        );
     }
 
     #[test]
@@ -303,26 +377,69 @@ mod physics_debug_compare_tests {
         let deviate_tick = deviated["tick"].as_u64().expect("deviated.tick") as u32;
         let deviated_run = replay(Some(deviate_tick), &fixture_value);
         // 偏差运行自身的哈希链也应与夹具 deviated.chainHash 一致(双侧同源)。
-        assert_eq!(pose_chain_hash(&deviated_run.lanes), deviated["chainHash"].as_str().expect("deviated.chainHash"));
+        assert_eq!(
+            pose_chain_hash(&deviated_run.lanes),
+            deviated["chainHash"].as_str().expect("deviated.chainHash")
+        );
 
         let clean = replay(None, &fixture_value);
         let outcome = compare_pose_recordings(
-            &PoseRecordingView { ticks: &clean.ticks, hashes: &clean.hashes, poses: &clean.poses },
-            &PoseRecordingView { ticks: &deviated_run.ticks, hashes: &deviated_run.hashes, poses: &deviated_run.poses },
+            &PoseRecordingView {
+                ticks: &clean.ticks,
+                hashes: &clean.hashes,
+                poses: &clean.poses,
+            },
+            &PoseRecordingView {
+                ticks: &deviated_run.ticks,
+                hashes: &deviated_run.hashes,
+                poses: &deviated_run.poses,
+            },
             PHYSICS_DEBUG_POSITION_TOLERANCE_METERS,
             PHYSICS_DEBUG_ROTATION_TOLERANCE_RADIANS,
         );
-        assert_eq!(outcome.first_exceeded_tick, Some(deviate_tick), "首超差 tick 定位漂移");
-        assert_eq!(outcome.first_hash_mismatch_tick, Some(deviate_tick), "首哈希失配 tick 定位漂移");
-        assert_eq!(outcome.exceeded_tick_count, 1, "单 tick 注入只允许单 tick 超差");
-        assert_eq!(outcome.first_exceeded_tick, deviated["expectedFirstExceededTick"].as_u64().map(|v| v as u32));
-        assert_eq!(outcome.first_hash_mismatch_tick, deviated["expectedFirstHashMismatchTick"].as_u64().map(|v| v as u32));
-        assert_eq!(outcome.exceeded_tick_count, deviated["expectedExceededTickCount"].as_u64().unwrap() as usize);
+        assert_eq!(
+            outcome.first_exceeded_tick,
+            Some(deviate_tick),
+            "首超差 tick 定位漂移"
+        );
+        assert_eq!(
+            outcome.first_hash_mismatch_tick,
+            Some(deviate_tick),
+            "首哈希失配 tick 定位漂移"
+        );
+        assert_eq!(
+            outcome.exceeded_tick_count, 1,
+            "单 tick 注入只允许单 tick 超差"
+        );
+        assert_eq!(
+            outcome.first_exceeded_tick,
+            deviated["expectedFirstExceededTick"]
+                .as_u64()
+                .map(|v| v as u32)
+        );
+        assert_eq!(
+            outcome.first_hash_mismatch_tick,
+            deviated["expectedFirstHashMismatchTick"]
+                .as_u64()
+                .map(|v| v as u32)
+        );
+        assert_eq!(
+            outcome.exceeded_tick_count,
+            deviated["expectedExceededTickCount"].as_u64().unwrap() as usize
+        );
         // 注入幅度 2e-3 = 2× 容差;测量值应落在其邻域(hypot 实现允许 ulp 级差异)。
-        let expected_max = deviated["expectedMaxPosition"].as_f64().expect("expectedMaxPosition");
-        assert!((outcome.max_position - expected_max).abs() < 1e-12, "max_position 与 TS 侧测量漂移");
+        let expected_max = deviated["expectedMaxPosition"]
+            .as_f64()
+            .expect("expectedMaxPosition");
+        assert!(
+            (outcome.max_position - expected_max).abs() < 1e-12,
+            "max_position 与 TS 侧测量漂移"
+        );
         // 快路径证据:除注入 tick 外全部哈希命中。
-        assert_eq!(outcome.rows.iter().filter(|row| row.hash_match).count(), outcome.rows.len() - 1);
+        assert_eq!(
+            outcome.rows.iter().filter(|row| row.hash_match).count(),
+            outcome.rows.len() - 1
+        );
     }
 
     #[test]
@@ -348,8 +465,16 @@ mod physics_debug_compare_tests {
             poses.push(block);
         }
         let outcome = compare_pose_recordings(
-            &PoseRecordingView { ticks: &clean.ticks, hashes: &clean.hashes, poses: &clean.poses },
-            &PoseRecordingView { ticks: &ticks, hashes: &hashes, poses: &poses },
+            &PoseRecordingView {
+                ticks: &clean.ticks,
+                hashes: &clean.hashes,
+                poses: &clean.poses,
+            },
+            &PoseRecordingView {
+                ticks: &ticks,
+                hashes: &hashes,
+                poses: &poses,
+            },
             PHYSICS_DEBUG_POSITION_TOLERANCE_METERS,
             PHYSICS_DEBUG_ROTATION_TOLERANCE_RADIANS,
         );

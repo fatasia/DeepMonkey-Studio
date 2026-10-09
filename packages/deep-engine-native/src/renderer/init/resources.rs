@@ -77,15 +77,34 @@ pub(super) fn frame_buffer(device: &wgpu::Device, frame: &FrameUniform) -> wgpu:
 
 /// Start only the admitted scene variants before texture hashing/upload, so
 /// browser driver compilation overlaps CPU resource preparation.
-pub(super) fn prewarm_used_pipelines(pipelines: &MeshPipelines,
+pub(super) fn prewarm_used_pipelines(
+    pipelines: &MeshPipelines,
     scene: &deep_engine_native::scene::PreparedScene,
-    pbr: &deep_engine_native::pbr_texture::PreparedPbrResources<'_>) {
+    pbr: &deep_engine_native::pbr_texture::PreparedPbrResources<'_>,
+) {
     for batch in &scene.batches {
         let material = &pbr.materials[batch.material_index];
-        if material.layered.is_some() && pipelines.select_layered(batch.alpha_mode,
-            batch.premultiplied, batch.mirrored, batch.double_sided, material.normal_mapped).is_some() { continue; }
-        pipelines.select_profile(batch.alpha_mode, batch.premultiplied, batch.mirrored,
-            batch.double_sided, material.normal_mapped, material.uses_extended_response());
+        if material.layered.is_some()
+            && pipelines
+                .select_layered(
+                    batch.alpha_mode,
+                    batch.premultiplied,
+                    batch.mirrored,
+                    batch.double_sided,
+                    material.normal_mapped,
+                )
+                .is_some()
+        {
+            continue;
+        }
+        pipelines.select_profile(
+            batch.alpha_mode,
+            batch.premultiplied,
+            batch.mirrored,
+            batch.double_sided,
+            material.normal_mapped,
+            material.uses_extended_response(),
+        );
     }
 }
 

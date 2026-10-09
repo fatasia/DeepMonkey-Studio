@@ -1,3 +1,4 @@
+pub(super) use crate::j3_hdr_frame as hdr_frame;
 use crate::{
     player_content::PlayerContent,
     shader_material_renderer::{FrameObservation, render_with_frame_observation},
@@ -8,10 +9,9 @@ use deep_engine_native::{
 };
 use serde_json::{Value, json};
 use winit::dpi::PhysicalSize;
-#[path = "j3_hdr_frame.rs"]
-pub(super) mod hdr_frame;
 pub(super) const PACKAGE: &[u8] = include_bytes!("../fixtures/runtime-package-v1.json");
-pub(super) const MANIFEST: &str = include_str!("../../../deep-engine/fixtures/j3-hdr-flat-normal-v1.json");
+pub(super) const MANIFEST: &str =
+    include_str!("../../../deep-engine/fixtures/j3-hdr-flat-normal-v1.json");
 pub(super) fn vector(value: &Value) -> [f32; 3] {
     std::array::from_fn(|i| value[i].as_f64().unwrap() as f32)
 }
@@ -43,15 +43,26 @@ fn deep_direct_dfg_185_table() -> &'static [[f64; 2]; 256] {
                 .split_once(',')
                 .expect("shared DFG twin entry holds two scalars");
             entries.push([
-                x.trim().parse().expect("shared DFG twin x must parse as f64"),
-                y.trim().parse().expect("shared DFG twin y must parse as f64"),
+                x.trim()
+                    .parse()
+                    .expect("shared DFG twin x must parse as f64"),
+                y.trim()
+                    .parse()
+                    .expect("shared DFG twin y must parse as f64"),
             ]);
             rest = &rest[end + 1..];
         }
-        assert_eq!(entries.len(), 256, "shared DFG twin must hold the full 16x16 table");
+        assert_eq!(
+            entries.len(),
+            256,
+            "shared DFG twin must hold the full 16x16 table"
+        );
         // 与 TS canonical 常量(directDfgLut185.ts 解码)的手算锚点一致
         // (j3TextureCoverageParity.test.mjs 同一锚点,三方互锁)。
-        assert_eq!(entries[15 * 16 + 12], [0.5830078125, 0.00010627508163452148]);
+        assert_eq!(
+            entries[15 * 16 + 12],
+            [0.5830078125, 0.00010627508163452148]
+        );
         entries.try_into().expect("256 entries")
     })
 }
@@ -94,7 +105,8 @@ pub(super) fn multiscattering_energy(f0: f64, rough: f64, nv: f64, nl: f64) -> f
     let lost_light = 1.0 - (light[0] + light[1]);
     let average = f0 + (1.0 - f0) * 0.047619;
     single_view * single_light * average / (1.0 - lost_view * lost_light * average + 0.000001)
-        * lost_view * lost_light
+        * lost_view
+        * lost_light
 }
 
 /// 128×128 数值附件的逐像素射线,复刻 `frame_data_with_camera` 的 VP 装配
@@ -114,7 +126,10 @@ pub(super) fn pixel_view_on_ground(view: &PlayerView, pixel: usize, size: u32) -
             + (ndc_y / focal) * f64::from(up[axis])
     });
     let s = -f64::from(eye[2]) / direction[2];
-    assert!(s > 0.0, "camera ray must hit the z=0 plane in front of the eye");
+    assert!(
+        s > 0.0,
+        "camera ray must hit the z=0 plane in front of the eye"
+    );
     let to_eye: [f64; 3] = direction.map(|axis| -axis * s);
     let length = (to_eye[0] * to_eye[0] + to_eye[1] * to_eye[1] + to_eye[2] * to_eye[2]).sqrt();
     let view_direction = std::array::from_fn(|axis| to_eye[axis] / length);

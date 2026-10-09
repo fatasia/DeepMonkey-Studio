@@ -156,4 +156,3 @@ pub(super) fn remap_ies_spot_rows(
     }
     Some((words, spot_count))
 }
-

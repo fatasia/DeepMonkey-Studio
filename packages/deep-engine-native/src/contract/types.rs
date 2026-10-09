@@ -125,14 +125,19 @@ pub struct StockAdvancedParameters {
 
 impl PbrMaterial {
     pub fn transmission_factor(&self) -> f32 {
-        self.extended_parameters.as_ref()
+        self.extended_parameters
+            .as_ref()
             .and_then(|parameters| parameters.transmission.as_ref())
-            .and_then(|transmission| transmission.factor).unwrap_or(0.0)
+            .and_then(|transmission| transmission.factor)
+            .unwrap_or(0.0)
     }
 
     pub fn draw_alpha_mode(&self) -> AlphaMode {
-        if self.transmission_factor() > 0.0 { AlphaMode::Blend }
-        else { self.alpha_mode.unwrap_or(AlphaMode::Opaque) }
+        if self.transmission_factor() > 0.0 {
+            AlphaMode::Blend
+        } else {
+            self.alpha_mode.unwrap_or(AlphaMode::Opaque)
+        }
     }
 }
 

@@ -82,6 +82,7 @@ fn stack_packet() -> RenderPacket {
 }
 
 /// 返回每个固定步三箱的平移与旋转(四元数),以及最终 packet 内三箱变换。
+#[allow(clippy::type_complexity)] // Golden cases keep all input and expected lanes together.
 fn run_stack() -> (Vec<[[f32; 3]; 3]>, Vec<[[f32; 4]; 3]>, Vec<[f32; 16]>) {
     let runtime = parse_and_validate_dynamic_scene_runtime(&stack_runtime_value()).unwrap();
     let mut packet = stack_packet();
@@ -318,7 +319,7 @@ fn hinge_motor_clamps_at_authored_limits_and_repeats_bit_exactly() {
     let final_angle = limited[HINGE_STEPS - 1];
     let peak = limited.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
     assert!(
-        final_angle >= HINGE_FINAL_ANGLE_MIN && final_angle <= HINGE_FINAL_ANGLE_MAX,
+        (HINGE_FINAL_ANGLE_MIN..=HINGE_FINAL_ANGLE_MAX).contains(&final_angle),
         "final angle {final_angle} outside the clamped band"
     );
     assert!(

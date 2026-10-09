@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { BLOOM_WGSL } from "../src/postprocess/bloomWgsl.js";
@@ -6,9 +6,17 @@ import { bloomPrefilterArithmeticForProbe, bloomPrefilterCpuReference } from "./
 
 describe("B6 probe production boundaries and independent CPU reference", () => {
   it("extracts actual old and current production formulas, failing on moved boundaries", () => {
-    const nativePath = "packages/deep-engine-native/assets/shaders/native_bloom_v1.wgsl";
-    const oldTs = execFileSync("git", ["show", "cbce805a:packages/deep-engine/src/postprocess/bloomWgsl.ts"], { encoding: "utf8" });
-    const oldNative = execFileSync("git", ["show", `cbce805a:${nativePath}`], { encoding: "utf8" });
+    const fixtureRoot = new URL("../fixtures/bloom-prefilter-cbce805a/", import.meta.url);
+    const manifest = JSON.parse(readFileSync(new URL("source.json", fixtureRoot), "utf8")) as {
+      files: { file: string; sha256: string }[];
+    };
+    const readSnapshot = (file: string) => {
+      const bytes = readFileSync(new URL(file, fixtureRoot));
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(manifest.files.find(entry => entry.file === file)!.sha256);
+      return bytes.toString("utf8");
+    };
+    const oldTs = readSnapshot("bloomWgsl.ts.txt");
+    const oldNative = readSnapshot("native_bloom_v1.wgsl");
     const currentNative = readFileSync(new URL("../../deep-engine-native/assets/shaders/native_bloom_v1.wgsl", import.meta.url), "utf8");
     expect(bloomPrefilterArithmeticForProbe(oldTs, "ts-max-rgb")).toContain("transition * transition / (4.0 * knee)");
     expect(bloomPrefilterArithmeticForProbe(BLOOM_WGSL, "ts-max-rgb")).toContain("deepBloomSoftKnee");

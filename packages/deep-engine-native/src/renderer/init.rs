@@ -146,11 +146,9 @@ pub(super) async fn create_renderer(
     )?;
     match initial_preparation_clock.as_mut() {
         Some(clock) => {
-            clock
-                .note_upload_bytes(u64::try_from(
-                    cast_slice::<f32, u8>(&view.clipping).len(),
-                )
-                .unwrap_or(u64::MAX));
+            clock.note_upload_bytes(
+                u64::try_from(cast_slice::<f32, u8>(&view.clipping).len()).unwrap_or(u64::MAX),
+            );
             clock.upload_timed(|| {
                 queue.write_buffer(&shadow_map.section_uniform, 0, cast_slice(&view.clipping))
             });
@@ -227,42 +225,40 @@ pub(super) async fn create_renderer(
         // GPU 腿:共享规划面(拒因与 CPU 腿同款封闭映射;规划失败 = 终局拒,
         // CPU 烘焙对同款合同拒因同判,不再重跑)。资源创建独立 error scope:
         // 设备拒/超限只丢 GPU 腿,不阻塞栅格主通路(fail-closed 回退 CPU)。
-        let gpu_leg = match super::sdf_gi_runtime::SdfGiFrameRuntime::plan_gpu(&sources, diffuse_mip0)
-        {
-            Ok(plan) => {
-                let gpu_validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
-                let gpu_memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
-                let gpu_internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
-                let chain =
-                    super::sdf_gi_gpu::SdfGiGpuChain::create(&plan, &sources, &device);
-                let gpu_errors = [
-                    gpu_internal.pop().await,
-                    gpu_memory.pop().await,
-                    gpu_validation.pop().await,
-                ];
-                match (chain, gpu_errors.into_iter().flatten().next()) {
-                    (Ok(chain), None) => Some(chain),
-                    (Ok(chain), Some(_)) => {
-                        drop(chain);
-                        diagnostics.note_sdf_gi_rejected(
-                            super::sdf_gi_runtime::SdfGiReject::GpuDeviceRejected.reason(),
-                        );
-                        None
-                    }
-                    (Err(reject), _) => {
-                        diagnostics.note_sdf_gi_rejected(reject.reason());
-                        None
+        let gpu_leg =
+            match super::sdf_gi_runtime::SdfGiFrameRuntime::plan_gpu(&sources, diffuse_mip0) {
+                Ok(plan) => {
+                    let gpu_validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
+                    let gpu_memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+                    let gpu_internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
+                    let chain = super::sdf_gi_gpu::SdfGiGpuChain::create(&plan, &sources, &device);
+                    let gpu_errors = [
+                        gpu_internal.pop().await,
+                        gpu_memory.pop().await,
+                        gpu_validation.pop().await,
+                    ];
+                    match (chain, gpu_errors.into_iter().flatten().next()) {
+                        (Ok(chain), None) => Some(chain),
+                        (Ok(chain), Some(_)) => {
+                            drop(chain);
+                            diagnostics.note_sdf_gi_rejected(
+                                super::sdf_gi_runtime::SdfGiReject::GpuDeviceRejected.reason(),
+                            );
+                            None
+                        }
+                        (Err(reject), _) => {
+                            diagnostics.note_sdf_gi_rejected(reject.reason());
+                            None
+                        }
                     }
                 }
-            }
-            Err(reject) => {
-                diagnostics.note_sdf_gi_rejected(reject.reason());
-                None
-            }
-        };
+                Err(reject) => {
+                    diagnostics.note_sdf_gi_rejected(reject.reason());
+                    None
+                }
+            };
         if let Some(chain) = gpu_leg {
-            let mut runtime =
-                super::sdf_gi_runtime::SdfGiFrameRuntime::from_gpu_chain(chain, skipped);
+            let runtime = super::sdf_gi_runtime::SdfGiFrameRuntime::from_gpu_chain(chain, skipped);
             match runtime.initial_records() {
                 Ok(records) => {
                     diagnostics.note_native_sdf_gi_runtime_gpu();
@@ -274,8 +270,7 @@ pub(super) async fn create_renderer(
         }
         if sdf_gi_runtime.is_none() {
             // CPU 权威腿回退(既有通路;规划面已拒的场景此处会同因拒并再披露)。
-            match super::sdf_gi_runtime::SdfGiFrameRuntime::build(&sources, skipped, diffuse_mip0)
-            {
+            match super::sdf_gi_runtime::SdfGiFrameRuntime::build(&sources, skipped, diffuse_mip0) {
                 Ok(runtime) => match runtime.initial_records() {
                     Ok(records) => {
                         diagnostics.note_native_sdf_gi_runtime();
@@ -288,9 +283,11 @@ pub(super) async fn create_renderer(
             }
         }
     }
-    if let (Some(records), Some(lighting), false) =
-        (probe_grid_records.as_mut(), content.lighting.as_ref(), sdf_gi_runtime.is_some())
-    {
+    if let (Some(records), Some(lighting), false) = (
+        probe_grid_records.as_mut(),
+        content.lighting.as_ref(),
+        sdf_gi_runtime.is_some(),
+    ) {
         let native_records: &mut [crate::probe_gi_abi::IrradianceProbeRecord] =
             bytemuck::cast_slice_mut(records.as_mut_slice());
         if super::native_gi_producer::produce_direct_irradiance(native_records, lighting) {
@@ -355,10 +352,9 @@ pub(super) async fn create_renderer(
     if let Some(runtime) = sdf_gi_runtime.as_mut()
         && runtime.gpu_chain_mut().is_some()
         && let Some(storage) = probe_gi_storage.as_ref()
+        && let Some(chain) = runtime.gpu_chain_mut()
     {
-        if let Some(chain) = runtime.gpu_chain_mut() {
-            chain.submit_initial_dispatch(&device, &queue, storage.buffer());
-        }
+        chain.submit_initial_dispatch(&device, &queue, storage.buffer());
     }
     let frame_buffer = resources::frame_buffer(&device, &frame);
     let ies_resource = resources::ies_resource(content.lighting.as_ref())?;
@@ -410,13 +406,23 @@ pub(super) async fn create_renderer(
         );
         forward_targets.background = content.background;
         forward_targets.studio_gradient = content.studio_background_gradient;
-        if packet.materials.iter().any(|material| material.transmission_factor() > 0.0) {
+        if packet
+            .materials
+            .iter()
+            .any(|material| material.transmission_factor() > 0.0)
+        {
             forward_targets.enable_transmission(&device);
             ibl.set_scene_opaque_view(forward_targets.scene_opaque_view.as_ref());
         }
         let frame_bind_group = ibl.create_frame_bind_group(
-            &device, &frame_layout, &frame_buffer, Some(&ies_buffer), &shadow_map,
-            Some(&probe_frame_buffer), "Deep Engine native frame bindings", true,
+            &device,
+            &frame_layout,
+            &frame_buffer,
+            Some(&ies_buffer),
+            &shadow_map,
+            Some(&probe_frame_buffer),
+            "Deep Engine native frame bindings",
+            true,
         );
         let shadow_probe = features.shadow_probe.then(|| {
             ShadowProbe::new(
@@ -654,10 +660,22 @@ pub(super) async fn create_renderer(
         clock.resource_stage_prepared(3)?;
     }
     let (rt_residency, rt_frame_bind_group) = rt::prepare(
-        &device, &queue, &scene, &mut initial_preparation_clock, &mut diagnostics,
-        rt_frame_layout.as_ref(), &material_layout, layered_material_layout.as_ref(),
-        has_layered_materials, &ibl, &frame_buffer, &ies_buffer, &shadow_map, &probe_frame_buffer,
-    ).await;
+        &device,
+        &queue,
+        &scene,
+        &mut initial_preparation_clock,
+        &mut diagnostics,
+        rt_frame_layout.as_ref(),
+        &material_layout,
+        layered_material_layout.as_ref(),
+        has_layered_materials,
+        &ibl,
+        &frame_buffer,
+        &ies_buffer,
+        &shadow_map,
+        &probe_frame_buffer,
+    )
+    .await;
     if let Some(clock) = initial_preparation_clock.as_mut() {
         clock.resource_stage_prepared(4)?;
     }
@@ -701,11 +719,15 @@ pub(super) async fn create_renderer(
     let initial_preparation = initial_preparation_clock
         .map(|clock| clock.finish(renderer_id))
         .transpose()?;
-    let studio_background = content.studio_background_gradient.then(|| deep_engine_native::studio_background::StudioBackground::new(
-        &device, &queue, &frame_buffer,
-        deep_engine_native::mesh_abi::FORWARD_COLOR_FORMAT,
-        deep_engine_native::mesh_abi::FORWARD_SAMPLE_COUNT,
-    ));
+    let studio_background = content.studio_background_gradient.then(|| {
+        deep_engine_native::studio_background::StudioBackground::new(
+            &device,
+            &queue,
+            &frame_buffer,
+            deep_engine_native::mesh_abi::FORWARD_COLOR_FORMAT,
+            deep_engine_native::mesh_abi::FORWARD_SAMPLE_COUNT,
+        )
+    });
     Ok(Renderer {
         id: renderer_id,
         studio_background,

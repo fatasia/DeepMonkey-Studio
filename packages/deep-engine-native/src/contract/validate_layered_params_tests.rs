@@ -205,7 +205,9 @@ fn native_layered_parameter_guard_accepts_active_layer_clearcoat_without_mutatio
     for index in 0..2 {
         let mut input = json!({"layers":[{"coverage":0.75},{"coverage":0.75}]});
         input["layers"][index]["params"] = json!({"clearcoat":{"factor":0.7,"roughness":0.3}});
-        let p = packet(input); let before = p.materials[0].layered.clone();
-        validate_packet(&p).unwrap(); assert_eq!(p.materials[0].layered, before);
+        let p = packet(input);
+        let before = p.materials[0].layered.clone();
+        validate_packet(&p).unwrap();
+        assert_eq!(p.materials[0].layered, before);
     }
 }

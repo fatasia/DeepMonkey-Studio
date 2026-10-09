@@ -6,7 +6,11 @@ use serde::Serialize;
 
 use crate::telemetry::{SampleToken, SegmentStats, stats_from};
 
-const GPU_SLOTS: usize = if cfg!(feature = "native-bench") { 512 } else { 64 };
+const GPU_SLOTS: usize = if cfg!(feature = "native-bench") {
+    512
+} else {
+    64
+};
 const QUERY_COUNT: u32 = 16;
 const SLOT_STRIDE: u64 = wgpu::QUERY_RESOLVE_BUFFER_ALIGNMENT;
 

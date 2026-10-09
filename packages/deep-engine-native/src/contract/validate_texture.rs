@@ -17,7 +17,10 @@ pub(super) fn validate_textures(packet: &RenderPacket) -> Result<(), String> {
         unique_id(&mut texture_ids, &texture.id, "texture")?;
         safe_revision(texture.revision, "texture")?;
         if texture.generate_mipmaps && !texture.mipmaps.is_empty() {
-            return Err(format!("texture {} cannot combine generated and authored mips", texture.id));
+            return Err(format!(
+                "texture {} cannot combine generated and authored mips",
+                texture.id
+            ));
         }
         if texture.width == 0
             || texture.height == 0
@@ -72,11 +75,26 @@ fn validate_material_slots(packet: &RenderPacket) -> Result<(), String> {
         .collect();
     for material in &packet.materials {
         for (slot, semantic) in [
-            (material.base_color_texture.as_ref(), TextureSemantic::BaseColor),
-            (material.metallic_roughness_texture.as_ref(), TextureSemantic::MetallicRoughness),
-            (material.emissive_texture.as_ref(), TextureSemantic::Emissive),
-            (material.specular_texture.as_ref(), TextureSemantic::Specular),
-            (material.specular_color_texture.as_ref(), TextureSemantic::SpecularColor),
+            (
+                material.base_color_texture.as_ref(),
+                TextureSemantic::BaseColor,
+            ),
+            (
+                material.metallic_roughness_texture.as_ref(),
+                TextureSemantic::MetallicRoughness,
+            ),
+            (
+                material.emissive_texture.as_ref(),
+                TextureSemantic::Emissive,
+            ),
+            (
+                material.specular_texture.as_ref(),
+                TextureSemantic::Specular,
+            ),
+            (
+                material.specular_color_texture.as_ref(),
+                TextureSemantic::SpecularColor,
+            ),
         ] {
             if let Some(slot) = slot {
                 validate_slot(slot, &material.id)?;

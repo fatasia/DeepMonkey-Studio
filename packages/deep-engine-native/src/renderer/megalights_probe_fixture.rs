@@ -25,7 +25,9 @@ pub(super) fn view_projection(view: PlayerView, aspect: f32) -> [[f32; 4]; 4] {
         ];
     }
     projection[3] = std::array::from_fn(|row| {
-        -(0..3).map(|axis| projection[axis][row] * eye[axis]).sum::<f32>()
+        -(0..3)
+            .map(|axis| projection[axis][row] * eye[axis])
+            .sum::<f32>()
     });
     projection[3][2] -= view.near * depth;
     projection
@@ -52,7 +54,12 @@ pub(super) enum Zone {
     Background,
 }
 
-pub(super) fn plane_hit(view: PlayerView, aspect: f32, px: u32, py: u32) -> (Zone, Option<[f64; 3]>) {
+pub(super) fn plane_hit(
+    view: PlayerView,
+    aspect: f32,
+    px: u32,
+    py: u32,
+) -> (Zone, Option<[f64; 3]>) {
     let ndc_x = ((f64::from(px) + 0.5) / f64::from(WIDTH)) * 2.0 - 1.0;
     let ndc_y = 1.0 - ((f64::from(py) + 0.5) / f64::from(HEIGHT)) * 2.0;
     // 视空间射线(view z = −depth,相机沿 forward 看):view 坐标方向
@@ -63,22 +70,20 @@ pub(super) fn plane_hit(view: PlayerView, aspect: f32, px: u32, py: u32) -> (Zon
     let yv = ndc_y / f64::from(view.focal);
     let mut dir = [0.0f64; 3];
     for axis in 0..3 {
-        dir[axis] = xv * f64::from(right[axis])
-            + yv * f64::from(up[axis])
-            + f64::from(forward[axis]);
+        dir[axis] =
+            xv * f64::from(right[axis]) + yv * f64::from(up[axis]) + f64::from(forward[axis]);
     }
     let length = (dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]).sqrt();
-    for axis in 0..3 {
-        dir[axis] /= length;
+    for value in &mut dir {
+        *value /= length;
     }
     // 斜面(view 系 z = −3 − 0.6x):−f·p = −3 − 0.6·(r·p) 且 p = t·dir →
     // t·(f·dir − 0.6·r·dir) = 3。
     let forward_dot = dir[0] * f64::from(forward[0])
         + dir[1] * f64::from(forward[1])
         + dir[2] * f64::from(forward[2]);
-    let right_dot = dir[0] * f64::from(right[0])
-        + dir[1] * f64::from(right[1])
-        + dir[2] * f64::from(right[2]);
+    let right_dot =
+        dir[0] * f64::from(right[0]) + dir[1] * f64::from(right[1]) + dir[2] * f64::from(right[2]);
     let denominator = forward_dot - PLANE_SLOPE * right_dot;
     if denominator <= 1e-6 {
         return (Zone::Background, None);
@@ -160,10 +165,15 @@ pub(super) fn reference_surfaces(depth: &[f32], combined: &[[f32; 4]; 4]) -> Vec
                 edge_r[0] * edge_d[1] - edge_r[1] * edge_d[0],
             ];
             let normal_length =
-                (crossed[0] * crossed[0] + crossed[1] * crossed[1] + crossed[2] * crossed[2]).sqrt();
+                (crossed[0] * crossed[0] + crossed[1] * crossed[1] + crossed[2] * crossed[2])
+                    .sqrt();
             let view_length = (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt();
             let view = if view_length > 0.0001 {
-                [-c[0] / view_length, -c[1] / view_length, -c[2] / view_length]
+                [
+                    -c[0] / view_length,
+                    -c[1] / view_length,
+                    -c[2] / view_length,
+                ]
             } else {
                 [0.0, 0.0, 1.0]
             };
@@ -190,7 +200,8 @@ pub(super) fn reference_surfaces(depth: &[f32], combined: &[[f32; 4]; 4]) -> Vec
 
 /// 黄金灯池(fixture 真载荷;与 lib 探针同源;native 生产链不供 IES → 行号清空)。
 pub(super) fn fixture_lights() -> Vec<MegaLight> {
-    const FIXTURE: &str = include_str!("../../../deep-engine/fixtures/megalights-native-parity-v1.json");
+    const FIXTURE: &str =
+        include_str!("../../../deep-engine/fixtures/megalights-native-parity-v1.json");
     let fixture: serde_json::Value = serde_json::from_str(FIXTURE).expect("fixture parses");
     fixture["inputs"]["lights"]
         .as_array()
@@ -229,4 +240,3 @@ pub(super) fn fixture_lights() -> Vec<MegaLight> {
         })
         .collect()
 }
-

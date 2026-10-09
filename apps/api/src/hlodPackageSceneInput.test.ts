@@ -7,7 +7,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import type { GeometryResource, RenderPacket } from "@bim-studio/deep-engine";
 import { extractHlodInstancesFromGlb, extractHlodInstancesFromRenderPacket } from "./hlodPackageSceneInput.js";
 
-const FACTORY_ZIP = path.resolve(import.meta.dirname, "../../../data/external-assets/open-packs/factory.zip");
+const FACTORY_ZIP = path.resolve(import.meta.dirname, "../../../test-fixtures/kenney-factory/factory.zip");
 /** T00 冻结的 machine.glb(T00-s1 报告):25,620 B,464 顶点 / 804 索引 / 268 三角形,米制。 */
 const MACHINE_SHA256 = "a39e3042bcb7789274428357383317d70e1c31906e5301c99e7d9e90ac584863";
 const MACHINE_ENTRY = "Models/GLB format/machine.glb";
