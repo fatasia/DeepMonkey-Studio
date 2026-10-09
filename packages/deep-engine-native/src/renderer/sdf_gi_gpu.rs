@@ -103,7 +103,7 @@ pub(crate) struct SdfGiGpuChain {
     update_params: wgpu::Buffer,
     triangle_buffer: wgpu::Buffer,
     /// 距离场(bind group 保活 + 真机编排腿读回;生产代码不读回)。
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(all(test, windows)), allow(dead_code))]
     field: wgpu::Buffer,
     records: wgpu::Buffer,
     /// 已派发更新窗口数(窗口计划游标;与 CPU 腿同语义)。
@@ -622,7 +622,7 @@ impl SdfGiGpuChain {
     }
 
     /// 内容哈希访问(诊断面;真机编排腿消费;rebake 内部直读字段)。
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(all(test, windows)), allow(dead_code))]
     pub(crate) fn content_hash(&self) -> [u8; 32] {
         self.content_hash
     }

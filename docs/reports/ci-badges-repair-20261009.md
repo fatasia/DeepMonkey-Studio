@@ -20,6 +20,7 @@
 - API 偶发排序失败：recordVerification 按账本时钟登记 judgedAt，测试却只设置 envelope.generatedAt。两次提交同毫秒时旧测试要求不成立；改用已有 now 注入点明确登记时间，不改生产排序规则或引入 sleep。
 - Native 干净 checkout 的 fmt：geometry_dag/Cargo.toml 已声明 CLI，但现有 src/bin/geometry_dag.rs 被根目录 `**/bin/` 规则忽略、从未提交。补入已有入口并为该源码目录添加精确例外，不重写 CLI。
 - Native CI 资源：本机 debug/deps 中 190 个 PDB 合计 36,420,493,312 B，Windows 干净构建耗时显著。CI 的 dev/test profile 关闭调试符号并在失败时保留 Rust 依赖缓存；优化等级、断言、测试集合与 Clippy 门槛维持原配置。
+- Linux 严格 Clippy：SDF-GI 距离场与内容哈希的读取者是 Windows GPU 测试，原 dead_code cfg 却假设所有平台都有这些读取者。局部 cfg 与实际 Windows 测试条件对齐，保留资源和诊断 API。
 
 失败记录：Governance 37822360547、Engine 37821584305、Studio 37819885965。原始日志保存在忽略的 test-output/ci-repair-20261009/。
 
@@ -43,4 +44,9 @@ Native 变更包含 cargo fmt 对存量源码的机械格式化，以及严格 C
 
 真实 LPAC 四项回归测试已通过：零 capability 身份／IPC、真实文件与 TCP 拒绝及普通进程正对照、非法镜像与取消、超时终止和 scratch 清理。
 
-GitHub 首轮干净环境：[Engine](https://github.com/fatasia/DeepMonkey-Studio/actions/runs/37872053631) 的 browser-core（含 J5 双端门）、[Studio](https://github.com/fatasia/DeepMonkey-Studio/actions/runs/37872053651) 的 Contracts/API、[Governance](https://github.com/fatasia/DeepMonkey-Studio/actions/runs/37872053736) 两个 job 已通过。第二轮 Web 生产构建与 Linux 原生全量测试通过；API 时间断言与 Native 缺失 CLI 已修正，正在复验最终状态。
+GitHub 验证记录：
+
+- [Studio](https://github.com/fatasia/DeepMonkey-Studio/actions/runs/37873749006)：Contracts、API、Web 三个 job 全部通过，包含 Web 生产构建。
+- [Governance](https://github.com/fatasia/DeepMonkey-Studio/actions/runs/37873749183)：治理与依赖许可证两个 job 全部通过。
+- [Engine](https://github.com/fatasia/DeepMonkey-Studio/actions/runs/37873749054)：browser-core 与 Windows 原生（全量测试、fmt、严格 Clippy）全部通过；Linux 原生全量测试与 fmt 通过，Windows GPU 诊断条件的 Clippy 缺口已按实际消费方修正。
+- 引擎 browser-core（含 J5 双端门）前两轮均通过。最终状态由 [PR #29 Checks](https://github.com/fatasia/DeepMonkey-Studio/pull/29/checks) 和合入 main 后的 push workflow 核验。
