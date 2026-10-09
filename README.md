@@ -41,6 +41,8 @@
 
 [文档](docs/README.md) · [贡献指南](CONTRIBUTING.md) · [支持](SUPPORT.md)
 
+[论文工作稿](docs/research/papers/README.md) · [PINN / PINO 训练源码](research/battery-twin/README.md)
+
 ![Deep Monkey Studio 平台总体架构](apps/web/public/docs-assets/generated/platform-architecture-business-v2.png)
 
 ## 系统介绍 · 从 Vibe Coding 到 Vibe World

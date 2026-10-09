@@ -41,6 +41,8 @@ The project uses the broadest possible MIT license so anyone can use it freely (
 
 [Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md)
 
+[Working papers](docs/research/papers/README.md) · [PINN / PINO training source](research/battery-twin/README.md)
+
 ## Demo video
 
 https://github.com/user-attachments/assets/b6059d6a-04c1-4fe1-b11e-9a46a42184d2
