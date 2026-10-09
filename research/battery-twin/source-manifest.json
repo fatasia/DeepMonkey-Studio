@@ -1,0 +1,97 @@
+{
+  "date": "2026-10-09",
+  "source_commit": "501e430095b5cf07369ec37c420bb8ebd92fad1d",
+  "snapshot": "working-tree files; hashes identify local changes",
+  "transformations": [
+    "UTF-8/LF normalization",
+    "Narrow models package initializer to exported models",
+    "Skip optional upstream integration test when backbone is absent"
+  ],
+  "files": [
+    {
+      "path": "models/__init__.py",
+      "origin_sha256": "18ea7dea81badf105e122c0bd47fbd4a4067865b928351654e50dc5e81eca966",
+      "published_sha256": "ba7729f1ae6e7b2c2155d245af230e035f63398fcf7cb590d9e2ca6486d2f8a0"
+    },
+    {
+      "path": "models/spm_pino_transformer.py",
+      "origin_sha256": "3778ea9fdd6018ee763445a03e23b8aa2b087d0b6c6d49f195011b2d435b2663",
+      "published_sha256": "3778ea9fdd6018ee763445a03e23b8aa2b087d0b6c6d49f195011b2d435b2663"
+    },
+    {
+      "path": "pretrain_battery_spm_pinn_head.py",
+      "origin_sha256": "205489faa39a1d4fa18ff4f8388c3a8ca6ed5ba513eb94b59a79ffa645e73c25",
+      "published_sha256": "205489faa39a1d4fa18ff4f8388c3a8ca6ed5ba513eb94b59a79ffa645e73c25"
+    },
+    {
+      "path": "research/__init__.py",
+      "origin_sha256": "e5b3e02edf45c06286f3934bf97cd0a6df186574b4a585d36f3cd8332d4c9f27",
+      "published_sha256": "e5b3e02edf45c06286f3934bf97cd0a6df186574b4a585d36f3cd8332d4c9f27"
+    },
+    {
+      "path": "research/adaptive_curriculum.py",
+      "origin_sha256": "99caa632d62d35eef99573a01ecfe560a87f0e8625cf6999b72229afe3dc0259",
+      "published_sha256": "99caa632d62d35eef99573a01ecfe560a87f0e8625cf6999b72229afe3dc0259"
+    },
+    {
+      "path": "research/adaptive_physics.py",
+      "origin_sha256": "ae1770406a8e065378287a26871916b9774609b385ec67c2296ee16a4256500b",
+      "published_sha256": "ae1770406a8e065378287a26871916b9774609b385ec67c2296ee16a4256500b"
+    },
+    {
+      "path": "research/battery_spm_pinn.py",
+      "origin_sha256": "d3dd6d9e3d617950bf2c399978a5a1fe15da85afaa2c377f328d439654ec984a",
+      "published_sha256": "d3dd6d9e3d617950bf2c399978a5a1fe15da85afaa2c377f328d439654ec984a"
+    },
+    {
+      "path": "research/candidate_gate.py",
+      "origin_sha256": "f1272d4c7117e6013fcea20d2640f34f4f5a16e75d8a0b7bb956f68b6d3fae52",
+      "published_sha256": "f1272d4c7117e6013fcea20d2640f34f4f5a16e75d8a0b7bb956f68b6d3fae52"
+    },
+    {
+      "path": "research/multi_constraint_balance.py",
+      "origin_sha256": "075df1c38b40d70da8f6edb8d7e9001a7d5da7dd61a7f8dc2c868b7b87cdf5f9",
+      "published_sha256": "075df1c38b40d70da8f6edb8d7e9001a7d5da7dd61a7f8dc2c868b7b87cdf5f9"
+    },
+    {
+      "path": "research/multiphysics_physics.py",
+      "origin_sha256": "751fbcd46b3ced66973e589a091757a097d503c46e2ad200a287ce24b1ccc157",
+      "published_sha256": "751fbcd46b3ced66973e589a091757a097d503c46e2ad200a287ce24b1ccc157"
+    },
+    {
+      "path": "research/spm_dataset.py",
+      "origin_sha256": "3b6c8d861e34a48eee89b036f8ebae105abd69e3bb22189d832294c5c3b73d9b",
+      "published_sha256": "3b6c8d861e34a48eee89b036f8ebae105abd69e3bb22189d832294c5c3b73d9b"
+    },
+    {
+      "path": "research/spm_physics.py",
+      "origin_sha256": "5f6f56dd4bca51d50c218e297a114af8e727961622d0712513b02510d5ca1d2b",
+      "published_sha256": "5f6f56dd4bca51d50c218e297a114af8e727961622d0712513b02510d5ca1d2b"
+    },
+    {
+      "path": "research/transfer_learning.py",
+      "origin_sha256": "ffda7e6fc714431abd260bf191e6cf603e2cd5cf5fa76e302ecec970595eadfa",
+      "published_sha256": "ffda7e6fc714431abd260bf191e6cf603e2cd5cf5fa76e302ecec970595eadfa"
+    },
+    {
+      "path": "tests/test_battery_spm_pinn.py",
+      "origin_sha256": "96c9764b6ed883fb6016fafbb13db50a5a20c401a43c2b082581975a16bea73b",
+      "published_sha256": "5dba93ba76872c2df4baa64bfe33d96c940f18a3d4240b17bf47802c2f3a6ed7"
+    },
+    {
+      "path": "tests/test_spm_pino_transformer.py",
+      "origin_sha256": "a5a705b93e7ff8621f01ed996d8451ef237662fb852baa8b0a6ce4efc5fa9e6e",
+      "published_sha256": "a5a705b93e7ff8621f01ed996d8451ef237662fb852baa8b0a6ce4efc5fa9e6e"
+    },
+    {
+      "path": "train_batterymformer_pinn.py",
+      "origin_sha256": "b17adc5304a79db96e80dbaf06c4046486511de12b1d05db6a3fa88597a076b3",
+      "published_sha256": "b17adc5304a79db96e80dbaf06c4046486511de12b1d05db6a3fa88597a076b3"
+    },
+    {
+      "path": "train_spm_pino_transformer_candidate.py",
+      "origin_sha256": "59ee57174cdc3ffd86163e86bdb2aa74d29c1a860b4354e97d68d0141b7a3938",
+      "published_sha256": "59ee57174cdc3ffd86163e86bdb2aa74d29c1a860b4354e97d68d0141b7a3938"
+    }
+  ]
+}

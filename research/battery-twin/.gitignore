@@ -1,0 +1,11 @@
+__pycache__/
+.pytest_cache/
+.venv/
+checkpoints/
+cache/
+data/
+logs/
+vendor/
+*.pt
+*.safetensors
+*.npz
