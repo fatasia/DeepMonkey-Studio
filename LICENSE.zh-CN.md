@@ -1,15 +1,6 @@
-# Deep Monkey Community Source License 1.0 中文说明
+MIT License
 
-标识：`DMCSL-1.0`
-SPDX 自定义标识：`LicenseRef-Deep-Monkey-Community-1.0`
-
-版权所有 © 2026 Deep Monkey Studio 贡献者。
-
-本文件是 [LICENSE](LICENSE) 的便读中文翻译。英文 `LICENSE` 是唯一完整的授权文本；中英文冲突时，在适用法律允许的范围内以英文为准。
-
-本许可证属于公开源码（source-available）许可证，不是 Open Source Initiative 定义或认证的开源许可证，不得宣传为 OSI Approved、OSI Open Source 或 Free Software。
-
-使用本软件授予的任何权利，即表示你接受本许可证。
+Copyright (c) 2026 Deep Monkey Studio contributors
 
 ## 1. 定义
 
