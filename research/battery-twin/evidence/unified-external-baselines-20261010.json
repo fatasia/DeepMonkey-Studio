@@ -1,0 +1,659 @@
+{
+  "protocol": {
+    "frozen_reports_only": true,
+    "retraining": false,
+    "bootstrap_resamples": 20000,
+    "bootstrap_seed": 20261010,
+    "tasks_kept_separate": true,
+    "interpretation": "External evidence supports voltage, SOH, SOC, and decision subsystems separately; it is not a single pooled score and does not create measured internal-field truth."
+  },
+  "paired_cell_comparisons": [
+    {
+      "source": "HUST",
+      "task": "native_voltage",
+      "model": "adaptive_mixture",
+      "baseline": "trend",
+      "metric": "cell_macro_MAE_V",
+      "comparison": {
+        "n": 77,
+        "a_mean": 0.0015204990646262419,
+        "b_mean": 0.0018683947181298267,
+        "b_minus_a_mean": 0.00034789565350358526,
+        "b_minus_a_bootstrap_95ci": [
+          0.00033592741512588974,
+          0.0003596404028677765
+        ],
+        "b_better_units": 0,
+        "a_better_units": 77,
+        "wilcoxon_p_raw": 2.4628307660238145e-14
+      },
+      "cells": 77
+    },
+    {
+      "source": "HUST",
+      "task": "native_voltage",
+      "model": "adaptive_mixture",
+      "baseline": "persistence",
+      "metric": "cell_macro_MAE_V",
+      "comparison": {
+        "n": 77,
+        "a_mean": 0.0015204990646262419,
+        "b_mean": 0.005213182153149111,
+        "b_minus_a_mean": 0.0036926830885228696,
+        "b_minus_a_bootstrap_95ci": [
+          0.0036715653362024005,
+          0.003714001461518803
+        ],
+        "b_better_units": 0,
+        "a_better_units": 77,
+        "wilcoxon_p_raw": 2.4628307660238145e-14
+      },
+      "cells": 77
+    },
+    {
+      "source": "HUST",
+      "task": "native_voltage",
+      "model": "adaptive_mixture",
+      "baseline": "uniform_weights",
+      "metric": "cell_macro_MAE_V",
+      "comparison": {
+        "n": 77,
+        "a_mean": 0.0015204990646262419,
+        "b_mean": 0.0026310896395401054,
+        "b_minus_a_mean": 0.001110590574913863,
+        "b_minus_a_bootstrap_95ci": [
+          0.0010961201041994036,
+          0.0011251399772595563
+        ],
+        "b_better_units": 0,
+        "a_better_units": 77,
+        "wilcoxon_p_raw": 2.4628307660238145e-14
+      },
+      "cells": 77
+    },
+    {
+      "source": "HUST",
+      "task": "native_voltage",
+      "model": "adaptive_mixture",
+      "baseline": "validation_fixed_weights",
+      "metric": "cell_macro_MAE_V",
+      "comparison": {
+        "n": 77,
+        "a_mean": 0.0015204990646262419,
+        "b_mean": 0.002556162575676184,
+        "b_minus_a_mean": 0.0010356635110499424,
+        "b_minus_a_bootstrap_95ci": [
+          0.0010222095703106176,
+          0.0010490311267135838
+        ],
+        "b_better_units": 0,
+        "a_better_units": 77,
+        "wilcoxon_p_raw": 2.4628307660238145e-14
+      },
+      "cells": 77
+    },
+    {
+      "source": "HUST",
+      "task": "native_voltage",
+      "model": "adaptive_mixture",
+      "baseline": "forced_physical_expert",
+      "metric": "cell_macro_MAE_V",
+      "comparison": {
+        "n": 77,
+        "a_mean": 0.0015204990646262419,
+        "b_mean": 0.007642574068940857,
+        "b_minus_a_mean": 0.006122075004314615,
+        "b_minus_a_bootstrap_95ci": [
+          0.006052035662016004,
+          0.006198631175445207
+        ],
+        "b_better_units": 0,
+        "a_better_units": 77,
+        "wilcoxon_p_raw": 2.4628307660238145e-14
+      },
+      "cells": 77
+    },
+    {
+      "source": "NA-ion",
+      "task": "native_voltage",
+      "model": "adaptive_mixture",
+      "baseline": "trend",
+      "subset": "all",
+      "metric": "cell_macro_MAE_V",
+      "comparison": {
+        "n": 64,
+        "a_mean": 0.0007358529946473671,
+        "b_mean": 0.000395821126889812,
+        "b_minus_a_mean": -0.0003400318677575551,
+        "b_minus_a_bootstrap_95ci": [
+          -0.0003855220305447597,
+          -0.00029343606568366613
+        ],
+        "b_better_units": 62,
+        "a_better_units": 2,
+        "wilcoxon_p_raw": 4.682600367383794e-12
+      },
+      "cells": 64
+    },
+    {
+      "source": "NA-ion",
+      "task": "native_voltage",
+      "model": "adaptive_mixture",
+      "baseline": "persistence",
+      "subset": "all",
+      "metric": "cell_macro_MAE_V",
+      "comparison": {
+        "n": 64,
+        "a_mean": 0.0007358529946473671,
+        "b_mean": 0.003144421646218993,
+        "b_minus_a_mean": 0.0024085686515716263,
+        "b_minus_a_bootstrap_95ci": [
+          0.002179688589331651,
+          0.0026770172794073573
+        ],
+        "b_better_units": 0,
+        "a_better_units": 64,
+        "wilcoxon_p_raw": 3.5254980732707397e-12
+      },
+      "cells": 64
+    },
+    {
+      "source": "NA-ion",
+      "task": "native_voltage",
+      "model": "adaptive_mixture",
+      "baseline": "trend",
+      "subset": "current_step",
+      "metric": "cell_macro_event_MAE_V",
+      "comparison": {
+        "n": 64,
+        "a_mean": 0.06421188345576725,
+        "b_mean": 0.07342408997242098,
+        "b_minus_a_mean": 0.009212206516653727,
+        "b_minus_a_bootstrap_95ci": [
+          0.006382830146642138,
+          0.012232994347691874
+        ],
+        "b_better_units": 15,
+        "a_better_units": 49,
+        "wilcoxon_p_raw": 4.6633410107128694e-08
+      },
+      "cells": 64
+    },
+    {
+      "source": "NA-ion",
+      "task": "native_voltage",
+      "model": "adaptive_mixture",
+      "baseline": "persistence",
+      "subset": "current_step",
+      "metric": "cell_macro_event_MAE_V",
+      "comparison": {
+        "n": 64,
+        "a_mean": 0.06421188345576725,
+        "b_mean": 0.1066277416499456,
+        "b_minus_a_mean": 0.042415858194178334,
+        "b_minus_a_bootstrap_95ci": [
+          0.038702730337617786,
+          0.045935063594203275
+        ],
+        "b_better_units": 0,
+        "a_better_units": 64,
+        "wilcoxon_p_raw": 3.5254980732707397e-12
+      },
+      "cells": 64
+    },
+    {
+      "source": "ZN-coin",
+      "task": "native_voltage",
+      "model": "adaptive_mixture",
+      "baseline": "trend",
+      "subset": "all",
+      "metric": "cell_macro_MAE_V",
+      "comparison": {
+        "n": 140,
+        "a_mean": 0.0025477647783808625,
+        "b_mean": 0.005556785303380464,
+        "b_minus_a_mean": 0.003009020524999601,
+        "b_minus_a_bootstrap_95ci": [
+          0.002448682424535771,
+          0.0035908801247084353
+        ],
+        "b_better_units": 51,
+        "a_better_units": 89,
+        "wilcoxon_p_raw": 5.360790432649499e-11
+      },
+      "cells": 140
+    },
+    {
+      "source": "ZN-coin",
+      "task": "native_voltage",
+      "model": "adaptive_mixture",
+      "baseline": "persistence",
+      "subset": "all",
+      "metric": "cell_macro_MAE_V",
+      "comparison": {
+        "n": 140,
+        "a_mean": 0.0025477647783808625,
+        "b_mean": 0.002238909434694205,
+        "b_minus_a_mean": -0.0003088553436866579,
+        "b_minus_a_bootstrap_95ci": [
+          -0.0005613568015768285,
+          -8.851562569917698e-05
+        ],
+        "b_better_units": 50,
+        "a_better_units": 90,
+        "wilcoxon_p_raw": 0.85476149033779
+      },
+      "cells": 140
+    },
+    {
+      "source": "ZN-coin",
+      "task": "native_voltage",
+      "model": "adaptive_mixture",
+      "baseline": "trend",
+      "subset": "current_step",
+      "metric": "cell_macro_event_MAE_V",
+      "comparison": {
+        "n": 140,
+        "a_mean": 0.11742905229985044,
+        "b_mean": 0.13020503834498873,
+        "b_minus_a_mean": 0.012775986045138271,
+        "b_minus_a_bootstrap_95ci": [
+          0.01174674390583471,
+          0.013840175138616233
+        ],
+        "b_better_units": 0,
+        "a_better_units": 140,
+        "wilcoxon_p_raw": 1.0114520744886418e-24
+      },
+      "cells": 140
+    },
+    {
+      "source": "ZN-coin",
+      "task": "native_voltage",
+      "model": "adaptive_mixture",
+      "baseline": "persistence",
+      "subset": "current_step",
+      "metric": "cell_macro_event_MAE_V",
+      "comparison": {
+        "n": 140,
+        "a_mean": 0.11742905229985044,
+        "b_mean": 0.13003688226380045,
+        "b_minus_a_mean": 0.01260782996395002,
+        "b_minus_a_bootstrap_95ci": [
+          0.011504244865181935,
+          0.013744923195676174
+        ],
+        "b_better_units": 0,
+        "a_better_units": 140,
+        "wilcoxon_p_raw": 1.0114520744886418e-24
+      },
+      "cells": 140
+    },
+    {
+      "source": "HUST",
+      "task": "soh_external",
+      "model": "PINN",
+      "baseline": "standard",
+      "metric": "mape",
+      "comparison": {
+        "n": 77,
+        "a_mean": 14.7530083248832,
+        "b_mean": 14.165708077666045,
+        "b_minus_a_mean": -0.5873002472171536,
+        "b_minus_a_bootstrap_95ci": [
+          -1.0006235598743733,
+          -0.20149180070765724
+        ],
+        "b_better_units": 33,
+        "a_better_units": 44,
+        "wilcoxon_p_raw": 0.271649615500157
+      },
+      "cells": 77
+    },
+    {
+      "source": "HUST",
+      "task": "soh_external",
+      "model": "PINN",
+      "baseline": "standard",
+      "metric": "rmse",
+      "comparison": {
+        "n": 77,
+        "a_mean": 0.16274315698483546,
+        "b_mean": 0.16602575267677183,
+        "b_minus_a_mean": 0.003282595691936357,
+        "b_minus_a_bootstrap_95ci": [
+          0.0005933889654743226,
+          0.005755655230107631
+        ],
+        "b_better_units": 17,
+        "a_better_units": 60,
+        "wilcoxon_p_raw": 0.0021454033601417083
+      },
+      "cells": 77
+    },
+    {
+      "source": "HUST",
+      "task": "soh_external",
+      "model": "PINN",
+      "baseline": "standard",
+      "metric": "mae",
+      "comparison": {
+        "n": 77,
+        "a_mean": 0.14985285030750486,
+        "b_mean": 0.14586313555476726,
+        "b_minus_a_mean": -0.003989714752737578,
+        "b_minus_a_bootstrap_95ci": [
+          -0.007706952103425739,
+          -0.0005212185056275371
+        ],
+        "b_better_units": 32,
+        "a_better_units": 45,
+        "wilcoxon_p_raw": 0.8689300686591552
+      },
+      "cells": 77
+    },
+    {
+      "source": "HUST",
+      "task": "soh_external",
+      "model": "PINN",
+      "baseline": "standard",
+      "metric": "monotonic_violation_rate",
+      "comparison": {
+        "n": 77,
+        "a_mean": 0.3376006370731584,
+        "b_mean": 0.36461429684342367,
+        "b_minus_a_mean": 0.027013659770265288,
+        "b_minus_a_bootstrap_95ci": [
+          0.02373941901339616,
+          0.03027355964758407
+        ],
+        "b_better_units": 0,
+        "a_better_units": 77,
+        "wilcoxon_p_raw": 2.4628307660238145e-14
+      },
+      "cells": 77
+    },
+    {
+      "source": "HUST",
+      "task": "soh_external",
+      "model": "PINN",
+      "baseline": "standard",
+      "metric": "monotonic_excess_rms",
+      "comparison": {
+        "n": 77,
+        "a_mean": 0.005608097887265362,
+        "b_mean": 0.006793447267929359,
+        "b_minus_a_mean": 0.0011853493806639952,
+        "b_minus_a_bootstrap_95ci": [
+          0.0011013268175937066,
+          0.0012701767408916445
+        ],
+        "b_better_units": 0,
+        "a_better_units": 77,
+        "wilcoxon_p_raw": 2.4628307660238145e-14
+      },
+      "cells": 77
+    },
+    {
+      "source": "HUST",
+      "task": "soh_external",
+      "model": "PINN",
+      "baseline": "standard",
+      "metric": "smoothness_rms",
+      "comparison": {
+        "n": 77,
+        "a_mean": 0.015769204283133147,
+        "b_mean": 0.018637199160195402,
+        "b_minus_a_mean": 0.0028679948770622544,
+        "b_minus_a_bootstrap_95ci": [
+          0.0026671832081583604,
+          0.0030703410318986112
+        ],
+        "b_better_units": 0,
+        "a_better_units": 77,
+        "wilcoxon_p_raw": 2.4628307660238145e-14
+      },
+      "cells": 77
+    }
+  ],
+  "external_source_summaries": {
+    "Oxford": {
+      "task": "current-characterisation-cycle SOH from same-cycle C1 charge; target is independent C1 discharge capacity",
+      "cells": 8,
+      "training_or_calibration_on_source": false,
+      "cell_macro_mape_pct": 2.7081445189773414,
+      "worst_cell_mape_pct": 3.9709004827822527,
+      "source_url": "https://ora.ox.ac.uk/objects/uuid:03ba4b01-cfed-46d3-9b1a-7d4a7bdf6fac"
+    },
+    "McMaster_LG_HG2": {
+      "task": "Digatron Ah throughput normalized by protocol-measured available capacity; no BMS SOC labels",
+      "temperature_folds": 6,
+      "mean_physical_mae_pct_points": 10.655866779815643,
+      "mean_candidate_mae_pct_points": 10.0416114839032,
+      "mean_net_gain_pct_points": 0.6142552959124422,
+      "positive_gain_folds": 4,
+      "cell_independent_generalisation_proven": false,
+      "source_url": "https://data.mendeley.com/datasets/b5mj79w5w9/2"
+    },
+    "BAIC": {
+      "task": "vehicle_soc_external",
+      "vehicles": 20,
+      "domain_status": {
+        "out-of-domain": 20
+      },
+      "socformer_mae_pct_points": 7.0332,
+      "soc_assimilation_mae_pct_points": 6.9441,
+      "blind_coulomb_mae_pct_points": 8.0443,
+      "positive_assimilation_gain_vehicles": 8
+    }
+  },
+  "decision_validation": {
+    "source": "SNL numerical controls",
+    "task": "multi_cell_decision",
+    "cells": 5,
+    "groups": 12,
+    "methods": {
+      "utility_0": {
+        "groups": 12,
+        "unsafe": 0,
+        "unnecessary_abstentions": 5,
+        "shortfall": 0.07466265377787237,
+        "calls": 0,
+        "replay_cost_s": 2.391357300009986
+      },
+      "utility_1": {
+        "groups": 12,
+        "unsafe": 0,
+        "unnecessary_abstentions": 3,
+        "shortfall": 0.046854929467309216,
+        "calls": 12,
+        "replay_cost_s": 7.4375951000038185
+      },
+      "utility_2": {
+        "groups": 12,
+        "unsafe": 0,
+        "unnecessary_abstentions": 3,
+        "shortfall": 0.046854929467309216,
+        "calls": 24,
+        "replay_cost_s": 12.691153399995528
+      },
+      "utility_3": {
+        "groups": 12,
+        "unsafe": 0,
+        "unnecessary_abstentions": 3,
+        "shortfall": 0.046854929467309216,
+        "calls": 34,
+        "replay_cost_s": 16.894111199981126
+      },
+      "boundary_0": {
+        "groups": 12,
+        "unsafe": 0,
+        "unnecessary_abstentions": 5,
+        "shortfall": 0.07466265377787237,
+        "calls": 0,
+        "replay_cost_s": 2.391357300009986
+      },
+      "boundary_1": {
+        "groups": 12,
+        "unsafe": 0,
+        "unnecessary_abstentions": 3,
+        "shortfall": 0.046854929467309216,
+        "calls": 12,
+        "replay_cost_s": 7.498258300001908
+      },
+      "boundary_2": {
+        "groups": 12,
+        "unsafe": 0,
+        "unnecessary_abstentions": 3,
+        "shortfall": 0.046854929467309216,
+        "calls": 24,
+        "replay_cost_s": 12.660264099991764
+      },
+      "boundary_3": {
+        "groups": 12,
+        "unsafe": 0,
+        "unnecessary_abstentions": 3,
+        "shortfall": 0.046854929467309216,
+        "calls": 34,
+        "replay_cost_s": 16.98652129997936
+      },
+      "charge_0": {
+        "groups": 12,
+        "unsafe": 0,
+        "unnecessary_abstentions": 5,
+        "shortfall": 0.07466265377787237,
+        "calls": 0,
+        "replay_cost_s": 2.391357300009986
+      },
+      "charge_1": {
+        "groups": 12,
+        "unsafe": 0,
+        "unnecessary_abstentions": 5,
+        "shortfall": 0.07466265377787237,
+        "calls": 12,
+        "replay_cost_s": 7.554074399995443
+      },
+      "charge_2": {
+        "groups": 12,
+        "unsafe": 0,
+        "unnecessary_abstentions": 5,
+        "shortfall": 0.07466265377787237,
+        "calls": 24,
+        "replay_cost_s": 12.719929499988211
+      },
+      "charge_3": {
+        "groups": 12,
+        "unsafe": 0,
+        "unnecessary_abstentions": 3,
+        "shortfall": 0.046854929467309216,
+        "calls": 34,
+        "replay_cost_s": 16.899529399976018
+      },
+      "SPMe_early_stop_6": {
+        "groups": 12,
+        "unsafe": 0,
+        "unnecessary_abstentions": 6,
+        "shortfall": 0.0836649945868922,
+        "calls": 66,
+        "replay_cost_s": 27.98987939995277
+      }
+    },
+    "selected": "utility_1",
+    "statistical_unit": "health_source_cell; mean within each cell before resampling",
+    "paired_shortfall_comparisons": {
+      "utility_0": {
+        "n": 5,
+        "a_mean": 0.08708787570788985,
+        "b_mean": 0.04309221043080242,
+        "b_minus_a_mean": -0.04399566527708743,
+        "b_minus_a_bootstrap_95ci": [
+          -0.10924412276299814,
+          0.0
+        ],
+        "b_better_units": 2,
+        "a_better_units": 0,
+        "wilcoxon_p_raw": 0.5,
+        "a": "utility_0",
+        "b": "utility_1",
+        "unit": "health_source_cell",
+        "cells": [
+          "SNL_18650_NMC_15C_0-100_0.5-1C_a.pkl",
+          "SNL_18650_NMC_15C_0-100_0.5-2C_b.pkl",
+          "SNL_18650_NMC_25C_0-100_0.5-1C_a.pkl",
+          "SNL_18650_NMC_25C_0-100_0.5-3C_c.pkl",
+          "SNL_18650_NMC_35C_0-100_0.5-1C_a.pkl"
+        ]
+      },
+      "boundary_1": {
+        "n": 5,
+        "a_mean": 0.04309221043080242,
+        "b_mean": 0.04309221043080242,
+        "b_minus_a_mean": 0.0,
+        "b_minus_a_bootstrap_95ci": [
+          0.0,
+          0.0
+        ],
+        "b_better_units": 0,
+        "a_better_units": 0,
+        "wilcoxon_p_raw": 1.0,
+        "a": "boundary_1",
+        "b": "utility_1",
+        "unit": "health_source_cell",
+        "cells": [
+          "SNL_18650_NMC_15C_0-100_0.5-1C_a.pkl",
+          "SNL_18650_NMC_15C_0-100_0.5-2C_b.pkl",
+          "SNL_18650_NMC_25C_0-100_0.5-1C_a.pkl",
+          "SNL_18650_NMC_25C_0-100_0.5-3C_c.pkl",
+          "SNL_18650_NMC_35C_0-100_0.5-1C_a.pkl"
+        ]
+      },
+      "charge_1": {
+        "n": 5,
+        "a_mean": 0.08708787570788985,
+        "b_mean": 0.04309221043080242,
+        "b_minus_a_mean": -0.04399566527708743,
+        "b_minus_a_bootstrap_95ci": [
+          -0.10924412276299814,
+          0.0
+        ],
+        "b_better_units": 2,
+        "a_better_units": 0,
+        "wilcoxon_p_raw": 0.5,
+        "a": "charge_1",
+        "b": "utility_1",
+        "unit": "health_source_cell",
+        "cells": [
+          "SNL_18650_NMC_15C_0-100_0.5-1C_a.pkl",
+          "SNL_18650_NMC_15C_0-100_0.5-2C_b.pkl",
+          "SNL_18650_NMC_25C_0-100_0.5-1C_a.pkl",
+          "SNL_18650_NMC_25C_0-100_0.5-3C_c.pkl",
+          "SNL_18650_NMC_35C_0-100_0.5-1C_a.pkl"
+        ]
+      },
+      "SPMe_early_stop_6": {
+        "n": 5,
+        "a_mean": 0.07254026252646881,
+        "b_mean": 0.04309221043080242,
+        "b_minus_a_mean": -0.029448052095666383,
+        "b_minus_a_bootstrap_95ci": [
+          -0.0721193492310084,
+          0.0
+        ],
+        "b_better_units": 2,
+        "a_better_units": 0,
+        "wilcoxon_p_raw": 0.5,
+        "a": "SPMe_early_stop_6",
+        "b": "utility_1",
+        "unit": "health_source_cell",
+        "cells": [
+          "SNL_18650_NMC_15C_0-100_0.5-1C_a.pkl",
+          "SNL_18650_NMC_15C_0-100_0.5-2C_b.pkl",
+          "SNL_18650_NMC_25C_0-100_0.5-1C_a.pkl",
+          "SNL_18650_NMC_25C_0-100_0.5-3C_c.pkl",
+          "SNL_18650_NMC_35C_0-100_0.5-1C_a.pkl"
+        ]
+      }
+    },
+    "scope": "Replay of actual estimated-state SPMe evaluations with label-free per-query selection. Counts physical calls and shared neural-state propagation; early-stop SPMe is the strong solver baseline."
+  }
+}

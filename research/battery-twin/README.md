@@ -34,8 +34,14 @@ These small runs verify that training and checkpoint writing work. They do not r
 
 ## Paper and evidence
 
-[Paper reading copies and source packages](../../docs/research/papers/README.md). These are working drafts; no arXiv identifier has been assigned. Source publication and smoke training do not replace the archived checkpoint configurations or data splits. In particular, evaluate sparse routing with a common counterfactual reference; legacy route-dependent oracle scores are not comparative evidence.
+[Paper reading copies and source packages](../../docs/research/papers/README.md). The current TwinMoE manuscript is awaiting `cs.LG` endorsement on arXiv. The repository includes the current PDF, TeX source package and frozen external-audit summary. Source publication and smoke training do not replace the archived checkpoint configurations or data splits. In particular, evaluate sparse routing with a common counterfactual reference; legacy route-dependent oracle scores are not comparative evidence.
 
-Verification on 2026-10-09: 18 tests discovered, 17 passed and one optional backbone integration test skipped. Both commands above completed and wrote checkpoints. Environment: PyTorch 2.12.0+cu130, NumPy 2.3.5, safetensors 0.8.0. Full paper experiments were not rerun for this source export.
+Verification on 2026-10-10: 31 focused field/state/decision tests passed. The frozen author-review package reports 64 final field controls, 48 continuous controls, 20 external vehicle traces and 5 health-source cells in the decision audit. Smoke commands remain the quick source check; full paper experiments were not rerun for this source export.
+
+## Frozen evidence
+
+- [`evidence/unified-external-baselines-20261010.md`](evidence/unified-external-baselines-20261010.md) — paired cell-level voltage and SOH comparisons, Oxford/McMaster/BAIC source summaries, and the five-cell decision audit.
+- [`evidence/unified-external-baselines-20261010.json`](evidence/unified-external-baselines-20261010.json) — machine-readable values and bootstrap intervals.
+- [`evidence/REPRODUCE-TWINMOE.md`](evidence/REPRODUCE-TWINMOE.md) — frozen execution order and data lineage.
 
 The repository [license](../../LICENSE) applies to this source. Upstream code, datasets and model weights retain their own terms.
