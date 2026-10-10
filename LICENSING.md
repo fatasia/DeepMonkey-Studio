@@ -1,7 +1,6 @@
 # Licensing guide
 
-Deep Monkey Studio uses the custom [Deep Monkey Community Source License 1.0](LICENSE), identified as `LicenseRef-Deep-Monkey-Community-1.0`. It is source-available rather than OSI-approved because organizations engaging in Covered Misconduct receive no permission to use the project.
-
+Deep Monkey Studio uses the custom [MIT License](LICENSE).
 This guide is explanatory. The English [LICENSE](LICENSE) controls. The [Chinese translation](LICENSE.zh-CN.md) is provided for convenience.
 
 ## Usage matrix
