@@ -252,7 +252,10 @@ async function waitForProbe(probe, label, url) {
   // API dev 启动会先构建 Native/工业 Worker；Windows 冷缓存下 Rust release
   // 编译常超过一分钟。给真实构建留出时间，避免启动器在进程即将就绪时
   // 连同刚启动的 MinIO 一起回收。
-  const timeoutMs = positiveDuration(environment.BIM_STUDIO_STARTUP_TIMEOUT_MS, 180_000);
+  // A cold Windows checkout may rebuild the Rust scene compiler and industrial
+  // worker before the API can bind. Keep the default generous; CI and local
+  // callers can still tighten it with BIM_STUDIO_STARTUP_TIMEOUT_MS.
+  const timeoutMs = positiveDuration(environment.BIM_STUDIO_STARTUP_TIMEOUT_MS, 600_000);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await probe()) return;
