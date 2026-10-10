@@ -1,6 +1,6 @@
-MIT License
+标识:`MIT`
 
-Copyright (c) 2026 Deep Monkey Studio contributors
+版权所有 © 2026 Deep Monkey Studio 贡献者。
 
 ## 1. 定义
 
