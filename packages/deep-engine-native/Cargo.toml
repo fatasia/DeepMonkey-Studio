@@ -34,7 +34,7 @@ serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
 # slotmap ^1.0.6,两者已是 Cargo.lock 存量传递依赖(0.7.8 / 1.1.1)——本依赖
 # 不新增任何其他包,grid/parse/serde/block/float 等未启用特性不进依赖树。
 # 确定性:纯 Rust 无 I/O,同输入逐位同输出,黄金用例钉死(见 src/deep2d/layout/)。
-taffy = { version = "=0.14.0", default-features = false, features = ["std", "flexbox", "taffy_tree"] }
+taffy = { version = "=0.15.0", default-features = false, features = ["std", "flexbox", "taffy_tree"] }
 unicode-segmentation = "=1.13.3"
 web-time = "=1.1.0"
 wgpu = { version = "=30.0.1", default-features = false, features = ["std", "parking_lot", "dx12", "metal", "vulkan", "wgsl"] }
