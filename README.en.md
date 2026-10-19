@@ -51,11 +51,13 @@ https://github.com/user-attachments/assets/d562bbec-f85a-4d75-890c-1aaa7f561105
 
 ## Try it online and download
 
-[Try the project workspace](https://fatasia.github.io/DeepMonkey-Studio/) · [Download 0.2.0](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/v0.2.0) · [Deploy with Docker](docs/docker-application.md) · [Codex / Claude: Skills, MCP and SDK](docs/ai-development.md)
+[Tencent Cloud instance](http://106.55.242.154/manager) · [GitHub Pages demo](https://fatasia.github.io/DeepMonkey-Studio/) · [Download 0.2.0](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/v0.2.0) · [Deploy with Docker](docs/docker-application.md) · [Codex / Claude: Skills, MCP and SDK](docs/ai-development.md)
 
-> The online demo includes **only a subset of features**. Download the Windows editor or deploy with Docker / Docker Compose for the full application.
+> The GitHub Pages demo includes **only a subset of features**. Download the Windows editor or deploy with Docker / Docker Compose for the full application.
 
-The browser demo includes an SMT line, 275 models and environment/material assets, and 30 sample data rows. No login is needed; edits stay in this browser. Download the full library from the [asset release](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/asset-library-v1).
+The GitHub Pages demo includes an SMT line, 275 models and environment/material assets, and 30 sample data rows. No login is needed; edits stay in this browser. Download the full library from the [asset release](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/asset-library-v1).
+
+The Tencent Cloud instance requires login; request an account from the administrator. It currently uses HTTP; client packaging and other secure-context features require HTTPS or localhost.
 
 Pages requires no username or password. Source development defaults to `admin / admin`; Docker uses `admin` with a password obtained through the [deployment guide](docs/docker-application.md).
 
