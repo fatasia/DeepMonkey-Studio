@@ -97,7 +97,7 @@ jobs:
               raise ValueError('Updated Pages site exceeds total size budget')
           PY
           rm deepmonkey-studio-browser.zip deepmonkey-studio-editor.zip
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
       - id: deployment
