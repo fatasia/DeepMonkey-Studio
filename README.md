@@ -59,15 +59,11 @@ https://github.com/user-attachments/assets/d562bbec-f85a-4d75-890c-1aaa7f561105
 
 ## 在线体验与下载
 
-[腾讯云在线版](http://106.55.242.154/manager) · [GitHub Pages 演示](https://fatasia.github.io/DeepMonkey-Studio/) · [下载 0.2.0](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/v0.2.0) · [Docker 一键部署](docs/docker-application.md) · [Codex / Claude：Skill、MCP 与 SDK](docs/ai-development.md)
+[腾讯云在线版](https://deepmonkey.studio/manager) · [GitHub Pages 演示](https://fatasia.github.io/DeepMonkey-Studio/) · [下载 0.2.0](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/v0.2.0) · [Docker 一键部署](docs/docker-application.md) · [Codex / Claude：Skill、MCP 与 SDK](docs/ai-development.md)
 
-> GitHub Pages 演示仅供部分功能体验，**不包含全部功能**。完整体验请下载 Windows 编辑器或使用 Docker / Docker Compose 部署。
+> 完整体验请下载 Windows 编辑器或使用 Docker / Docker Compose 部署。完整素材库通过 [素材包 Release](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/asset-library-v1) 下载。
 
-GitHub Pages 演示内置 SMT 产线、275 项模型与环境材质、30 行示例数据，无需登录。编辑保存在当前浏览器；完整素材库通过 [素材包 Release](https://github.com/fatasia/DeepMonkey-Studio/releases/tag/asset-library-v1) 下载。
-
-腾讯云在线版需登录，账号请向管理员申请。当前使用 HTTP，客户端打包等需要安全上下文的功能请使用 HTTPS 或 localhost。
-
-Pages 无需账号或密码。源码开发默认 `admin / admin`；Docker 账号为 `admin`，密码按[部署说明](docs/docker-application.md)获取。
+默认账号密码 `admin / admin`；密码按[部署说明](docs/docker-application.md)获取。
 
 ### 切换渲染引擎
 
