@@ -25,7 +25,7 @@ geometry_dag = { path = "geometry_dag" }
 # SHA-256 6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb.
 flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
 pollster = "=1.0.1"
-rapier3d = { version = "=0.35.3", default-features = true, features = ["enhanced-determinism"] }
+rapier3d = { version = "=0.36.1", default-features = true, features = ["enhanced-determinism"] }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
 # deep2d 刀2 组件布局(flexbox)。开源依赖门槛审计结论:taffy 0.14.0(MIT,crates.io
